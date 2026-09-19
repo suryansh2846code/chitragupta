@@ -121,7 +121,12 @@ _PROACTIVE = ["set_reminder", "create_routine", "create_followup"]
 #: then have no way to finish the job the user asked for, and the card it shows
 #: looks like a send that quietly did not happen. The pair is the capability;
 #: either alone is a half-answer.
-_ALL_ACTIONS = ["create_draft", "send_email", "create_event", *_PROACTIVE]
+#: `update_event` and `cancel_event` travel with `create_event` for the same
+#: reason `create_draft` travels with `send_email`: an agent that can put a
+#: meeting in the calendar and cannot move it will propose a new one beside
+#: the old, which is how a diary ends up with two of everything.
+_ALL_ACTIONS = ["create_draft", "send_email", "create_event", "update_event",
+                "cancel_event", *_PROACTIVE]
 #: Only for agents that can actually reach an inbox or a chat. An agent taught
 #: to propose a change it has no tool to address is an agent that will claim it
 #: archived something.
@@ -417,8 +422,12 @@ TEMPLATES: tuple[Template, ...] = (
         # the numbers are.
         tools=[*BASE_TOOLS, *_MEASURE, *_TRAINING, *_FILES, *_DIARY, *_TASKS,
                *_LOOPS, "run_python"],
-        actions=["set_reminder", "create_event", "create_routine",
-                 "log_workout"],
+        # `create_event` travels with the two that change one, the same way it
+        # does in `_ALL_ACTIONS`: an agent that can book a session and cannot
+        # move it books a second one beside the first the moment the user's
+        # week shifts, which for a training plan is most weeks.
+        actions=["set_reminder", "create_event", "update_event",
+                 "cancel_event", "create_routine", "log_workout"],
         recall_sources=["gcal", "notes", "apple_health"],
         works_with=["gcal", "notes", "apple_health"],
         # Nothing. It works on the first day with no connectors at all: the

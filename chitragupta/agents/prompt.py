@@ -22,9 +22,9 @@ from ..log import suppressed
 
 #: Every action an agent can propose. `Agent.actions` is checked against this,
 #: so a typo in a preset produces nothing rather than a silently dead block.
-KNOWN_ACTIONS = ("create_draft", "send_email", "create_event", "create_followup",
-                 "set_reminder", "create_routine", "mail_triage",
-                 "message_send", "log_workout")
+KNOWN_ACTIONS = ("create_draft", "send_email", "create_event", "update_event",
+                 "cancel_event", "create_followup", "set_reminder",
+                 "create_routine", "mail_triage", "message_send", "log_workout")
 
 #: Argument names listed per connector tool. Enough for a model to fill a call
 #: in correctly; few enough that twenty tools do not become the system prompt.
@@ -163,6 +163,24 @@ _BLOCKS: dict[str, str] = {
         '<action type="create_event" title="..." '
         'start="2026-09-01T15:00:00+05:30" end="2026-09-01T16:00:00+05:30">'
         "optional description</action>"
+    ),
+    "update_event": (
+        '<action type="update_event" event_id="abc123" '
+        'start="2026-09-25T15:00:00+05:30">optional new description</action>\n'
+        "Moving or renaming an existing meeting. `event_id` MUST come from "
+        "`calendar_lookup` — you cannot guess one, and the wrong id moves "
+        "somebody else's meeting. Give `start` alone to move it and keep it "
+        "the same length. Only name `attendees` if the user is changing WHO "
+        "is coming: sending the list you happen to have uninvites everybody "
+        "not on it."
+    ),
+    "cancel_event": (
+        '<action type="cancel_event" event_id="abc123"></action>\n'
+        "Calls it off and tells the attendees. `event_id` from "
+        "`calendar_lookup`. This cannot be undone — recreating it is a new "
+        "invitation to people who have already been told it is cancelled — so "
+        "when the user might mean *move*, propose `update_event` instead and "
+        "say which you chose."
     ),
     "create_followup": (
         '<action type="create_followup" who="rahul@work.test" due="in 3 days" '
@@ -400,6 +418,40 @@ _FOLLOWUP_RECIPE = (
 )
 
 
+#: "Move tomorrow's client meeting to Friday afternoon."
+#:
+#: The API is the easy half. The hard half is rung 3: *propose a specific
+#: time*. An agent that answers "what time on Friday works for you?" has
+#: handed the job back — the user asked to have it moved, not to be consulted
+#: about moving it.
+_CALENDAR_RECIPE = (
+    "MOVING OR CANCELLING A MEETING:\n"
+    "1. `calendar_lookup` first, and take the `event_id` from it. Never guess "
+    "one — the wrong id moves somebody else's meeting, and they find out from "
+    "the invitation.\n"
+    "2. If the user named a vague time (\"Friday afternoon\", \"next week\"), "
+    "LOOK at that period with `calendar_lookup` and PICK a concrete slot that "
+    "is free, in their working hours, not touching what is already there. "
+    "Propose that exact time. Asking them which slot they want is handing the "
+    "job back — they asked you to move it.\n"
+    "3. Say in your text why you chose that slot and what else was on that "
+    "day, so they can disagree with the reasoning rather than only with the "
+    "answer.\n"
+    "4. Move with update_event; only use cancel_event if they said cancel. "
+    "Moving keeps the meeting the same length automatically — give `start` "
+    "and leave `end` out."
+)
+
+
+def _calendar_recipe(tools: list[str] | None, actions: list[str]) -> str:
+    """Only for an agent that can both see the calendar and change it."""
+    if "calendar_lookup" not in set(tools or []):
+        return ""
+    if not {"update_event", "cancel_event"} & set(actions or []):
+        return ""
+    return _CALENDAR_RECIPE
+
+
 def _followup_recipe(tools: list[str] | None, actions: list[str]) -> str:
     """Only for an agent that can check AND chase.
 
@@ -593,7 +645,8 @@ def build(*, name: str, role: str, system_prompt: str,
         # tells the agent what to put in a plan, and reads as nonsense to one
         # that has not just been told plans exist.
         for recipe in (_inbox_recipe(tools, allowed),
-                       _followup_recipe(tools, allowed)):
+                       _followup_recipe(tools, allowed),
+                       _calendar_recipe(tools, allowed)):
             if recipe:
                 lines.append(recipe)
         parts.append("\n".join(lines))

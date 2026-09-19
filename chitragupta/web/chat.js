@@ -337,6 +337,11 @@ async function loadActionCatalog() {
 //: agent id is bookkeeping, not content.
 const NOT_TYPEABLE = new Set(["items", "blocks", "arguments", "agent_id",
                               "loop_id", "thread_id",
+                              // An opaque Google id. Nobody can correct one by
+                              // reading it, and a typo here moves a different
+                              // meeting — the failure the recipe forbids
+                              // guessing for in the first place.
+                              "event_id",
                               // A file path typed into a box is a path the
                               // folder grants have to re-check anyway, and a
                               // half-typed one is an attachment that silently
@@ -498,6 +503,9 @@ function actionSummary(step) {
     case "create_draft": return `Draft “${p.subject || "(no subject)"}” to ${p.to || "nobody yet"}`;
     case "send_email": return `Email “${p.subject || "(no subject)"}” to ${p.to || "someone"}`;
     case "create_event": return `Event “${p.title || "untitled"}” on ${p.start || "a date"}`;
+    case "update_event": return p.start
+      ? `Move a meeting to ${p.start}` : "Change a meeting";
+    case "cancel_event": return "Cancel a meeting";
     case "set_reminder": return `Reminder: ${p.message || ""}`;
     case "message_send": return `Message ${p.chat || p.to || "someone"} on ${
       MESSAGING_APPS[(p.app || "").toLowerCase()] || p.app || "an app"}`;
@@ -797,6 +805,21 @@ function actionCard(a) {
        ${at && !drafting ? `<div class="ac-row"><b>Send at</b> ${esc(at)}</div>` : ""}
        ${files ? `<div class="ac-row"><b>Attached</b> ${esc(files)}</div>` : ""}
        <div class="ac-body">${esc(p.body || "")}</div>`;
+  } else if (a.type === "update_event" || a.type === "cancel_event") {
+    // What is CHANGING, never "an event was changed". This card emails every
+    // attendee, so the thing being approved has to be readable as the thing
+    // that will land in their inbox.
+    const off = a.type === "cancel_event";
+    title = off ? "Cancel this meeting" : "Move this meeting";
+    verb = off ? "cancel" : "move";
+    rows = (off
+      ? `<div class="ac-row muted">It is called off and everybody in it is told.</div>`
+      : `${p.start ? `<div class="ac-row"><b>New time</b> ${esc(p.start)}${
+            p.end ? " → " + esc(p.end) : " (same length)"}</div>` : ""}
+         ${p.title ? `<div class="ac-row"><b>New name</b> ${esc(p.title)}</div>` : ""}
+         ${p.location ? `<div class="ac-row"><b>Where</b> ${esc(p.location)}</div>` : ""}
+         ${p.attendees ? `<div class="ac-row"><b>Who</b> ${esc(String(p.attendees))}</div>` : ""}
+         <div class="ac-row muted">Everybody in it gets the update.</div>`);
   } else if (a.type === "set_reminder") {
     title = "Set reminder"; verb = "set";
     rows = `<div class="ac-row"><b>Remind</b> ${esc(p.message || "")}</div>

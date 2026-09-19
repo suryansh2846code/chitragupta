@@ -187,5 +187,5 @@ def test_acting_on_the_world_still_goes_through_the_user():
     held = set(get_agent(CHIEF).actions)
     assert held <= set(REGISTRY), f"unknown action: {sorted(held - set(REGISTRY))}"
     assert {a for a in held if REGISTRY[a].risk is not Risk.GREEN} == {
-        "send_email", "create_event", "mail_triage", "message_send",
-        "create_routine"}
+        "send_email", "create_event", "update_event", "cancel_event",
+        "mail_triage", "message_send", "create_routine"}
