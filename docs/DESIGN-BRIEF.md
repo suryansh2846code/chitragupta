@@ -32,9 +32,9 @@ constellation · **monospace-forward** technical type · hairline **HUD** overla
 
 ## Mark
 A **yantra** — the bhupura square with its four gates, a lotus ring, the inner
-rotated square, and the **bindu** at the centre. The bindu is the hook: the one
-point being written down, which is why it is the only thing in the mark that
-ever takes `--north`.
+rotated square, and the **bindu** at the centre. It is drawn art, and it is kept
+as drawn: the mark is not restyled per surface, and nothing is picked out of it
+for emphasis.
 
 One master, `docs/brand/yantra.png` — 1024px, white, the shape carried entirely
 in the **alpha channel**. Nothing downstream is hand-cut:
@@ -43,13 +43,17 @@ in the **alpha channel**. Nothing downstream is hand-cut:
   onboarding paint it with CSS `mask`, so it takes the colour of the surface it
   sits on) and `favicon-32/64.png` (gold baked in — the tab is the one place CSS
   cannot reach, and gold is the only hue that holds on a light *and* a dark tab).
-- `packaging/make-icon.py` lays it on the night sky for `icon.icns`, gold bindu
-  and all.
+- `packaging/make-icon.py` renders `icon.icns` as the artwork itself: the ink
+  (`#1b1b19`) on its own paper (`#fdfcf8`), filling the tile. Both colours are
+  sampled from the drawing rather than taken from the tokens above — the brief
+  governs the product's surfaces, and the icon's job is to reproduce a specific
+  piece of art. It is the one place the palette does not apply.
 
 It does not shrink forever. Below ~20px the lotus and the gates merge and it
-stops being this mark; the rail runs it at 22px for that reason, and the app
-icon falls back to the core — the rotated square and its bindu — at 32px and
-below.
+stops being this mark, which is why the rail runs it at 22px. The app icon keeps
+one treatment at every size regardless: a simplified small size would mean the
+icon in a Finder list is a different shape from the icon in the Dock, and ink on
+paper survives the shrink better than a reversed-out mark does anyway.
 
 ## Type
 - **Mono-forward** (system mono: `ui-monospace, 'SF Mono', 'JetBrains Mono',
