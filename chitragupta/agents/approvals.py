@@ -66,8 +66,16 @@ def _conn() -> sqlite3.Connection:
 def describe(action_type: str, params: dict) -> str:
     """One line, in the user's terms — not the action's internals."""
     params = params or {}
-    if action_type == "send_email":
-        return f"Email “{params.get('subject') or '(no subject)'}” to {params.get('to') or 'someone'}"
+    if action_type in ("send_email", "create_draft"):
+        # "Draft" and "Email" are different promises and the word is the whole
+        # difference: one of them has left the machine. The attachment is named
+        # too — a file going out is half of what a person is approving, and a
+        # card that omits it is asking them to trust the summary.
+        verb = "Email" if action_type == "send_email" else "Draft"
+        line = (f"{verb} “{params.get('subject') or '(no subject)'}” to "
+                f"{params.get('to') or 'someone'}")
+        files = _attachment_names(params)
+        return f"{line} — with {files}" if files else line
     if action_type == "create_event":
         return f"Calendar event “{params.get('title') or 'untitled'}” on {params.get('start') or 'a date'}"
     if action_type == "create_routine":
@@ -108,6 +116,26 @@ def describe(action_type: str, params: dict) -> str:
         detail = _argument_summary(params.get("arguments"))
         return f"{line} — {detail}" if detail else line
     return action_type.replace("_", " ")
+
+
+def _attachment_names(params: dict) -> str:
+    """The files this message would carry, by name — never by path.
+
+    The path says where it is on disk, which the user already knows and which
+    is long enough to push the subject off the card. The *name* is what they
+    are checking: that it is the right document.
+    """
+    from pathlib import Path
+
+    named = (params or {}).get("attach") or (params or {}).get("attachments") or []
+    if isinstance(named, str):
+        named = [p.strip() for p in named.split(",") if p.strip()]
+    names = [Path(str(p)).name for p in named if str(p).strip()]
+    if not names:
+        return ""
+    if len(names) <= 2:
+        return " and ".join(names)
+    return f"{names[0]} and {len(names) - 1} more files"
 
 
 def _connector_label(params: dict) -> str:

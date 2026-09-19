@@ -101,7 +101,14 @@ _TRAINING = ["list_exercises", "lift_progress", "training_load"]
 #: difference between an agent that answers and one that notices.
 _PROACTIVE = ["set_reminder", "create_routine"]
 
-_ALL_ACTIONS = ["send_email", "create_event", *_PROACTIVE]
+#: `create_draft` travels with `send_email` and never without it.
+#:
+#: Not because it needs the permission — a draft reaches nobody and is green —
+#: but because an agent that can draft and cannot send will draft a reply and
+#: then have no way to finish the job the user asked for, and the card it shows
+#: looks like a send that quietly did not happen. The pair is the capability;
+#: either alone is a half-answer.
+_ALL_ACTIONS = ["create_draft", "send_email", "create_event", *_PROACTIVE]
 #: Only for agents that can actually reach an inbox or a chat. An agent taught
 #: to propose a change it has no tool to address is an agent that will claim it
 #: archived something.

@@ -321,7 +321,12 @@ def test_the_catalog_publishes_every_action_with_its_fields():
 def test_send_email_is_correctable_because_its_fields_are_published():
     """The frontend used to hardcode `EDITABLE = { log_workout: true }`, so the
     one action where a typo is worst could not be fixed before confirming."""
-    assert actions.catalog()["send_email"]["fields"] == ["to", "subject", "body"]
+    fields = actions.catalog()["send_email"]["fields"]
+    assert fields[:4] == ["to", "cc", "subject", "body"]
+    # `attach` is published so the card can NAME the files, and excluded from
+    # the typeable set in `chat.js` — a half-typed path is an attachment that
+    # silently vanishes.
+    assert "attach" in fields
 
 
 def test_the_catalog_carries_no_callables_over_the_wire():

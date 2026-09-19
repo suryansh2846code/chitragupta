@@ -31,6 +31,7 @@ from enum import Enum
 from typing import Any
 
 from .connectors import get_connector
+from .log import suppressed
 
 _ACTION_RE = re.compile(r"<action\s+([^>]*?)>(.*?)</action>", re.I | re.S)
 _ATTR_RE = re.compile(r'(\w+)="([^"]*)"')
@@ -318,18 +319,110 @@ def _items(inner: str) -> list | None:
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
-def _send_email(params: dict) -> dict:
+def _attachments_for(params: dict) -> tuple[list | None, str]:
+    """Files named on the action, read from the folders the user has granted.
+
+    `(attachments, problem)`. The path goes through `file_tools._resolve`
+    rather than being opened directly, because the filename on this action was
+    very often written by a model reasoning about somebody else's email —
+    `attach ../../.ssh/id_rsa` is a sentence an injection would write, and the
+    folder grants are the boundary that already answers it.
+    """
+    named = params.get("attach") or params.get("attachments") or []
+    if isinstance(named, str):
+        named = [p.strip() for p in named.split(",") if p.strip()]
+    if not named:
+        return None, ""
+
+    from .agents.file_tools import _resolve
+
+    out = []
+    for raw in named:
+        path, problem = _resolve(str(raw))
+        if path is None:
+            return None, problem
+        if not path.is_file():
+            return None, f"There is no file at {path}."
+        try:
+            data = path.read_bytes()
+        except OSError as exc:
+            return None, f"Could not read {path.name}: {exc}"
+        if len(data) > MAX_ATTACHMENT_BYTES:
+            return None, (f"{path.name} is {len(data) // 1_000_000} MB. "
+                          f"Gmail refuses anything over "
+                          f"{MAX_ATTACHMENT_BYTES // 1_000_000} MB.")
+        out.append({"name": path.name, "data": data})
+    return out, ""
+
+
+#: Gmail's own ceiling is 25 MB for the whole message, and base64 inflates by a
+#: third — so the useful limit on the raw bytes is lower than the number Google
+#: quotes. Named rather than discovered as a 400 halfway through a send.
+MAX_ATTACHMENT_BYTES = 18_000_000
+
+
+def _draft_or_send(params: dict, *, send: bool) -> dict:
+    """The two outbound paths, which differ in one call and one sentence.
+
+    Written once because everything before that call is identical — the same
+    recipient check, the same attachments, the same threading — and two copies
+    would be two places for the next header to be added to one of them.
+    """
     to = (params.get("to") or "").strip()
     subject = (params.get("subject") or "").strip()
     body = params.get("body") or ""
-    if not _EMAIL_RE.match(to):
-        return {"ok": False,
-                "error": f"'{to}' is not a valid email address" if to
-                else "a recipient (to) is required"}
-    gmail = _writer("gmail", "send_email")
+    cc = (params.get("cc") or "").strip()
+    thread_id = (params.get("thread_id") or "").strip()
+
+    # A draft may legitimately have no recipient yet — "write this up and I
+    # will decide who it goes to" is a real thing to ask for. A send may not.
+    if to and not _EMAIL_RE.match(to):
+        return {"ok": False, "error": f"'{to}' is not a valid email address"}
+    if send and not to:
+        return {"ok": False, "error": "a recipient (to) is required"}
+
+    attachments, problem = _attachments_for(params)
+    if problem:
+        return {"ok": False, "error": problem}
+
+    capability = "send_email" if send else "create_draft"
+    gmail = _writer("gmail", capability)
     if gmail is None:
-        return {"ok": False, "error": "Gmail is not connected for sending mail."}
-    return gmail.send_email(to, subject, body)
+        return {"ok": False, "error": "Gmail is not connected for sending mail."
+                if send else "Gmail is not connected."}
+
+    # Only what this message actually carries. Connectors are duck-typed — the
+    # whole point of `_writer` — so a call that always passes five keywords is
+    # a call that breaks on any implementation which has not grown all five
+    # yet. `send_email(to, subject, body)` stays exactly the call it has always
+    # been for the plain case, which is most of them.
+    extra: dict[str, Any] = {}
+    if cc:
+        extra["cc"] = cc
+    if attachments:
+        extra["attachments"] = attachments
+    if thread_id:
+        extra["thread_id"] = thread_id
+        # What makes a reply land *inside* the conversation for a recipient who
+        # is not on Gmail. `threadId` alone only convinces Gmail.
+        with suppressed("reading the headers a reply has to carry"):
+            found = gmail.thread_headers(thread_id)
+            headers = {k: v for k, v in
+                       (("In-Reply-To", found.get("in_reply_to", "")),
+                        ("References", found.get("references", ""))) if v}
+            if headers:
+                extra["headers"] = headers
+
+    call = gmail.send_email if send else gmail.create_draft
+    return call(to, subject, body, **extra)
+
+
+def _send_email(params: dict) -> dict:
+    return _draft_or_send(params, send=True)
+
+
+def _create_draft(params: dict) -> dict:
+    return _draft_or_send(params, send=False)
 
 
 def _mail_triage(params: dict) -> dict:
@@ -539,6 +632,13 @@ def _verify_email(params: dict, result: dict) -> dict:
     return gmail.message_sent_at(str(result.get("id") or ""))
 
 
+def _verify_draft(params: dict, result: dict) -> dict:
+    gmail = _writer("gmail", "draft_exists")
+    if gmail is None:
+        return {}
+    return gmail.draft_exists(str(result.get("id") or ""))
+
+
 def _verify_event(params: dict, result: dict) -> dict:
     gcal = _writer("gcal", "event_exists")
     if gcal is None:
@@ -630,6 +730,13 @@ def _remember_connector_action(params: dict, result: dict) -> None:
 # declares `undo` when it can really take the effect back.
 
 
+def _undo_draft(params: dict, result: dict) -> dict:
+    gmail = _writer("gmail", "delete_draft")
+    if gmail is None:
+        return {"ok": False, "error": "Gmail is not connected."}
+    return gmail.delete_draft(str(result.get("id") or ""))
+
+
 def _undo_event(params: dict, result: dict) -> dict:
     gcal = _writer("gcal", "delete_event")
     if gcal is None:
@@ -706,10 +813,40 @@ def _undo_row(store_name: str, label: str):
 REGISTRY: dict[str, ActionSpec] = {
     "send_email": ActionSpec(
         handler=_send_email, label="Send email",
-        fields=["to", "subject", "body"],
+        fields=["to", "cc", "subject", "body", "attach"],
         risk=Risk.AMBER, recipient_kind=EMAIL_RECIPIENT,
         verify=_verify_email, remember=_remember_email,
         # No undo: it has left the machine and no API takes it back.
+    ),
+    "create_draft": ActionSpec(
+        handler=_create_draft, label="Save a draft",
+        fields=["to", "cc", "subject", "body", "attach"],
+        # **Green, and this is the rung the product skipped.** A draft reaches
+        # nobody: it sits in the user's own Drafts folder until *they* press
+        # send. So it needs no permitted recipient and no allow-list, which
+        # means an agent can do the preparing overnight and the user wakes up
+        # to a folder of things to read rather than a queue of things to
+        # approve. It is also the only outbound-shaped action that is
+        # completely reversible.
+        #
+        # What green does NOT mean here, stated because it is the tempting
+        # mistake: an unattended agent reading a stranger's email can be talked
+        # into *drafting* one addressed to that stranger, carrying whatever it
+        # knows. Nothing sends it — the user is the send button, and that is
+        # the whole defence. It holds because a draft is read before it goes,
+        # and it is why the card says "Draft" and never "Email": a person about
+        # to press send in Gmail has to be able to tell the two apart.
+        #
+        # Attachments are the part that would not hold on its own, so they do
+        # not rely on this: `_attachments_for` resolves every path through the
+        # folder grants in `agents/file_tools.py`, which is the same boundary
+        # that already answers "read ~/.ssh/id_rsa".
+        risk=Risk.GREEN,
+        verify=_verify_draft,
+        undo=_undo_draft, undo_label="Discard it",
+        # No `remember`: nothing has happened in the world yet. Writing "emailed
+        # Rahul" into the brain because a draft exists is how an agent later
+        # tells the user a thing was sent that is still sitting unsent.
     ),
     "create_event": ActionSpec(
         handler=_create_event, label="Create calendar event",

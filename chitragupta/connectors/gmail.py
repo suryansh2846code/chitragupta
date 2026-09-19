@@ -76,6 +76,29 @@ def _walk_body(payload: dict) -> tuple[str, str]:
     return plain, html
 
 
+def _safe_filename(name: object) -> str:
+    """An attachment name that cannot become a second header.
+
+    `x.pdf"\\r\\nBcc: attacker@evil.test` in a `Content-Disposition` is the
+    classic header injection, and this name reaches us from a model reasoning
+    about somebody else's email.
+
+    Python's `add_header` does refuse it — by raising `HeaderParseError` when
+    the message is serialised, several frames away from anything that could
+    say what went wrong. That is a guard, not an answer: the user sees a
+    traceback string where a sentence should be. So the name is cleaned here,
+    where the reason is visible, and the library's refusal stays as the
+    backstop it should have been all along.
+
+    Directories go too. The name is a label on a part, not a path, and
+    `../../etc/passwd` as a filename is a suggestion to whatever opens it.
+    """
+    text = str(name or "").replace("\\", "/")
+    text = text.split("/")[-1]
+    text = "".join(c for c in text if c.isprintable() and c not in '"\r\n')
+    return text.strip() or "attachment"
+
+
 def _to_epoch(stamp: str) -> int:
     """An ISO watermark as whole seconds, for Gmail's `after:` operator."""
     from datetime import datetime
@@ -171,32 +194,194 @@ class GmailConnector(Connector):
         except Exception:
             return []
 
-    # ── helpers ──────────────────────────────────────────────────────────
+    # ── composing ────────────────────────────────────────────────────────
+    #
+    # One builder for every outbound message, because a draft, a send, a reply
+    # and a forward differ only in which headers they carry and where the
+    # result is posted. Four `MIMEText` blocks would be four places to fix the
+    # day one of them needs an attachment — which is the day that arrived.
+
+    @staticmethod
+    def _compose(to: str, subject: str, body: str, *,
+                 cc: str = "", attachments: list | None = None,
+                 headers: dict[str, str] | None = None) -> str:
+        """A base64url message, ready for `send` or `drafts.create`.
+
+        `MIMEText` alone cannot carry a file, and `MIMEMultipart` around a
+        single part is a heavier message for no reason — so the shape follows
+        the content rather than being one or the other always.
+        """
+        import base64
+        from email.mime.text import MIMEText
+
+        if attachments:
+            from email import encoders
+            from email.mime.base import MIMEBase
+            from email.mime.multipart import MIMEMultipart
+
+            msg: Any = MIMEMultipart()
+            msg.attach(MIMEText(body))
+            for item in attachments:
+                part = MIMEBase("application", "octet-stream")
+                part.set_payload(item["data"])
+                encoders.encode_base64(part)
+                part.add_header("Content-Disposition", "attachment",
+                                filename=_safe_filename(item.get("name")))
+                msg.attach(part)
+        else:
+            msg = MIMEText(body)
+
+        if to:
+            msg["to"] = to
+        if cc:
+            msg["cc"] = cc
+        msg["subject"] = subject
+        for key, value in (headers or {}).items():
+            if value:
+                msg[key] = value
+        return base64.urlsafe_b64encode(msg.as_bytes()).decode()
+
+    @staticmethod
+    def _send_refusal(exc: Exception) -> dict:
+        """Google's permission refusal, translated into the thing to do."""
+        m = str(exc)
+        if "insufficient" in m.lower() or "scope" in m.lower() or "403" in m:
+            return {"ok": False, "error": "Gmail needs re-authorization to "
+                    "SEND. Reconnect Google (Connectors → Gmail → Reconnect) "
+                    "and approve the send permission, then try again.",
+                    "reauth": True}
+        return {"ok": False, "error": m[:200]}
+
     def send_email(self, to: str, subject: str, body: str,
-                   interactive: bool = False) -> dict:
+                   interactive: bool = False, *, cc: str = "",
+                   attachments: list | None = None,
+                   thread_id: str = "", headers: dict | None = None) -> dict:
         """Send an email (WRITE). Only ever called after user confirmation."""
         service = self._service(None, interactive)
         if service is None:
             return {"ok": False, "error": "Gmail not connected"}
         try:
-            import base64
-            from email.mime.text import MIMEText
-            msg = MIMEText(body)
-            msg["to"] = to
-            msg["subject"] = subject
-            raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
+            raw = self._compose(to, subject, body, cc=cc,
+                                attachments=attachments, headers=headers)
+            payload: dict[str, Any] = {"raw": raw}
+            if thread_id:
+                # Without this Gmail files the reply as a new conversation, and
+                # the recipient sees an orphan beside the thread it answers.
+                payload["threadId"] = thread_id
             sent = service.users().messages().send(
-                userId="me", body={"raw": raw}).execute()
+                userId="me", body=payload).execute()
             return {"ok": True, "id": sent.get("id"),
+                    "thread_id": sent.get("threadId", thread_id),
                     "detail": f"Email sent to {to}"}
         except Exception as exc:
+            return self._send_refusal(exc)
+
+    def create_draft(self, to: str, subject: str, body: str,
+                     interactive: bool = False, *, cc: str = "",
+                     attachments: list | None = None,
+                     thread_id: str = "", headers: dict | None = None) -> dict:
+        """Put a message in Drafts (WRITE) without sending it.
+
+        The rung the product skipped. Every other outbound path here is
+        send-or-nothing, which makes *preparing* an email cost the same
+        approval as sending one — so an agent that could have filled the
+        drafts folder overnight instead queued a decision for the morning.
+
+        A draft reaches nobody, so it needs no permitted recipient and no
+        allow-list; `actions.REGISTRY` declares it GREEN for that reason. The
+        `gmail.modify` scope already covers `drafts.create`, so this asks for
+        nothing the user has not already granted.
+        """
+        service = self._service(None, interactive)
+        if service is None:
+            return {"ok": False, "error": "Gmail not connected"}
+        try:
+            raw = self._compose(to, subject, body, cc=cc,
+                                attachments=attachments, headers=headers)
+            message: dict[str, Any] = {"raw": raw}
+            if thread_id:
+                message["threadId"] = thread_id
+            made = service.users().drafts().create(
+                userId="me", body={"message": message}).execute()
+            where = f" to {to}" if to else ""
+            return {"ok": True, "id": made.get("id"),
+                    "message_id": (made.get("message") or {}).get("id", ""),
+                    "thread_id": (made.get("message") or {}).get("threadId", thread_id),
+                    "detail": f"Draft saved{where}"}
+        except Exception as exc:
+            return self._maybe_scope_error(exc, {})
+
+    def draft_exists(self, draft_id: str, interactive: bool = False) -> dict:
+        """Read a draft back, so "saved" is checked rather than assumed."""
+        if not draft_id:
+            return {"verified": False}
+        service = self._service(None, interactive)
+        if service is None:
+            return {"verified": False}
+        try:
+            got = service.users().drafts().get(
+                userId="me", id=draft_id, format="minimal").execute()
+        except Exception as exc:                       # pragma: no cover - network
+            log.debug("could not verify draft %s: %s", draft_id, exc)
+            return {"verified": False}
+        return {"verified": bool(got.get("id"))}
+
+    def delete_draft(self, draft_id: str, interactive: bool = False) -> dict:
+        """Discard a draft. The inverse of `create_draft`, and nothing more.
+
+        Gmail treats deleting an absent draft as an error; that is reported as
+        success, because the user asked for it to be gone and it is gone.
+        """
+        if not draft_id:
+            return {"ok": False, "error": "no draft to discard"}
+        service = self._service(None, interactive)
+        if service is None:
+            return {"ok": False, "error": "Gmail not connected"}
+        try:
+            service.users().drafts().delete(userId="me", id=draft_id).execute()
+            return {"ok": True, "detail": "Draft discarded"}
+        except Exception as exc:
             m = str(exc)
-            if "insufficient" in m.lower() or "scope" in m.lower() or "403" in m:
-                return {"ok": False, "error": "Gmail needs re-authorization to "
-                        "SEND. Reconnect Google (Connectors → Gmail → Reconnect) "
-                        "and approve the send permission, then try again.",
-                        "reauth": True}
-            return {"ok": False, "error": m[:200]}
+            if "404" in m or "notFound" in m:
+                return {"ok": True, "detail": "That draft was already gone"}
+            return self._maybe_scope_error(exc, {})
+
+    def thread_headers(self, thread_id: str, interactive: bool = False) -> dict:
+        """What a reply to this thread has to carry to land inside it.
+
+        `threadId` alone is enough for *Gmail* to file the reply correctly, and
+        not enough for anybody else: a recipient on another mail client threads
+        on `In-Reply-To` and `References`, and without them the reply arrives as
+        a new conversation next to the one it answers.
+
+        Reads the LAST message in the thread, because that is what is being
+        replied to — the first one is where the conversation started, which is
+        a different message and usually the wrong `In-Reply-To`.
+        """
+        if not thread_id:
+            return {}
+        service = self._service(None, interactive)
+        if service is None:
+            return {}
+        try:
+            thread = service.users().threads().get(
+                userId="me", id=thread_id, format="metadata",
+                metadataHeaders=["Message-ID", "References", "Subject", "From"],
+            ).execute()
+        except Exception as exc:
+            log.debug("could not read thread %s: %s", thread_id, exc)
+            return {}
+        messages = thread.get("messages") or []
+        if not messages:
+            return {}
+        last = messages[-1]
+        found = {h.get("name", "").lower(): h.get("value", "")
+                 for h in (last.get("payload") or {}).get("headers", [])}
+        message_id = found.get("message-id", "")
+        references = " ".join(
+            x for x in (found.get("references", ""), message_id) if x).strip()
+        return {"in_reply_to": message_id, "references": references,
+                "subject": found.get("subject", ""), "from": found.get("from", "")}
 
     def message_sent_at(self, message_id: str, interactive: bool = False) -> dict:
         """When Gmail says this message actually went out.

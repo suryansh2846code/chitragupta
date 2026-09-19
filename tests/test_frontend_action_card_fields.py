@@ -30,8 +30,13 @@ WEB = ROOT / "chitragupta/web"
 #: that imported the registry would only prove it agrees with itself.
 CATALOG = {
     "send_email": {
-        "label": "Send email", "fields": ["to", "subject", "body"],
+        "label": "Send email", "fields": ["to", "cc", "subject", "body", "attach"],
         "risk": "amber", "reversible": False, "undo_label": "",
+        "always_ask_because": "",
+    },
+    "create_draft": {
+        "label": "Save a draft", "fields": ["to", "cc", "subject", "body", "attach"],
+        "risk": "green", "reversible": True, "undo_label": "Discard it",
         "always_ask_because": "",
     },
     "set_reminder": {
@@ -69,9 +74,74 @@ def _run(action, result, *, edits=None, catalog=CATALOG, undo_result=None):
 
 # ── correcting before confirming ───────────────────────────────────────────
 
-def test_an_email_card_offers_a_box_for_every_field_the_registry_declares():
+def test_an_email_card_offers_a_box_for_every_typeable_field():
     out = _run(EMAIL, SENT)
-    assert out["editableFields"] == ["To", "Subject", "Body"]
+    assert out["editableFields"] == ["To", "Cc", "Subject", "Body"]
+
+
+def test_a_file_path_gets_no_text_box():
+    """A half-typed path is an attachment that silently vanishes, and the
+    folder grants would have to re-check whatever was typed anyway. Changing
+    what is attached means asking the agent."""
+    out = _run({**EMAIL, "params": {**EMAIL["params"],
+                                    "attach": "/Users/x/Docs/deck.pdf"}}, SENT)
+    assert "Attach" not in out["editableFields"]
+
+
+# ── drafting ───────────────────────────────────────────────────────────────
+
+DRAFT = {"type": "create_draft",
+         "params": {"to": "rahul@work.test", "subject": "Proposal",
+                    "body": "Here it is.", "cc": "lead@work.test",
+                    "attach": "/Users/x/Docs/deck.pdf", "thread_id": "t7"}}
+
+SAVED = {"ok": True, "detail": "Draft saved to rahul@work.test",
+         "reversible": True, "undo_label": "Discard it", "log_id": "L1"}
+
+
+def test_a_draft_card_never_says_send():
+    """A person reading the card has to be able to tell a thing that was
+    prepared from a thing that has gone."""
+    out = _run(DRAFT, SAVED)
+    assert "Save a draft" in out["text"]
+    assert "Send email" not in out["text"]
+    assert "Confirm & save" in out["text"]
+
+
+def test_a_draft_card_says_it_reaches_nobody():
+    out = _run(DRAFT, SAVED)
+    assert out["risk"] == "green"
+    assert "Reaches nobody" in out["text"]
+
+
+def test_an_attachment_is_named_but_its_path_is_not():
+    """The path is long enough to push the subject off the card, and the user
+    already knows where their own file is. The name is what they are checking:
+    that it is the right document."""
+    out = _run(DRAFT, SAVED)
+    assert "deck.pdf" in out["text"]
+    assert "/Users/x/Docs" not in out["text"]
+
+
+def test_a_reply_says_it_joins_the_existing_conversation():
+    out = _run(DRAFT, SAVED)
+    assert "existing conversation" in out["text"]
+
+
+def test_a_draft_can_be_discarded_from_the_card():
+    out = _run(DRAFT, SAVED,
+               undo_result={"ok": True, "detail": "Draft discarded"})
+    assert out["hasUndo"]
+    assert out["undoLabel"] == "Discard it"
+    assert "Draft discarded" in out["afterUndo"]
+
+
+def test_confirming_a_draft_still_carries_the_fields_nobody_can_type():
+    """`attach` and `thread_id` are not editable, which must not mean they are
+    dropped — a draft that quietly lost its attachment is the bug."""
+    out = _run(DRAFT, SAVED)
+    assert out["sent"]["params"]["attach"] == "/Users/x/Docs/deck.pdf"
+    assert out["sent"]["params"]["thread_id"] == "t7"
 
 
 def test_the_corrected_subject_is_what_gets_sent_not_the_proposed_one():
