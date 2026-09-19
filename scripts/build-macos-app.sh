@@ -50,6 +50,11 @@ cat > "$CONTENTS/Info.plist" <<EOF
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>LSMinimumSystemVersion</key><string>11.0</string>
   <key>NSHighResolutionCapable</key><true/>
+  <!-- macOS 26 replaced Launchpad with a Spotlight "Applications" browser that
+       groups by category. Without this key the app has no bucket and is not
+       listed at all — installed, signed and indexed, but nowhere a user can
+       find it. Nothing warns you, so it is easy to lose an afternoon to. -->
+  <key>LSApplicationCategoryType</key><string>public.app-category.productivity</string>
 </dict>
 </plist>
 EOF
