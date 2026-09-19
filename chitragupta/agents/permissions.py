@@ -194,6 +194,30 @@ def list_permissions(kind: str = EMAIL_RECIPIENT) -> list[dict]:
     return [dict(r) for r in rows]
 
 
+def all_permissions() -> list[dict]:
+    """Every standing grant, whichever list it is on.
+
+    The screen that reviews these asked only for the email list, so a chat
+    grant was stored, honoured, and invisible — and a permission the user
+    cannot see is one they cannot take back.
+
+    Each row carries the label a person reads for its list, because "kind:
+    chat_recipient" is our column name and not a sentence.
+    """
+    rows = _conn().execute(
+        "SELECT id,kind,value,note,created_at FROM action_permissions "
+        "ORDER BY kind, value").fetchall()
+    return [{**dict(r), "kind_label": KIND_LABELS.get(r["kind"], r["kind"])}
+            for r in rows]
+
+
+#: What each list is called on screen.
+KIND_LABELS = {
+    EMAIL_RECIPIENT: "Email",
+    CHAT_RECIPIENT: "Messaging",
+}
+
+
 def grant(value: str, *, kind: str = EMAIL_RECIPIENT, note: str = "") -> dict:
     """Permit unattended actions toward `value`."""
     clean = normalise(value) if kind == EMAIL_RECIPIENT else (value or "").strip()

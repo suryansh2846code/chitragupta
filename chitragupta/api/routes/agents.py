@@ -64,31 +64,41 @@ def set_agent_effort(body: EffortIn):
 class PermissionIn(BaseModel):
     value: str
     note: str = ""
+    #: Which allow-list this goes on. Defaults to email so an older caller
+    #: keeps working; the approval card now sends the one the server named.
+    kind: str = ""
 
 
 @router.get("/api/agents/permissions")
 def list_action_permissions():
-    """Recipients the user has allowed unattended agents to reach."""
-    from ...agents.permissions import list_permissions
+    """Recipients the user has allowed unattended agents to reach.
 
-    return {"permissions": list_permissions()}
+    **Every list, not just the email one.** They were filtered to
+    `email_recipient` here, so a chat grant was stored, honoured by the gate,
+    and invisible on the screen that exists to review and revoke them — a
+    standing permission nobody can see is not one anybody agreed to keep.
+    """
+    from ...agents.permissions import all_permissions
+
+    return {"permissions": all_permissions()}
 
 
 @router.post("/api/agents/permissions")
 def grant_action_permission(body: PermissionIn):
-    from ...agents.permissions import grant
+    from ...agents.permissions import EMAIL_RECIPIENT, grant
 
     try:
-        return grant(body.value, note=body.note)
+        return grant(body.value, kind=body.kind or EMAIL_RECIPIENT,
+                     note=body.note)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from None
 
 
 @router.delete("/api/agents/permissions/{value}")
-def revoke_action_permission(value: str):
-    from ...agents.permissions import revoke
+def revoke_action_permission(value: str, kind: str = ""):
+    from ...agents.permissions import EMAIL_RECIPIENT, revoke
 
-    return {"revoked": revoke(value)}
+    return {"revoked": revoke(value, kind=kind or EMAIL_RECIPIENT)}
 
 
 # ── actions an unattended agent wanted to take ───────────────────────────────
