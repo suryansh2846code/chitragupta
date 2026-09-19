@@ -346,6 +346,62 @@ class GmailConnector(Connector):
                 return {"ok": True, "detail": "That draft was already gone"}
             return self._maybe_scope_error(exc, {})
 
+    def thread_reply_state(self, thread_id: str,
+                           interactive: bool = False) -> dict:
+        """Has anybody answered this thread since we last wrote in it?
+
+        The missing half of a follow-up. An open loop saying "waiting on Rahul"
+        stays open forever, because nothing in this app ever looked to see
+        whether Rahul replied — so the user gets chased about a thing that was
+        settled a week ago, which is worse than not being chased at all.
+
+        "We" is the signed-in Google address. Comparing against that rather
+        than against a list of our sent ids means a reply sent from the user's
+        phone counts as them answering too, which is what a person means by
+        "did I get a reply".
+
+        Returns `{answered, last_from, last_at, waiting_days}`. Never raises:
+        an unreadable thread is reported as unknown, not as unanswered — the
+        difference matters, because unanswered is what triggers a chase.
+        """
+        blank = {"answered": None, "last_from": "", "last_at": "",
+                 "waiting_days": 0}
+        if not thread_id:
+            return blank
+        service = self._service(None, interactive)
+        if service is None:
+            return blank
+        try:
+            thread = service.users().threads().get(
+                userId="me", id=thread_id, format="metadata",
+                metadataHeaders=["From", "Date"]).execute()
+        except Exception as exc:
+            log.debug("could not read thread %s: %s", thread_id, exc)
+            return blank
+
+        messages = thread.get("messages") or []
+        if not messages:
+            return blank
+        last = messages[-1]
+        found = {h.get("name", "").lower(): h.get("value", "")
+                 for h in (last.get("payload") or {}).get("headers", [])}
+        sender = found.get("from", "")
+
+        from .google_auth import connected_email
+        mine = (connected_email(fetch=False) or "").lower()
+        # Substring rather than equality: `From` is "Dana <dana@x.test>", and
+        # an address is the part of it that identifies anybody.
+        answered = bool(mine) and mine not in sender.lower()
+
+        waiting = 0
+        stamp = last.get("internalDate")
+        if stamp:
+            from datetime import datetime
+            when = datetime.fromtimestamp(int(stamp) / 1000, tz=UTC)
+            waiting = max(0, (datetime.now(UTC) - when).days)
+        return {"answered": answered, "last_from": sender,
+                "last_at": str(stamp or ""), "waiting_days": waiting}
+
     def thread_headers(self, thread_id: str, interactive: bool = False) -> dict:
         """What a reply to this thread has to carry to land inside it.
 

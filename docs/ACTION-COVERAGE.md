@@ -200,14 +200,14 @@ run end to end through all seven steps, not when its endpoints exist.
 | 2 | "Draft replies to anything waiting on me" | 1→3 | 1 |
 | 3 | "Reply to this thread saying X" | 1→6 | 1 |
 | 4 | "Send the latest proposal to Rahul" | 1→6 | 3 |
-| 5 | "Follow up with whoever hasn't replied" | 1→6 | 1 |
+| 5 | "Follow up with whoever hasn't replied" | 1→6 | ✅ done |
 | 6 | "Move tomorrow's client meeting to Friday afternoon" | 1→6 | 2 |
 | 7 | "Cancel Thursday and tell everyone why" | 1→6 | 2 |
 | 8 | "Find a time with Rahul next week" | 1→6 | 2 |
 | 9 | "Prep me for my next meeting" | 1→3 | 2 |
 | 10 | "Tell Rahul I'll send it tonight" | 1→6 | 3 |
 | 11 | "Chase this in two days if nothing happens" | 1→6 | 1 |
-| 12 | "What am I waiting on, and who's waiting on me?" | 1→2 | 0 |
+| 12 | "What am I waiting on, and who's waiting on me?" | 1→2 | ✅ done |
 | 13 | "Turn this thread into a task" | 1→6 | 0 |
 | 14 | "File an issue for this" | 1→6 | 4 |
 | 15 | "Comment on that PR for me" | 1→6 | 4 |
@@ -350,6 +350,44 @@ approves "weekdays at 8:00 AM" and gets "every 60 min".
 
 > This is also the prerequisite for job 5 (*"follow up with whoever hasn't
 > replied"*). A chase you have to trigger by hand is not a chase.
+
+#### Job 5 — "follow up with whoever hasn't replied" · ✅
+
+An open loop saying *"waiting on Rahul"* was true from the moment it was
+written until somebody deleted it by hand. **Nothing ever went and looked to
+see whether Rahul replied** — so a week later the user is chased about a thing
+that was settled on Tuesday.
+
+`create_followup` (🟢) stores the `thread_id` beside the commitment, which is
+the difference between a note and a thing that can notice it has been
+answered. `awaiting_reply` reads each one back and sorts it into **three**
+states, not two:
+
+```
+WORTH CHASING (3+ days, no reply):
+- Priya: the contract — priya@work.test, 9 day(s) with no reply  (thread t_stale)
+
+STILL RECENT, leave them be:
+- Sam: the deck — Sam, 1 day(s) with no reply
+
+COULD NOT CHECK — do not chase these:
+- Lee: the invoice — could not read that thread
+
+ANSWERED since you asked, now closed:
+- Rahul: the proposal — Rahul replied.
+```
+
+**The third state is the point.** A Gmail outage that read as silence would
+become a round of chasing emails to people who already answered, sent in the
+user's name and impossible to take back. Unknown says so and is left alone —
+and the recipe forbids touching it. Five tests break if that guard goes.
+
+Answered loops close **as a side effect of looking**, not in a background
+sweep: the check is the only thing that knows, and a loop that closes the
+moment anybody asks cannot be stale when it is read.
+
+This also answers **job 12** — *"what am I waiting on?"* — because that is the
+same question asked without the chasing.
 
 **Acceptance — job 1, end to end:**
 

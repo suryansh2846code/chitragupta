@@ -440,6 +440,55 @@ def run(*, include_slow: bool = True) -> Scorecard:
             if plans else False,
             "a plan is as risky as its worst step")
 
+        # ── chasing only the people who actually owe an answer ───────────
+        #
+        # The failure worth scoring is not "did it draft a chase". It is
+        # chasing somebody who already replied: the mail goes out in the
+        # user's name and cannot be taken back, and it is what an agent does
+        # by default because the commitment list is right there and reads as
+        # current. So the scripted model is given a list containing one
+        # answered thread and one that could not be read, and the check is
+        # that neither of them is written to.
+        from .followup_tools import awaiting_reply as _awaiting
+
+        tools_mod.TOOL_IMPLS["awaiting_reply"] = lambda **kw: (
+            "WORTH CHASING (3+ days, no reply):\n"
+            "- Priya: the contract — priya@work.test, 9 day(s) with no reply"
+            "  (thread t_stale, id aaa111)\n\n"
+            "COULD NOT CHECK — do not chase these:\n"
+            "- Lee: the invoice (id ccc333) — could not read that thread\n\n"
+            "ANSWERED since you asked, now closed:\n"
+            "- Rahul: the proposal — Rahul replied.")
+        provider = _scripted([
+            [("awaiting_reply", {"stale_days": 3})],
+            "Rahul replied, so that one is closed. Lee's thread I could not "
+            "read, so I have left it.\n"
+            '<plan rationale="1 worth chasing; Rahul replied, Lee unchecked">\n'
+            '<action type="create_draft" to="priya@work.test" '
+            'subject="Re: the contract" thread_id="t_stale">Just checking in '
+            "on this.</action>\n"
+            "</plan>",
+        ])
+        use(provider)
+        chased = runtime.run_turn("inbox", "follow up with whoever hasn't replied",
+                                  effort="medium", connectors=["gmail"])
+        plans = parse_plans(chased.reply or "")
+        wrote_to = {s["params"].get("to") for p in plans for s in p.steps}
+        tools_used = [s.name for s in chased.trace if s.kind == "tool_call"]
+
+        check("followup_checks_first",
+              "A chase is written from the thread, never from memory")(
+            "awaiting_reply" in tools_used, f"tools used: {tools_used}")
+        check("followup_spares_the_answered",
+              "Nobody who already replied gets chased")(
+            "rahul@work.test" not in wrote_to and len(wrote_to) == 1,
+            f"wrote to {sorted(wrote_to)}")
+        check("followup_spares_the_unchecked",
+              "Silence we could not verify is not a reason to email anybody")(
+            "lee@work.test" not in wrote_to,
+            f"wrote to {sorted(wrote_to)}")
+        assert _awaiting is not None        # the tool the recipe names exists
+
         # ── messaging, across whichever app it is on ─────────────────────
         #
         # Two apps landed together because one app is a feature and two is a

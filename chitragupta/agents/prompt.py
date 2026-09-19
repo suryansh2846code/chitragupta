@@ -22,8 +22,9 @@ from ..log import suppressed
 
 #: Every action an agent can propose. `Agent.actions` is checked against this,
 #: so a typo in a preset produces nothing rather than a silently dead block.
-KNOWN_ACTIONS = ("create_draft", "send_email", "create_event", "set_reminder",
-                 "create_routine", "mail_triage", "message_send", "log_workout")
+KNOWN_ACTIONS = ("create_draft", "send_email", "create_event", "create_followup",
+                 "set_reminder", "create_routine", "mail_triage",
+                 "message_send", "log_workout")
 
 #: Argument names listed per connector tool. Enough for a model to fill a call
 #: in correctly; few enough that twenty tools do not become the system prompt.
@@ -162,6 +163,15 @@ _BLOCKS: dict[str, str] = {
         '<action type="create_event" title="..." '
         'start="2026-09-01T15:00:00+05:30" end="2026-09-01T16:00:00+05:30">'
         "optional description</action>"
+    ),
+    "create_followup": (
+        '<action type="create_followup" who="rahul@work.test" due="in 3 days" '
+        'thread_id="t7">Waiting on Rahul for the proposal</action>\n'
+        "Use this whenever the user sends or drafts something that NEEDS an "
+        "answer. `thread_id` is what makes it work — with one, the follow-up "
+        "closes itself when they reply; without one it is a note that stays "
+        "true forever. Not the same as set_reminder: a reminder pings the "
+        "user at a time, a follow-up tracks somebody else's answer."
     ),
     "set_reminder": (
         '<action type="set_reminder" at="tomorrow 3pm">Call the supplier</action>'
@@ -361,6 +371,49 @@ _INBOX_RECIPE = (
 )
 
 
+#: "Follow up with whoever hasn't replied."
+#:
+#: The failure this exists to prevent is specific and it is the only one that
+#: matters: chasing somebody who already answered. It costs the user more than
+#: not chasing at all, because the mail went out in their name and they cannot
+#: take it back — and it is the thing an agent does by default, because the
+#: list of commitments is right there in the brain and reads as current.
+#:
+#: So the rule is never chase from memory. `awaiting_reply` is the only thing
+#: that has read the thread, and it separates "no answer" from "could not
+#: check" for exactly this reason.
+_FOLLOWUP_RECIPE = (
+    "FOLLOWING UP — when the user asks who hasn't replied, what they are "
+    "waiting on, or to chase people:\n"
+    "1. Call `awaiting_reply` FIRST, every time. Never chase from memory or "
+    "from `list_open_loops`: those say what was true when it was written, and "
+    "chasing somebody who already answered is worse than not chasing at all — "
+    "the mail goes out in the user's name and cannot be taken back.\n"
+    "2. Chase only what it lists under WORTH CHASING. Leave STILL RECENT "
+    "alone, and never touch COULD NOT CHECK — unverified silence is not a "
+    "reason to email anybody.\n"
+    "3. Draft the chases in one plan, one create_draft each, passing the "
+    "thread_id so each lands in its own conversation. Keep them short and "
+    "refer to what was actually asked.\n"
+    "4. Say who replied and was closed, so the user sees the list get shorter "
+    "rather than only seeing the work."
+)
+
+
+def _followup_recipe(tools: list[str] | None, actions: list[str]) -> str:
+    """Only for an agent that can check AND chase.
+
+    Without `awaiting_reply` the recipe's first rule is unfollowable, and an
+    agent told to follow up with no way to check is the exact agent that
+    chases people who already answered.
+    """
+    if "awaiting_reply" not in set(tools or []):
+        return ""
+    if not {"create_draft", "create_followup"} & set(actions or []):
+        return ""
+    return _FOLLOWUP_RECIPE
+
+
 def _inbox_recipe(tools: list[str] | None, actions: list[str]) -> str:
     """Only for an agent that can do the whole job.
 
@@ -539,9 +592,10 @@ def build(*, name: str, role: str, system_prompt: str,
         # After the planning block, because it is an instance of it: the recipe
         # tells the agent what to put in a plan, and reads as nonsense to one
         # that has not just been told plans exist.
-        recipe = _inbox_recipe(tools, allowed)
-        if recipe:
-            lines.append(recipe)
+        for recipe in (_inbox_recipe(tools, allowed),
+                       _followup_recipe(tools, allowed)):
+            if recipe:
+                lines.append(recipe)
         parts.append("\n".join(lines))
 
     safety = _health_safety(tools)
