@@ -108,6 +108,50 @@ class GoogleCalendarConnector(Connector):
                          cache_discovery=False), ""
         return None, "Google Calendar is not connected."
 
+    def free_busy(self, emails: list[str], start: str, end: str,
+                  interactive: bool = False) -> dict:
+        """When each person is busy — and who we could not see at all.
+
+        **The two must never be merged.** Google answers an unreadable calendar
+        with an empty `busy` list and an `errors` entry beside it, so a caller
+        that reads only `busy` sees somebody with no meetings all week. That is
+        how an agent proposes Tuesday at 10 "because Rahul is free" when the
+        truth is that Rahul's calendar is not shared with this account and
+        nobody has any idea whether he is free.
+
+        Sharing is the norm inside one Workspace domain and the exception
+        outside it, so the unreadable case is the common one for anybody the
+        user actually needs to arrange something with.
+
+        Returns `{"busy": {email: [(from, to), …]}, "unreadable": [email, …]}`.
+        """
+        wanted = [e for e in dict.fromkeys(emails or []) if e]
+        if not wanted:
+            return {"busy": {}, "unreadable": []}
+        service, problem = self._client(interactive)
+        if service is None:
+            log.debug("free/busy unavailable: %s", problem)
+            return {"busy": {}, "unreadable": wanted}
+        try:
+            answer = service.freebusy().query(body={
+                "timeMin": start, "timeMax": end,
+                "items": [{"id": e} for e in wanted]}).execute()
+        except Exception as exc:
+            log.debug("free/busy query failed: %s", exc)
+            return {"busy": {}, "unreadable": wanted}
+
+        calendars = answer.get("calendars") or {}
+        busy: dict[str, list[tuple[str, str]]] = {}
+        unreadable: list[str] = []
+        for email in wanted:
+            entry = calendars.get(email)
+            if entry is None or entry.get("errors"):
+                unreadable.append(email)
+                continue
+            busy[email] = [(b.get("start", ""), b.get("end", ""))
+                           for b in (entry.get("busy") or [])]
+        return {"busy": busy, "unreadable": unreadable}
+
     def get_event(self, event_id: str, interactive: bool = False) -> dict:
         """One event as Google holds it, for showing or for putting back.
 

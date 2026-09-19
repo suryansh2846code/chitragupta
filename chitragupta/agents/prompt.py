@@ -439,7 +439,13 @@ _CALENDAR_RECIPE = (
     "answer.\n"
     "4. Move with update_event; only use cancel_event if they said cancel. "
     "Moving keeps the meeting the same length automatically — give `start` "
-    "and leave `end` out."
+    "and leave `end` out.\n"
+    "5. To arrange something NEW with other people, call `find_time` with "
+    "their addresses — it checks their calendars where it can. Say who it "
+    "could NOT check and offer the times rather than asserting they are free: "
+    "most people outside the user's own company do not share a calendar, and "
+    "\"Rahul is free Tuesday\" when nobody can see Rahul's diary is a "
+    "sentence the user will be embarrassed by."
 )
 
 
