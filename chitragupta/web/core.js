@@ -114,6 +114,11 @@ const IC = {
   //: the design brief asks for exactly that.
   close: _S('<path d="M4.5 4.5l7 7M11.5 4.5l-7 7"/>', 14),
   check: _S('<path d="M3.5 8.4l3 3 6-6.4"/>', 14),
+  //: An action taken back. Drawn rather than the ↩ character, which is a
+  //: colour-font dingbat on macOS — it ignores `currentColor`, so it cannot
+  //: take the muted grey the undone row needs, and it sits at its own weight
+  //: beside every other mark in the list.
+  undo: _S('<path d="M3 7.5h6.2a3.3 3.3 0 0 1 0 6.6H6"/><path d="M5.6 4.1L2.8 7.5l2.8 3"/>', 14),
   warn: _S('<path d="M8 2.6l6 10.8H2z"/><path d="M8 6.6v3.1"/><circle cx="8" cy="11.6" r=".6" fill="currentColor" stroke="none"/>', 14),
   external: _S('<path d="M6.5 3.5H3.4v9.1h9.1V9.5"/><path d="M9.2 3.5h3.3v3.3M12.5 3.5L7.4 8.6"/>', 13),
   folder: _S('<path d="M2 4.6h4l1.2 1.6h6.8v6.4a1.2 1.2 0 0 1-1.2 1.2H3.2A1.2 1.2 0 0 1 2 12.6z"/>', 13),

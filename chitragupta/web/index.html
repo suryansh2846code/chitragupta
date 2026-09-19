@@ -357,6 +357,22 @@
           <div id="reminderList" class="tasks"></div>
         </div>
       </section>
+
+      <!-- Approval is consent before. This is the other half — the record
+           after, which is what makes letting an agent act unattended a
+           reasonable thing to agree to. Lives in this panel rather than behind
+           a nav item of its own: it is the same subject the panel already
+           promises, and a second place to look for "what did my agents do" is
+           a second place to forget about. -->
+      <section class="ib-sec">
+        <div class="ib-head">
+          <div><h2 class="ib-title">What your agents did</h2>
+            <p class="ib-sub">Everything that actually happened — confirmed by you or run on its own. Anything reversible can still be taken back.</p></div>
+          <span id="actionLogCount" class="muted"></span>
+        </div>
+        <div id="actionLog" class="alog"></div>
+        <div id="actionLogEmpty" class="ib-empty">Nothing yet. Actions appear here the moment one runs.</div>
+      </section>
     </div>
 
     <!-- ── panel: agents & tools ───────────────────────────────────────

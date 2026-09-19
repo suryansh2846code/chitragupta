@@ -353,7 +353,7 @@ function undoButton(result) {
       if (out.ok) {
         b.replaceWith(Object.assign(document.createElement("span"),
           { className: "muted ac-undone", textContent: " · " + (out.detail || "Undone") }));
-        loadReminders(); loadRoutines();
+        loadReminders(); loadRoutines(); loadActionLog();
       } else {
         b.disabled = false; b.textContent = was;
         toast(out.error || "That could not be undone.");
@@ -703,7 +703,7 @@ function actionCard(a) {
           + (stamp ? `<span class="ac-verified"> · confirmed ${esc(stamp)}</span>` : "")
           + `</span>`;
         if (r.reversible && r.log_id) rr.appendChild(undoButton(r));
-        loadReminders(); loadRoutines(); return;
+        loadReminders(); loadRoutines(); loadActionLog(); return;
       }
       rr.innerHTML = `<span class="ac-err">${esc(r.error || "Failed")}</span>`
         + (note ? `<div class="ac-note">${md(note)}</div>` : "");

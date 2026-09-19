@@ -105,6 +105,119 @@ async function loadApprovals() {
 }
 
 
+// ── what actually happened ───────────────────────────────────────────────
+/**
+ * The record after the fact.
+ *
+ * The approvals queue above is consent *before* an action runs. This is the
+ * other half, and it is the half that makes agreeing to unattended work
+ * reasonable: a person who cannot review what their agents did has only ever
+ * been asked to trust them.
+ *
+ * Three things it must say and used to say none of, because nothing read the
+ * log back at all:
+ *
+ * * **Whether it worked**, distinctly from whether it was *confirmed*. "Sent"
+ *   is what we asked for; "confirmed 3:42 PM" is what Gmail said happened, and
+ *   an action we could not check says the plainer thing rather than claiming a
+ *   verification nobody made.
+ * * **Where it came from** — a routine acting on its own is a different fact
+ *   about your week than a card you tapped.
+ * * **Whether it can still be taken back.** Undo lives on the card for the few
+ *   seconds after a confirm; this is where it lives afterwards, which is when
+ *   a person actually notices the date was wrong.
+ */
+
+//: How an action arrived, in the user's terms. "chat" is the ordinary case and
+//: says nothing — a label on every row is a label nobody reads.
+const ACTION_ORIGIN = {
+  routine: "an automation",
+  approval: "you approved it",
+  scheduled: "scheduled",
+};
+
+function actionWhen(stamp) {
+  const d = new Date(stamp);
+  if (Number.isNaN(d.getTime())) return "";
+  const mins = Math.round((Date.now() - d.getTime()) / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  if (mins < 60 * 24) return `${Math.round(mins / 60)}h ago`;
+  return d.toLocaleDateString([], { month: "short", day: "numeric" });
+}
+
+async function loadActionLog() {
+  const box = $("#actionLog");
+  if (!box) return;
+  const empty = $("#actionLogEmpty");
+  const count = $("#actionLogCount");
+
+  let rows;
+  try {
+    rows = (await api("/api/actions/log?limit=40")).entries || [];
+  } catch {
+    return;                       // a failed poll must not blank a live list
+  }
+  if (empty) empty.hidden = rows.length > 0;
+  if (count) count.textContent = rows.length ? `${rows.length} recent` : "";
+  if (!rows.length) { box.innerHTML = ""; return; }
+
+  box.innerHTML = rows.map((e) => {
+    // Three states, not two. An undone action is neither a success the user
+    // should still see as done nor a failure that needs their attention.
+    const state = e.undone ? "undone" : (e.ok ? "ok" : "err");
+    // Drawn, never typed — `web/CLAUDE.md`. A dingbat is a colour font the OS
+    // picks, so it ignores `currentColor` and cannot take the three states'
+    // colours; `IC` is the set.
+    const mark = e.undone ? IC.undo : (e.ok ? IC.check : IC.close);
+    const stamp = e.verified && e.result && e.result.verified_at
+      ? clockTime(e.result.verified_at) : "";
+    const where = ACTION_ORIGIN[e.origin] || "";
+    const why = [where, actionWhen(e.created_at)].filter(Boolean).join(" · ");
+    // Offered only where the server said an inverse exists AND it has not
+    // already been used. A button that quietly does nothing is the bug this
+    // whole column is meant to prevent.
+    const undo = e.reversible && !e.undone
+      ? `<button class="tiny ghost" data-undo="${esc(e.id)}">${
+           esc(e.result && e.result.undo_label ? e.result.undo_label : "Undo")}</button>`
+      : "";
+    return `
+      <div class="alog-row" data-alog="${esc(e.id)}" data-state="${state}">
+        <span class="alog-mark" aria-hidden="true">${mark}</span>
+        <div class="alog-body">
+          <div class="alog-sum">${esc(e.summary || e.action_type)}</div>
+          <div class="alog-why">${esc(why)}${
+            stamp ? ` · confirmed ${esc(stamp)}` : ""}${
+            e.undone ? " · taken back" : ""}</div>
+          ${e.ok ? "" : `<div class="alog-err">${esc(e.detail || "It did not work.")}</div>`}
+        </div>
+        ${undo}
+      </div>`;
+  }).join("");
+
+  box.querySelectorAll("[data-undo]").forEach((b) => {
+    b.onclick = async () => {
+      b.disabled = true;
+      const was = b.textContent;
+      b.textContent = "Undoing…";
+      try {
+        const out = await api("/api/actions/undo", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ log_id: b.dataset.undo }) });
+        toast(out.ok ? (out.detail || "Undone")
+                     : (out.error || "That could not be undone."));
+        // Reload either way: a refusal usually means the world moved, and the
+        // row is now telling the user something that is no longer true.
+        loadActionLog(); loadReminders(); loadRoutines();
+      } catch (e) {
+        b.disabled = false; b.textContent = was;
+        toast(String(e));
+      }
+    };
+  });
+}
+
+
 // ── the standing half of the gate ────────────────────────────────────────
 /**
  * Who unattended agents may reach without asking each time.

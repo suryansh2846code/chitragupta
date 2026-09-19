@@ -903,11 +903,12 @@ async function openInboxScreen() {
   const m = $("#modelScreen"); if (!m) return;
   m.hidden = false;
   showSettingsPanel("inbox");
-  // Each of the three sections loads itself; one failing must not blank the
-  // other two, which is what a single await chain would do.
+  // Each section loads itself; one failing must not blank the others, which is
+  // what a single await chain would do.
   try { await loadApprovals(); } catch (_) {}
   try { await loadRoutines(); } catch (_) {}
   try { await loadReminders(); } catch (_) {}
+  try { await loadActionLog(); } catch (_) {}
 }
 async function openToolsScreen() {
   const m = $("#modelScreen"); if (!m) return;
