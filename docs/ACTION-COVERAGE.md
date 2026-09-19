@@ -41,9 +41,10 @@ Measured against the code, not against intent.
 | **Calendar** | **4⁻** | `create_event` only. No reschedule, cancel, attendee change, location, notes — `gcal.py` has one write method |
 | **Messaging** | **4** | ~~no UI to connect Telegram~~ — **shipped.** `message_send` can now actually fire: the four-screen sign-in lives in `connectors.js`, driven by `GET /api/telegram/status` rather than by its own step counter |
 | **Files** | **4** | `find_file` searches the granted folders and reports each match's **modified date**, so "the latest" is a claim the user can check. `attach=` sends it. Still no rename, move or convert |
-| **GitHub · Linear · Notion · Drive** | **1** | Read-only sync. Zero actions. The tokens are stored and the SDKs installed; the write half was never built |
+| **GitHub** | **5** | `github_comment` (reversible) and `github_create_issue` (not — GitHub has no delete-issue API). Allow-listed **by repository**, the first grant that is a place rather than a person |
+| **Linear · Notion · Drive** | **1** | Read-only sync. Zero actions. The tokens are stored and the SDKs installed; the write half was never built |
 
-**Thirteen of fifteen connectors are read-only.** Only Gmail, GCal, Slack,
+~~Thirteen~~ **Twelve of fifteen connectors are read-only.** Only Gmail, GCal, Slack,
 Telegram and MCP can push anything back out.
 
 ---
@@ -216,8 +217,8 @@ run end to end through all seven steps, not when its endpoints exist.
 | 11 | "Chase this in two days if nothing happens" | 1→6 | ✅ done |
 | 12 | "What am I waiting on, and who's waiting on me?" | 1→2 | ✅ done |
 | 13 | "Turn this thread into a task" | 1→6 | 0 |
-| 14 | "File an issue for this" | 1→6 | 4 |
-| 15 | "Comment on that PR for me" | 1→6 | 4 |
+| 14 | "File an issue for this" | 1→6 | ✅ done |
+| 15 | "Comment on that PR for me" | 1→6 | ✅ done |
 | 16 | "Write this up as a document" | 1→3 | 3 |
 | 17 | "Log: 5×5 squats, last one a grind" | 1→6 | ✅ done |
 | 18 | "What did you do this week?" | 1→2 | ✅ done |
@@ -578,20 +579,34 @@ a different connector; `rename` and `move` are `_resolve` twice and a call to
 
 ---
 
-### Phase 4 — Work surfaces · ~2 weeks
+### Phase 4 — Work surfaces · **GitHub done**
 
-Four connectors that read today and cannot write.
+Four connectors that read and cannot write. One of them can now.
 
 | Connector | Actions | Risk |
 |---|---|---|
-| GitHub | `comment`, `create_issue`, `assign`, `label`, `close_issue` | 🟡 |
+| GitHub | ✅ `github_comment` · `github_create_issue`. `assign`, `label`, `close_issue` not yet | 🟡 |
 | Linear | `create_issue`, `comment`, `assign`, `move_state` | 🟡 |
 | Notion | `append_block`, `create_page` | 🟡 |
 | Drive | `create_doc`, `share` | 🟡 / 🔴 (share) |
 
-Ship alongside **per-tool grants** (the amber promotion above) — this is the
-phase where the number of approvals gets annoying enough to justify the rung,
-and where `(server_id, tool)` proves itself as a key.
+**The allow-list is a place, not a person — and that is the first time.**
+The tier test has never been "does this reach somebody", it is *can the gate
+see what it reaches*. `update_event` went RED because the people a move touches
+are on the event and not in the params. Nobody can enumerate who watches
+`acme/api` either — but `acme/api` **is** in the URL, so it is a key an
+allow-list can hold, and *"always allow comments on acme/api"* is a coherent
+offer. `REPO_RECIPIENT` is that list, case-folded because GitHub is.
+
+That is the same argument as **per-tool grants** for `mcp_action`
+(`(server_id, tool)` as the key), which remains the last unbuilt rung. GitHub
+is its proof of concept.
+
+Starting this phase turned up a live bug first: the two allow-lists that
+already existed were plumbed as one. The *"Always allow"* button on a Telegram
+card wrote onto the **email** list, which `message_send` never reads — so the
+tap did nothing and said it had worked. Fixed in `3c7c1c3` before any of the
+above.
 
 `create_branch` / `create_pr` / `review_pr` are deliberately **out of scope**.
 They are a different product, and the 18 jobs do not need them.
