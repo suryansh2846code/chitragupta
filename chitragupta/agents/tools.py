@@ -123,6 +123,11 @@ def _create_open_loop(description: str, due_at: str | None = None, related_proje
     return f"Created open loop: {loop.get('description')}{proj}{due}"
 
 
+def _awaiting_reply(stale_days: int = 3) -> ToolResult:
+    from .followup_tools import awaiting_reply
+    return awaiting_reply(stale_days=stale_days)
+
+
 def _list_open_loops(project: str | None = None) -> str:
     loops = get_brain().get_open_loops(status="open", related_project=project)
     if not loops:
@@ -282,6 +287,7 @@ TOOL_IMPLS = {
     "complete_task": _complete_task,
     "create_open_loop": _create_open_loop,
     "list_open_loops": _list_open_loops,
+    "awaiting_reply": _awaiting_reply,
     "complete_open_loop": _complete_open_loop,
 }
 
@@ -836,6 +842,23 @@ TOOL_DEFS: dict[str, Tool] = {
             },
         },
     ),
+    "awaiting_reply": Tool(
+        name="awaiting_reply",
+        description=(
+            "Who owes the user an answer, and for how long. Checks each "
+            "tracked follow-up against its email thread, closes the ones that "
+            "have been answered, and says which are worth chasing. Use this "
+            "before drafting any follow-up — never chase from memory."),
+        parameters={
+            "type": "object",
+            "properties": {
+                "stale_days": {
+                    "type": "integer",
+                    "description": "Days with no reply before it is worth "
+                                   "chasing. Default 3."},
+            },
+        },
+    ),
     "complete_open_loop": Tool(
         name="complete_open_loop",
         description="Mark an open loop completed by id prefix or text.",
@@ -929,6 +952,7 @@ _LABELS: dict[str, tuple[str, str]] = {
     "complete_task":            ("Done",      "Tasks"),
     "create_open_loop":         ("Track",     "Tasks"),
     "list_open_loops":          ("Pending",   "Tasks"),
+    "awaiting_reply":           ("Waiting on", "Tasks"),
     "complete_open_loop":       ("Close",     "Tasks"),
     # The things it can reach
     "gmail_search":             ("Search",    "Email"),

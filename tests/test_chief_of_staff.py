@@ -174,13 +174,18 @@ def test_acting_on_the_world_still_goes_through_the_user():
     assert "create_routine" in NEVER_UNATTENDED
     assert "mail_triage" in NEVER_UNATTENDED, (
         "the one agent that never asks to READ still asks before it CHANGES")
-    assert set(get_agent(CHIEF).actions) == {
-        "create_draft", "send_email", "create_event", "set_reminder",
-        "create_routine", "mail_triage", "message_send"}
-    # `create_draft` joins the set and changes nothing about this test's claim:
-    # it is GREEN because it reaches nobody — the draft sits in the user's own
-    # folder and they are the send button — so "acting on the world" is still
-    # exactly the list above minus this one.
+    # Pinned as "what can this agent do WITHOUT a tap", not as an inventory of
+    # its actions. The inventory form broke twice in a row on actions that
+    # reach nobody — a draft, a follow-up — which is not the thing this test
+    # exists to notice, and each break was fixed by editing the expectation.
+    #
+    # What must not change quietly is the other half: the set of things Chief
+    # of Staff holds that DO touch somebody. An action joining that set is a
+    # real widening of the one agent with every tool.
     from chitragupta.actions import REGISTRY, Risk
 
-    assert REGISTRY["create_draft"].risk is Risk.GREEN
+    held = set(get_agent(CHIEF).actions)
+    assert held <= set(REGISTRY), f"unknown action: {sorted(held - set(REGISTRY))}"
+    assert {a for a in held if REGISTRY[a].risk is not Risk.GREEN} == {
+        "send_email", "create_event", "mail_triage", "message_send",
+        "create_routine"}

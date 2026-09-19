@@ -425,6 +425,65 @@ def _create_draft(params: dict) -> dict:
     return _draft_or_send(params, send=False)
 
 
+def _create_followup(params: dict) -> dict:
+    """Remember that somebody owes an answer, and which thread it is in.
+
+    An open loop the agent writes with `create_open_loop` is a sentence. This
+    one carries the `thread_id` as well, which is the difference between "you
+    are waiting on Rahul" — true until somebody deletes it by hand — and a
+    thing that can *notice it has been answered* and close itself.
+
+    Green: it writes one row in the user's own brain and reaches nobody.
+    """
+    from .brain import get_brain
+
+    about = (params.get("about") or params.get("description")
+             or params.get("message") or "").strip()
+    who = (params.get("who") or params.get("from") or "").strip()
+    if not about and not who:
+        return {"ok": False, "error": "say what the follow-up is about"}
+    if not about:
+        about = f"Waiting on {who}"
+
+    when = (params.get("due") or params.get("at") or params.get("due_at") or "").strip()
+    due_at = None
+    if when:
+        from .reminders import parse_when
+        due_at = parse_when(when)
+        if not due_at:
+            return {"ok": False, "error": f"couldn't understand the time '{when}'"}
+
+    loop = get_brain().store.add_open_loop(
+        about, due_at=due_at, source="followup",
+        related_entities=[who] if who else None,
+        metadata={k: v for k, v in (
+            ("thread_id", str(params.get("thread_id") or "")),
+            ("who", who)) if v})
+    if loop is None:                                   # pragma: no cover
+        return {"ok": False, "error": "that follow-up could not be stored"}
+
+    nice = ""
+    if due_at:
+        from datetime import datetime
+        nice = " — chase after " + datetime.fromisoformat(due_at).strftime(
+            "%a %b %d")
+    return {"ok": True, "id": loop.id, "detail": f"Tracking: {about}{nice}"}
+
+
+def _undo_followup(params: dict, result: dict) -> dict:
+    from .brain import get_brain
+
+    loop_id = str(result.get("id") or "")
+    if not loop_id:
+        return {"ok": False, "error": "that follow-up cannot be found."}
+    # Cancelled, not deleted. The loop is provenance — that the user was once
+    # waiting on this is true whether or not they still want chasing about it,
+    # and `list_open_loops` filters by status anyway.
+    gone = get_brain().store.update_open_loop(loop_id, status="cancelled")
+    return {"ok": True, "detail": "Stopped tracking it" if gone
+            else "That was already gone"}
+
+
 def _mail_triage(params: dict) -> dict:
     """Apply one approved batch of inbox changes.
 
@@ -865,6 +924,13 @@ REGISTRY: dict[str, ActionSpec] = {
         risk=Risk.AMBER, recipient_kind=EMAIL_RECIPIENT,
         verify=_verify_event, remember=_remember_event,
         undo=_undo_event, undo_label="Remove the event",
+    ),
+    "create_followup": ActionSpec(
+        handler=_create_followup, label="Track a follow-up",
+        fields=["about", "who", "due", "thread_id"],
+        # Green: one row in the user's own brain, reaching nobody.
+        risk=Risk.GREEN,
+        undo=_undo_followup, undo_label="Stop tracking it",
     ),
     "set_reminder": ActionSpec(
         handler=_set_reminder, label="Set reminder",

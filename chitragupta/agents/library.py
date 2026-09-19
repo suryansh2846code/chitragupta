@@ -76,7 +76,11 @@ BASE_TOOLS = [
 _FILES = ["list_dir", "read_file", "write_file"]
 
 _TASKS = ["add_task", "list_tasks", "complete_task"]
-_LOOPS = ["create_open_loop", "list_open_loops", "complete_open_loop"]
+_LOOPS = ["create_open_loop", "list_open_loops", "complete_open_loop",
+          # Reads a thread to see whether it was answered, so it travels with
+          # the loops rather than with `_MAIL`: an agent that tracks follow-ups
+          # and cannot tell which were answered chases people who replied.
+          "awaiting_reply"]
 _MAIL = ["search_source", "sync_source", "gmail_search",
          "list_mail", "read_thread"]
 #: Telegram, Slack — one pair of tools across every app, not one pair each.
@@ -99,7 +103,12 @@ _TRAINING = ["list_exercises", "lift_progress", "training_load"]
 #: same agent, later, with these same tools — neither reaches anybody and
 #: neither widens what the agent can do. They only decide *when*, which is the
 #: difference between an agent that answers and one that notices.
-_PROACTIVE = ["set_reminder", "create_routine"]
+#: `create_followup` belongs here for the same reason as the other two: it
+#: reaches nobody. It records that somebody else owes an answer, in the user's
+#: own brain, and its whole value is that the agent writes one at the moment it
+#: sends the thing being waited on — an agent that has to be asked to track a
+#: follow-up is one that will be asked after it has been forgotten.
+_PROACTIVE = ["set_reminder", "create_routine", "create_followup"]
 
 #: `create_draft` travels with `send_email` and never without it.
 #:
