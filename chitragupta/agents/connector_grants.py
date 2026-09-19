@@ -89,6 +89,9 @@ FIRST_PARTY_TOOLS: dict[str, str] = {
     "list_mail": "gmail",
     "read_thread": "gmail",
     "calendar_lookup": "gcal",
+    # Reads other people's free/busy as well as the user's own, so it is
+    # at least as much a reach into Google as the lookup beside it.
+    "find_time": "gcal",
     # The browser is a connector too. Which SITES it may reach is a separate
     # question, answered per origin in `browser/origins.py`; this answers
     # whether this agent may open one at all.

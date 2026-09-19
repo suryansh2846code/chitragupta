@@ -123,6 +123,12 @@ def _create_open_loop(description: str, due_at: str | None = None, related_proje
     return f"Created open loop: {loop.get('description')}{proj}{due}"
 
 
+def _find_time(with_people: str = "", when: str = "next week",
+               minutes: int = 30) -> ToolResult:
+    from .meeting_tools import find_time
+    return find_time(with_people=with_people, when=when, minutes=minutes)
+
+
 def _awaiting_reply(stale_days: int = 3) -> ToolResult:
     from .followup_tools import awaiting_reply
     return awaiting_reply(stale_days=stale_days)
@@ -323,6 +329,7 @@ TOOL_IMPLS = {
     "create_open_loop": _create_open_loop,
     "list_open_loops": _list_open_loops,
     "awaiting_reply": _awaiting_reply,
+    "find_time": _find_time,
     "what_i_did": _what_i_did,
     "complete_open_loop": _complete_open_loop,
 }
@@ -878,6 +885,27 @@ TOOL_DEFS: dict[str, Tool] = {
             },
         },
     ),
+    "find_time": Tool(
+        name="find_time",
+        description=(
+            "Concrete free slots for a meeting, checked against the user's "
+            "calendar and — where it is shared — the other people's. Say who "
+            "it could NOT check rather than claiming a time works for them."),
+        parameters={
+            "type": "object",
+            "properties": {
+                "with_people": {
+                    "type": "string",
+                    "description": "Comma-separated email addresses. Leave "
+                                   "empty for the user's own free time."},
+                "when": {"type": "string",
+                         "description": "A period: 'next week', 'tomorrow', "
+                                        "'2026-09-28'. Default next week."},
+                "minutes": {"type": "integer",
+                            "description": "How long it needs to be. Default 30."},
+            },
+        },
+    ),
     "what_i_did": Tool(
         name="what_i_did",
         description=(
@@ -1020,6 +1048,7 @@ _LABELS: dict[str, tuple[str, str]] = {
     "list_chats":               ("List",      "Messages"),
     "read_chat":                ("Read",      "Messages"),
     "calendar_lookup":          ("Schedule",  "Calendar"),
+    "find_time":                ("Find a time", "Calendar"),
     "web_search":               ("Search",    "Web"),
     # Websites the user has allowed. Their own group rather than folded into
     # "Web": a search returns public results, and these read pages the user is

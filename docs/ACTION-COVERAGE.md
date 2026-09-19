@@ -210,7 +210,7 @@ run end to end through all seven steps, not when its endpoints exist.
 | 5 | "Follow up with whoever hasn't replied" | 1→6 | ✅ done |
 | 6 | "Move tomorrow's client meeting to Friday afternoon" | 1→6 | ✅ done |
 | 7 | "Cancel Thursday and tell everyone why" | 1→6 | ✅ done |
-| 8 | "Find a time with Rahul next week" | 1→6 | 2 |
+| 8 | "Find a time with Rahul next week" | 1→6 | ✅ done |
 | 9 | "Prep me for my next meeting" | 1→3 | 2 |
 | 10 | "Tell Rahul I'll send it tonight" | 1→6 | 3 |
 | 11 | "Chase this in two days if nothing happens" | 1→6 | ✅ done |
@@ -445,7 +445,7 @@ in the morning. That is the product.
 
 ---
 
-### Phase 2 — Calendar to rung 6 · **jobs 6 and 7 done**
+### Phase 2 — Calendar to rung 6 · ✅ **jobs 6, 7 and 8**
 
 `gcal.py` had exactly one write method, so an agent could put a meeting in the
 diary and not move it — which is how you end up with two of everything.
@@ -455,7 +455,7 @@ diary and not move it — which is how you end up with two of everything.
 | `update_event` | ✅ 🔴 · move, rename, relocate, change who is coming. Verified, and **reversible**: the handler keeps the event as it found it, so *Put it back* has the other side of the diff |
 | `cancel_event` | ✅ 🔴 · calls it off and tells the attendees. **No undo** — recreating it is a new invitation to people already told it was off, which is not the same event |
 | `calendar_lookup` | ✅ now surfaces the `event_id` the sync has stored since it was written. Without it an agent asked to move a meeting could describe it and not address it — the same gap `list_mail` had |
-| free/busy, `add_attendee` as its own verb | ❌ job 8 |
+| `find_time` | ✅ free/busy for the user **and** the other people, where their calendar is shared. Proposes concrete slots in working hours, and names who it could **not** check rather than calling them free |
 
 **Three things that would each have done real damage:**
 
@@ -473,6 +473,38 @@ The last one is why this phase has tests against the **real connector** and a
 fake Google, not only against a fake connector. Breaking the duration rule
 passed all 36 action-level tests: the fake had reimplemented the logic rather
 than exercising it.
+
+#### Job 8 — "find a time with Rahul next week" · ✅
+
+```
+30-minute slots in next week (09:00–18:00 weekdays):
+- Mon 21 Sep, 2:00 PM  →  2026-09-21T14:30:00+05:30
+- Tue 22 Sep, 9:00 AM  →  2026-09-22T09:30:00+05:30
+
+Checked against: your calendar
+NOT checked (their calendar is not shared with you): rahul@work.test.
+Offer these times, do not assert they are free for them.
+```
+
+**Google answers an unreadable calendar with an empty `busy` list**, so
+anything reading only `busy` sees a person with a completely clear week.
+Sharing is normal inside one Workspace domain and rare outside it — which makes
+the unreadable case the *common* one for exactly the people you need to arrange
+something with. "Rahul is free Tuesday" when nobody can see Rahul's diary is a
+sentence you get embarrassed by, so `free_busy` returns **busy** and
+**unreadable** as separate things and the tool never merges them.
+
+`calendar.readonly` was already granted, so this needed no reconnect.
+
+Two arithmetic traps, both pinned: overlapping meetings are merged before
+subtracting (the sliver where one ends after the next began is not free time),
+and a gap at 03:00 is free and is not a time to offer anybody.
+
+**`parse_date_range("next week")` returned nothing.** The module grew up
+answering *"what did I get"*, so every relative phrase in it pointed backwards
+— which means `calendar_lookup("next week")`, the most ordinary question
+anybody asks a diary, has been answering *"I could not read that as a period"*
+this whole time. Fixed at the source, with `next month` and `next N days`.
 
 **Rung 3 is the part that is not the API.** *"Friday afternoon"* has to become
 a specific time — an agent that replies *"what time on Friday works for you?"*

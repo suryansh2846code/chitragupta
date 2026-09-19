@@ -47,6 +47,20 @@ def parse_date_range(text: str, today: date | None = None) -> tuple[str, str] | 
     if re.search(rf"\blast week{_s}\b", t):
         start = today - timedelta(days=today.weekday() + 7)
         return _iso(start), _iso(start + timedelta(days=6))
+    # Forwards as well as backwards. This module grew up answering "what did I
+    # get" and every relative phrase in it pointed at the past, so
+    # `calendar_lookup("next week")` — the most ordinary question anybody asks
+    # a diary — came back "I could not read that as a period".
+    if re.search(rf"\bnext week{_s}\b", t):
+        start = today + timedelta(days=7 - today.weekday())
+        return _iso(start), _iso(start + timedelta(days=6))
+    if re.search(rf"\bnext month{_s}\b", t):
+        first = today.replace(day=1)
+        start = (first + timedelta(days=32)).replace(day=1)
+        return _iso(start), _iso(
+            start.replace(day=monthrange(start.year, start.month)[1]))
+    if m := re.search(r"\bnext\s+(\d+)\s+days?\b", t):
+        return _iso(today), _iso(today + timedelta(days=int(m.group(1))))
     if m := re.search(r"\b(past|last)\s+(\d+)\s+days?\b", t):
         # Reuse the match rather than searching again with a looser pattern:
         # the second search could legitimately find nothing and crash on .group.

@@ -90,7 +90,10 @@ _MAIL = ["search_source", "sync_source", "gmail_search",
 #: Telegram, Slack — one pair of tools across every app, not one pair each.
 #: Which apps are reachable at all: docs/MESSAGING.md.
 _MESSAGES = ["list_chats", "read_chat"]
-_DIARY = ["calendar_lookup", "sync_source"]
+#: `find_time` travels with the lookup: an agent that can read a diary
+#: and cannot find a gap in it answers "when suits you?", which is the
+#: job handed back.
+_DIARY = ["calendar_lookup", "find_time", "sync_source"]
 #: Numbers over time. The agent that plans training and food had none of these
 #: and was still asked to "review honestly" — so every answer about progress was
 #: a model estimating from recalled prose. See `chitragupta/metrics.py`.

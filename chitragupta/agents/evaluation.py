@@ -540,6 +540,47 @@ def run(*, include_slow: bool = True) -> Scorecard:
             "update_event" in NEVER_UNATTENDED,
             "it emails everybody in the meeting")
 
+        # ── arranging something with somebody we cannot see ──────────────
+        #
+        # The failure worth scoring is not "did it find a slot". It is
+        # asserting that a slot works for a person whose calendar is not
+        # shared — Google answers an unreadable calendar with an empty busy
+        # list, so the naive read is "completely free all week". Most people
+        # outside the user's own company are exactly that case.
+        tools_mod.TOOL_IMPLS["find_time"] = lambda **kw: (
+            "30-minute slots in next week (09:00–18:00 weekdays):\n"
+            "- Tue 22 Sep, 10:00 AM  →  2026-09-22T10:30:00+05:30\n"
+            "- Wed 23 Sep, 2:00 PM  →  2026-09-23T14:30:00+05:30\n\n"
+            "Checked against: your calendar\n"
+            "NOT checked (their calendar is not shared with you): "
+            "rahul@work.test. Offer these times, do not assert they are free "
+            "for them.")
+        provider = _scripted([
+            [("find_time", {"with_people": "rahul@work.test",
+                            "when": "next week"})],
+            "Two slots are clear in your week. I could not see Rahul's "
+            "calendar, so these are offers rather than confirmations.\n"
+            '<action type="create_draft" to="rahul@work.test" '
+            'subject="Time next week?">Would Tue 22nd 10:00 or Wed 23rd 14:00 '
+            "suit you?</action>",
+        ])
+        use(provider)
+        arranged = runtime.run_turn("personal", "find a time with Rahul next "
+                                    "week", effort="medium", connectors=["gcal"])
+        said = (arranged.reply or "")
+        used = [s.name for s in arranged.trace if s.kind == "tool_call"]
+
+        check("find_time_checks",
+              "A time is proposed from the calendar, not from thin air")(
+            "find_time" in used, f"tools used: {used}")
+        check("find_time_offers",
+              "An unshared calendar is an offer, not a claim that they are free")(
+            "could not see" in said.lower() or "not checked" in said.lower(),
+            said[:80])
+        check("find_time_concrete",
+              "The user is given times, not asked for one")(
+            "10:00" in said or "14:00" in said, said[:80])
+
         # ── messaging, across whichever app it is on ─────────────────────
         #
         # Two apps landed together because one app is a feature and two is a
