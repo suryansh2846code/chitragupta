@@ -389,12 +389,15 @@ function planCard(plan) {
     .map((s) => (ACTION_CATALOG[s.type] || {}).always_ask_because)
     .find(Boolean) || RISK_NOTE[worst] || "";
 
-  const rows = [...counts].map(([label, n]) =>
-    `<div class="ac-row"><b>${esc(label)}</b> ${n === 1 ? "once" : `${n} times`}</div>`
-  ).join("");
   const listed = steps.slice(0, PLAN_NAMED_MAX).map((s) =>
     `<div class="pl-step">${esc(actionSummary(s))}</div>`).join("");
   const rest = steps.length - Math.min(steps.length, PLAN_NAMED_MAX);
+  // The counts only earn their space when the list below is truncated. On a
+  // plan short enough to show whole they repeat it — and worse, they repeat it
+  // badly: "Inbox changes once" over a step that is fourteen emails.
+  const rows = rest > 0 ? [...counts].map(([label, n]) =>
+    `<div class="ac-row"><b>${esc(label)}</b> ${n === 1 ? "once" : `${n} times`}</div>`
+  ).join("") : "";
 
   const el = document.createElement("div");
   el.className = "action-card";
@@ -452,6 +455,25 @@ function planCard(plan) {
 //: end — the same limit and the same reason as the mail card's.
 const PLAN_NAMED_MAX = 6;
 
+/** "Archive 9 emails, Mark read 5 emails" — the decision, grouped by verb.
+ *
+ *  Lives here rather than inside the triage card because the plan card needs
+ *  the same sentence, and "9 inbox changes" on the one card that is supposed
+ *  to make the whole job readable is the version of this that fails. Mirrors
+ *  `mail_triage.summarise` on the server; both exist because the card has to
+ *  read the same as the log.
+ */
+function triageSummary(items) {
+  const counts = new Map();
+  for (const it of (items || [])) {
+    const name = MAIL_VERBS[it && it.do] || "Change";
+    const key = it && it.label ? `${name} as “${it.label}”` : name;
+    counts.set(key, (counts.get(key) || 0) + 1);
+  }
+  const parts = [...counts].map(([k, n]) => `${k} ${n} email${n === 1 ? "" : "s"}`);
+  return parts.join(", ") || "Change your inbox";
+}
+
 /** The files a message would carry, by name — never by path.
  *
  *  The path says where it is on disk, which the user already knows and which
@@ -479,10 +501,7 @@ function actionSummary(step) {
     case "set_reminder": return `Reminder: ${p.message || ""}`;
     case "message_send": return `Message ${p.chat || p.to || "someone"} on ${
       MESSAGING_APPS[(p.app || "").toLowerCase()] || p.app || "an app"}`;
-    case "mail_triage": {
-      const items = Array.isArray(p.items) ? p.items : [];
-      return `${items.length} inbox change${items.length === 1 ? "" : "s"}`;
-    }
+    case "mail_triage": return triageSummary(p.items);
     case "mcp_action": return humanAction(p.tool, p.connector || p.server_id);
     default: return String(step.type || "an action").replace(/_/g, " ");
   }
@@ -831,14 +850,7 @@ function actionCard(a) {
     // own inbox, so the card has to read like one — never a message id, never
     // a Gmail label name, and never twelve separate cards for twelve emails.
     const items = Array.isArray(p.items) ? p.items : [];
-    const counts = new Map();
-    for (const it of items) {
-      const name = MAIL_VERBS[it && it.do] || "Change";
-      const key = it && it.label ? `${name} as “${it.label}”` : name;
-      counts.set(key, (counts.get(key) || 0) + 1);
-    }
-    const parts = [...counts].map(([k, n]) => `${k} ${n} email${n === 1 ? "" : "s"}`);
-    title = parts.join(", ") || "Change your inbox";
+    title = triageSummary(items);
     verb = "apply";
     const named = items.slice(0, MAIL_NAMED_MAX);
     rows = named.map((it) => {
