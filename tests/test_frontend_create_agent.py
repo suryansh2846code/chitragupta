@@ -177,10 +177,18 @@ def test_no_rule_styles_every_label_in_the_body():
 
 def test_both_modals_use_the_same_label_class():
     """The automation modal shares `.am-body`. When the blanket rule went, its
-    labels went with it unless they carry the class too."""
+    labels went with it unless they carry the class too.
+
+    Counted against the labels that are actually there rather than against a
+    number. The number was 5, and the next field added to this modal made it 6
+    — at which point the test says "6 != 5", which is not the defect it exists
+    to catch and is fixed by editing the test. Comparing the two counts asks
+    the real question: is any label here unstyled?
+    """
     body = INDEX.split('id="routineModal"', 1)[1].split('id="agentModal"', 1)[0]
     assert "<label>" not in body, "a bare label is left with no style"
-    assert body.count('class="am-label"') == 5
+    assert body.count('class="am-label"') == body.count("<label"), (
+        "a label in the automation modal does not carry .am-label")
 
 
 def test_the_fields_cannot_be_squeezed_by_a_long_tool_list():

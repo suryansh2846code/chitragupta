@@ -201,9 +201,14 @@ def actions_log_summary(days: int = 7):
 class NewRoutine(BaseModel):
     name: str
     agent_id: str = "personal"
-    trigger: str = "new_email"          # new_email | schedule
+    trigger: str = "new_email"          # new_email | daily | schedule
     instruction: str
     interval_min: int = 60
+    #: Wall-clock, for `daily`. "8am" and "08:00" are both accepted — the store
+    #: normalises, so the form and the agent can each send what they have.
+    at_time: str = ""
+    #: "" is every day. "weekdays", "mon,wed,fri" and a list all parse.
+    days: str = ""
 
 
 class EditRoutine(BaseModel):
@@ -216,6 +221,8 @@ class EditRoutine(BaseModel):
     trigger: str | None = None
     instruction: str | None = None
     interval_min: int | None = None
+    at_time: str | None = None
+    days: str | None = None
 
 
 class NewReminder(BaseModel):
@@ -242,7 +249,8 @@ def list_routines():
 def create_routine(body: NewRoutine):
     from ...routines import get_routines
     return get_routines().create(body.name, body.agent_id, body.trigger,
-                                 body.instruction, body.interval_min)
+                                 body.instruction, body.interval_min,
+                                 at_time=body.at_time, days=body.days)
 
 
 @router.patch("/api/routines/{rid}")

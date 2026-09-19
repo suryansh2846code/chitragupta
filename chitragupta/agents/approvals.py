@@ -79,7 +79,26 @@ def describe(action_type: str, params: dict) -> str:
     if action_type == "create_event":
         return f"Calendar event “{params.get('title') or 'untitled'}” on {params.get('start') or 'a date'}"
     if action_type == "create_routine":
-        return f"New automation “{params.get('name') or 'untitled'}”"
+        # WHEN it runs is the decision, not the name. "New automation
+        # 'Morning brief'" asks the user to approve a schedule they were never
+        # shown, and a routine that fires at the wrong hour is discovered by
+        # the thing it did at that hour.
+        from ..routines import describe_schedule, parse_days, parse_time
+
+        at_time = parse_time(params.get("at") or params.get("at_time"))
+        trigger = params.get("trigger") or "new_email"
+        # The same inference `actions._create_routine` makes, for the same
+        # reason: a time was given, so a time is what was meant. The card must
+        # promise what the handler will actually build, or the user approves
+        # "weekdays at 8:00 AM" and gets "every 60 min".
+        if at_time and trigger != "new_email":
+            trigger = "daily"
+        when = describe_schedule({
+            "trigger": trigger, "at_time": at_time,
+            "days": parse_days(params.get("days")),
+            "interval_min": params.get("interval_min") or 60,
+        })
+        return f"New automation “{params.get('name') or 'untitled'}” — {when}"
     if action_type == "set_reminder":
         return f"Reminder: {params.get('message') or ''}"
     if action_type == "log_workout":

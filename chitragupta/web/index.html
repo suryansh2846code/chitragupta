@@ -229,8 +229,23 @@
         <label class="am-label">Trigger</label>
         <select id="rmTrigger">
           <option value="new_email">When a new email arrives</option>
+          <option value="daily">At a time of day</option>
           <option value="schedule">On a schedule (every N minutes)</option>
         </select>
+        <!-- Its own group, not a variant of the interval one. "Every morning
+             at 8" and "every 60 minutes" are different questions, and one box
+             that means different things depending on a dropdown above it is
+             how a routine gets set to the wrong thing. -->
+        <div id="rmDailyWrap" hidden>
+          <label class="am-label">Time</label>
+          <input id="rmAtTime" type="time" value="08:00" />
+          <label class="am-label">Days</label>
+          <select id="rmDays">
+            <option value="">Every day</option>
+            <option value="mon,tue,wed,thu,fri">Weekdays</option>
+            <option value="sat,sun">Weekends</option>
+          </select>
+        </div>
         <div id="rmIntervalWrap" hidden>
           <label class="am-label">Every (minutes)</label>
           <input id="rmInterval" type="number" value="60" />
