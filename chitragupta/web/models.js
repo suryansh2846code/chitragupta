@@ -924,6 +924,14 @@ async function openConnectorsScreen() {
   showSettingsPanel("connectors");
   try { await loadBrain(); } catch (_) {}   // fills #connectors, #googleCard, sync status
 }
+// Who you are signed in as, per provider. The cards are #providerCards, which
+// loadProviders() has always filled — the panel moved, the renderer did not.
+async function openAccountScreen() {
+  const m = $("#modelScreen"); if (!m) return;
+  m.hidden = false;
+  showSettingsPanel("account");
+  try { await loadProviders(); } catch (_) {}
+}
 async function openModelScreen() {
   const m = $("#modelScreen"); if (!m) return;
   m.hidden = false;
@@ -954,11 +962,18 @@ document.querySelectorAll(".ms-nav-item").forEach((b) => {
   b.onclick = () => {
     const to = b.dataset.msnav;
     if (to === "model") return openModelScreen();
+    if (to === "account") return openAccountScreen();
     if (to === "connectors") return openConnectorsScreen();
     if (to === "inbox") return openInboxScreen();
     if (to === "tools") return openToolsScreen();
+    // Leaves the app entirely, so nothing after it runs and the screen does not
+    // need closing — the navigation replaces the document.
+    if (to === "onboarding") { window.location.href = "/onboarding?replay=1"; return; }
+    // The two that are their own full-window screens rather than panels in this
+    // shell: close this one first, or it stays open underneath them.
     closeModelScreen();
     if (to === "brain") openBrainScreen();
+    if (to === "library" && typeof openLibrary === "function") openLibrary();
   };
 });
 

@@ -36,21 +36,26 @@ let CONNECTORS = [];
 function applyIcons() {
   document.querySelectorAll(".snav").forEach((b) => {
     const el = b.querySelector(".snav-ic"); if (!el) return;
-    const key = b.id === "helpBtn" ? "help"
-      : b.dataset.nav === "sources" ? "connectors"
-      : b.dataset.nav;
+    const key = b.dataset.nav === "sources" ? "connectors" : b.dataset.nav;
     el.innerHTML = IC[key] || "";
   });
+  // The nav key and the icon key agree everywhere except onboarding, whose
+  // glyph has always been filed under "help". Without the alias that row draws
+  // an empty 18px slot and its label sits out of line with every other one —
+  // the `|| ""` fallback makes a missing icon silent, so it has to be mapped
+  // rather than noticed later.
+  const MS_IC = { onboarding: "help" };
   document.querySelectorAll(".ms-nav-item").forEach((b) => {
     const el = b.querySelector(".ms-nav-ic"); if (!el) return;
-    el.innerHTML = IC[b.dataset.msnav] || "";
+    const key = b.dataset.msnav;
+    el.innerHTML = IC[MS_IC[key] || key] || "";
   });
   const set = (id, name) => { const e = $(id); if (e) e.innerHTML = IC[name]; };
   set("#attachBtn", "attach"); set("#micBtn", "mic"); set("#send", "arrowUp");
 }
 
 // collapse / expand the sidebar (persisted)
-function setCollapsed(on) {
+function setCollapsed(on, persist = true) {
   const app = document.querySelector(".app"); if (!app) return;
   app.classList.toggle("collapsed", on);
   const b = $("#collapseBtn");
@@ -60,12 +65,25 @@ function setCollapsed(on) {
     b.setAttribute("aria-label", b.title);
     b.setAttribute("aria-expanded", on ? "false" : "true");
   }
-  try { localStorage.setItem("ls_collapsed", on ? "1" : ""); } catch (_) {}
+  // `persist` is false when the width forced this, not the user. Writing it
+  // anyway would mean resizing a window narrow once silently answered a
+  // question only the user gets to answer, and the rail would still be
+  // collapsed the next time they opened the app on a big screen.
+  if (persist) { try { localStorage.setItem("ls_collapsed", on ? "1" : ""); } catch (_) {} }
 }
 {
   const b = $("#collapseBtn");
   if (b) b.onclick = () => setCollapsed(!document.querySelector(".app").classList.contains("collapsed"));
-  setCollapsed(localStorage.getItem("ls_collapsed") === "1");
+
+  // Below 1080px the rail is icons-only, always: the CSS used to hide it
+  // outright, which left no way to reach Inbox, Brain, Account or Settings at
+  // all. Forced here rather than described again in CSS so the collapsed rail
+  // has exactly one definition.
+  const narrow = window.matchMedia("(max-width: 1080px)");
+  const stored = () => localStorage.getItem("ls_collapsed") === "1";
+  const applyWidth = () => setCollapsed(narrow.matches || stored(), false);
+  narrow.addEventListener("change", applyWidth);
+  applyWidth();
 }
 function agentOrbId(a) { return a ? a.id : ""; }
 function agentDesc(a) {
@@ -165,10 +183,12 @@ function openDrawer(name) {
   if (name === "brain") return openBrainScreen();
   if (name === "library") return openLibrary();
 }
-document.querySelectorAll(".snav").forEach((b) => b.onclick = () => {
-  if (b.id === "helpBtn") { window.location.href = "/onboarding?replay=1"; return; }  // re-experience onboarding (won't wipe)
-  openDrawer(b.dataset.nav);
-});
+// Inbox, Brain and Settings. Replay onboarding moved into the Settings rail,
+// which is why the helpBtn special case that used to live here is gone.
+document.querySelectorAll(".snav").forEach((b) => b.onclick = () => openDrawer(b.dataset.nav));
+// The account chip was markup with no handler at all — a control that could not
+// do anything. It goes where its name now says it goes.
+{ const u = $("#userChip"); if (u) u.onclick = () => openAccountScreen(); }
 { const nr = $("#newAgentRow"); if (nr) nr.onclick = () => $("#newAgentBtn").click(); }
 window.addEventListener("keydown", (e) => { if (e.key === "Escape" && $("#modelScreen") && !$("#modelScreen").hidden) closeModelScreen(); });
 
