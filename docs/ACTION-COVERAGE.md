@@ -40,7 +40,7 @@ Measured against the code, not against intent.
 | **Email** | **4⁻** | `send_email` and `mail_triage` work. **No draft** — rung 3 is missing entirely. No reply-in-thread, no forward, no attachment (`gmail.py:181` is a bare `MIMEText`). Verify fires only on failure. Remember writes to the conversation, never the brain |
 | **Calendar** | **4⁻** | `create_event` only. No reschedule, cancel, attendee change, location, notes — `gcal.py` has one write method |
 | **Messaging** | **4** | ~~no UI to connect Telegram~~ — **shipped.** `message_send` can now actually fire: the four-screen sign-in lives in `connectors.js`, driven by `GET /api/telegram/status` rather than by its own step counter |
-| **Files** | **3 (local)** | `write_file` inside granted roots. No rename, move, convert, or attach-to-anything. A file Chitragupta writes cannot leave the machine |
+| **Files** | **4** | `find_file` searches the granted folders and reports each match's **modified date**, so "the latest" is a claim the user can check. `attach=` sends it. Still no rename, move or convert |
 | **GitHub · Linear · Notion · Drive** | **1** | Read-only sync. Zero actions. The tokens are stored and the SDKs installed; the write half was never built |
 
 **Thirteen of fifteen connectors are read-only.** Only Gmail, GCal, Slack,
@@ -206,7 +206,7 @@ run end to end through all seven steps, not when its endpoints exist.
 | 1 | "Clear the emails that don't need me" | 1→6 | ✅ done |
 | 2 | "Draft replies to anything waiting on me" | 1→3 | 1 |
 | 3 | "Reply to this thread saying X" | 1→6 | 1 |
-| 4 | "Send the latest proposal to Rahul" | 1→6 | 3 |
+| 4 | "Send the latest proposal to Rahul" | 1→6 | ✅ done |
 | 5 | "Follow up with whoever hasn't replied" | 1→6 | ✅ done |
 | 6 | "Move tomorrow's client meeting to Friday afternoon" | 1→6 | ✅ done |
 | 7 | "Cancel Thursday and tell everyone why" | 1→6 | ✅ done |
@@ -514,24 +514,67 @@ reasoning can be argued with rather than only the answer.
 
 ---
 
-### Phase 3 — Messaging and Files · ~2 weeks
+### Phase 3 — Messaging and Files · **jobs 4 and the Telegram door**
 
-**Messaging.** Start with the one-hour fix: **a connect-Telegram UI.** Six
-endpoints and a complete Telethon flow are already mounted (`telegram_auth.py`)
-with no door. Shipping the door activates `message_send`, which is already
-written, already registered, and currently unreachable.
+#### The Telegram door · ✅
 
-Then: `draft_message` 🟢 · `schedule_message` 🟡 · `create_followup` 🟢.
+Six endpoints and the whole Telethon sign-in shipped with nothing calling
+them, so `message_send` was an action the Inbox agent is *taught* and
+structurally could not take. The Connectors row even had a **Connect** button:
+it opened *"add the value to your `.env` and restart"*, which is worse than no
+button.
 
-**Files.** Today `write_file` writes inside granted roots and the result can
-never leave the machine.
+Four screens, and **the server owns which one you are on** — `status` is asked
+first and again after anything that might have moved, rather than the modal
+counting its own steps. Two answers that are not failures had to be read as
+steps: `already` means you are done, and `needs_password` is two-factor, not a
+refusal. Reading the second as an error strands every account with two-step
+verification on.
 
-`create_file` 🟢 · `rename` 🟢 · `move` 🟡 · `convert` 🟢 · `generate_document`
-🟢 · **`attach_to_email`** 🟡.
+#### Job 4 — "send the latest proposal to Rahul" · ✅
 
-**Acceptance — job 4:** *"Take the latest proposal and send it to Rahul"* → find
-candidates → **show which version and why** (rung 3 is the version check, not the
-attachment) → draft with it attached → approve → send → verify → record.
+Two questions, and the dangerous one is the first. Attaching is easy;
+**picking the wrong draft is discovered by the recipient, not by you** — and by
+then it is a document somebody else has read.
+
+So rung 3 here is not *find a file*, it is **say which one and when it was
+modified, before it goes**:
+
+```
+3 file(s) matching "proposal" — newest first:
+- Acme proposal.pdf
+  /Work/2026/Q3/Acme proposal.pdf
+  modified 18 Sep 2026, 09:12 · 84,210 bytes
+- proposal-draft.md
+  …
+
+Say WHICH one you picked and when it was modified before attaching it.
+Two drafts a week apart look identical in a sentence.
+```
+
+The ranking is a suggestion; the **evidence is what makes disagreeing
+possible**. And the recipe says to *ask* rather than choose when two are close
+in time — "the latest" is only obvious when it is.
+
+`find_file` searches `granted_roots()` and nothing else, and the attachment is
+re-resolved through `_resolve` on the way out. Two checks rather than one on
+purpose: the search could be widened one day and the send must not widen with
+it.
+
+### Phase 3 — the rest · ~1 week
+
+`create_followup` 🟢 landed early, with job 5. What is left:
+
+| | |
+|---|---|
+| `draft_message` 🟢 | the messaging twin of `create_draft` — prepare a reply without sending it |
+| `schedule_message` 🟡 | `execute()`'s `at` path already schedules mail; messaging does not use it |
+| `rename` 🟢 · `move` 🟡 | inside granted roots |
+| `convert` 🟢 · `generate_document` 🟢 | job 16, *"write this up as a document"* |
+
+None of these is a new mechanism. `draft_message` is `create_draft` pointed at
+a different connector; `rename` and `move` are `_resolve` twice and a call to
+`Path.rename`.
 
 ---
 

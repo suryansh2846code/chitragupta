@@ -581,6 +581,50 @@ def run(*, include_slow: bool = True) -> Scorecard:
               "The user is given times, not asked for one")(
             "10:00" in said or "14:00" in said, said[:80])
 
+        # ── sending a file, and saying which one ─────────────────────────
+        #
+        # Attaching is the easy half. The half worth scoring is that the agent
+        # NAMES the version it picked: attaching last quarter's draft is found
+        # out by the person who receives it, not by the user. So the scripted
+        # search returns three proposals a week apart and the check is that the
+        # reply says which, with its date, and attaches that exact path.
+        tools_mod.TOOL_IMPLS["find_file"] = lambda **kw: (
+            "3 file(s) matching “proposal” — newest first:\n"
+            "- Acme proposal.pdf\n  /Work/2026/Q3/Acme proposal.pdf\n"
+            "  modified 18 Sep 2026, 09:12 · 84,210 bytes\n"
+            "- proposal-draft.md\n  /Work/proposal-draft.md\n"
+            "  modified 11 Sep 2026, 17:40 · 9,004 bytes\n"
+            "- old proposal.pdf\n  /Work/2026/old proposal.pdf\n"
+            "  modified 03 Jul 2025, 11:02 · 80,551 bytes")
+        provider = _scripted([
+            [("find_file", {"name": "proposal"})],
+            "Three match. The newest is Acme proposal.pdf, modified 18 Sep "
+            "2026 — the other two are a week and a year older.\n"
+            '<action type="create_draft" to="rahul@work.test" '
+            'subject="The proposal" attach="/Work/2026/Q3/Acme proposal.pdf">'
+            "Attached, as promised.</action>",
+        ])
+        use(provider)
+        attached = runtime.run_turn("personal", "send Rahul the latest proposal",
+                                    effort="medium")
+        reply = attached.reply or ""
+        proposed = parse_actions(reply)
+        params = proposed[0]["params"] if proposed else {}
+
+        check("attach_searches",
+              "A file is attached from a search, not from a guessed path")(
+            "find_file" in [s.name for s in attached.trace
+                            if s.kind == "tool_call"],
+            "nothing looked for the file")
+        check("attach_names_the_version",
+              "The user is told WHICH version, with its date")(
+            "18 Sep" in reply and "Acme proposal.pdf" in reply,
+            reply[:90])
+        check("attach_sends_what_it_named",
+              "The path attached is the one it said it chose")(
+            params.get("attach") == "/Work/2026/Q3/Acme proposal.pdf",
+            f"attach={params.get('attach')!r}")
+
         # ── messaging, across whichever app it is on ─────────────────────
         #
         # Two apps landed together because one app is a feature and two is a

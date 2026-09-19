@@ -22,6 +22,8 @@ cheap; the other mistake is not.
 from __future__ import annotations
 
 import json
+import re
+from datetime import datetime
 from pathlib import Path
 
 from ..log import get_logger, suppressed
@@ -165,6 +167,86 @@ def list_dir(path: str = "") -> ToolResult:
     if not entries:
         return ToolResult(f"{real} is empty.")
     return ToolResult(f"{real}:\n" + "\n".join(entries))
+
+
+#: Enough to choose from, few enough to read. A folder of ninety drafts
+#: answered in full is a wall nobody checks, which defeats the point of
+#: showing the evidence at all.
+MAX_MATCHES = 8
+
+#: Anything deeper than this is somebody's node_modules, and walking it costs
+#: the whole turn.
+MAX_DEPTH = 6
+
+#: Never walked into. Not a security boundary — `_resolve` is that — but a
+#: search that returns forty vendored licence files has answered a different
+#: question than the one asked.
+SKIP_DIRS = {"node_modules", "__pycache__", ".venv", "venv", ".git", "build",
+             "dist", ".next", "target", "Library"}
+
+
+def find_file(name: str, newest_first: bool = True) -> ToolResult:
+    """Files matching a description, with what makes one the *latest*.
+
+    "Take the latest proposal and send it to Rahul" is two questions, and the
+    dangerous one is the first. An agent that attaches a file without saying
+    which it picked has asked the user to approve a filename they did not
+    choose — and attaching last quarter's draft is discovered by the recipient,
+    not by them.
+
+    So every match carries its modified date, its size and where it lives, and
+    the caller is told to show them. The ranking is a suggestion; the evidence
+    is what makes disagreeing possible.
+
+    Searches only folders the user has opened. No grant, no answer.
+    """
+    words = [w for w in re.split(r"[\s_\-.]+", str(name or "").lower()) if w]
+    if not words:
+        return ToolResult.failed("Say what to look for — a word from the "
+                                 "filename is enough.")
+    roots = granted_roots()
+    if not roots:
+        return ToolResult.failed(
+            "No folder has been opened to agents yet, so there is nothing to "
+            "search. The user can pick one in the Files connector.")
+
+    found: list[tuple[float, Path]] = []
+    for root in roots:
+        base = Path(root)
+        with suppressed("searching a granted folder"):
+            for child in base.rglob("*"):
+                if len(found) >= 400:            # a bounded walk, always
+                    break
+                if child.is_dir() or child.name.startswith("."):
+                    continue
+                relative = child.relative_to(base)
+                if len(relative.parts) > MAX_DEPTH:
+                    continue
+                if SKIP_DIRS & set(relative.parts):
+                    continue
+                haystack = child.name.lower()
+                if all(word in haystack for word in words):
+                    found.append((child.stat().st_mtime, child))
+
+    if not found:
+        where = ", ".join(roots)
+        return ToolResult(f"Nothing matching “{name}” in {where}.")
+
+    found.sort(reverse=bool(newest_first))
+    lines = [f"{len(found)} file(s) matching “{name}”"
+             + (" — newest first:" if newest_first else " — oldest first:")]
+    for when, path in found[:MAX_MATCHES]:
+        stamp = datetime.fromtimestamp(when).strftime("%d %b %Y, %H:%M")
+        lines.append(f"- {path.name}\n"
+                     f"  {path}\n"
+                     f"  modified {stamp} · {path.stat().st_size:,} bytes")
+    if len(found) > MAX_MATCHES:
+        lines.append(f"…and {len(found) - MAX_MATCHES} more.")
+    lines.append("")
+    lines.append("Say WHICH one you picked and when it was modified before "
+                 "attaching it. Two drafts a week apart look identical in a "
+                 "sentence.")
+    return ToolResult("\n".join(lines))
 
 
 def read_file(path: str) -> ToolResult:

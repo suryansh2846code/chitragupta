@@ -299,6 +299,7 @@ TOOL_IMPLS = {
     "gmail_search": _gmail_search,
     "calendar_lookup": source_tools.calendar_lookup,
     "list_dir": file_tools.list_dir,
+    "find_file": file_tools.find_file,
     "read_file": file_tools.read_file,
     "write_file": file_tools.write_file,
     "run_python": code_tools.run_python,
@@ -676,6 +677,25 @@ TOOL_DEFS: dict[str, Tool] = {
         parameters={"type": "object", "properties": {
             "path": {"type": "string", "description": "Omit to list the folders "
                                                       "you are allowed to use"}}},
+    ),
+    "find_file": Tool(
+        name="find_file",
+        description=(
+            "Files whose name matches, newest first, with when each was last "
+            "modified. Use this before attaching anything — and say which one "
+            "you picked and its date, because two drafts a week apart look "
+            "identical in a sentence."),
+        parameters={
+            "type": "object",
+            "properties": {
+                "name": {"type": "string",
+                         "description": "A word or two from the filename."},
+                "newest_first": {
+                    "type": "boolean",
+                    "description": "Newest first by default; false for oldest."},
+            },
+            "required": ["name"],
+        },
     ),
     "read_file": Tool(
         name="read_file",
@@ -1061,6 +1081,7 @@ _LABELS: dict[str, tuple[str, str]] = {
     # Your Mac — the powers worth naming as a group, because they are the ones
     # a person wants to see gathered before deciding
     "list_dir":                 ("Browse",    "Your Mac"),
+    "find_file":                ("Find",      "Your Mac"),
     "read_file":                ("Read",      "Your Mac"),
     "write_file":               ("Write",     "Your Mac"),
     "run_python":               ("Run",       "Your Mac"),
