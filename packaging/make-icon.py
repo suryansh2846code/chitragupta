@@ -6,16 +6,25 @@ it is supposed to embody. Every colour here is copied from `docs/DESIGN-BRIEF.md
 and `chitragupta/web/styles.css` — the night-sky ground, the cool-white particles,
 and the one warm gold pole-star that is the app's single accent.
 
-The mark is the same rotated square (`.brand-mark` in styles.css) the sidebar
-wears, with a constellation inside it and one gold star at its top vertex. That
-is the brand hook in a shape: a field of scattered things, the lines drawn
-between them, and a single bright point for the one being written down.
+The mark is the yantra the sidebar wears (`.brand-mark` in styles.css, cut from
+`docs/brand/yantra.png`), laid on the night sky with its **bindu** — the point
+at the centre — carrying the gold. That placement is the brand hook in a shape:
+a field of scattered things, and one bright point for the one being written down.
 
-Two things make it survive being shrunk to 16px in a Finder list:
+What the diamond version of this icon drew inside the mark — a constellation and
+a needle reaching up to a pole star — is gone. It could be, because the diamond
+was an outline with an empty middle; the yantra is a filled silhouette with its
+own lattice, and anything drawn behind it is simply not visible. The particle
+field around it still carries that half of the idea.
 
-* the diamond is an outline with a thick-enough stroke to stay closed, and
-* the gold star is the only saturated thing in the frame, so it reads as a dot
-  of colour long after the constellation behind it has blurred to texture.
+Three things make it survive being shrunk to 16px in a Finder list:
+
+* the gold bindu is the only saturated thing in the frame, so it reads as a dot
+  of colour long after the lattice behind it has blurred to texture,
+* the detail drops in tiers rather than scaling (see `render`), and
+* at 32px and below the mark falls back to its own core, because the full
+  yantra at that size is a smudge — the same finding `styles.css` records for
+  the rail.
 
 Deterministic on purpose — a fixed seed means rebuilding produces byte-identical
 PNGs, so an icon change shows up in review as an intentional diff.
@@ -31,9 +40,10 @@ import subprocess
 import sys
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFilter
+from PIL import Image, ImageChops, ImageDraw, ImageFilter
 
 HERE = Path(__file__).resolve().parent
+MASTER = HERE.parent / "docs" / "brand" / "yantra.png"
 
 # ── Tokens, lifted from the brief ────────────────────────────────────────────
 GROUND_TOP = (10, 14, 26)        # #0a0e1a — the sky is not flat; it lifts
@@ -47,6 +57,15 @@ NORTH = (245, 200, 119)          # #f5c877 — --north, the ONE accent
 CANVAS = 1024
 SQUIRCLE = 824
 SUPERSAMPLE = 2                  # draw at 2x, downsample — Pillow has no AA
+
+# The mark's footprint inside the squircle. Smaller than the diamond's was: the
+# yantra is a dense lattice where the diamond was two strokes, and at the old
+# 0.57 it crowded the corners and lost the sky it is supposed to sit in.
+MARK_FRAC = 0.62
+BINDU_R = 0.085                  # bindu radius, measured off the master art
+CORE_FRAC = 0.345                # the inner square's half-width in the master,
+                                 # which is what sets the bindu's ratio once the
+                                 # core is drawn at full size instead of cropped
 
 #: Every size `iconutil` requires, as (pixel size, iconset filename).
 ICONSET = [
@@ -106,29 +125,68 @@ def _glow(size: int, centre: tuple[float, float], radius: float,
     return layer.filter(ImageFilter.GaussianBlur(radius * 0.55))
 
 
+def _mark(px: int, core: bool, gold: bool) -> Image.Image:
+    """The yantra silhouette at `px` square, star-white, with a gold bindu.
+
+    `core` swaps the lattice for the shape at the heart of it — the rotated
+    square with the bindu inside — drawn rather than cropped. Cropping the
+    master was tried first and failed: the crop that holds the inner square also
+    catches the lotus tips and the gate stubs, and at 32px those arrive as grey
+    noise around the centre instead of as the mark. Drawn, the same geometry is
+    two clean shapes that survive the size.
+    """
+    if core:
+        mark = Image.new("RGBA", (px, px), (*STAR, 0))
+        draw = ImageDraw.Draw(mark)
+        c, h = px / 2.0, px / 2.0
+        draw.polygon([(c, c - h), (c + h, c), (c, c + h), (c - h, c)],
+                     fill=(*STAR, 236))
+        if gold:
+            # Bigger than the master's bindu in proportion, because the square
+            # around it is bigger too — the ratio is what has to hold, not the
+            # absolute radius.
+            r = px * BINDU_R / (2 * CORE_FRAC)
+            draw.ellipse([c - r, c - r, c + r, c + r], fill=(*NORTH, 255))
+        return mark
+
+    alpha = Image.open(MASTER).convert("RGBA").getchannel("A")
+    alpha = alpha.resize((px, px), Image.Resampling.LANCZOS)
+    mark = Image.new("RGBA", (px, px), (*STAR, 0))
+    mark.paste((*STAR, 238), (0, 0), alpha)
+    if not gold:
+        return mark
+
+    # The bindu, over the top, clipped to the mark's own alpha — so the gold can
+    # never spill past the dot the artwork actually draws at the centre.
+    r, c = px * BINDU_R, px / 2.0
+    dot = Image.new("RGBA", (px, px), (*NORTH, 0))
+    ImageDraw.Draw(dot).ellipse([c - r, c - r, c + r, c + r], fill=(*NORTH, 255))
+    dot.putalpha(ImageChops.multiply(dot.getchannel("A"), alpha))
+    mark.alpha_composite(dot)
+    return mark
+
+
 def render(size: int) -> Image.Image:
     """The artwork, at `size` px square, alpha outside the squircle.
 
     The detail drops in tiers, the way an icon set is drawn rather than scaled.
-    Each threshold below was chosen by rendering the size and looking at it, and
-    each exists because the fuller treatment failed there:
+    Each threshold below was chosen by rendering the size and looking at it:
 
-    * **>=128** everything: particle field, constellation, needle, pole star.
-    * **>=64** drops the particles. They stop being texture and become dirt.
-    * **>=32** drops the constellation and needle too, and thickens the outline
-      so it stays a closed shape. The star survives as a crisp gold dot.
-    * **16** is the silhouette alone — a *filled* diamond, no gold at all. An
-      outline that small closes up into a grey ring, and the gold star smears
-      into a brown blob that made the whole icon read as a hot-air balloon. The
-      diamond by itself is the sidebar's `.brand-mark`, so it is still the
-      product's own mark and not a compromise shape.
+    * **>=256** everything: particle field, bloom, full yantra, gold bindu.
+    * **>=64** drops the particles. Against the yantra's own lattice — far busier
+      than the diamond this replaced — they stop being texture and become dirt.
+    * **>=32** falls back to the mark's core — the rotated square and its bindu
+      — and drops the bloom, which at that size stops being a light source
+      behind the gold and becomes a brown haze over it.
+    * **16** is that square alone. The gold goes: a bindu that small smears into
+      the white around it and turns the whole icon muddy.
     """
     s = size * SUPERSAMPLE
     scale = s / CANVAS                       # everything below is in 1024-space
-    particles = size >= 128
-    constellation = size >= 64
-    star = size >= 32                        # below this the gold only muddies
-    outline = size >= 32                     # 16px is filled instead
+    particles = size >= 256
+    core = size < 64
+    bloom = size >= 64
+    gold = size >= 32
 
     def u(v: float) -> float:
         return v * scale
@@ -142,65 +200,38 @@ def render(size: int) -> Image.Image:
     ground = _ground(round(u(SQUIRCLE))).convert("RGBA")
     art.paste(ground, (round(box[0]), round(box[1])))
 
-    # The diamond grows as the detail falls away — with nothing else in the
-    # frame at 16px it can afford the room, and it needs it to read.
-    frac = 0.285 if constellation else (0.30 if outline else 0.34)
-    half_d = u(SQUIRCLE * frac)
-    north_xy = (cx, cy - half_d)
+    # The mark grows as the detail falls away — with nothing else in the frame
+    # at 16px it can afford the room, and it needs it to read.
+    frac = MARK_FRAC if not core else (0.66 if gold else 0.70)
+    mark_px = round(u(SQUIRCLE * frac))
+    half_m = mark_px / 2.0
 
-    # A gold bloom behind the star lifts the sky locally, so the accent looks
+    # A gold bloom behind the bindu lifts the sky locally, so the accent looks
     # like a light source rather than a sticker. It shrinks faster than the icon
     # does — at small sizes the bloom would otherwise BE the icon.
-    if star:
+    if bloom:
         art.alpha_composite(
-            _glow(s, north_xy, u(210) if particles else u(46), NORTH,
-                  0.20 if particles else 0.95))
+            _glow(s, (cx, cy), u(190) if particles else u(64), NORTH,
+                  0.22 if particles else 0.55))
     if particles:
         art.alpha_composite(_glow(s, (cx, cy + u(140)), u(300), STAR, 0.035))
 
-    draw = ImageDraw.Draw(art)
-
     # ── particle field ──────────────────────────────────────────────────────
     if particles:
+        draw = ImageDraw.Draw(art)
         rng = random.Random(20260916)        # fixed seed → reproducible PNGs
         for _ in range(90):
             px_, py_ = rng.uniform(box[0], box[2]), rng.uniform(box[1], box[3])
             # Keep the field off the mark; texture must not fight the shape.
-            if abs(px_ - cx) + abs(py_ - cy) < half_d * 1.22:
+            if max(abs(px_ - cx), abs(py_ - cy)) < half_m * 1.10:
                 continue
             r = u(rng.uniform(1.6, 4.4))
             a = round(255 * rng.uniform(0.07, 0.30))
             draw.ellipse([px_ - r, py_ - r, px_ + r, py_ + r], fill=(*STAR, a))
 
-    # ── the constellation inside the mark, and the needle up to the star ────
-    if constellation:
-        # Fixed nodes, as fractions of the diamond's half-diagonal from centre.
-        nodes = [(-0.46, -0.10), (-0.12, 0.34), (0.30, 0.08),
-                 (0.10, -0.40), (0.50, -0.30), (-0.28, 0.62)]
-        pts = [(cx + nx * half_d, cy + ny * half_d) for nx, ny in nodes]
-        for a_i, b_i in [(0, 1), (1, 2), (2, 3), (3, 0), (2, 4), (1, 5)]:
-            draw.line([pts[a_i], pts[b_i]], fill=(*STAR, 54), width=max(1, round(u(3))))
-        # The one edge drawn in gold: the needle, reaching for north.
-        draw.line([pts[3], north_xy], fill=(*NORTH, 96), width=max(1, round(u(3.5))))
-        for p in pts:
-            r = u(6.5)
-            draw.ellipse([p[0] - r, p[1] - r, p[0] + r, p[1] + r], fill=(*STAR, 190))
-
-    # ── the mark: the sidebar's rotated square ──────────────────────────────
-    diamond = [(cx, cy - half_d), (cx + half_d, cy), (cx, cy + half_d), (cx - half_d, cy)]
-    if outline:
-        # A heavier stroke at 32px: scaled down from 15 it thins to nothing and
-        # the corners break open.
-        draw.line([*diamond, diamond[0]], fill=(*STAR, 238),
-                  width=max(2, round(u(15 if constellation else 30))), joint="curve")
-    else:
-        draw.polygon(diamond, fill=(*STAR, 236))
-
-    # ── the pole star, last, over everything ────────────────────────────────
-    if star:
-        r = u(21) if particles else u(34)     # hold its ground once shrunk
-        draw.ellipse([north_xy[0] - r, north_xy[1] - r, north_xy[0] + r, north_xy[1] + r],
-                     fill=(255, 243, 218, 255))
+    # ── the mark ────────────────────────────────────────────────────────────
+    art.alpha_composite(_mark(mark_px, core, gold),
+                        (round(cx - half_m), round(cy - half_m)))
 
     # ── clip, and downsample to the requested size ──────────────────────────
     mask = Image.new("L", (s, s), 0)

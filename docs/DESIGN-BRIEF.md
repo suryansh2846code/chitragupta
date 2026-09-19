@@ -30,6 +30,27 @@ constellation · **monospace-forward** technical type · hairline **HUD** overla
 - `--north: #f5c877` (warm pole-star gold — the ONE accent: live/hover/primary)
 - `--north-dim: rgba(245,200,119,.14)`
 
+## Mark
+A **yantra** — the bhupura square with its four gates, a lotus ring, the inner
+rotated square, and the **bindu** at the centre. The bindu is the hook: the one
+point being written down, which is why it is the only thing in the mark that
+ever takes `--north`.
+
+One master, `docs/brand/yantra.png` — 1024px, white, the shape carried entirely
+in the **alpha channel**. Nothing downstream is hand-cut:
+
+- `scripts/make-brand-assets.py` writes `brand-mark.png` (the rail and the
+  onboarding paint it with CSS `mask`, so it takes the colour of the surface it
+  sits on) and `favicon-32/64.png` (gold baked in — the tab is the one place CSS
+  cannot reach, and gold is the only hue that holds on a light *and* a dark tab).
+- `packaging/make-icon.py` lays it on the night sky for `icon.icns`, gold bindu
+  and all.
+
+It does not shrink forever. Below ~20px the lotus and the gates merge and it
+stops being this mark; the rail runs it at 22px for that reason, and the app
+icon falls back to the core — the rotated square and its bindu — at 32px and
+below.
+
 ## Type
 - **Mono-forward** (system mono: `ui-monospace, 'SF Mono', 'JetBrains Mono',
   Menlo, monospace`). Headline = mono, light (300), tight letter-spacing.
