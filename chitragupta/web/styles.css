@@ -160,8 +160,11 @@ select:focus, input:focus, textarea:focus { outline: none; border-color: var(--a
 .app.collapsed .new-agent { margin: 6px auto 2px; }
 .app.collapsed .agents, .app.collapsed .side-nav { gap: 4px; }
 /* Collapsed there is no room for a row: the avatar and the gear go back to
-   being two stacked 40px squares like everything else in the rail. */
-.app.collapsed .side-foot { flex-direction: column; gap: 4px; }
+   being two stacked 40px squares like everything else in the rail. The bleed
+   has to follow the rail's own padding, which is 8px here rather than 12px —
+   otherwise the rule overshoots the edges by 4px a side. */
+.app.collapsed .side-foot { flex-direction: column; gap: 4px;
+  margin-left: -8px; margin-right: -8px; padding-left: 8px; padding-right: 8px; }
 .app.collapsed .orb { width: 28px; height: 28px; }
 .app.collapsed .na-plus { width: 24px; height: 24px; }
 .app.collapsed .user-av { width: 26px; height: 26px; }
@@ -212,8 +215,11 @@ select:focus, input:focus, textarea:focus { outline: none; border-color: var(--a
 .new-agent:hover { background: rgba(255,255,255,.04); color: var(--text); }
 .na-plus { width: 26px; height: 26px; border-radius: 50%; border: 1px dashed var(--border2);
   display: inline-flex; align-items: center; justify-content: center; font-size: 15px; }
-.side-nav { display: flex; flex-direction: column; gap: 2px; margin-top: 12px;
-  border-top: 1px solid var(--line); padding-top: 12px; }
+/* No rule above this group. There were two — one here and one above the account
+   — which cut the bottom of the rail into three slivers and made Inbox/Brain
+   look like a section of their own rather than part of the block they sit in.
+   One line, above the account, is the whole separation the rail needs. */
+.side-nav { display: flex; flex-direction: column; gap: 2px; margin-top: 16px; }
 .snav { display: flex; align-items: center; gap: 11px; padding: 9px 12px; border-radius: 10px;
   background: transparent; color: var(--muted); font-size: 13.5px; text-align: left; }
 .snav:hover { background: rgba(255,255,255,.04); color: var(--text); }
@@ -226,7 +232,13 @@ select:focus, input:focus, textarea:focus { outline: none; border-color: var(--a
    navigation above it. That was true of pinning the account ALONE. The whole
    block travels together now — nav, then account — so they stay adjacent and
    the slack ends up above all of it, where empty space in a rail belongs. */
-.side-foot { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line);
+/* FULL BLEED. The rail pads its children by 12px a side, so a plain border here
+   stopped 12px short at each end and read as a dash floating in the middle of
+   the rail rather than as the floor of it. The negative margins reach back out
+   to the rail's edges and the matching padding puts the content back where it
+   was, so only the rule moves. */
+.side-foot { margin: 12px -12px 0; padding: 12px 12px 0;
+  border-top: 1px solid var(--line);
   display: flex; flex-direction: row; align-items: center; gap: 6px; }
 .side-foot .user-chip { flex: 1; min-width: 0; }
 /* Icon only, so the row stays a row. The label is hidden, so the button needs
