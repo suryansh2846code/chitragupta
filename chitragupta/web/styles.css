@@ -1,22 +1,39 @@
 :root {
   /* ── Living Constellation (docs/DESIGN-BRIEF.md) ───────────────────────
-     The workspace now stands on the same ground as the onboarding the user
-     just walked through — same near-black, same cool-white, same gold — so
-     arriving here does not feel like arriving in a different product.
+     The workspace stands on the same ground as the onboarding the user just
+     walked through — same charcoal, same cool-white, same gold — so arriving
+     here does not feel like arriving in a different product. Both palettes are
+     declared separately (onboarding is a standalone page) and must move
+     together; changing one alone is how the seam comes back.
      GOLD IS THE ONLY INTERACTIVE COLOUR: live, hover, focus, primary. Green
      and red survive only where they carry a meaning gold cannot (connected
      vs failed). Blue is deliberately gone: it was the generic-AI default the
      brief exists to avoid, and it was doing 40 different jobs here. */
-  --ground: #05070d;                     /* cool near-black — the night sky */
-  --ground-2: #0b0f18;                   /* panel */
+  /* CHARCOAL, not the blue near-black this shipped with. The ground reads as a
+     blackboard: a slate you write on, which is what the product is. The old
+     #05070d family was cool — every surface carried a blue cast, and against
+     gold it pulled the whole shell toward "console". Charcoal is quieter and it
+     lets the one accent be the only colour in the room.
+
+     The hue is a hair warm (~30°, ~4% saturation) rather than dead neutral. A
+     perfectly grey charcoal goes slightly blue next to the gold and next to the
+     cream of the brand tile; a trace of warmth holds against both. */
+  --ground: #191817;                     /* charcoal — the board */
+  --ground-2: #232120;                   /* panel */
   /* The shell is TWO surfaces, not one flat field. The rail is the chrome the
      workspace floats on; the workspace is a raised card. --surface sits
      deliberately BETWEEN --rail and --panel so every card already drawn in
-     --panel (composer, hero cards, doc cards) still reads as raised above it. */
-  --rail: #03050a;                       /* sidebar + the gutter around the card */
-  --surface: #080b12;                    /* the chat card itself */
+     --panel (composer, hero cards, doc cards) still reads as raised above it.
+     The steps below are spaced to keep that order intact at the new lightness —
+     they are a ramp, not seven independent colours. */
+  --rail: #151413;                       /* sidebar + the gutter around the card */
+  --surface: #1d1c1a;                    /* the chat card itself */
   --star: #dfe7f2;                       /* cool white — particles and text */
-  --muted: #7a8397; --faint: #5c6473;
+  /* Neutralised with the ground. These were blue-greys picked against a blue
+     ground; left alone on charcoal they read as a mistake rather than as a
+     shade. The contrast ratios are matched to what they replaced (~2.8:1 and
+     ~2.1:1 on the ground), so nothing gets harder to read than it was. */
+  --muted: #928c85; --faint: #756f68;
   --line: rgba(223,231,242,.10); --line2: rgba(223,231,242,.18);
   --north: #f5c877;                      /* the pole star — the ONE accent */
   --north-dim: rgba(245,200,119,.14);  /* tinted fills */
@@ -32,7 +49,7 @@
   /* Legacy names. Every existing rule keeps working, and the ~40 sites that
      said "blue" now say gold by pointing here rather than by 40 edits. */
   --bg: var(--ground); --panel: var(--ground-2);
-  --panel-2: #111826; --raise: #19212f; --user: #151d2b;
+  --panel-2: #2a2826; --raise: #35322f; --user: #2f2d2b;
   --text: var(--star); --accent: var(--north); --accent-2: var(--ok);
 
   --sans: -apple-system, "SF Pro Text", "SF Pro Display", system-ui, "Helvetica Neue", Arial, sans-serif;
@@ -44,9 +61,12 @@
 html, body { height: 100%; margin: 0; }
 body {
   font: 14px/1.55 var(--sans); color: var(--text);
+  /* Two soft washes so the board is not a flat fill — chalk dust catching the
+     light, not a gradient for its own sake. Warm-grey now; these were blue and
+     were the loudest remaining source of the cast. */
   background:
-    radial-gradient(80% 60% at 82% 90%, rgba(30,40,60,.25), transparent 60%),
-    radial-gradient(70% 50% at 12% 8%, rgba(40,44,60,.18), transparent 60%),
+    radial-gradient(80% 60% at 82% 90%, rgba(58,54,48,.28), transparent 60%),
+    radial-gradient(70% 50% at 12% 8%, rgba(52,50,46,.20), transparent 60%),
     var(--bg);
 }
 /* The row is minmax(0,1fr), not auto, and both columns get min-height:0 —
@@ -1380,7 +1400,9 @@ select:focus, input:focus, textarea:focus { outline: none; border-color: var(--a
 }
 
 /* full-screen brain screen */
-.brainscreen { position: fixed; inset: 0; z-index: 70; background: #05070d; overflow: hidden; }
+/* The token, not a copy of it — this hardcoded the old ground and would have
+   stayed blue while everything around it went charcoal. */
+.brainscreen { position: fixed; inset: 0; z-index: 70; background: var(--ground); overflow: hidden; }
 .brainscreen[hidden] { display: none; }
 #bsCanvas { position: absolute; inset: 0; width: 100%; height: 100%; }
 .bs-side { position: absolute; left: 28px; top: 74px; bottom: 28px; width: 330px; z-index: 3;
@@ -2419,8 +2441,8 @@ button.tiny.running:hover { background: linear-gradient(to right,
    fills its container — `loadAgents()` and `renderHistory()` both assign
    innerHTML, so nothing has to remember to clear them.
 
-   Built from --star at low alpha rather than a flat grey: the rail (#03050a)
-   and the chat card (#080b12) are different grounds, and a translucent fill
+   Built from --star at low alpha rather than a flat grey: the rail (#151413)
+   and the chat card (#1d1c1a) are different grounds, and a translucent fill
    sits correctly on both instead of needing one value per surface. */
 @keyframes sk-sheen {
   from { background-position: -120% 0; }
