@@ -77,7 +77,10 @@ BASE_TOOLS = [
 
 #: Reading and writing files is safe to ship with any agent: it reaches nothing
 #: until the user opens a folder, and that grant is the consent.
-_FILES = ["list_dir", "read_file", "write_file"]
+#: `find_file` travels with them: an agent that can read a file and
+#: cannot find one can only open what it was handed the path to, and
+#: "the latest proposal" is a description, not a path.
+_FILES = ["list_dir", "find_file", "read_file", "write_file"]
 
 _TASKS = ["add_task", "list_tasks", "complete_task"]
 _LOOPS = ["create_open_loop", "list_open_loops", "complete_open_loop",

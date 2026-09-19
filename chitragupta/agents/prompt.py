@@ -449,6 +449,40 @@ _CALENDAR_RECIPE = (
 )
 
 
+#: "Take the latest proposal and send it to Rahul."
+#:
+#: Two questions, and the dangerous one is the first. Attaching is easy;
+#: picking the *wrong* draft is discovered by the recipient rather than by the
+#: user, and by then it is a document somebody else has read.
+#:
+#: So the rule is not "find a file" — it is **say which one, and when it was
+#: modified, before it goes**. A filename alone is not evidence: `proposal.pdf`
+#: and `proposal.pdf` in two folders are the same sentence and a week apart.
+_ATTACH_RECIPE = (
+    "SENDING A FILE — when the user asks you to send, attach or share "
+    "something of theirs:\n"
+    "1. `find_file` first. Never attach a path you did not get from it; a "
+    "guessed one is either missing or somebody else's draft.\n"
+    "2. If more than one matches, say WHICH you chose and WHEN it was last "
+    "modified, in your text, before the card. \"The latest\" is your "
+    "judgement and the user is the one who knows whether it is right.\n"
+    "3. If two are close in time, or the newest is not the obvious one, ASK "
+    "rather than choose. Sending last quarter's numbers is found out by the "
+    "person who receives them.\n"
+    "4. Then propose the mail with attach=\"<full path from find_file>\". "
+    "Prefer create_draft unless they said send."
+)
+
+
+def _attach_recipe(tools: list[str] | None, actions: list[str]) -> str:
+    """Only for an agent that can find a file AND send one."""
+    if "find_file" not in set(tools or []):
+        return ""
+    if not {"send_email", "create_draft"} & set(actions or []):
+        return ""
+    return _ATTACH_RECIPE
+
+
 def _calendar_recipe(tools: list[str] | None, actions: list[str]) -> str:
     """Only for an agent that can both see the calendar and change it."""
     if "calendar_lookup" not in set(tools or []):
@@ -652,7 +686,8 @@ def build(*, name: str, role: str, system_prompt: str,
         # that has not just been told plans exist.
         for recipe in (_inbox_recipe(tools, allowed),
                        _followup_recipe(tools, allowed),
-                       _calendar_recipe(tools, allowed)):
+                       _calendar_recipe(tools, allowed),
+                       _attach_recipe(tools, allowed)):
             if recipe:
                 lines.append(recipe)
         parts.append("\n".join(lines))
