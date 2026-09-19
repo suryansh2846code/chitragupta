@@ -39,7 +39,7 @@ Measured against the code, not against intent.
 | **Health / training** | **6** | `log_measurement`, `log_workout` — proposed, editable, executed, stored. The most complete domain in the product, and the only one with no screen to show for it |
 | **Email** | **4⁻** | `send_email` and `mail_triage` work. **No draft** — rung 3 is missing entirely. No reply-in-thread, no forward, no attachment (`gmail.py:181` is a bare `MIMEText`). Verify fires only on failure. Remember writes to the conversation, never the brain |
 | **Calendar** | **4⁻** | `create_event` only. No reschedule, cancel, attendee change, location, notes — `gcal.py` has one write method |
-| **Messaging** | **4 (blocked)** | `message_send` is registered and `telegram.py::send` is written — and **there is no UI to connect Telegram**, so the action cannot fire. An agent taught an action it cannot take |
+| **Messaging** | **4** | ~~no UI to connect Telegram~~ — **shipped.** `message_send` can now actually fire: the four-screen sign-in lives in `connectors.js`, driven by `GET /api/telegram/status` rather than by its own step counter |
 | **Files** | **3 (local)** | `write_file` inside granted roots. No rename, move, convert, or attach-to-anything. A file Chitragupta writes cannot leave the machine |
 | **GitHub · Linear · Notion · Drive** | **1** | Read-only sync. Zero actions. The tokens are stored and the SDKs installed; the write half was never built |
 

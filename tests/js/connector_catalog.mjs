@@ -25,6 +25,16 @@ const scenario = JSON.parse(fs.readFileSync(0, "utf8"));
 const textWrites = [];
 const registry = new Map();
 
+//: Recorded, not fatal. A flow that ends by refreshing a panel does it
+//: fire-and-forget, so an unanswered request lands as a rejection AFTER the
+//: result has been written — which killed the process and truncated stdout
+//: into invalid JSON, making a passing flow look like a broken harness.
+//: Reported instead, so a real one is still visible.
+const unhandled = [];
+process.on("unhandledRejection", (reason) => {
+  unhandled.push(String(reason && reason.message ? reason.message : reason));
+});
+
 function makeEl(id = "") {
   const children = [];
   const el = {
@@ -116,13 +126,31 @@ globalThis.setTimeout = (fn) => fn;
 // stubbing it would skip its own error handling — which is part of what these
 // paths depend on when a request fails.
 const calls = [];
-globalThis.fetch = async (path) => {
+//: Bodies as well as paths. A sign-in flow's whole claim is about WHAT it
+//: posted at each step, and a path list cannot tell a phone number from a
+//: login code.
+const posted = [];
+//: Some steps need a different answer the second time — "status" is asked
+//: again after credentials are saved, and it has moved on by then. A list
+//: under a pattern is consumed in order; the last entry repeats.
+const consumed = {};
+globalThis.fetch = async (path, options = {}) => {
   calls.push(path);
+  if (options.body) {
+    let body = options.body;
+    try { body = JSON.parse(body); } catch { /* left as sent */ }
+    posted.push({ path: String(path), body });
+  }
   for (const [pattern, answer] of Object.entries(scenario.api || {})) {
-    if (String(path).startsWith(pattern)) {
-      if (answer && answer.__throw) throw new Error(answer.__throw);
-      return { ok: true, json: async () => answer };
+    if (!String(path).startsWith(pattern)) continue;
+    let reply = answer;
+    if (Array.isArray(answer)) {
+      const seen = consumed[pattern] || 0;
+      reply = answer[Math.min(seen, answer.length - 1)];
+      consumed[pattern] = seen + 1;
     }
+    if (reply && reply.__throw) throw new Error(reply.__throw);
+    return { ok: true, json: async () => reply };
   }
   return { ok: false, statusText: "Not Found",
            json: async () => ({ detail: `no canned answer for ${path}` }) };
@@ -137,10 +165,11 @@ new Function(
   "\nglobalThis.__browser = connectorBrowser;" +
   "\nglobalThis.__loadCatalog = loadConnectorCatalog;" +
   "\nglobalThis.__permissions = connectorPermissions;" +
-  "\nglobalThis.__approvals = loadApprovals;"
+  "\nglobalThis.__approvals = loadApprovals;" +
+  "\nglobalThis.__setup = connectorHelp;"
 )();
 
-const result = { ok: true, calls, modals: [], textWrites, error: null };
+const result = { ok: true, calls, posted, modals: [], textWrites, error: null };
 try {
   if (scenario.mode === "catalog") {
     globalThis.__browser();
@@ -153,6 +182,27 @@ try {
   } else if (scenario.mode === "permissions") {
     await globalThis.__permissions(scenario.entry);
     result.permHtml = elFor("cxPerm").innerHTML;
+  } else if (scenario.mode === "setup") {
+    // A sign-in is several screens, and the claim is what each one posts. So
+    // the flow is driven the way a person drives it: open it, type into the
+    // boxes it actually rendered, press its button, repeat.
+    await globalThis.__setup(scenario.connector);
+    for (const round of scenario.steps || []) {
+      for (const [id, value] of Object.entries(round.type || {})) {
+        elFor(id).value = value;
+      }
+      const button = elFor(round.press || "tgGo");
+      if (!button.onclick) {
+        result.error = `nothing is wired to #${round.press || "tgGo"}`;
+        break;
+      }
+      await button.onclick();
+    }
+    // The modal BODY, not only its title: an account name, a warning or a
+    // set of form fields all live in the html and never in textContent.
+    result.modalBody = elFor("bmBody").innerHTML;
+    result.say = elFor("tgSay").textContent;
+    result.modalHidden = elFor("brainModal").hidden;
   } else if (scenario.mode === "approvals") {
     await globalThis.__approvals();
     const box = elFor("approvals");
@@ -168,4 +218,8 @@ try {
 // The real `openBrainModal` writes the title into #bmTitle, so the recorded
 // textContent writes are what prove it opened.
 result.modals = textWrites.filter((w) => w.id === "bmTitle").map((w) => w.text);
+// One turn of the loop, so a rejection raised by fire-and-forget work the
+// flow started is recorded before the result is written rather than after.
+await new Promise((done) => setImmediate(done));
+result.unhandled = unhandled;
 process.stdout.write(JSON.stringify(result));
