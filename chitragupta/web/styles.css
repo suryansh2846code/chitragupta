@@ -399,11 +399,20 @@ select:focus, input:focus, textarea:focus { outline: none; border-color: var(--a
   z-index: 2;
   width: min(840px, calc(100% - 52px));
   margin: 0 auto;
+  /* TWO ROWS: the message on top, its controls underneath. They used to sit
+     side by side, which made the field a narrow slot in the middle of a strip
+     of chips — the wider the window, the more it read as a toolbar that happens
+     to accept text. Stacked, the first row is unmistakably the thing you type
+     in and the second is unmistakably about what you type.
+
+     align-items must be stretch, not flex-end: in a column that property runs
+     horizontally, and flex-end would shrink both rows to their content width
+     and pin them to the right. */
   display: flex;
-  flex-direction: row;
-  align-items: flex-end;
-  gap: 10px;
-  padding: 10px 11px 10px 16px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  padding: 14px 14px 12px;
   background: var(--panel-2);
   border: 1px solid var(--line2);
   /* 18px, matching the cards. At 28px the radius was very nearly half the box's
@@ -428,6 +437,7 @@ select:focus, input:focus, textarea:focus { outline: none; border-color: var(--a
 }
 .composer textarea {
   flex: 1;
+  width: 100%;
   background: transparent;
   border: 0;
   color: var(--text);
@@ -435,8 +445,12 @@ select:focus, input:focus, textarea:focus { outline: none; border-color: var(--a
   font-size: 14.5px;
   resize: none;
   line-height: 1.5;
+  /* A floor, not a height — it still grows with the text up to max-height. One
+     line of type in a box this wide reads as a search field; the extra room is
+     what says "write something". */
+  min-height: 42px;
   max-height: 150px;
-  padding: 8px 2px;
+  padding: 4px 2px 0;
 }
 .composer textarea:focus {
   outline: none;
@@ -444,25 +458,6 @@ select:focus, input:focus, textarea:focus { outline: none; border-color: var(--a
 .composer textarea::placeholder {
   color: var(--faint);
   opacity: 0.85;
-}
-.cmp-ic {
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  background: transparent;
-  color: var(--muted);
-  font-size: 16px;
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: none;
-  cursor: pointer;
-  transition: background .15s, color .15s;
-}
-.cmp-ic:hover {
-  background: rgba(255,255,255,.06);
-  color: var(--text);
 }
 @media (max-width: 720px) {
   .composer { width: calc(100% - 24px); bottom: 12px; }
@@ -499,9 +494,10 @@ select:focus, input:focus, textarea:focus { outline: none; border-color: var(--a
 .cmp-bottom-bar {
   display: flex;
   align-items: center;
+  justify-content: space-between;   /* context left, actions right */
   gap: 8px;
+  width: 100%;
   flex: none;
-  padding-bottom: 2px;
 }
 .cmp-bar-left {
   display: flex;
@@ -1485,12 +1481,12 @@ textarea:focus-visible, a:focus-visible, [tabindex]:focus-visible,
 }
 
 /* ── line icons (no emoji) ────────────────────────────────────────────── */
-.snav-ic, .cmp-ic, .cmp-send, .hc-ic, .pb-ic { display: inline-flex; align-items: center; justify-content: center; }
+.snav-ic, .cmp-send, .hc-ic, .pb-ic { display: inline-flex; align-items: center; justify-content: center; }
 .snav-ic { width: 18px; color: var(--muted); }
 .snav:hover .snav-ic { color: var(--text); }
 .hc-ic { color: var(--muted); }
 .hc-ic svg { width: 19px; height: 19px; }
-.cmp-ic svg, .cmp-send svg { width: 17px; height: 17px; }
+.cmp-send svg { width: 17px; height: 17px; }
 .pb-ic svg { width: 12px; height: 12px; }
 
 /* model usage box */
