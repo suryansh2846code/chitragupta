@@ -235,14 +235,14 @@ after this becomes additive.
 | **VERIFY on success**, not only failure | `actions.py`, `outcomes.py`, `gmail.py`, `gcal.py` | ✅ `message_sent_at` / `event_exists` read the thing back. The card says *confirmed 3:42 PM* only when it was really checked; an unverifiable send reports **unverified, never failed** |
 | **REMEMBER**: outcome → brain, and close the named open loop | `actions.py` | ✅ Episodic memory, `source="action"` — the store every agent reads, not one agent's conversation. A loop closes only on an explicit `loop_id`; fuzzy description matching was rejected |
 | **Undo** where the inverse exists | `actions.py`, `gcal.py` | ✅ `mail_triage` (label pairs swapped), `create_event` (new `delete_event`), reminders, routines, scheduled sends. `send_email` declares **no** undo and the card offers no button |
-| **The action log** | `action_log.py`, 4 routes | ⚠️ Store + API done (`/api/actions/log`, `/log/summary`, `/catalog`, `/undo`). Its own `actions.db` with WAL and a busy timeout. **No screen yet** |
+| **The action log** | `action_log.py`, 4 routes, Inbox panel | ✅ Its own `actions.db` with WAL and a busy timeout. *What your agents did* sits under *Waiting on you* — the same subject the panel already promises, rather than a second place to forget about. Undo lives here after the card is gone, which is when a person actually notices the date was wrong |
 | `ActionPlan` — batch, one approval, settled together | `actions.py`, `chat.js` | ❌ Not started. *"9 actions are ready. [Approve]"* still needs it |
 
-**Closes job 13. Jobs 12 and 18 are one screen away** — the data is there,
-nothing renders it.
+**Closes jobs 13 and 18.** Job 12 (*what am I waiting on*) still needs the
+open-loops surface from `AUDIT.md` A9.
 
 > Undo and the audit trail are what make everything in Phases 1–5 safe to want.
-> They exist now; the log needs a face.
+> Both exist now.
 
 #### What Phase 0 deliberately did *not* change
 
