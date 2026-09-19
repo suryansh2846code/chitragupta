@@ -2248,9 +2248,18 @@ button.tiny.running:hover { background: linear-gradient(to right,
 }
 
 
+/* Below 1080px the rail COLLAPSES to icons; it does not disappear. Hiding it
+   took Inbox, Brain, Account and Settings off the screen with nothing standing
+   in for them — survivable when the rail was one way in among several, and not
+   survivable now that everything you configure lives behind Settings. That
+   would have been the whole of the app's navigation gone on a narrow window.
+
+   The collapsed column (74px) comes from `.app.collapsed`, which app.js forces
+   at this width, so there is one description of the icon rail rather than two
+   that drift. The toggle hides because there is nothing here to toggle. */
 @media (max-width: 1080px) {
-  .app { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
-  .sidebar, .ctx { display: none; }
+  .ctx { display: none; }
+  .collapse-btn { display: none; }
 }
 
 /* CLI sign-in instructions (Cursor, Claude Code) — the command is the action,

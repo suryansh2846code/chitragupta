@@ -27,19 +27,21 @@
       <button id="newAgentRow" class="new-agent"><span class="na-plus">+</span><span class="na-tx">New Agent</span></button>
       <button id="newAgentBtn" hidden></button>
 
+      <!-- Two destinations, not seven. Agent Library, Connectors, Agents &
+           tools, Model and Replay onboarding all moved into Settings, which was
+           already a hub with its own rail — they were a second rail competing
+           with it, so the same page could be reached two ways and the two ways
+           disagreed about which one you were on. The rail is for the work now;
+           everything you configure is behind Settings. -->
       <div class="side-nav">
         <button class="snav" data-nav="inbox"><span class="snav-ic"></span><span class="snav-tx">Inbox</span></button>
         <button class="snav" data-nav="brain"><span class="snav-ic"></span><span class="snav-tx">Brain</span></button>
-        <button class="snav" data-nav="library"><span class="snav-ic"></span><span class="snav-tx">Agent Library</span></button>
-        <button class="snav" data-nav="sources"><span class="snav-ic"></span><span class="snav-tx">Connectors</span></button>
-        <button class="snav" data-nav="tools"><span class="snav-ic"></span><span class="snav-tx">Agents &amp; tools</span></button>
-        <button class="snav" data-nav="model"><span class="snav-ic"></span><span class="snav-tx">Model</span></button>
-        <button class="snav" id="helpBtn" title="Re-experience the onboarding (won't wipe your brain)"><span class="snav-ic"></span><span class="snav-tx">Replay onboarding</span></button>
       </div>
 
+      <!-- Account above Settings, Settings on the floor. -->
       <div class="side-foot">
+        <button class="user-chip" id="userChip" title="Account"><span class="user-av" id="userAv">S</span><span class="user-nm">Account</span></button>
         <button class="snav" data-nav="settings" title="Settings"><span class="snav-ic"></span><span class="snav-tx">Settings</span></button>
-        <button class="user-chip" id="userChip"><span class="user-av" id="userAv">S</span><span class="user-nm">You</span></button>
       </div>
     </aside>
 
@@ -320,11 +322,16 @@
         <button class="ms-nav-item" data-msnav="inbox"><span class="ms-nav-ic" aria-hidden="true"></span><span>Inbox</span></button>
         <button class="ms-nav-item" data-msnav="brain"><span class="ms-nav-ic" aria-hidden="true"></span><span>Brain</span></button>
         <button class="ms-nav-item" data-msnav="tools"><span class="ms-nav-ic" aria-hidden="true"></span><span>Agents &amp; tools</span></button>
+        <button class="ms-nav-item" data-msnav="library"><span class="ms-nav-ic" aria-hidden="true"></span><span>Agent Library</span></button>
       </nav>
       <div class="ms-nav-label">Settings</div>
       <nav class="ms-nav-list">
+        <button class="ms-nav-item" data-msnav="account"><span class="ms-nav-ic" aria-hidden="true"></span><span>Account</span></button>
         <button class="ms-nav-item" data-msnav="connectors"><span class="ms-nav-ic" aria-hidden="true"></span><span>Connectors</span></button>
         <button class="ms-nav-item is-active" data-msnav="model" aria-current="page"><span class="ms-nav-ic" aria-hidden="true"></span><span>Model</span></button>
+        <!-- Leaves the app rather than showing a panel, so it is last and it
+             says so on hover. -->
+        <button class="ms-nav-item" data-msnav="onboarding" title="Re-experience the onboarding (won't wipe your brain)"><span class="ms-nav-ic" aria-hidden="true"></span><span>Replay onboarding</span></button>
       </nav>
     </aside>
 
@@ -483,7 +490,21 @@
     </div>
 
     <!-- ── panel: model ────────────────────────────────────────────────── -->
-    <div class="ms-body sp" data-sp="model">
+    <!-- ── panel: account ─────────────────────────────────────────────
+         Where the sidebar's account chip lands. The provider cards were already
+         the only "who are you signed in as" surface in the product, living
+         under Models where they were answering a different question — a model
+         picker and a sign-in are not the same decision. Same ids, so
+         loadProviders() renders here untouched. -->
+    <div class="ms-body sp" data-sp="account" hidden>
+      <h1 class="ms-h1">Account</h1>
+      <p class="ms-sub" style="margin-bottom:26px">The accounts Chitragupta signs in to on your behalf. Everything it builds from them stays on this Mac.</p>
+      <section class="ms-sec">
+        <div id="providerCards" class="provider-cards"></div>
+      </section>
+    </div>
+
+    <div class="ms-body sp" data-sp="model" hidden>
       <h1 class="ms-h1">Models</h1>
 
       <!-- What a new agent opens on. Provider and model already persist in
@@ -540,11 +561,10 @@
         </div>
       </section>
 
-      <!-- No wrapper heading: each provider group renders its own h3, and a
-           heading above them put "OpenAI" and "Providers & accounts" at the
-           same apparent level. -->
       <section class="ms-sec">
-        <div id="providerCards" class="provider-cards"></div>
+        <!-- #providerCards moved to the Account panel: those cards are who you
+             are signed in as, not which model to use. The hidden fallbacks stay
+             here, where the model code that reads them lives. -->
 
         <!-- Hidden fallbacks kept so legacy scripts run without errors -->
         <div id="agentModelMatrix" hidden></div>

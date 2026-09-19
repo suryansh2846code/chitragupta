@@ -121,6 +121,9 @@ const IC = {
   arrowLeft: _S('<path d="M12.5 8h-9M7 3.5L2.5 8 7 12.5"/>', 14),
   settings: _S('<circle cx="8" cy="8" r="2.3"/><path d="M8 1.9v1.7M8 12.4v1.7M2.6 8H4.3M11.7 8h1.7M4.2 4.2l1.2 1.2M10.6 10.6l1.2 1.2M11.8 4.2l-1.2 1.2M5.4 10.6l-1.2 1.2"/>'),
   attach: _S('<path d="M12 6.5l-5 5a2.4 2.4 0 0 1-3.4-3.4l5.2-5.2a1.6 1.6 0 0 1 2.3 2.3l-5.2 5.2a.8.8 0 0 1-1.1-1.1L9.5 5"/>', 17),
+  // Settings grew an Account page and the rail draws itself from this table, so
+  // the key has to exist or that row renders with an empty icon slot.
+  account: _S('<circle cx="8" cy="5.6" r="2.7"/><path d="M2.9 14c0-2.9 2.3-4.7 5.1-4.7s5.1 1.8 5.1 4.7"/>'),
 };
 
 // tiny, safe markdown renderer (escapes first, then applies a subset)
