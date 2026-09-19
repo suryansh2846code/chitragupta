@@ -64,6 +64,10 @@ BASE_TOOLS = [
     "why_do_you_think_that", "correct_fact", "remember", "list_entities",
     "web_search", "ask_agent", "ask_agents", "update_plan",
     "list_routines", "pause_routine", "list_pending_approvals", "list_scheduled",
+    # Every agent, because "what did you do this week" is asked of whichever
+    # one is open — and because an agent about to claim it sent something
+    # should be able to check rather than trust its own memory of the chat.
+    "what_i_did",
     MCP_TOOLS,
     # Offered to every agent and gated at execution, like the connector tools
     # beside it: an agent that cannot see the tool tells the user it cannot
