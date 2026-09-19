@@ -506,13 +506,41 @@ $("#ingestBtn").onclick = async () => {
 };
 
 // ── automations / routines ─────────────────────────────────────────────────
+//: When a routine runs, in the words a person would use. Mirrors
+//: `routines.describe_schedule` — both exist because the row and the approval
+//: card have to say the same thing, and a row that says "Every 1440 min" over
+//: a routine the user set for 8am is the row lying about their own automation.
+const ROUTINE_DAY_WORDS = {
+  "": "Every day",
+  "mon,tue,wed,thu,fri": "Weekdays",
+  "sat,sun": "Weekends",
+};
+
+function routineClock(at) {
+  const [h, m] = String(at || "").split(":").map(Number);
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return at || "";
+  const suffix = h < 12 ? "AM" : "PM";
+  return `${h % 12 || 12}:${String(m).padStart(2, "0")} ${suffix}`;
+}
+
+function routineWhen(r) {
+  if (r.trigger === "new_email") return "When new email arrives";
+  if (r.trigger === "daily" && r.at_time) {
+    const days = ROUTINE_DAY_WORDS[r.days || ""]
+      || String(r.days).split(",").filter(Boolean)
+        .map((d) => d.charAt(0).toUpperCase() + d.slice(1)).join(", ");
+    return `${days} at ${routineClock(r.at_time)}`;
+  }
+  const mins = Number(r.interval_min) || 60;
+  return mins === 60 ? "Every hour" : `Every ${mins} min`;
+}
+
 async function loadRoutines() {
   try {
     const { routines } = await api("/api/routines");
     ROUTINES = routines;
     $("#routineList").innerHTML = routines.length ? routines.map((r) => {
-      const trig = r.trigger === "new_email" ? "When new email arrives"
-        : `Every ${r.interval_min} min`;
+      const trig = routineWhen(r);
       // An automation the user never watches run is one they cannot trust, so
       // the row says when it last ran and whether that run went anywhere.
       const ran = r.last_run
@@ -559,19 +587,32 @@ async function routineForm(existing) {
   $("#rmInstruction").value = existing ? existing.instruction : "";
   $("#rmInterval").value = existing ? String(existing.interval_min) : "60";
   $("#rmTrigger").value = existing ? existing.trigger : "new_email";
-  $("#rmIntervalWrap").hidden = $("#rmTrigger").value !== "schedule";
+  $("#rmAtTime").value = (existing && existing.at_time) || "08:00";
+  $("#rmDays").value = (existing && existing.days) || "";
+  routineTriggerFields();
   const save = $("#rmCreate"); if (save) save.textContent = existing ? "Save" : "Create";
   const title = $("#rmTitle"); if (title) title.textContent = existing ? "Edit automation" : "New automation";
   $("#routineModal").hidden = false;
 }
+
+//: Show only the question this trigger actually asks. A box that means a
+//: different thing depending on a dropdown above it is how a routine gets set
+//: to something nobody chose.
+function routineTriggerFields() {
+  const kind = $("#rmTrigger").value;
+  $("#rmIntervalWrap").hidden = kind !== "schedule";
+  $("#rmDailyWrap").hidden = kind !== "daily";
+}
+
 $("#newRoutineBtn").onclick = () => routineForm(null);
-$("#rmTrigger").onchange = () => { $("#rmIntervalWrap").hidden = $("#rmTrigger").value !== "schedule"; };
+$("#rmTrigger").onchange = routineTriggerFields;
 $("#rmClose").onclick = () => $("#routineModal").hidden = true;
 $("#rmCreate").onclick = async () => {
   const name = $("#rmName").value.trim(), instruction = $("#rmInstruction").value.trim();
   if (!name || !instruction) { toast("Name & instruction required"); return; }
   const body = JSON.stringify({ name, agent_id: $("#rmAgent").value, trigger: $("#rmTrigger").value,
-    instruction, interval_min: parseInt($("#rmInterval").value) || 60 });
+    instruction, interval_min: parseInt($("#rmInterval").value) || 60,
+    at_time: $("#rmAtTime").value || "", days: $("#rmDays").value || "" });
   const editing = _editingRoutine;
   try {
     if (editing) await api(`/api/routines/${editing.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body });

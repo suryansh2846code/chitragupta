@@ -551,20 +551,31 @@ def _set_reminder(params: dict) -> dict:
 
 
 def _create_routine(params: dict) -> dict:
-    from .routines import get_routines
+    from .routines import describe_schedule, get_routines, parse_time
     instruction = (params.get("instruction") or params.get("body") or "").strip()
     if not instruction:
         return {"ok": False, "error": "an instruction is required"}
     name = (params.get("name") or "Automation").strip()
-    trigger = params.get("trigger") or "new_email"
-    if trigger not in ("new_email", "schedule"):
-        trigger = "new_email"
     agent = params.get("agent") or params.get("agent_id") or "personal"
     interval = int(params.get("interval_min") or 60)
-    row = get_routines().create(name, agent, trigger, instruction, interval) or {}
-    when = "on every new email" if trigger == "new_email" else f"every {interval} min"
+    at_time = parse_time(params.get("at") or params.get("at_time"))
+    days = params.get("days") or ""
+
+    trigger = params.get("trigger") or "new_email"
+    if trigger not in ("new_email", "schedule", "daily"):
+        trigger = "new_email"
+    # A time was given, so a time is what was meant. Models reach for the
+    # trigger they were shown first and then attach `at="8am"` to it, and
+    # honouring the trigger over the time turns "every morning at 8" into
+    # "every 60 minutes" — which is not late, it is wrong all day.
+    if at_time and trigger != "new_email":
+        trigger = "daily"
+
+    row = get_routines().create(name, agent, trigger, instruction, interval,
+                                at_time=at_time, days=days) or {}
     return {"ok": True, "id": row.get("id", ""),
-            "detail": f"Automation '{name}' created — runs {when}"}
+            "detail": f"Automation '{name}' created — runs "
+                      f"{describe_schedule(row or {'trigger': trigger})}"}
 
 
 def _create_event(params: dict) -> dict:
@@ -864,7 +875,8 @@ REGISTRY: dict[str, ActionSpec] = {
     ),
     "create_routine": ActionSpec(
         handler=_create_routine, label="Create automation",
-        fields=["name", "trigger", "agent", "interval_min", "instruction"],
+        fields=["name", "trigger", "agent", "at", "days", "interval_min",
+                "instruction"],
         risk=Risk.RED,
         always_ask_because="Creating automations always needs your approval.",
         undo=_undo_row("routine", "automation"), undo_label="Delete it",

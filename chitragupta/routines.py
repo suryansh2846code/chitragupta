@@ -10,7 +10,14 @@ everything else waits for one tap.
 
 Triggers:
   • schedule   — every N minutes.
+  • daily      — at a wall-clock time, on chosen days ("weekdays at 8:00 AM").
   • new_email  — when new email(s) arrive during a sync.
+
+`daily` exists because `schedule` could not say it. "Every morning" meant
+`interval_min=1440`, which fires 24 hours after whenever you happened to create
+it and then drifts by however long each run takes — so the morning brief
+arrives at 8:04, then 8:11, then some time in the afternoon. A routine people
+actually want is a wall-clock one, and the schema had no way to express it.
 
 Guardrails: routines are user-created, disable-able, permission-gated for
 outbound actions, and their runs are logged + notified.
@@ -33,15 +40,121 @@ CREATE TABLE IF NOT EXISTS routines (
     id           TEXT PRIMARY KEY,
     name         TEXT NOT NULL,
     agent_id     TEXT NOT NULL DEFAULT 'personal',
-    trigger      TEXT NOT NULL,            -- schedule | new_email
+    trigger      TEXT NOT NULL,            -- schedule | daily | new_email
     interval_min INTEGER NOT NULL DEFAULT 60,
     instruction  TEXT NOT NULL,
     enabled      INTEGER NOT NULL DEFAULT 1,
     created_at   TEXT NOT NULL,
     last_run     TEXT,
-    last_result  TEXT
+    last_result  TEXT,
+    at_time      TEXT NOT NULL DEFAULT '',   -- "HH:MM", local wall clock
+    days         TEXT NOT NULL DEFAULT ''    -- "mon,tue,…"; "" is every day
 );
 """
+
+#: Columns added after the table shipped. `CREATE TABLE IF NOT EXISTS` does
+#: nothing to a table that already exists, so a user upgrading in place keeps
+#: the old shape and every read of a new column raises — the same lesson
+#: `agents/approvals.py` records, and the same fix.
+_ADDED_COLUMNS = {
+    "at_time": "TEXT NOT NULL DEFAULT ''",
+    "days": "TEXT NOT NULL DEFAULT ''",
+}
+
+#: Weekdays as `datetime.weekday()` orders them, so a name maps to an index by
+#: position and nothing has to keep a second table in step.
+WEEKDAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+
+_DAY_ALIASES = {
+    "weekday": "mon,tue,wed,thu,fri", "weekdays": "mon,tue,wed,thu,fri",
+    "weekend": "sat,sun", "weekends": "sat,sun",
+    "daily": "", "everyday": "", "every day": "", "all": "",
+}
+
+
+def parse_days(raw: object) -> str:
+    """A day list the store can hold, from whatever the model or form sent.
+
+    Accepts the words people use ("weekdays"), full names ("Monday"), and a
+    list. Anything unrecognised is dropped rather than guessed at — a routine
+    that runs on the wrong days is worse than one that runs on all of them,
+    and "" (every day) is the honest fallback when nothing parsed.
+    """
+    if isinstance(raw, (list, tuple)):
+        parts = [str(x) for x in raw]
+    else:
+        text = str(raw or "").strip().lower()
+        if text in _DAY_ALIASES:
+            return _DAY_ALIASES[text]
+        parts = text.replace("/", ",").replace(" ", ",").split(",")
+
+    found = []
+    for part in parts:
+        key = part.strip().lower()[:3]
+        if key in WEEKDAYS and key not in found:
+            found.append(key)
+    # Stored in week order, never in the order they were typed, so two routines
+    # on the same days compare equal and render the same.
+    return ",".join(d for d in WEEKDAYS if d in found)
+
+
+def parse_time(raw: object) -> str:
+    """`"HH:MM"` from "8am", "08:00", "20:30", or "" if it is not a time.
+
+    Deliberately small. `reminders.parse_when` understands "tomorrow at 3" and
+    that is the wrong question here — a daily routine has no date, only a time
+    of day, and handing it a parser that returns one is how "every morning"
+    becomes a single reminder for tomorrow.
+    """
+    import re as _re
+
+    text = str(raw or "").strip().lower().replace(".", ":")
+    if not text:
+        return ""
+    found = _re.match(r"^(\d{1,2})(?::(\d{2}))?\s*(am|pm)?$", text)
+    if not found:
+        return ""
+    hour = int(found.group(1))
+    minute = int(found.group(2) or 0)
+    suffix = found.group(3)
+    if suffix == "pm" and hour < 12:
+        hour += 12
+    elif suffix == "am" and hour == 12:
+        hour = 0
+    if not (0 <= hour <= 23 and 0 <= minute <= 59):
+        return ""
+    return f"{hour:02d}:{minute:02d}"
+
+
+def describe_schedule(routine: dict) -> str:
+    """When this runs, in the words a person would use."""
+    trigger = routine.get("trigger")
+    if trigger == "new_email":
+        return "on every new email"
+    if trigger == "daily" and routine.get("at_time"):
+        when = _clock(routine["at_time"])
+        days = routine.get("days") or ""
+        if not days:
+            return f"every day at {when}"
+        if days == "mon,tue,wed,thu,fri":
+            return f"weekdays at {when}"
+        if days == "sat,sun":
+            return f"weekends at {when}"
+        names = [d.capitalize() for d in days.split(",") if d]
+        return f"{', '.join(names)} at {when}"
+    minutes = int(routine.get("interval_min") or 60)
+    return "every hour" if minutes == 60 else f"every {minutes} min"
+
+
+def _clock(at_time: str) -> str:
+    """"08:00" → "8:00 AM", without pulling in a date."""
+    try:
+        hour, minute = (int(x) for x in at_time.split(":"))
+    except (ValueError, AttributeError):
+        return at_time
+    suffix = "AM" if hour < 12 else "PM"
+    shown = hour % 12 or 12
+    return f"{shown}:{minute:02d} {suffix}"
 
 
 class RoutineStore:
@@ -53,16 +166,29 @@ class RoutineStore:
         self._c.execute("PRAGMA journal_mode=WAL;")
         self._c.execute("PRAGMA busy_timeout=5000;")   # scheduler + API share this
         self._c.executescript(_SCHEMA)
+        have = {r["name"] for r in self._c.execute("PRAGMA table_info(routines)")}
+        for column, decl in _ADDED_COLUMNS.items():
+            if column not in have:
+                self._c.execute(f"ALTER TABLE routines ADD COLUMN {column} {decl}")
+        self._c.commit()
 
     def create(self, name, agent_id, trigger, instruction,
-               interval_min=60) -> dict:
+               interval_min=60, at_time="", days="") -> dict:
         rid = str(uuid.uuid4())
+        at_time = parse_time(at_time)
+        # A `daily` routine with no readable time has no way to fire, and a
+        # routine that never fires looks exactly like one that is broken. It
+        # falls back to an interval, which at least does something and which
+        # `describe_schedule` will then say out loud on the card.
+        if trigger == "daily" and not at_time:
+            trigger = "schedule"
         self._c.execute(
             "INSERT INTO routines (id,name,agent_id,trigger,interval_min,"
-            "instruction,enabled,created_at) VALUES (?,?,?,?,?,?,1,?)",
+            "instruction,enabled,created_at,at_time,days) "
+            "VALUES (?,?,?,?,?,?,1,?,?,?)",
             (rid, name.strip() or "Routine", agent_id, trigger,
              int(interval_min or 60), instruction.strip(),
-             datetime.now(UTC).isoformat()))
+             datetime.now(UTC).isoformat(), at_time, parse_days(days)))
         self._c.commit()
         return self.get(rid)
 
@@ -81,7 +207,8 @@ class RoutineStore:
     #: What an edit is allowed to touch. `enabled` has its own toggle and the
     #: run history is the routine's record of itself — neither is the user's to
     #: retype, and allowing them here would let a typo erase what it did.
-    EDITABLE = ("name", "agent_id", "trigger", "interval_min", "instruction")
+    EDITABLE = ("name", "agent_id", "trigger", "interval_min", "instruction",
+                "at_time", "days")
 
     def update(self, rid, **fields) -> dict | None:
         """Change a routine in place. Unknown or absent fields are ignored.
@@ -96,6 +223,16 @@ class RoutineStore:
             v = fields[k]
             if k == "interval_min":
                 v = max(1, int(v))        # a zero-minute routine is a busy loop
+            elif k == "at_time":
+                v = parse_time(v)
+                if not v:
+                    continue              # an unreadable time is not an edit
+            elif k == "days":
+                # "" is meaningful here — it is "every day" — so unlike a name,
+                # an empty day list is a real edit and must not be skipped.
+                sets.append("days=?")
+                vals.append(parse_days(v))
+                continue
             elif isinstance(v, str):
                 v = v.strip()
                 if not v:
@@ -176,13 +313,64 @@ def run_routine(r: dict, trigger_context: str = "") -> dict:
     return {"ok": True, "detail": summary}
 
 
+def daily_due(routine: dict, now: datetime) -> bool:
+    """Has this wall-clock routine's time come round today, unanswered?
+
+    Three things it has to get right, and the third is the one that bites:
+
+    * **The day.** `weekday()` is Monday-zero, which is why `WEEKDAYS` is
+      written in that order — the name maps to the index by position.
+    * **Local wall clock, not UTC.** "8am" means eight in the morning where the
+      user is, so today's target is built from the local date and compared in
+      UTC only at the end. Building it in UTC would move the morning brief by
+      the timezone offset, and again twice a year.
+    * **Late is better than never.** A laptop asleep at 08:00 and opened at
+      11:00 still fires, because the user wanted the morning brief and did not
+      get one. It fires *once*: `last_run` at or after today's target is what
+      says today has been answered, so the next sweep five minutes later does
+      not run it again.
+    """
+    at_time = routine.get("at_time") or ""
+    if not at_time:
+        return False
+    try:
+        hour, minute = (int(x) for x in at_time.split(":"))
+    except ValueError:
+        return False
+
+    here = now.astimezone()
+    days = routine.get("days") or ""
+    if days and WEEKDAYS[here.weekday()] not in days.split(","):
+        return False
+
+    target = here.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    if here < target:
+        return False
+
+    last = routine.get("last_run")
+    if not last:
+        return True
+    try:
+        ran = datetime.fromisoformat(last)
+    except ValueError:                     # pragma: no cover - defensive
+        return True
+    if ran.tzinfo is None:
+        ran = ran.replace(tzinfo=UTC)
+    return ran < target.astimezone(UTC)
+
+
 def sweep(new_email_count: int = 0) -> None:
     """Called by the scheduler each cycle: fire due routines."""
     store = get_routines()
     now = datetime.now(UTC)
     for r in store.enabled():
         try:
-            if r["trigger"] == "schedule":
+            if r["trigger"] == "daily":
+                if not daily_due(r, now):
+                    continue
+                res = run_routine(r)
+                store.mark_run(r["id"], json.dumps(res)[:400])
+            elif r["trigger"] == "schedule":
                 last = r["last_run"]
                 due = (last is None or
                        datetime.fromisoformat(last) +

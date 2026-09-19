@@ -328,6 +328,29 @@ The whole job is **reversible** — archive is a label pair, a draft is
 discardable — which is what makes one tap over fourteen emails a reasonable
 thing to ask somebody for.
 
+#### Routines that run at a time of day · ✅
+
+Shipped alongside, because it is what you want the moment you have seen job 1
+work once: *do that every weekday at 8am.*
+
+`trigger="daily"` with `at_time` and `days`. The schema could not say it
+before — "every morning" meant `interval_min=1440`, which fires 24 hours after
+whenever you created it and then drifts by however long each run takes, so the
+morning brief arrives at 8:04, then 8:11, then some time in the afternoon.
+
+Three properties carry it, all driven against a fake clock rather than waited
+on: it fires **once a day** whatever the sweep cadence (288 sweeps, one run);
+a laptop asleep at 08:00 and opened at 11:00 **still gets its brief**, because
+the user wanted one and did not get one; and *weekdays* means weekdays.
+
+The card promises what the handler builds. A model reaches for the trigger it
+was shown first and then attaches `at="8am"` to it, so **a time wins over the
+trigger** — in the handler and in the approval card identically, or the user
+approves "weekdays at 8:00 AM" and gets "every 60 min".
+
+> This is also the prerequisite for job 5 (*"follow up with whoever hasn't
+> replied"*). A chase you have to trigger by hand is not a chase.
+
 **Acceptance — job 1, end to end:**
 
 ```

@@ -175,9 +175,18 @@ _BLOCKS: dict[str, str] = {
         'trigger="new_email" agent="inbox">When a new email arrives from '
         "dana@example.com, forward it with a short summary to me@example.com; "
         "ignore anything else.</action>\n"
-        'trigger is "new_email" or "schedule" (add interval_min="60"). Put the '
-        "full rule, including the filter and the exact action, in the tag's "
-        "inner text. Check `list_routines` first so you don't duplicate one."
+        "trigger is one of:\n"
+        '  new_email — when mail arrives.\n'
+        '  daily     — at a wall-clock time. Add at="8am" and optionally '
+        'days="weekdays" (or "mon,wed,fri"; leave it out for every day). '
+        "USE THIS whenever the user says a time of day — \"every morning\", "
+        "\"at 8\", \"before I start work\". It is not the same as an interval: "
+        'interval_min="1440" fires 24 hours after you make it and then drifts '
+        "a little further every day.\n"
+        '  schedule  — every N minutes (add interval_min="60"). For "check "'
+        '"every hour", not for "every morning".\n'
+        "Put the full rule, including the filter and the exact action, in the "
+        "tag's inner text. Check `list_routines` first so you don't duplicate one."
     ),
     "log_workout": (
         "When the user describes a training session, propose it as ONE action "
