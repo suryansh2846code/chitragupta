@@ -88,8 +88,11 @@
         <div class="cmp-connectors" id="cmpConnectors" hidden></div>
         <div class="cmp-picker" id="cmpPicker" hidden role="listbox"
              aria-label="Connectors you can add to this message"></div>
+        <!-- The text gets the whole first row. Attach used to sit to its left,
+             which cost the field a 40px indent on every line and separated the
+             one control that is about the message from the controls that are
+             about the message. It lives in the bar now, with the others. -->
         <div class="cmp-main-row">
-          <button type="button" class="cmp-ic" id="attachBtn" title="Attach an image" aria-label="Attach an image"></button>
           <textarea id="input" rows="1" autocomplete="off" aria-label="Message your agent"
                  placeholder="Message your agent… it already knows you."></textarea>
         </div>
@@ -167,6 +170,7 @@
           </div>
 
           <div class="cmp-bar-right">
+            <button type="button" class="cmp-bar-btn" id="attachBtn" title="Attach an image" aria-label="Attach an image"></button>
             <button type="button" class="cmp-bar-btn" id="micBtn" title="Voice (coming soon)" aria-label="Voice input (coming soon)" aria-disabled="true" tabindex="-1"></button>
             <button type="button" class="cmp-bar-btn" id="waveformBtn" title="Voice waveform" aria-label="Voice waveform" tabindex="-1">
               <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round">
