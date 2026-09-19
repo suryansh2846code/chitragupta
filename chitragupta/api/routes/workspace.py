@@ -103,6 +103,57 @@ def execute_action(body: ActionIn):
     return settle(agent_id, body.type, params, result)
 
 
+class UndoIn(BaseModel):
+    log_id: str
+
+
+@router.post("/api/actions/undo")
+def undo_action(body: UndoIn):
+    """Take back a logged action, where taking it back is possible.
+
+    Addressed by log entry rather than by what was proposed: the inverse needs
+    the *result* — the calendar id Google handed back, the reminder row we
+    wrote — and a caller reconstructing the call from the card does not have it.
+    """
+    from ...actions import undo
+
+    return undo((body.log_id or "").strip())
+
+
+@router.get("/api/actions/catalog")
+def actions_catalog():
+    """Every action's fields, risk tier and whether it can be undone.
+
+    The card renders itself from this. The frontend used to keep its own idea
+    of which actions were correctable (`EDITABLE = { log_workout: true }`),
+    which was a second copy of a fact this registry already held.
+    """
+    from ...actions import catalog
+
+    return {"actions": catalog()}
+
+
+@router.get("/api/actions/log")
+def actions_log(limit: int = 50, action_type: str = "", since: str = ""):
+    """What the agents actually did — newest first.
+
+    Approval is consent before; this is the record after, and it is what makes
+    letting an agent act unattended a reasonable thing to agree to.
+    """
+    from ... import action_log
+
+    return {"entries": action_log.recent(limit, action_type=action_type,
+                                         since=since)}
+
+
+@router.get("/api/actions/log/summary")
+def actions_log_summary(days: int = 7):
+    """Counts rather than rows — "what did you do this week?"."""
+    from ... import action_log
+
+    return action_log.summarise(days)
+
+
 class NewRoutine(BaseModel):
     name: str
     agent_id: str = "personal"

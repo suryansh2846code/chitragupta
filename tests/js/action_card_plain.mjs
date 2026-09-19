@@ -15,7 +15,7 @@ import path from "node:path";
 import { appSource } from "./_app_source.mjs";
 
 const APP_JS = process.argv[2];
-const { action, result, edits } = JSON.parse(fs.readFileSync(0, "utf8"));
+const { action, result, edits, catalog, undoResult } = JSON.parse(fs.readFileSync(0, "utf8"));
 
 const makeEl = (tag = "div") => {
   const node = {
@@ -23,9 +23,28 @@ const makeEl = (tag = "div") => {
     dataset: {}, onclick: null, textContent: "", children: [],
     classList: { add() {}, remove() {}, toggle() {}, contains: () => false },
     querySelectorAll: () => [],
-    addEventListener() {}, setAttribute() {}, getAttribute: () => null,
+    addEventListener() {},
+    // Recorded, not discarded: the generic field editor labels its boxes with
+    // `aria-label`, and a test addressing them by position would pin the
+    // registry's field order as well as the behaviour it means to check.
+    attrs: {},
+    setAttribute(k, v) { this.attrs[k] = String(v); },
+    getAttribute(k) { return k in this.attrs ? this.attrs[k] : null; },
     focus() {}, remove() {}, closest: () => null,
-    appendChild(c) { this.children.push(c); return c; },
+    parent: null,
+    appendChild(c) { c.parent = this; this.children.push(c); return c; },
+    // Without this the Undo button's success path threw `replaceWith is not a
+    // function`, was swallowed by its own error handler, and the harness
+    // reported the button still sitting there — a green test over a path that
+    // had never run. Real browsers have it; the fake DOM did not.
+    replaceWith(node) {
+      const parent = this.parent;
+      if (!parent) return;
+      const at = parent.children.indexOf(this);
+      if (at === -1) return;
+      node.parent = parent;
+      parent.children.splice(at, 1, node);
+    },
     querySelector(sel) {
       this._q = this._q || {};
       if (!this._q[sel]) this._q[sel] = makeEl();
@@ -64,8 +83,16 @@ globalThis.sessionStorage = { getItem: () => null, setItem() {} };
 // calls `loadReminders()` and `loadRoutines()` straight afterwards, and those
 // have no body — so "last call wins" recorded null over the thing under test.
 let sent = null;
-globalThis.fetch = async (_url, options) => {
+//: Undo POSTs to a different endpoint, and its body is not the thing the
+//: confirm claim is about — recorded separately so one does not hide the other.
+let undoSent = null;
+globalThis.fetch = async (url, options) => {
   const body = options && options.body;
+  const isUndo = String(url || "").includes("/api/actions/undo");
+  if (body && isUndo) {
+    try { undoSent = JSON.parse(body); } catch { undoSent = "unparseable"; }
+    return { ok: true, json: async () => (undoResult || { ok: true, detail: "Undone" }) };
+  }
   if (body && sent === null) {
     try { sent = JSON.parse(body); } catch { sent = "unparseable"; }
   }
@@ -74,7 +101,14 @@ globalThis.fetch = async (_url, options) => {
 
 new Function(appSource(path.dirname(APP_JS)) +
   "\nglobalThis.__card = actionCard;" +
-  "\nglobalThis.__esc = esc;")();
+  "\nglobalThis.__esc = esc;" +
+  // `ACTION_CATALOG` is a `let` inside this scope and is normally filled by
+  // `loadActionCatalog()` at boot. The harness does not boot, so a card would
+  // render with no editable fields and no Undo — the two things most worth
+  // testing — unless the test can seed it.
+  "\nglobalThis.__setCatalog = (c) => { ACTION_CATALOG = c; };")();
+
+if (catalog) globalThis.__setCatalog(catalog);
 
 // `esc` is the escaper every innerHTML path in the app goes through, so a
 // throw here does not lose one message — it blanks whatever was being drawn.
@@ -134,6 +168,14 @@ if (card && edits) {
     const drops = findAll(card, "ac-drop ghost");
     if (drops[index] && drops[index].onclick) drops[index].onclick();
   }
+  // The generic editor's boxes carry a second class, so they are a separate
+  // list — addressed by field NAME rather than by position, because the order
+  // is the registry's and a test pinning an index would pin that too.
+  const wide = findAll(card, "ac-field ac-field-wide");
+  for (const [name, value] of Object.entries(edits.setField || {})) {
+    const box = wide.find((b) => (b.attrs || {})["aria-label"] === name);
+    if (box) box.value = String(value);
+  }
 }
 
 let confirmed = null;
@@ -146,6 +188,25 @@ if (card) {
   }
 }
 
+// Undo lives on the result, so it only exists after a confirm. Clicking it is
+// the only way to know the button is wired to anything — a rendered button that
+// does nothing is the exact failure it is supposed to prevent.
+const undoBtn = card
+  ? findAll(card.querySelector(".ac-result"), "tiny ac-undo")[0] || null : null;
+// Read BEFORE the click. The handler rewrites the label to "Undoing…" and then
+// replaces the node outright, so reading it afterwards reports the machinery
+// rather than the word the user was offered.
+const undoLabel = undoBtn ? undoBtn.textContent : null;
+let afterUndo = null;
+if (undoBtn && undoBtn.onclick) {
+  try {
+    await undoBtn.onclick();
+    afterUndo = visibleText(card.querySelector(".ac-result")).replace(/\s+/g, " ").trim();
+  } catch (e) {
+    afterUndo = `THREW: ${e.constructor.name}: ${e.message}`;
+  }
+}
+
 console.log(JSON.stringify({
   error,
   html: card ? card.innerHTML : "",
@@ -155,5 +216,14 @@ console.log(JSON.stringify({
   // about this and nothing else.
   sent,
   fieldCount: card ? findAll(card, "ac-field").length : 0,
+  //: The generic editor's boxes, by the field name each one carries.
+  editableFields: card
+    ? findAll(card, "ac-field ac-field-wide").map((b) => (b.attrs || {})["aria-label"])
+    : [],
+  risk: card ? card.dataset.risk : null,
+  hasUndo: Boolean(undoBtn),
+  undoLabel,
+  undoSent,
+  afterUndo,
   escaped,
 }, null, 2));

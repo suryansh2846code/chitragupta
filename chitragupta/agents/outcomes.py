@@ -68,13 +68,33 @@ def _what_was_attempted(action_type: str, params: dict) -> str:
     return action_type.replace("_", " ")
 
 
+def _clock(stamp: str) -> str:
+    """" at 3:42 PM" from an ISO timestamp, or "" if it is not one.
+
+    Never raises on a malformed stamp: the verification is a nicety and a
+    broken clock string must not take the outcome line down with it.
+    """
+    if not stamp:
+        return ""
+    with suppressed("formatting the time an action was confirmed"):
+        from datetime import datetime
+        return " at " + datetime.fromisoformat(stamp).strftime("%-I:%M %p")
+    return ""
+
+
 def describe(action_type: str, params: dict, result: dict) -> str:
     """One line: what was attempted, and what came back."""
     what = _what_was_attempted(action_type, params)
 
     if result.get("ok"):
         detail = str(result.get("detail") or "").strip()
-        return f"{PREFIX} {what} — done." + (f" {detail[:MAX_DETAIL_CHARS]}" if detail else "")
+        # Rung 5, in the sentence the agent reads. "done" is what we asked for;
+        # "confirmed 3:42 PM" is what the service says happened, and an agent
+        # that can tell the two apart can answer "did it definitely go?".
+        verb = "confirmed" if result.get("verified") else "done"
+        when = _clock(str(result.get("verified_at") or ""))
+        head = f"{PREFIX} {what} — {verb}{when}."
+        return head + (f" {detail[:MAX_DETAIL_CHARS]}" if detail else "")
     why = str(result.get("error") or "it did not work").strip()
     return f"{PREFIX} {what} — FAILED: {why[:MAX_DETAIL_CHARS]}"
 

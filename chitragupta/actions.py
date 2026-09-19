@@ -3,16 +3,127 @@
 Nothing here runs without an explicit user confirmation (the API endpoint is
 only called from a UI Confirm button). Each action validates its params and
 runs the corresponding connector's WRITE method.
+
+**An action is the whole loop, not just the doing.** See
+`docs/ACTION-COVERAGE.md` for why. A user watching an agent work moves through
+six rungs — understand, recommend, prepare, act, verify, remember — and the
+last three used to live nowhere: the handler ran, the card said "done", and
+that was the end of it. Nothing read the result back to check it landed, and
+nothing told the brain it had happened, so asking a different agent next week
+whether the proposal went out got a blank look.
+
+So `ActionSpec` carries the rungs as slots beside the handler:
+
+* `risk` — may an unattended agent do this at all (see `agents/permissions.py`)
+* `verify` — read it back from the service and say when it landed
+* `remember` — write what happened into the brain, not just the conversation
+* `undo` — the inverse, where one honestly exists
+
+An action that ships without them is an action that stops at rung 4, and the
+registry is the one place that is visible.
 """
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
+from dataclasses import dataclass
+from enum import Enum
 from typing import Any
 
 from .connectors import get_connector
 
 _ACTION_RE = re.compile(r"<action\s+([^>]*?)>(.*?)</action>", re.I | re.S)
 _ATTR_RE = re.compile(r'(\w+)="([^"]*)"')
+
+
+class Risk(str, Enum):
+    """How much of the user's world an action can disturb.
+
+    Declared per action rather than inferred, because the three tiers used to
+    be three separate hand-maintained sets in `agents/permissions.py` — and an
+    action added to two of them and forgotten in the third is a gap nobody sees
+    until something has already been sent.
+
+    A `str` enum so the value crosses the wire to the card as its own name.
+    """
+
+    #: Reaches nobody. Local, or reversible, or both — a task, a draft, a
+    #: reminder on the user's own laptop. May run unattended with no allow-list,
+    #: because there is no one for it to reach. The action log is the audit.
+    GREEN = "green"
+
+    #: Reaches a person, or changes a system somebody else can see. Needs a
+    #: permitted recipient to run unattended, and otherwise waits for one tap.
+    #: A repeated approval of the same shape may be promoted to a standing
+    #: grant — this is the tier where that is a coherent offer.
+    AMBER = "amber"
+
+    #: Never unattended, and never promotable to a standing grant. Either the
+    #: effect cannot be undone, or — more often here — the *input* was written
+    #: by a stranger and there is nothing stable to allow-list against.
+    RED = "red"
+
+
+@dataclass(frozen=True)
+class ActionSpec:
+    """One action, and everything the loop needs to run it honestly.
+
+    `fields` is the order a card shows and the set a user may correct before
+    confirming. It was already here and read by nobody; `/api/actions/catalog`
+    publishes it now, so the frontend renders a form from the registry instead
+    of keeping a second list of its own that drifts.
+    """
+
+    handler: Callable[[dict], dict]
+    label: str
+    fields: list[str]
+    risk: Risk
+
+    #: Which allow-list `permissions.check()` judges recipients against. Only
+    #: meaningful for AMBER; "" means the action reaches nobody by name.
+    recipient_kind: str = ""
+
+    #: RED only: why it waits, in the user's terms. One sentence per action —
+    #: a user told "creating automations always needs your approval" about a
+    #: Slack message learns nothing except that the app is confused.
+    always_ask_because: str = ""
+
+    #: Rung 5. `(params, result) -> dict` merged into the result. Reads the
+    #: thing back from the service that now holds it, so "sent" is something we
+    #: checked rather than something we assumed from a 200.
+    verify: Callable[[dict, dict], dict] | None = None
+
+    #: Rung 6. `(params, result) -> None`. Writes into the brain, where every
+    #: agent can see it — not into one agent's conversation, where only that
+    #: agent can.
+    remember: Callable[[dict, dict], None] | None = None
+
+    #: The inverse, where one honestly exists. `(params, result) -> dict`.
+    #: None is the common and correct answer: a sent email is gone, and an
+    #: Undo button that quietly does nothing is worse than no button.
+    undo: Callable[[dict, dict], dict] | None = None
+
+    #: Human-readable, present tense, for the Undo button's own label.
+    undo_label: str = ""
+
+    def public(self) -> dict[str, Any]:
+        """What the card needs to render itself, without the callables."""
+        return {
+            "label": self.label,
+            "fields": list(self.fields),
+            "risk": self.risk.value,
+            "reversible": self.undo is not None,
+            "undo_label": self.undo_label,
+            "always_ask_because": self.always_ask_because,
+        }
+
+
+#: The allow-lists recipients are judged against. Declared here, beside the
+#: actions that name them, and re-exported by `agents/permissions.py` — which
+#: owns the *policy* and reads these as data. One direction only: actions know
+#: nothing about permissions.
+EMAIL_RECIPIENT = "email_recipient"
+CHAT_RECIPIENT = "chat_recipient"
 
 
 def parse_actions(text: str) -> list[dict]:
@@ -254,7 +365,9 @@ def _set_reminder(params: dict) -> dict:
     r = get_reminders().add(message, fire_at, params.get("agent_id"))
     from datetime import datetime
     nice = datetime.fromisoformat(r["fire_at"]).strftime("%a %b %d, %-I:%M %p")
-    return {"ok": True, "detail": f"Reminder set for {nice}"}
+    # The id travels back so the result can be undone. A handler that creates a
+    # row and returns only prose is a handler whose effect nothing can address.
+    return {"ok": True, "id": r["id"], "detail": f"Reminder set for {nice}"}
 
 
 def _create_routine(params: dict) -> dict:
@@ -268,9 +381,10 @@ def _create_routine(params: dict) -> dict:
         trigger = "new_email"
     agent = params.get("agent") or params.get("agent_id") or "personal"
     interval = int(params.get("interval_min") or 60)
-    get_routines().create(name, agent, trigger, instruction, interval)
+    row = get_routines().create(name, agent, trigger, instruction, interval) or {}
     when = "on every new email" if trigger == "new_email" else f"every {interval} min"
-    return {"ok": True, "detail": f"Automation '{name}' created — runs {when}"}
+    return {"ok": True, "id": row.get("id", ""),
+            "detail": f"Automation '{name}' created — runs {when}"}
 
 
 def _create_event(params: dict) -> dict:
@@ -318,55 +432,388 @@ def _mcp_action(params: dict) -> dict:
     return conn.perform(tool, params.get("arguments") or {}, confirmed=True)
 
 
-# action name → (handler, human label, required params)
-REGISTRY: dict[str, dict[str, Any]] = {
-    "send_email": {
-        "handler": _send_email, "label": "Send email",
-        "fields": ["to", "subject", "body"],
-    },
-    "create_event": {
-        "handler": _create_event, "label": "Create calendar event",
-        "fields": ["title", "start", "end", "description", "attendees"],
-    },
-    "set_reminder": {
-        "handler": _set_reminder, "label": "Set reminder",
-        "fields": ["message", "at"],
-    },
-    "create_routine": {
-        "handler": _create_routine, "label": "Create automation",
-        "fields": ["name", "trigger", "agent", "interval_min", "instruction"],
-    },
-    "mcp_action": {
-        "handler": _mcp_action, "label": "Connector action",
-        "fields": ["server_id", "tool", "arguments"],
-    },
-    "mail_triage": {
-        "handler": _mail_triage, "label": "Inbox changes",
-        "fields": ["items"],
-    },
-    "message_send": {
-        "handler": _message_send, "label": "Send a message",
-        "fields": ["app", "chat", "text"],
-    },
-    "log_workout": {
-        "handler": _log_workout, "label": "Training session",
-        "fields": ["blocks", "at", "note"],
-    },
+# ── rung 5: verify ─────────────────────────────────────────────────────────
+#
+# A handler returning `ok` means the service accepted the request. That is a
+# weaker claim than "it is in your Sent folder", and the gap between them is
+# exactly what a person wants to know before deciding whether to write the
+# thing again.
+#
+# Every verifier here is deliberately unable to fail loudly. An unverifiable
+# action is reported as *unverified*, never as failed: the mail may well have
+# gone, and telling somebody their email did not send when it did is the worse
+# of the two errors by a long way.
+
+
+def _verify_email(params: dict, result: dict) -> dict:
+    gmail = _writer("gmail", "message_sent_at")
+    if gmail is None:
+        return {}
+    return gmail.message_sent_at(str(result.get("id") or ""))
+
+
+def _verify_event(params: dict, result: dict) -> dict:
+    gcal = _writer("gcal", "event_exists")
+    if gcal is None:
+        return {}
+    return gcal.event_exists(str(result.get("id") or ""))
+
+
+# ── rung 6: remember ───────────────────────────────────────────────────────
+#
+# `agents/outcomes.py` writes the outcome into the agent's own conversation,
+# which is right for the agent and wrong for everything else: ask a *different*
+# agent next week whether the proposal went out and it has never heard of it.
+#
+# So what happened goes into the brain as an episodic memory — the one store
+# every agent reads. Not into the canonical layer: "I sent an email on Friday"
+# is something that happened, not a curated fact about who the user is, and
+# `brain.remember()` would push it into both.
+
+
+def _record(text: str, *, title: str, event_time: str = "") -> None:
+    from .brain import get_brain
+
+    get_brain().ingest(
+        text, source="action", kind="event", title=title,
+        memory_type="episodic", importance=0.6, confidence=1.0,
+        extraction_method="direct", event_time=event_time or None,
+        evidence="performed by Chitragupta after the user confirmed it")
+
+
+def _close_named_loop(params: dict) -> None:
+    """Complete the open loop this action was taken to close — if one was named.
+
+    Only ever an explicit `loop_id` the proposing agent put on the action
+    because it was working from that loop. Matching by description was the
+    obvious alternative and is the wrong one: "send Rahul the proposal" and
+    "ask Rahul about the proposal" are one fuzzy match apart, and silently
+    closing the wrong commitment is a failure the user cannot see.
+    """
+    loop_id = str(params.get("loop_id") or "").strip()
+    if not loop_id:
+        return
+    from .log import suppressed
+
+    with suppressed("closing the open loop an action was taken to resolve"):
+        from .brain import get_brain
+
+        get_brain().complete_open_loop(loop_id)
+
+
+def _remember_email(params: dict, result: dict) -> None:
+    to = str(params.get("to") or "someone")
+    subject = str(params.get("subject") or "").strip()
+    about = f" about “{subject}”" if subject else ""
+    _record(f"Emailed {to}{about}.", title=f"Email to {to}",
+            event_time=str(result.get("at") or ""))
+    _close_named_loop(params)
+
+
+def _remember_message(params: dict, result: dict) -> None:
+    from .messaging import labels
+
+    app = str(params.get("app") or "").strip().lower()
+    where = labels().get(app) or app.title() or "a messaging app"
+    who = str(params.get("chat") or params.get("to") or "someone")
+    text = " ".join(str(params.get("text") or "").split())[:160]
+    _record(f"Messaged {who} on {where}: {text}", title=f"Message to {who}")
+    _close_named_loop(params)
+
+
+def _remember_event(params: dict, result: dict) -> None:
+    title = str(params.get("title") or "an event")
+    start = str(params.get("start") or "")
+    _record(f"Put “{title}” in the calendar for {start}.",
+            title=f"Event: {title}", event_time=start)
+    _close_named_loop(params)
+
+
+def _remember_connector_action(params: dict, result: dict) -> None:
+    from .agents.approvals import describe
+
+    _record(describe("mcp_action", params) + ".", title="Connector action")
+    _close_named_loop(params)
+
+
+# ── the inverse, where one honestly exists ─────────────────────────────────
+#
+# None is the common and correct answer. A sent email is gone; an Undo button
+# that quietly does nothing is worse than no button at all, so an action only
+# declares `undo` when it can really take the effect back.
+
+
+def _undo_event(params: dict, result: dict) -> dict:
+    gcal = _writer("gcal", "delete_event")
+    if gcal is None:
+        return {"ok": False, "error": "Google Calendar is not connected."}
+    return gcal.delete_event(str(result.get("id") or ""))
+
+
+def _undo_triage(params: dict, result: dict) -> dict:
+    """Put every message back where it was.
+
+    Free, and the reason is `mail_triage.OPERATIONS`: a verb is an `add`/
+    `remove` pair of Gmail labels, so its inverse is the same pair swapped.
+    Archive removes INBOX; undoing it adds INBOX. Nothing here has to know what
+    archiving *means*.
+
+    A verb that creates a label (`label`) is not inverted by deleting the
+    label — the label may be in use elsewhere — only by removing it from these
+    messages, which is what swapping add and remove already does.
+    """
+    from .mail_triage import OPERATIONS, group, parse_items
+
+    items, problem = parse_items(params.get("items"))
+    if problem:
+        return {"ok": False, "error": problem}
+    gmail = _writer("gmail", "modify_messages")
+    if gmail is None:
+        return {"ok": False, "error": "Gmail is not connected."}
+
+    restored = 0
+    for (verb, label), ids in group(items).items():
+        operation = OPERATIONS[verb]
+        add, remove = list(operation.remove), list(operation.add)
+        if operation.names_a_label:
+            made = gmail.ensure_label(label)
+            if not made.get("ok"):
+                return {"ok": False, "error": made.get("error")
+                        or f"Could not find the label “{label}”."}
+            remove.append(str(made.get("id")))
+        out = gmail.modify_messages(ids, add=add, remove=remove)
+        if not out.get("ok"):
+            return {"ok": False,
+                    "error": f"{out.get('error') or 'Gmail refused the change.'}"
+                             + (f" {restored} were already put back."
+                                if restored else "")}
+        restored += out.get("count", len(ids))
+    return {"ok": True, "detail": f"Put {restored} email(s) back"}
+
+
+def _undo_row(store_name: str, label: str):
+    """Undo for an action whose whole effect is one row we wrote ourselves."""
+
+    def undo(params: dict, result: dict) -> dict:
+        row_id = str(result.get("id") or "")
+        if not row_id:
+            return {"ok": False, "error": f"That {label} cannot be found."}
+        if store_name == "reminder":
+            from .reminders import get_reminders
+            gone = get_reminders().delete(row_id)
+        else:
+            from .routines import get_routines
+            gone = get_routines().delete(row_id)
+        return ({"ok": True, "detail": f"{label.capitalize()} cancelled"} if gone
+                else {"ok": True, "detail": f"That {label} was already gone"})
+
+    return undo
+
+
+#: Every action Chitragupta can take, and the whole loop for each one.
+#:
+#: This is the single place an action is declared. `risk` used to be three
+#: hand-maintained sets in `agents/permissions.py` — an action added to two of
+#: them and forgotten in the third is a gap nobody sees until something has
+#: already been sent — and that module now reads these as data instead.
+REGISTRY: dict[str, ActionSpec] = {
+    "send_email": ActionSpec(
+        handler=_send_email, label="Send email",
+        fields=["to", "subject", "body"],
+        risk=Risk.AMBER, recipient_kind=EMAIL_RECIPIENT,
+        verify=_verify_email, remember=_remember_email,
+        # No undo: it has left the machine and no API takes it back.
+    ),
+    "create_event": ActionSpec(
+        handler=_create_event, label="Create calendar event",
+        fields=["title", "start", "end", "description", "attendees"],
+        risk=Risk.AMBER, recipient_kind=EMAIL_RECIPIENT,
+        verify=_verify_event, remember=_remember_event,
+        undo=_undo_event, undo_label="Remove the event",
+    ),
+    "set_reminder": ActionSpec(
+        handler=_set_reminder, label="Set reminder",
+        fields=["message", "at"],
+        # Green: a notification on the user's own laptop reaches nobody else.
+        risk=Risk.GREEN,
+        undo=_undo_row("reminder", "reminder"), undo_label="Cancel it",
+    ),
+    "create_routine": ActionSpec(
+        handler=_create_routine, label="Create automation",
+        fields=["name", "trigger", "agent", "interval_min", "instruction"],
+        risk=Risk.RED,
+        always_ask_because="Creating automations always needs your approval.",
+        undo=_undo_row("routine", "automation"), undo_label="Delete it",
+    ),
+    "mcp_action": ActionSpec(
+        handler=_mcp_action, label="Connector action",
+        fields=["server_id", "tool", "arguments"],
+        risk=Risk.RED,
+        always_ask_because="Anything a connector changes needs your approval.",
+        remember=_remember_connector_action,
+        # No undo: the verb belongs to somebody else's server and nothing tells
+        # us what its inverse is — or whether it has one.
+    ),
+    "mail_triage": ActionSpec(
+        handler=_mail_triage, label="Inbox changes",
+        fields=["items"],
+        risk=Risk.RED,
+        always_ask_because="Changing your inbox always needs your approval.",
+        undo=_undo_triage, undo_label="Put them back",
+    ),
+    "message_send": ActionSpec(
+        handler=_message_send, label="Send a message",
+        fields=["app", "chat", "text"],
+        risk=Risk.AMBER, recipient_kind=CHAT_RECIPIENT,
+        remember=_remember_message,
+    ),
+    "log_workout": ActionSpec(
+        handler=_log_workout, label="Training session",
+        fields=["blocks", "at", "note"],
+        # Green: it writes one row in the user's own training log.
+        risk=Risk.GREEN,
+    ),
 }
 
 
-def run_now(action_type: str, params: dict) -> dict:
-    """Run an action immediately (used by the scheduler for due scheduled ones)."""
+def catalog() -> dict[str, dict[str, Any]]:
+    """Every action as the frontend needs it — fields, risk, reversibility.
+
+    Published so a card renders itself from the registry. The field list was
+    already here and read by nobody: the frontend kept its own idea of which
+    actions were correctable (`EDITABLE = { log_workout: true }`), which is a
+    second list of the same fact and drifted from this one the moment it was
+    written.
+    """
+    return {name: spec.public() for name, spec in REGISTRY.items()}
+
+
+def _summary(action_type: str, params: dict) -> str:
+    """One line in the user's terms, borrowed from the approval card.
+
+    Reused rather than re-worded: the log and the card must call an action the
+    same thing, or the user is reading two descriptions of one event and has to
+    work out that they are the same.
+    """
+    from .log import suppressed
+
+    with suppressed("describing an action for the log"):
+        from .agents.approvals import describe
+        return describe(action_type, params)
+    return action_type.replace("_", " ")
+
+
+def _finish(action_type: str, spec: ActionSpec, params: dict, result: dict, *,
+            agent_id: str = "", origin: str = "chat") -> dict:
+    """Rungs 5 and 6, then the log. The half of an action after the doing.
+
+    Order matters and is not obvious: **verify before remember**, so the memory
+    can carry the time the service reported rather than the time we asked. And
+    every step is suppressed, because none of them may turn an action that
+    worked into one the user is told failed.
+    """
+    from .log import suppressed
+
+    if result.get("ok"):
+        if spec.verify is not None:
+            with suppressed("verifying an action landed"):
+                checked = spec.verify(params, result) or {}
+                if checked.get("verified"):
+                    result["verified"] = True
+                    result["verified_at"] = str(checked.get("at") or "")
+                    for extra in ("link", "in_sent"):
+                        if extra in checked:
+                            result[extra] = checked[extra]
+
+        if spec.remember is not None:
+            with suppressed("recording what an action did into the brain"):
+                spec.remember(params, dict(result))
+
+    result["risk"] = spec.risk.value
+    result["reversible"] = spec.undo is not None and bool(result.get("ok"))
+    if spec.undo is not None:
+        result["undo_label"] = spec.undo_label
+
+    with suppressed("logging an action"):
+        from . import action_log
+        result["log_id"] = action_log.record(
+            action_type, params, result, summary=_summary(action_type, params),
+            risk=spec.risk.value, reversible=bool(result.get("reversible")),
+            agent_id=agent_id, origin=origin)
+    return result
+
+
+def run_now(action_type: str, params: dict, *, agent_id: str = "",
+            origin: str = "chat") -> dict:
+    """Run an action immediately (used by the scheduler for due scheduled ones).
+
+    The single chokepoint every action passes through — attended, unattended,
+    approved later, or fired by the scheduler. That is why verification, the
+    memory write and the log live here rather than at the four call sites that
+    would each have to remember them.
+    """
     spec = REGISTRY.get(action_type)
     if not spec:
         return {"ok": False, "error": f"unknown action '{action_type}'"}
+    params = params or {}
     try:
-        return spec["handler"](params or {})
+        result = spec.handler(params)
+    except Exception as exc:
+        result = {"ok": False, "error": str(exc)[:200]}
+    if not isinstance(result, dict):                   # pragma: no cover
+        result = {"ok": False, "error": "that action returned nothing usable"}
+    return _finish(action_type, spec, params, result,
+                   agent_id=agent_id, origin=origin)
+
+
+def undo(log_id: str) -> dict:
+    """Take back a logged action, if it is one that can be taken back.
+
+    Addressed by log entry rather than by (type, params), because the inverse
+    needs the *result* — the event id Google returned, the reminder row we
+    wrote — and the result is the thing a caller reconstructing the call from
+    the proposal does not have.
+    """
+    from . import action_log
+
+    entry = action_log.get(log_id)
+    if not entry:
+        return {"ok": False, "error": "That action is not in the log."}
+    if entry["undone"]:
+        return {"ok": True, "detail": "That was already undone."}
+
+    if entry["origin"] == "scheduled":
+        # A scheduled send has not left the machine yet, so its inverse is
+        # cancelling the schedule — not the action's own `undo`, which for
+        # `send_email` does not exist and for `create_event` would try to
+        # delete a calendar entry nobody has created.
+        from .scheduled import get_scheduled
+
+        row_id = str(entry["result"].get("id") or "")
+        if not row_id:
+            return {"ok": False, "error": "That schedule cannot be found."}
+        gone = get_scheduled().delete(row_id)
+        action_log.mark_undone(log_id)
+        return {"ok": True, "detail": "Cancelled — it will not fire" if gone
+                else "That was already cancelled"}
+
+    spec = REGISTRY.get(entry["action_type"])
+    if spec is None or spec.undo is None:
+        return {"ok": False,
+                "error": f"{spec.label if spec else 'That action'} cannot be undone."}
+    if not entry["ok"]:
+        return {"ok": False, "error": "That action did not succeed, so there is "
+                                      "nothing to take back."}
+    try:
+        out = spec.undo(entry["params"], entry["result"])
     except Exception as exc:
         return {"ok": False, "error": str(exc)[:200]}
+    if out.get("ok"):
+        action_log.mark_undone(log_id)
+    return out
 
 
-def execute(action_type: str, params: dict) -> dict:
+def execute(action_type: str, params: dict, *, origin: str = "chat") -> dict:
     """Confirm-time execution. If the action carries an `at` time (and supports
     scheduling), SCHEDULE it to fire later instead of running now — the user has
     confirmed both the content and the time."""
@@ -374,6 +821,7 @@ def execute(action_type: str, params: dict) -> dict:
     if not spec:
         return {"ok": False, "error": f"unknown action '{action_type}'"}
     params = params or {}
+    agent_id = str(params.get("agent_id") or "")
 
     at = (params.get("at") or "").strip()
     if at and action_type in ("send_email", "create_event"):
@@ -385,11 +833,32 @@ def execute(action_type: str, params: dict) -> dict:
         if not fire_at:
             return {"ok": False, "error": f"couldn't understand the time '{at}'"}
         sched_params = {k: v for k, v in params.items() if k != "at"}
-        get_scheduled().add(action_type, sched_params, fire_at,
-                            params.get("agent_id"))
+        row = get_scheduled().add(action_type, sched_params, fire_at,
+                                  params.get("agent_id")) or {}
         nice = datetime.fromisoformat(fire_at).strftime("%a %b %d, %-I:%M %p")
         verb = "Email" if action_type == "send_email" else "Event"
-        return {"ok": True, "scheduled": True,
-                "detail": f"{verb} scheduled — will fire automatically at {nice}"}
+        queued = {"ok": True, "scheduled": True, "id": row.get("id", ""),
+                  "detail": f"{verb} scheduled — will fire automatically at {nice}"}
+        # Logged as its own event, and reversible whatever the action itself is:
+        # a *scheduled* send has not left the machine yet, so cancelling it is a
+        # real inverse even though sending it would not have been.
+        return _log_scheduled(action_type, params, queued, agent_id)
 
-    return run_now(action_type, params)
+    return run_now(action_type, params, agent_id=agent_id, origin=origin)
+
+
+def _log_scheduled(action_type: str, params: dict, queued: dict,
+                   agent_id: str) -> dict:
+    from .log import suppressed
+
+    queued["risk"] = REGISTRY[action_type].risk.value
+    queued["reversible"] = bool(queued.get("id"))
+    queued["undo_label"] = "Cancel it"
+    with suppressed("logging a scheduled action"):
+        from . import action_log
+        queued["log_id"] = action_log.record(
+            action_type, params, queued,
+            summary=_summary(action_type, params) + " — scheduled",
+            risk=queued["risk"], reversible=queued["reversible"],
+            agent_id=agent_id, origin="scheduled")
+    return queued

@@ -6,8 +6,11 @@ import re
 from datetime import UTC
 from typing import Any
 
+from ..log import get_logger
 from .base import Connector, SyncResult
 from .google_auth import get_credentials, google_ready
+
+log = get_logger(__name__)
 
 #: Gmail's own cap on one `batchModify`. Named so the limit is visible rather
 #: than discovered as a 400 from Google.
@@ -194,6 +197,39 @@ class GmailConnector(Connector):
                         "and approve the send permission, then try again.",
                         "reauth": True}
             return {"ok": False, "error": m[:200]}
+
+    def message_sent_at(self, message_id: str, interactive: bool = False) -> dict:
+        """When Gmail says this message actually went out.
+
+        The verify rung. `send_email` returning `ok` means the API accepted the
+        request, which is not the same claim as "it is in your Sent folder" —
+        and the difference is exactly what a user wants to know when they are
+        deciding whether to write the thing again. So the id is read back and
+        Gmail's own `internalDate` is what the card reports.
+
+        Never raises. A verification that fails is reported as unverified, not
+        as a failed send: the mail may well have gone, and telling somebody
+        their email failed when it did not is the worse error of the two.
+        """
+        if not message_id:
+            return {"verified": False}
+        service = self._service(None, interactive)
+        if service is None:
+            return {"verified": False}
+        try:
+            got = service.users().messages().get(
+                userId="me", id=message_id, format="metadata",
+                metadataHeaders=["Date"]).execute()
+        except Exception as exc:                       # pragma: no cover - network
+            log.debug("could not verify message %s: %s", message_id, exc)
+            return {"verified": False}
+        stamp = got.get("internalDate")
+        if not stamp:
+            return {"verified": True, "at": ""}
+        from datetime import datetime
+        when = datetime.fromtimestamp(int(stamp) / 1000).astimezone()
+        return {"verified": True, "at": when.isoformat(),
+                "in_sent": "SENT" in (got.get("labelIds") or ["SENT"])}
 
     # ── addressing, reading and changing existing mail ───────────────────
     #

@@ -60,6 +60,59 @@ class GoogleCalendarConnector(Connector):
                         "permission, then try again.", "reauth": True}
             return {"ok": False, "error": m[:200]}
 
+    def delete_event(self, event_id: str, interactive: bool = False) -> dict:
+        """Remove an event (WRITE). The inverse of `create_event`, and nothing
+        more than that.
+
+        Here so that creating an event is *undoable*. A calendar invite is the
+        action most worth taking back — it has already emailed every attendee
+        by the time anyone notices the date is wrong, and until now the only
+        remedy was to open Calendar and do it by hand.
+
+        Google treats deleting an already-deleted event as an error; that is
+        reported as success, because the user asked for it to be gone and it
+        is gone.
+        """
+        if not event_id:
+            return {"ok": False, "error": "no event to remove"}
+        try:
+            from googleapiclient.discovery import build
+        except ImportError:
+            return {"ok": False, "error": "pip install .[gdrive] for Calendar"}
+        try:
+            creds = get_credentials(interactive=interactive)
+            service = build("calendar", "v3", credentials=creds,
+                            cache_discovery=False)
+            service.events().delete(calendarId="primary",
+                                    eventId=event_id).execute()
+            return {"ok": True, "detail": "Event removed"}
+        except Exception as exc:
+            m = str(exc)
+            if "410" in m or "deleted" in m.lower() or "404" in m:
+                return {"ok": True, "detail": "Event was already gone"}
+            return {"ok": False, "error": m[:200]}
+
+    def event_exists(self, event_id: str, interactive: bool = False) -> dict:
+        """Read an event back, so "created" is checked rather than assumed."""
+        if not event_id:
+            return {"verified": False}
+        try:
+            from googleapiclient.discovery import build
+        except ImportError:
+            return {"verified": False}
+        try:
+            creds = get_credentials(interactive=interactive)
+            service = build("calendar", "v3", credentials=creds,
+                            cache_discovery=False)
+            ev = service.events().get(calendarId="primary",
+                                      eventId=event_id).execute()
+        except Exception:
+            return {"verified": False}
+        if (ev.get("status") or "") == "cancelled":
+            return {"verified": False}
+        return {"verified": True, "at": (ev.get("start") or {}).get("dateTime", ""),
+                "link": ev.get("htmlLink", "")}
+
     def sync(self, *, days_back: int = 180, days_ahead: int = 180,
              max_results: int = 250, since: str | None = None,
              limit: int | None = None, full_history: bool = False,
