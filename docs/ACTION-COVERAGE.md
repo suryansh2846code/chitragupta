@@ -236,10 +236,19 @@ after this becomes additive.
 | **REMEMBER**: outcome → brain, and close the named open loop | `actions.py` | ✅ Episodic memory, `source="action"` — the store every agent reads, not one agent's conversation. A loop closes only on an explicit `loop_id`; fuzzy description matching was rejected |
 | **Undo** where the inverse exists | `actions.py`, `gcal.py` | ✅ `mail_triage` (label pairs swapped), `create_event` (new `delete_event`), reminders, routines, scheduled sends. `send_email` declares **no** undo and the card offers no button |
 | **The action log** | `action_log.py`, 4 routes, Inbox panel | ✅ Its own `actions.db` with WAL and a busy timeout. *What your agents did* sits under *Waiting on you* — the same subject the panel already promises, rather than a second place to forget about. Undo lives here after the card is gone, which is when a person actually notices the date was wrong |
-| `ActionPlan` — batch, one approval, settled together | `actions.py`, `chat.js` | ❌ Not started. *"9 actions are ready. [Approve]"* still needs it |
+| `ActionPlan` — batch, one approval, settled together | `actions.py`, `prompt.py`, `chat.js` | ✅ A model wraps proposals in `<plan rationale="…">`. One card, one button, run **in order, stopping at the first failure** — and every step that never started is named, because "6 of 9" does not say which three. Risk is the **worst** step's, so nine green archives beside one amber send is an amber card |
 
 **Closes jobs 13 and 18.** Job 12 (*what am I waiting on*) still needs the
 open-loops surface from `AUDIT.md` A9.
+
+#### The line a plan does not cross
+
+`parse_actions` still finds every `<action>` inside a `<plan>`, so an
+*unattended* routine keeps judging each one on its own through
+`approvals.run_or_queue`. The wrapper groups a decision a person is present to
+make; it never widens one — and a `<plan>` is written by the **model**, so if it
+could hide actions from the unattended gate it would be a way to smuggle one
+past the check. `test_action_plans.py` breaks that on purpose.
 
 > Undo and the audit trail are what make everything in Phases 1–5 safe to want.
 > Both exist now.

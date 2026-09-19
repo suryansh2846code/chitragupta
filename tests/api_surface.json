@@ -85,6 +85,7 @@
  "PATCH /api/reminders/{rid}",
  "PATCH /api/routines/{rid}",
  "POST /api/actions/execute",
+ "POST /api/actions/execute-plan",
  "POST /api/actions/undo",
  "POST /api/agents/approvals/{approval_id}/approve",
  "POST /api/agents/approvals/{approval_id}/reject",

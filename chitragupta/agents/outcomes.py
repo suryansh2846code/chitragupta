@@ -139,6 +139,74 @@ def react(agent_id: str, action_type: str, params: dict, result: dict,
     return reply
 
 
+def _step_line(step: dict) -> str:
+    """One plan step, in the words the card used for it.
+
+    Built from the step's own `summary` rather than run back through
+    `describe()`: `run_plan` already worked out what to call each action, and
+    asking a second time with the params thrown away produces "send email"
+    where the card said "Email “Revised proposal” to rahul@work.test".
+    """
+    result = step.get("result") or {}
+    what = step.get("summary") or str(step.get("type") or "an action")
+    if result.get("ok"):
+        verb = "confirmed" if result.get("verified") else "done"
+        when = _clock(str(result.get("verified_at") or ""))
+        detail = str(result.get("detail") or "").strip()
+        return (f"{PREFIX} {what} — {verb}{when}."
+                + (f" {detail[:MAX_DETAIL_CHARS]}" if detail else ""))
+    why = str(result.get("error") or "it did not work").strip()
+    return f"{PREFIX} {what} — FAILED: {why[:MAX_DETAIL_CHARS]}"
+
+
+def settle_plan(agent_id: str, plan_result: dict, **turn_kwargs: Any) -> dict:
+    """Record what a whole plan did, and answer for it at most once.
+
+    A plan of nine steps that failed on the seventh must not become seven
+    follow-up turns. The asymmetry that governs a single action governs this
+    too, one level up: every step is written into the conversation so the agent
+    knows what happened, and **one** turn is spent only if something failed.
+
+    The note the agent is given is the plan's own summary line, not the failed
+    step's error alone — an agent told "Gmail refused" without being told that
+    six things before it worked will apologise for all seven.
+    """
+    from .agent import AgentMemory
+
+    steps = plan_result.get("steps") or []
+    lines = [_step_line(s) for s in steps]
+    for s in plan_result.get("skipped") or []:
+        # Named, never left to be inferred from a count. "Six of nine" does not
+        # tell anybody which three did not happen.
+        lines.append(f"{PREFIX} {s.get('summary') or s.get('type', '')} "
+                     "— not started, the step before it failed.")
+    summary = f"{PREFIX} Plan: {plan_result.get('detail') or ''}".strip()
+
+    if agent_id:
+        with suppressed("recording a plan's outcome for the agent"):
+            memory = AgentMemory()
+            for line in [*lines, summary]:
+                memory.append(agent_id, "assistant", line)
+
+    out = dict(plan_result)
+    if plan_result.get("ok"):
+        return out
+
+    note = ""
+    with suppressed("asking the agent to react to a failed plan"):
+        from .runtime import run_turn
+
+        detail = "\n".join([*lines, summary])
+        turn = run_turn(agent_id, RETRY_BRIEF.format(detail=detail),
+                        persist=False, **turn_kwargs)
+        note = (turn.reply or "").strip()
+        if note:
+            AgentMemory().append(agent_id, "assistant", note)
+    if note:
+        out["agent_note"] = note
+    return out
+
+
 def settle(agent_id: str, action_type: str, params: dict,
            result: dict, **turn_kwargs: Any) -> dict:
     """Record the outcome, and on a failure give the agent one chance to answer.

@@ -848,6 +848,18 @@ select:focus, input:focus, textarea:focus { outline: none; border-color: var(--a
 .action-card[data-risk="green"] { border-color: var(--border2); }
 .action-card[data-risk="red"] .ac-risk { color: var(--danger); }
 
+/* A plan: several actions, one judgement. The steps are a quiet list — the
+   decision is the card, not each line in it. */
+.pl-why { font-style: italic; margin-bottom: 6px; }
+.pl-steps { margin: 8px 0 2px; padding-left: 10px;
+  border-left: 2px solid var(--line2); }
+.pl-step { font-size: 12.5px; line-height: 1.6; opacity: .85; }
+.pl-done { display: flex; align-items: center; gap: 6px; font-size: 12.5px;
+  line-height: 1.6; margin-top: 3px; }
+.pl-done[data-state="ok"] { color: var(--accent-2); }
+.pl-done[data-state="err"] { color: var(--danger); }
+.pl-done[data-state="skip"] { opacity: .55; padding-left: 20px; }
+
 /* Correcting a proposal before confirming it. One row per scalar field the
    registry declares, in the registry's order. */
 .ac-edit { display: flex; flex-direction: column; gap: 7px; margin-top: 10px;

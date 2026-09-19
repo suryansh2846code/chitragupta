@@ -103,8 +103,50 @@ def execute_action(body: ActionIn):
     return settle(agent_id, body.type, params, result)
 
 
+class PlanStep(BaseModel):
+    type: str
+    params: dict[str, Any] = {}
+
+
+class PlanIn(BaseModel):
+    steps: list[PlanStep] = []
+    agent_id: str = ""
+
+
+@router.post("/api/actions/execute-plan")
+@calls_a_model
+def execute_plan(body: PlanIn):
+    """Run several actions the user approved as one piece of work.
+
+    One approval, because the user read one intention — *"clear the emails
+    that don't need my attention"* is seventeen decisions and one judgement,
+    and seventeen cards ask them to make it seventeen times.
+
+    The gate is untouched. This runs because a person pressed Confirm, exactly
+    like `/api/actions/execute`; the unattended path still judges every action
+    on its own through `approvals.run_or_queue`, and a `<plan>` wrapper the
+    model wrote cannot change that.
+    """
+    from ...actions import run_plan
+    from ...agents.outcomes import settle_plan
+
+    steps = [{"type": s.type, "params": s.params} for s in body.steps]
+    if not steps:
+        raise HTTPException(400, "a plan needs at least one action")
+
+    agent_id = (body.agent_id or "").strip()
+    result = run_plan(steps, agent_id=agent_id)
+    if not agent_id:
+        return result
+    return settle_plan(agent_id, result)
+
+
 class UndoIn(BaseModel):
-    log_id: str
+    log_id: str = ""
+    #: A plan is taken back as a whole. Separate from `log_id` rather than
+    #: overloading it, so "undo this one thing" cannot be read as "undo a list
+    #: that happens to have one element in it".
+    log_ids: list[str] = []
 
 
 @router.post("/api/actions/undo")
@@ -115,8 +157,10 @@ def undo_action(body: UndoIn):
     the *result* — the calendar id Google handed back, the reminder row we
     wrote — and a caller reconstructing the call from the card does not have it.
     """
-    from ...actions import undo
+    from ...actions import undo, undo_plan
 
+    if body.log_ids:
+        return undo_plan([str(i).strip() for i in body.log_ids if str(i).strip()])
     return undo((body.log_id or "").strip())
 
 
