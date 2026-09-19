@@ -206,14 +206,14 @@ run end to end through all seven steps, not when its endpoints exist.
 | 8 | "Find a time with Rahul next week" | 1→6 | 2 |
 | 9 | "Prep me for my next meeting" | 1→3 | 2 |
 | 10 | "Tell Rahul I'll send it tonight" | 1→6 | 3 |
-| 11 | "Chase this in two days if nothing happens" | 1→6 | 1 |
+| 11 | "Chase this in two days if nothing happens" | 1→6 | ✅ done |
 | 12 | "What am I waiting on, and who's waiting on me?" | 1→2 | ✅ done |
 | 13 | "Turn this thread into a task" | 1→6 | 0 |
 | 14 | "File an issue for this" | 1→6 | 4 |
 | 15 | "Comment on that PR for me" | 1→6 | 4 |
 | 16 | "Write this up as a document" | 1→3 | 3 |
 | 17 | "Log: 5×5 squats, last one a grind" | 1→6 | ✅ done |
-| 18 | "What did you do this week?" | 1→2 | 0 |
+| 18 | "What did you do this week?" | 1→2 | ✅ done |
 
 Job 17 already works. Job 12 and 18 need no new actions at all — only the
 surfaces Phase 0 builds.
@@ -388,6 +388,40 @@ moment anybody asks cannot be stale when it is read.
 
 This also answers **job 12** — *"what am I waiting on?"* — because that is the
 same question asked without the chasing.
+
+**Job 11** — *"chase this in two days if nothing happens"* — is the same
+machinery with the stored `due` actually honoured. It was written down and then
+ignored: the global three-day default governed regardless, so a date the user
+named either fired early or not at all. It now beats the default **in both
+directions** — chase when they said, stay quiet until then — and beats it in
+neither of the two that matter: somebody replying still closes the loop, and
+unverified silence is still not a chase.
+
+#### Job 18 — "what did you do this week?" · ✅
+
+`action_log` recorded every action from the day the loop landed, and only the
+Inbox screen ever read it back. But this is a question asked **in chat**, of
+whichever agent is open, and an agent that answers it with *"check the Inbox
+panel"* cannot answer a question about itself.
+
+`what_i_did` is in `BASE_TOOLS` for that reason, and for a second one worth
+more: an agent about to claim it sent something can now **check the record**
+rather than trust its own memory of the conversation — which is exactly what
+`_HONESTY` tells it not to trust.
+
+```
+In the last 7 day(s): 1 done, 1 failed, 1 taken back.
+2× set reminder, 1× create followup
+
+↩ Follow up: Priya: the contract
+✕ Reminder:  — reminder message required
+✓ Reminder: call Rahul
+```
+
+Three outcomes, not two — an undone action is neither a success the user should
+still see as done nor a failure needing attention. A clean week mentions
+neither failures nor undos, because saying "0 failed" to somebody whose week
+went fine is noise.
 
 **Acceptance — job 1, end to end:**
 

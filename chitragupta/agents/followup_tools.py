@@ -47,6 +47,33 @@ def _gmail():
     return None
 
 
+def _due_verdict(due_at: object) -> bool | None:
+    """Has a date the user named passed? `None` when they named none.
+
+    Three answers rather than two, so the caller can tell "they said chase by
+    now" from "they said nothing" — those are the same *action* today and
+    different sentences, and the sentence is what makes the list readable.
+    """
+    if not due_at:
+        return None
+    from datetime import UTC, datetime
+
+    with suppressed("reading the date a follow-up was due"):
+        when = datetime.fromisoformat(str(due_at))
+        if when.tzinfo is None:
+            when = when.replace(tzinfo=UTC)
+        return datetime.now(UTC) >= when
+    return None
+
+
+def _day(due_at: object) -> str:
+    from datetime import datetime
+
+    with suppressed("naming the day a follow-up is due"):
+        return datetime.fromisoformat(str(due_at)).strftime("%a %b %d")
+    return str(due_at)
+
+
 def _tracked() -> list[dict]:
     """Open follow-ups, newest first, whichever way they were created."""
     from ..brain import get_brain
@@ -107,12 +134,26 @@ def awaiting_reply(stale_days: int = DEFAULT_STALE_DAYS) -> ToolResult:
         line = (f"- {about}" + (f" — {who}" if who else "")
                 + f", {days} day(s) with no reply"
                 + f"  (thread {thread_id}, id {loop['id'][:6]})")
-        (stale if days >= stale_days else waiting).append(line)
+
+        # A date the user named beats the default. "Chase this in two days if
+        # nothing happens" is a decision about THIS thread, and a global
+        # `stale_days` that overrode it would mean the thing they asked for
+        # either happened early or not at all.
+        due = _due_verdict(loop.get("due_at"))
+        if due is True:
+            stale.append(line + "  · you asked to chase this by now")
+        elif due is False:
+            waiting.append(line + f"  · you said chase after {_day(loop['due_at'])}")
+        else:
+            (stale if days >= stale_days else waiting).append(line)
 
     parts = []
     if stale:
-        parts.append(f"WORTH CHASING ({stale_days}+ days, no reply):\n"
-                     + "\n".join(stale))
+        # Both reasons in the header, because both put lines in this bucket and
+        # a heading that said "3+ days" over a one-day-old item the user asked
+        # to chase today would be describing the wrong rule.
+        parts.append(f"WORTH CHASING (no reply after {stale_days} days, "
+                     "or a date you set):\n" + "\n".join(stale))
     if waiting:
         parts.append("STILL RECENT, leave them be:\n" + "\n".join(waiting))
     if unknown:

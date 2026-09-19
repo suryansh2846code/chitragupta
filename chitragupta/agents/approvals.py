@@ -99,6 +99,16 @@ def describe(action_type: str, params: dict) -> str:
             "interval_min": params.get("interval_min") or 60,
         })
         return f"New automation “{params.get('name') or 'untitled'}” — {when}"
+    if action_type == "create_followup":
+        # Who owes the answer is the whole content. "Track a follow-up" in the
+        # log tells a person nothing about which one, and this row is read a
+        # week later when they have forgotten there was a thread at all.
+        who = str(params.get("who") or params.get("from") or "").strip()
+        about = str(params.get("about") or params.get("description")
+                    or params.get("message") or "").strip()
+        line = about or (f"Waiting on {who}" if who else "a follow-up")
+        when = str(params.get("due") or params.get("at") or "").strip()
+        return f"Follow up: {line}" + (f" — chase after {when}" if when else "")
     if action_type == "set_reminder":
         return f"Reminder: {params.get('message') or ''}"
     if action_type == "log_workout":

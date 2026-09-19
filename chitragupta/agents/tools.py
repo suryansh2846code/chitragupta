@@ -128,6 +128,41 @@ def _awaiting_reply(stale_days: int = 3) -> ToolResult:
     return awaiting_reply(stale_days=stale_days)
 
 
+def _what_i_did(days: int = 7) -> ToolResult:
+    """What the agents actually did, read back out of the action log.
+
+    The log has recorded every action since the loop landed and only the Inbox
+    screen ever read it. "What did you do this week?" is a question asked in
+    chat, of whichever agent is open, and an agent that has to say "check the
+    Inbox panel" is an agent that cannot answer a question about itself.
+
+    Counts first, then the rows. A week of tidying is forty lines and one
+    sentence, and the sentence is the answer — the rows are there for the one
+    the user then asks about.
+    """
+    from .. import action_log
+
+    window = max(1, min(int(days or 7), 90))
+    counts = action_log.summarise(window)
+    if not counts["total"]:
+        return ToolResult(f"Nothing in the last {window} day(s).")
+
+    head = (f"In the last {window} day(s): {counts['done']} done"
+            + (f", {counts['failed']} failed" if counts["failed"] else "")
+            + (f", {counts['undone']} taken back" if counts["undone"] else "")
+            + ".")
+    by_type = ", ".join(f"{n}× {t.replace('_', ' ')}"
+                        for t, n in sorted(counts["by_type"].items(),
+                                           key=lambda kv: -kv[1]))
+    rows = []
+    for entry in action_log.recent(20, since=""):
+        mark = "↩" if entry["undone"] else ("✓" if entry["ok"] else "✕")
+        rows.append(f"{mark} {entry['summary'] or entry['action_type']}"
+                    + ("" if entry["ok"] or entry["undone"]
+                       else f" — {entry['detail']}"))
+    return ToolResult(f"{head}\n{by_type}\n\n" + "\n".join(rows))
+
+
 def _list_open_loops(project: str | None = None) -> str:
     loops = get_brain().get_open_loops(status="open", related_project=project)
     if not loops:
@@ -288,6 +323,7 @@ TOOL_IMPLS = {
     "create_open_loop": _create_open_loop,
     "list_open_loops": _list_open_loops,
     "awaiting_reply": _awaiting_reply,
+    "what_i_did": _what_i_did,
     "complete_open_loop": _complete_open_loop,
 }
 
@@ -842,6 +878,21 @@ TOOL_DEFS: dict[str, Tool] = {
             },
         },
     ),
+    "what_i_did": Tool(
+        name="what_i_did",
+        description=(
+            "What the agents actually did — every action taken, whether it "
+            "worked, and what was taken back. Use this for \"what did you do "
+            "this week\" and before claiming anything was done: it is the "
+            "record, and your own memory of the conversation is not."),
+        parameters={
+            "type": "object",
+            "properties": {
+                "days": {"type": "integer",
+                         "description": "How far back to look. Default 7."},
+            },
+        },
+    ),
     "awaiting_reply": Tool(
         name="awaiting_reply",
         description=(
@@ -953,6 +1004,7 @@ _LABELS: dict[str, tuple[str, str]] = {
     "create_open_loop":         ("Track",     "Tasks"),
     "list_open_loops":          ("Pending",   "Tasks"),
     "awaiting_reply":           ("Waiting on", "Tasks"),
+    "what_i_did":               ("History",   "Automations"),
     "complete_open_loop":       ("Close",     "Tasks"),
     # The things it can reach
     "gmail_search":             ("Search",    "Email"),
