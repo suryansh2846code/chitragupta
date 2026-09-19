@@ -1,5 +1,5 @@
 #!/bin/bash
-# Build a double-clickable "Chitragupta.app" for THIS machine, for development.
+# Build a double-clickable "Chitragupta (dev).app" for THIS machine.
 #
 # The launcher it writes runs this checkout's virtualenv, so the bundle contains
 # no Python and works nowhere else. That is the point — it is a fast way to get
@@ -15,7 +15,13 @@ PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 # pyproject.toml said 0.1.0.
 VERSION="$(sed -n 's/^version = "\(.*\)"/\1/p' "$PROJECT_DIR/pyproject.toml" | head -1)"
 VENV="$PROJECT_DIR/.venv"
-APP_DIR="${1:-$HOME/Applications}/Chitragupta.app"
+# "(dev)" is in the directory name, not just the plist. macOS labels an app in
+# Finder, the Dock and the Applications browser by its bundle's FILENAME —
+# CFBundleDisplayName does not override that here. Naming only the plist left
+# two rows both reading "Chitragupta", which is exactly the confusion this is
+# meant to prevent: one of them is a frozen build and one runs your checkout,
+# and you cannot tell which you just launched.
+APP_DIR="${1:-$HOME/Applications}/Chitragupta (dev).app"
 CONTENTS="$APP_DIR/Contents"
 
 if [ ! -x "$VENV/bin/chitragupta" ]; then
@@ -81,3 +87,4 @@ fi
 
 echo "✓ Built $APP_DIR"
 echo "  Open it from $HOME/Applications (or double-click). First launch: right-click → Open."
+echo "  It runs $PROJECT_DIR — edits to the checkout show up on next launch."
