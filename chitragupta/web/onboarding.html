@@ -9,12 +9,15 @@
 <body>
 <title>Chitragupta — Neural Brain</title>
 <style>
-  :root{--ground:#05070d;--panel:#0b0f18;--star:#dfe7f2;--muted:#7a8397;--faint:#4a5266;
+  /* Charcoal, matching styles.css. Onboarding keeps its own copy of the palette
+     because it is a standalone page, so both have to move together — arriving
+     in the workspace must not feel like arriving in a different product. */
+  :root{--ground:#191817;--panel:#232120;--star:#dfe7f2;--muted:#928c85;--faint:#5f5a54;
     --line:rgba(223,231,242,.1);--line2:rgba(223,231,242,.18);--north:#f5c877;--blue:#5b9bff;--ok:#5fcf8e;
     --mono:ui-monospace,"SF Mono",SFMono-Regular,"JetBrains Mono",Menlo,Consolas,monospace;
     --sans:-apple-system,"SF Pro Display","Helvetica Neue",system-ui,Arial,sans-serif;color-scheme:dark;}
   *{box-sizing:border-box}body{margin:0}
-  .stage{position:relative;min-height:100svh;background:radial-gradient(120% 90% at 40% 0,rgba(20,28,48,.35),transparent 60%),var(--ground);
+  .stage{position:relative;min-height:100svh;background:radial-gradient(120% 90% at 40% 0,rgba(58,54,48,.32),transparent 60%),var(--ground);
     color:var(--star);font-family:var(--mono);overflow:hidden}
   .grid{position:absolute;inset:0;z-index:0;pointer-events:none;opacity:.55;
     background-image:linear-gradient(rgba(223,231,242,.045) 1px,transparent 1px),linear-gradient(90deg,rgba(223,231,242,.045) 1px,transparent 1px);
