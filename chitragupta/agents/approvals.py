@@ -78,6 +78,25 @@ def describe(action_type: str, params: dict) -> str:
         return f"{line} — with {files}" if files else line
     if action_type == "create_event":
         return f"Calendar event “{params.get('title') or 'untitled'}” on {params.get('start') or 'a date'}"
+    if action_type == "update_event":
+        # What is CHANGING is the decision. A card reading "Change an event"
+        # asks the user to approve a diff they were not shown, and the thing
+        # being approved emails everybody in the meeting.
+        name = str(params.get("title") or "").strip()
+        moved = str(params.get("start") or "").strip()
+        bits = []
+        if moved:
+            bits.append(f"move it to {moved}")
+        if name:
+            bits.append(f"rename it to “{name}”")
+        if params.get("location"):
+            bits.append(f"at {params['location']}")
+        if params.get("attendees") is not None:
+            bits.append("change who is coming")
+        what = ", ".join(bits) or "change it"
+        return f"Meeting — {what} (everybody in it is told)"
+    if action_type == "cancel_event":
+        return "Cancel a meeting — everybody in it is told"
     if action_type == "create_routine":
         # WHEN it runs is the decision, not the name. "New automation
         # 'Morning brief'" asks the user to approve a schedule they were never

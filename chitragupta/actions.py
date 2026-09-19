@@ -652,6 +652,89 @@ def _create_event(params: dict) -> dict:
         title, start, params.get("end"), params.get("description", ""), attendees)
 
 
+def _attendees_of(params: dict) -> list[str] | None:
+    """The attendee list as given, or None for "do not touch it".
+
+    The distinction is the whole reason this is not `or []`. An `update_event`
+    that sent an empty list because nobody mentioned attendees would uninvite
+    the meeting — a change nobody asked for, delivered as a cancellation to
+    everyone on it.
+    """
+    raw = params.get("attendees")
+    if raw is None or raw == "":
+        return None
+    if isinstance(raw, str):
+        return [a.strip() for a in raw.split(",") if a.strip()]
+    return [str(a).strip() for a in raw if str(a).strip()]
+
+
+def _update_event(params: dict) -> dict:
+    event_id = (params.get("event_id") or params.get("id") or "").strip()
+    if not event_id:
+        return {"ok": False, "error": "Say which event — use the id from "
+                                      "`calendar_lookup`."}
+    gcal = _writer("gcal", "update_event")
+    if gcal is None:
+        return {"ok": False, "error": "Google Calendar is not connected."}
+    return gcal.update_event(
+        event_id,
+        title=(params.get("title") or "").strip(),
+        start=(params.get("start") or "").strip(),
+        end=(params.get("end") or "").strip(),
+        description=params.get("description"),
+        location=params.get("location"),
+        attendees=_attendees_of(params))
+
+
+def _cancel_event(params: dict) -> dict:
+    event_id = (params.get("event_id") or params.get("id") or "").strip()
+    if not event_id:
+        return {"ok": False, "error": "Say which event — use the id from "
+                                      "`calendar_lookup`."}
+    gcal = _writer("gcal", "cancel_event")
+    if gcal is None:
+        return {"ok": False, "error": "Google Calendar is not connected."}
+    return gcal.cancel_event(event_id)
+
+
+def _verify_update(params: dict, result: dict) -> dict:
+    gcal = _writer("gcal", "event_exists")
+    if gcal is None:
+        return {}
+    return gcal.event_exists(str(result.get("id") or ""))
+
+
+def _remember_update(params: dict, result: dict) -> None:
+    title = str(params.get("title") or "").strip()
+    before = result.get("before") or {}
+    name = title or str(before.get("summary") or "a meeting")
+    moved = str(params.get("start") or "")
+    _record(f"Moved “{name}” to {moved}." if moved else f"Changed “{name}”.",
+            title=f"Event: {name}", event_time=moved)
+    _close_named_loop(params)
+
+
+def _remember_cancel(params: dict, result: dict) -> None:
+    _record(str(result.get("detail") or "Cancelled an event") + ".",
+            title="Event cancelled")
+    _close_named_loop(params)
+
+
+def _undo_update(params: dict, result: dict) -> dict:
+    """Put the event back exactly as `update_event` found it.
+
+    Reversible because the handler kept the other side of the diff. It is not
+    silent: attendees were told it moved and are told again that it moved
+    back, which is the honest thing — they have the wrong time in their
+    calendar until somebody says so.
+    """
+    gcal = _writer("gcal", "restore_event")
+    if gcal is None:
+        return {"ok": False, "error": "Google Calendar is not connected."}
+    return gcal.restore_event(str(result.get("id") or ""),
+                              result.get("before") or {})
+
+
 def _mcp_action(params: dict) -> dict:
     """Run one tool on a connector the user added.
 
@@ -924,6 +1007,34 @@ REGISTRY: dict[str, ActionSpec] = {
         risk=Risk.AMBER, recipient_kind=EMAIL_RECIPIENT,
         verify=_verify_event, remember=_remember_event,
         undo=_undo_event, undo_label="Remove the event",
+    ),
+    "update_event": ActionSpec(
+        handler=_update_event, label="Change a calendar event",
+        fields=["event_id", "title", "start", "end", "location",
+                "description", "attendees"],
+        # **Red, not amber**, and the reason is the one `mcp_action` gives:
+        # an allow-list needs something to compare against, and there is
+        # nothing here. `create_event` is amber because the people it reaches
+        # are the `attendees` on the card. The people a *move* reaches are on
+        # the existing event — not in these params — so `recipients_of` would
+        # find none, and "reaches nobody" is how an unattended agent ends up
+        # rearranging a calendar full of other people's mornings.
+        risk=Risk.RED,
+        always_ask_because="Moving a meeting emails everybody in it, so it "
+                           "always needs your approval.",
+        verify=_verify_update, remember=_remember_update,
+        undo=_undo_update, undo_label="Put it back",
+    ),
+    "cancel_event": ActionSpec(
+        handler=_cancel_event, label="Cancel a calendar event",
+        fields=["event_id"],
+        risk=Risk.RED,
+        always_ask_because="Cancelling a meeting tells everybody in it, so it "
+                           "always needs your approval.",
+        remember=_remember_cancel,
+        # No undo. Recreating it would be a NEW invitation with a new id, sent
+        # to everybody who has already been told it was cancelled — which is
+        # not the same event and not an undo. Same honesty as `send_email`.
     ),
     "create_followup": ActionSpec(
         handler=_create_followup, label="Track a follow-up",

@@ -86,11 +86,20 @@ def test_the_permission_sets_are_derived_from_the_registry():
     assert kinds == dict(permissions.RECIPIENT_KINDS)
 
 
-def test_the_tiers_still_hold_the_actions_they_held_before():
-    """The refactor must not have moved anything. Written as literals on
-    purpose: a test that derives its expectation the same way the code does
-    would pass however wrong the code became."""
-    never = frozenset({"create_routine", "mcp_action", "mail_triage"})
+def test_the_tiers_hold_exactly_the_actions_they_are_meant_to():
+    """Written as literals on purpose: a test that derived its expectation the
+    same way the code does would pass however wrong the code became.
+
+    So this fails whenever an action joins a tier — which is correct, and the
+    point. Each addition below was a deliberate line in a commit:
+
+    * `update_event` / `cancel_event` are RED rather than AMBER because the
+      people they reach are on the existing event, not in the params, so
+      `recipients_of` would find none and an allow-list would be checking
+      nothing.
+    """
+    never = frozenset({"create_routine", "mcp_action", "mail_triage",
+                       "update_event", "cancel_event"})
     outbound = frozenset({"send_email", "create_event", "message_send"})
 
     assert never == set(permissions.NEVER_UNATTENDED)

@@ -90,9 +90,23 @@ def calendar_lookup(when: str = "today") -> ToolResult:
 
     span = start if start == end else f"{start} to {end}"
     lines = [f"Calendar, {span}:"]
+    movable = 0
     for hit in events[:MAX_EVENTS]:
         text = " ".join((hit.memory.text or "").split())
-        lines.append(f"- {text[:220]}")
+        # The id the sync already stored. Without it an agent asked to move a
+        # meeting can describe the meeting and cannot address it — the same
+        # gap `list_mail` had, and the same fix: show what you already know.
+        # Only Google's ids are usable; Apple Calendar is read-only here, so a
+        # row with no id simply does not carry one rather than carrying a
+        # useless one.
+        event_id = ""
+        with suppressed("reading the id of a synced calendar event"):
+            event_id = str((hit.memory.metadata or {}).get("event_id") or "")
+        lines.append(f"- {text[:220]}"
+                     + (f"\n  id={event_id}" if event_id else ""))
+        movable += 1 if event_id else 0
+    if movable:
+        lines.append("\nUse the id to move or cancel one. Never guess an id.")
     return ToolResult("\n".join(lines))
 
 

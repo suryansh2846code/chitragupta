@@ -489,6 +489,57 @@ def run(*, include_slow: bool = True) -> Scorecard:
             f"wrote to {sorted(wrote_to)}")
         assert _awaiting is not None        # the tool the recipe names exists
 
+        # ── moving a meeting to a slot it picked itself ──────────────────
+        #
+        # The API half of this is ordinary. The half worth scoring is rung 3:
+        # the user said "Friday afternoon", and an agent that answers "what
+        # time on Friday works for you?" has handed the job back. So the
+        # scripted calendar has a Friday with one thing already on it, and the
+        # check is that the proposal carries a CONCRETE time which does not
+        # collide with it.
+        tools_mod.TOOL_IMPLS["calendar_lookup"] = lambda **kw: (
+            "Calendar, 2026-09-25:\n"
+            "- Client call, Thu 24 Sep 15:00–16:00\n  id=ev_client\n"
+            "- Standup, Fri 25 Sep 14:00–14:30\n  id=ev_standup\n"
+            "\nUse the id to move or cancel one. Never guess an id.")
+        provider = _scripted([
+            [("calendar_lookup", {"when": "this week"})],
+            "Friday afternoon has standup at 14:00, so I have put it at 15:30 "
+            "— the next clear hour.\n"
+            '<action type="update_event" event_id="ev_client" '
+            'start="2026-09-25T15:30:00+05:30"></action>',
+        ])
+        use(provider)
+        moved = runtime.run_turn("personal", "move the client call to Friday "
+                                 "afternoon", effort="medium",
+                                 connectors=["gcal"])
+        # Named `reply` so the source guard in
+        # `test_only_the_reply_is_ever_handed_to_parse_actions` can see what
+        # this is: a model reply and nothing else.
+        reply = moved.reply or ""
+        proposals = parse_actions(reply)
+        picked = proposals[0]["params"] if proposals else {}
+
+        check("calendar_move",
+              "A meeting can be moved, not only created")(
+            len(proposals) == 1 and picked.get("type", "update_event"),
+            f"{len(proposals)} proposal(s)")
+        check("calendar_move_id",
+              "The event is addressed by an id that came from the calendar")(
+            picked.get("event_id") == "ev_client",
+            f"event_id={picked.get('event_id')!r}")
+        check("calendar_move_concrete",
+              "A vague time becomes a specific one, not a question back")(
+            "T" in str(picked.get("start") or "")
+            and "14:00" not in str(picked.get("start") or ""),
+            f"start={picked.get('start')!r}")
+        from .permissions import NEVER_UNATTENDED
+
+        check("calendar_move_gate",
+              "Moving a meeting still waits for a tap")(
+            "update_event" in NEVER_UNATTENDED,
+            "it emails everybody in the meeting")
+
         # ── messaging, across whichever app it is on ─────────────────────
         #
         # Two apps landed together because one app is a feature and two is a

@@ -154,10 +154,17 @@ Reaches a person or changes somebody else's system. Approval required — but a
 repeated approval of the *same shape* may be promoted to a standing grant.
 
 ```
-send_email · send_message · create_event · update_event · cancel_event
-mail_triage · github_comment · linear_create_issue · notion_append
-write_file · schedule_send
+send_email · send_message · create_event · github_comment
+linear_create_issue · notion_append · write_file · schedule_send
 ```
+
+> **`update_event` and `cancel_event` were predicted here and shipped RED.**
+> The test is not "does it reach somebody" but "can this tier's machinery
+> *see* who". `create_event` is amber because its attendees are on the card.
+> The people a *move* reaches are on the existing event, not in the params —
+> so `recipients_of` finds none, and amber would have read that as "reaches
+> nobody" and let an unattended agent rearrange a diary full of other
+> people's mornings. `mail_triage` sits in red for the mirror-image reason.
 
 Promotion is the rung the current design is missing. `permissions.py:73` argues
 `mcp_action` can never be allow-listed because *"a Slack tool's `channel` and a
@@ -201,8 +208,8 @@ run end to end through all seven steps, not when its endpoints exist.
 | 3 | "Reply to this thread saying X" | 1→6 | 1 |
 | 4 | "Send the latest proposal to Rahul" | 1→6 | 3 |
 | 5 | "Follow up with whoever hasn't replied" | 1→6 | ✅ done |
-| 6 | "Move tomorrow's client meeting to Friday afternoon" | 1→6 | 2 |
-| 7 | "Cancel Thursday and tell everyone why" | 1→6 | 2 |
+| 6 | "Move tomorrow's client meeting to Friday afternoon" | 1→6 | ✅ done |
+| 7 | "Cancel Thursday and tell everyone why" | 1→6 | ✅ done |
 | 8 | "Find a time with Rahul next week" | 1→6 | 2 |
 | 9 | "Prep me for my next meeting" | 1→3 | 2 |
 | 10 | "Tell Rahul I'll send it tonight" | 1→6 | 3 |
@@ -438,20 +445,40 @@ in the morning. That is the product.
 
 ---
 
-### Phase 2 — Calendar to rung 6 · ~1.5 weeks
+### Phase 2 — Calendar to rung 6 · **jobs 6 and 7 done**
 
-`gcal.py` has exactly one write method. Everything below is the same SDK shape.
+`gcal.py` had exactly one write method, so an agent could put a meeting in the
+diary and not move it — which is how you end up with two of everything.
 
-`update_event` · `cancel_event` · `add_attendee` · `remove_attendee` ·
-`change_location` · `add_notes` — all 🟡.
+| | |
+|---|---|
+| `update_event` | ✅ 🔴 · move, rename, relocate, change who is coming. Verified, and **reversible**: the handler keeps the event as it found it, so *Put it back* has the other side of the diff |
+| `cancel_event` | ✅ 🔴 · calls it off and tells the attendees. **No undo** — recreating it is a new invitation to people already told it was off, which is not the same event |
+| `calendar_lookup` | ✅ now surfaces the `event_id` the sync has stored since it was written. Without it an agent asked to move a meeting could describe it and not address it — the same gap `list_mail` had |
+| free/busy, `add_attendee` as its own verb | ❌ job 8 |
 
-**Acceptance — job 6:** *"Move tomorrow's client meeting to Friday afternoon"* →
-find it → read attendees' free/busy → propose a concrete slot → show the change
-as a diff → approve → update → verify → record → notify attendees.
+**Three things that would each have done real damage:**
 
-The hard part is not the API, it's **candidate selection**: rung 3 for calendar
-means proposing a *specific* time, not asking the user to pick one. Free/busy is
-already reachable through the Google auth that's in place.
+* **A patch, never a replace.** An event carries a Meet link, recurrence and
+  reminders nobody named on the card. A body built from the four things the
+  user mentioned drops the rest.
+* **Attendees are only touched when named.** `attendees=[]` because nobody
+  mentioned them uninvites the meeting — delivered to everyone on it as a
+  cancellation.
+* **Moving keeps the length.** *"Move it to Friday afternoon"* is about when it
+  begins. Keeping the old finish time makes a one-hour call end the previous
+  day.
+
+The last one is why this phase has tests against the **real connector** and a
+fake Google, not only against a fake connector. Breaking the duration rule
+passed all 36 action-level tests: the fake had reimplemented the logic rather
+than exercising it.
+
+**Rung 3 is the part that is not the API.** *"Friday afternoon"* has to become
+a specific time — an agent that replies *"what time on Friday works for you?"*
+has handed the job back, because the user asked to have it moved. The recipe
+makes it look at that day and pick a clear slot, and say why it chose it so the
+reasoning can be argued with rather than only the answer.
 
 ---
 
