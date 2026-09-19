@@ -897,14 +897,64 @@ select:focus, input:focus, textarea:focus { outline: none; border-color: var(--a
 .think-fill { height: 100%; width: 0; background: var(--accent); border-radius: 2px; transition: width .18s linear; }
 @keyframes think-pulse { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: .35; transform: scale(.65); } }
 
-/* action cards (confirm-before-execute) */
-.action-card { align-self: flex-start; max-width: 100%; background: var(--panel);
-  border: 1px solid var(--accent); border-radius: 14px; padding: 13px 15px; }
-.ac-head { display: flex; justify-content: space-between; align-items: center; font-weight: 600; margin-bottom: 8px; }
-.ac-tag { font-size: 10.5px; text-transform: uppercase; letter-spacing: .5px; color: var(--north); background: var(--north-dim); padding: 2px 7px; border-radius: 20px; }
+/* ── action cards (confirm-before-execute) ───────────────────────────────
+   A little application window, after the Uiverse "Mac-Style Code Preview": the
+   three chrome dots, a title, the details, and the payload in an inset panel
+   the agent is effectively handing you to read before you sign it.
+
+   That is the point of the borrowed shape. An agent asking permission is a
+   *different kind of thing* from a reply, and a window says so instantly —
+   where the old card said it with a gold outline that had to compete with the
+   gold chip and the gold button inside it. Three golds for one message. The
+   outline is gone; the chip and the confirm button still carry the signal.
+
+   The reference's palette is not copied. It is #000 with #0d1117 panels — a
+   blue-black, which is the exact cast the charcoal ground removed, and it would
+   have put a cold rectangle in the middle of a warm room. The RELATIONSHIPS are
+   what carry the look, so they are kept: the card sits darker than the surface
+   behind it, the panel inside sits lighter than the card, and a hairline
+   separates them. */
+/* Bounded, like the reference's 400px, rather than stretching the full width of
+   the conversation. A window that spans the column stops reading as an object
+   the agent handed you and starts reading as another paragraph with a border —
+   and the mono panel inside becomes 110 characters wide, which is past the line
+   length anyone reads comfortably. Wider than 400 because these rows carry a
+   label AND a value, which 400 wraps. */
+.action-card { align-self: flex-start; width: min(520px, 100%);
+  background: var(--rail); border: 1px solid var(--line);
+  border-radius: 12px; padding: 16px 18px 15px;
+  box-shadow: 0 4px 14px rgba(0,0,0,.35);
+  transition: transform .2s, box-shadow .2s; }
+/* The lift is the reference's, at less than half the distance. -5px on a card
+   that sits inline in a scrolling conversation reads as the message jumping;
+   -2px reads as it coming forward under the cursor. No `cursor: pointer` —
+   the reference's card is clickable as a whole and this one is not, and a
+   pointer over dead space is a promise the card cannot keep. */
+.action-card:hover { transform: translateY(-2px); box-shadow: 0 8px 22px rgba(0,0,0,.45); }
+@media (prefers-reduced-motion: reduce) {
+  .action-card, .action-card:hover { transform: none; transition: none; }
+}
+.ac-chrome { display: flex; align-items: center; gap: 7px; margin-bottom: 13px; }
+.ac-dot { width: 11px; height: 11px; border-radius: 50%; display: inline-block; flex: none; }
+.ac-dot.red { background: #ff5f57; } .ac-dot.yellow { background: #ffbd2e; } .ac-dot.green { background: #28c941; }
+.ac-head { font-size: 16px; font-weight: 700; margin-bottom: 6px; color: var(--text); }
+/* Below the title, the way the reference puts its tag — and still gold,
+   because it is the one line on the card that says you have to do something. */
+.ac-tag { display: inline-block; font-size: 10px; text-transform: uppercase; letter-spacing: .5px;
+  color: var(--north); background: var(--north-dim); padding: 4px 8px;
+  border-radius: 5px; margin-bottom: 12px; }
 .ac-row { font-size: 13px; margin: 3px 0; } .ac-row b { color: var(--muted); font-weight: 500; margin-right: 6px; }
-.ac-body { background: var(--panel-2); border: 1px solid var(--border); border-radius: 9px; padding: 8px 10px; margin: 8px 0; font-size: 12.5px; white-space: pre-wrap; max-height: 200px; overflow-y: auto; }
-.ac-actions { display: flex; gap: 8px; margin-top: 8px; align-items: center; }
+/* The "code editor": what the agent is actually going to act on, inset and
+   mono, so it reads as quoted material rather than as more of the card's own
+   prose. Scrolls rather than grows — a long payload must not push the Confirm
+   button off the bottom of a conversation. */
+.ac-body { background: var(--panel-2); border: 1px solid var(--line2);
+  border-radius: 6px; padding: 13px 14px; margin: 11px 0;
+  font-family: var(--mono); font-size: 12.5px; line-height: 1.55;
+  color: var(--text); white-space: pre-wrap; max-height: 200px; overflow-y: auto; }
+.ac-body::-webkit-scrollbar { width: 8px; }
+.ac-body::-webkit-scrollbar-thumb { background: var(--line2); border-radius: 4px; }
+.ac-actions { display: flex; gap: 8px; margin-top: 12px; align-items: center; }
 .ac-confirm { background: var(--north); color: var(--north-ink); border-radius: 8px; padding: 8px 14px; font-weight: 600; }
 .ac-result { margin-top: 8px; font-size: 13px; } .ac-ok { color: var(--accent-2); } .ac-err { color: var(--danger); }
 

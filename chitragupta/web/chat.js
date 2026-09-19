@@ -533,7 +533,14 @@ function actionCard(a) {
   const isEmail = a.type === "send_email";
   const el = document.createElement("div");
   el.className = "action-card";
-  el.innerHTML = `<div class="ac-head">${title}<span class="ac-tag">needs your confirmation</span></div>
+  // A window, not a notice. The chrome is decorative and says so to screen
+  // readers — the three dots are the shape of "an application is asking you
+  // something", and nothing is announced by them that the title does not say.
+  el.innerHTML = `<div class="ac-chrome" aria-hidden="true">
+      <span class="ac-dot red"></span><span class="ac-dot yellow"></span><span class="ac-dot green"></span>
+    </div>
+    <div class="ac-head">${title}</div>
+    <span class="ac-tag">needs your confirmation</span>
     ${rows}
     <div class="ac-actions"><button class="ac-confirm">Confirm & ${verb}</button>
     <button class="ac-cancel ghost">Cancel</button></div>
