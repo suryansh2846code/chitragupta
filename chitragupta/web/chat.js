@@ -335,7 +335,14 @@ async function loadActionCatalog() {
 
 //: Fields whose value is structured, or which the user must not retype. The
 //: agent id is bookkeeping, not content.
-const NOT_TYPEABLE = new Set(["items", "blocks", "arguments", "agent_id", "loop_id"]);
+const NOT_TYPEABLE = new Set(["items", "blocks", "arguments", "agent_id",
+                              "loop_id", "thread_id",
+                              // A file path typed into a box is a path the
+                              // folder grants have to re-check anyway, and a
+                              // half-typed one is an attachment that silently
+                              // vanishes. Changing what is attached means
+                              // asking the agent.
+                              "attach", "attachments"]);
 
 //: A one-line input for a short field, a textarea for the long ones. The body
 //: of an email is the field most worth fixing and the one least suited to a
@@ -445,11 +452,28 @@ function planCard(plan) {
 //: end — the same limit and the same reason as the mail card's.
 const PLAN_NAMED_MAX = 6;
 
+/** The files a message would carry, by name — never by path.
+ *
+ *  The path says where it is on disk, which the user already knows and which
+ *  is long enough to push the subject off the card. The name is what they are
+ *  checking: that it is the right document. Mirrors `approvals._attachment_names`.
+ */
+function attachmentNames(p) {
+  let named = (p && (p.attach || p.attachments)) || [];
+  if (typeof named === "string") named = named.split(",");
+  const names = named.map((x) => String(x).trim().split("/").pop())
+    .filter(Boolean);
+  if (!names.length) return "";
+  if (names.length <= 2) return names.join(" and ");
+  return `${names[0]} and ${names.length - 1} more files`;
+}
+
 /** One plan step in the user's terms. Falls back to the type rather than
  *  showing raw params, which is a card asking to be trusted rather than read. */
 function actionSummary(step) {
   const p = step.params || {};
   switch (step.type) {
+    case "create_draft": return `Draft “${p.subject || "(no subject)"}” to ${p.to || "nobody yet"}`;
     case "send_email": return `Email “${p.subject || "(no subject)"}” to ${p.to || "someone"}`;
     case "create_event": return `Event “${p.title || "untitled"}” on ${p.start || "a date"}`;
     case "set_reminder": return `Reminder: ${p.message || ""}`;
@@ -739,11 +763,20 @@ function actionCard(a) {
   const p = a.params;
   let title, rows, verb = "send";
   const at = p.at || p.when;
-  if (a.type === "send_email") {
-    title = "Send email"; verb = at ? "schedule" : "send";
-    rows = `<div class="ac-row"><b>To</b> ${esc(p.to || "")}</div>
+  if (a.type === "send_email" || a.type === "create_draft") {
+    // One branch, because the two differ in a word and a verb. The word is the
+    // whole difference and it has to be the loudest thing on the card: a draft
+    // sits in the user's own folder, and an email has gone.
+    const drafting = a.type === "create_draft";
+    title = drafting ? "Save a draft" : "Send email";
+    verb = drafting ? "save" : (at ? "schedule" : "send");
+    const files = attachmentNames(p);
+    rows = `<div class="ac-row"><b>To</b> ${esc(p.to || (drafting ? "(nobody yet)" : ""))}</div>
+       ${p.cc ? `<div class="ac-row"><b>Cc</b> ${esc(p.cc)}</div>` : ""}
        <div class="ac-row"><b>Subject</b> ${esc(p.subject || "")}</div>
-       ${at ? `<div class="ac-row"><b>Send at</b> ${esc(at)}</div>` : ""}
+       ${p.thread_id ? `<div class="ac-row muted">Goes into the existing conversation.</div>` : ""}
+       ${at && !drafting ? `<div class="ac-row"><b>Send at</b> ${esc(at)}</div>` : ""}
+       ${files ? `<div class="ac-row"><b>Attached</b> ${esc(files)}</div>` : ""}
        <div class="ac-body">${esc(p.body || "")}</div>`;
   } else if (a.type === "set_reminder") {
     title = "Set reminder"; verb = "set";

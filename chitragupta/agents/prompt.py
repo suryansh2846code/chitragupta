@@ -22,8 +22,8 @@ from ..log import suppressed
 
 #: Every action an agent can propose. `Agent.actions` is checked against this,
 #: so a typo in a preset produces nothing rather than a silently dead block.
-KNOWN_ACTIONS = ("send_email", "create_event", "set_reminder", "create_routine",
-                 "mail_triage", "message_send", "log_workout")
+KNOWN_ACTIONS = ("create_draft", "send_email", "create_event", "set_reminder",
+                 "create_routine", "mail_triage", "message_send", "log_workout")
 
 #: Argument names listed per connector tool. Enough for a model to fill a call
 #: in correctly; few enough that twenty tools do not become the system prompt.
@@ -145,6 +145,15 @@ _ACTION_PREAMBLE = (
 )
 
 _BLOCKS: dict[str, str] = {
+    "create_draft": (
+        '<action type="create_draft" to="person@example.com" subject="...">'
+        "Full email body here.</action>\n"
+        "A draft goes to the user's own Drafts folder and is sent by nobody but "
+        "them. PREFER IT when you were not explicitly told to send: "
+        "\"reply to Rahul\" means write the reply; \"send Rahul the proposal\" "
+        "means send it. Drafting something they did not want costs one click to "
+        "delete; sending something they did not want cannot be undone."
+    ),
     "send_email": (
         '<action type="send_email" to="person@example.com" subject="...">'
         "Full email body here.</action>"
@@ -215,6 +224,16 @@ _BLOCKS: dict[str, str] = {
         "deleted: archive takes a message out of the inbox and keeps it."
     ),
 }
+
+#: The attributes both outbound-mail actions share. Written once because a
+#: draft and a send differ in one word and nothing else here.
+_MAIL_EXTRAS = (
+    'Either mail action also takes cc="…", attach="/path/one.pdf,/path/two.md" '
+    '(files must be in a folder the user granted you), and thread_id="…" to '
+    "answer an existing conversation — take the id from `read_thread` or "
+    "`list_mail`, never invent one. A reply without it arrives beside the "
+    "thread it answers instead of inside it."
+)
 
 #: Grouping several proposals into one approval.
 #:
@@ -451,6 +470,8 @@ def build(*, name: str, role: str, system_prompt: str,
     if allowed:
         lines = [_ACTION_PREAMBLE]
         lines += [_BLOCKS[a] for a in KNOWN_ACTIONS if a in allowed]
+        if "send_email" in allowed or "create_draft" in allowed:
+            lines.append(_MAIL_EXTRAS)
         if "send_email" in allowed or "create_event" in allowed:
             lines.append(_SCHEDULING)
         if len(allowed) > 1:

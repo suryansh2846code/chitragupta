@@ -175,5 +175,12 @@ def test_acting_on_the_world_still_goes_through_the_user():
     assert "mail_triage" in NEVER_UNATTENDED, (
         "the one agent that never asks to READ still asks before it CHANGES")
     assert set(get_agent(CHIEF).actions) == {
-        "send_email", "create_event", "set_reminder", "create_routine",
-        "mail_triage", "message_send"}
+        "create_draft", "send_email", "create_event", "set_reminder",
+        "create_routine", "mail_triage", "message_send"}
+    # `create_draft` joins the set and changes nothing about this test's claim:
+    # it is GREEN because it reaches nobody — the draft sits in the user's own
+    # folder and they are the send button — so "acting on the world" is still
+    # exactly the list above minus this one.
+    from chitragupta.actions import REGISTRY, Risk
+
+    assert REGISTRY["create_draft"].risk is Risk.GREEN

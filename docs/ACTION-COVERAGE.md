@@ -268,19 +268,32 @@ describes the effect, and the gate has to describe the input too.
 
 ---
 
-### Phase 1 — Email to rung 6 · ~2 weeks
+### Phase 1 — Email to rung 6 · **in progress**
 
 The highest-frequency domain, and the one with a hole at rung 3.
 
-| Action | Risk | Note |
+| Action | Risk | State |
 |---|---|---|
-| `create_draft` | 🟢 | **Start here.** `gmail.drafts.create`. Reaches nobody → unattended-safe → the overnight-preparation unlock |
-| `reply_in_thread` | 🟡 | Needs `threadId` + `In-Reply-To`; `send_email` has neither today |
-| `forward` | 🟡 | |
-| `attach` | 🟡 | `gmail.py:181` is `MIMEText` — needs `MIMEMultipart`. Prerequisite for job 4 |
-| `schedule_send` | 🟡 | `execute()`'s `at` path (`actions.py:377`) already does this — surface it on the card |
-| `label` / `move` | 🟡 | `modify_messages` already takes add/remove; the verbs exist, the action type doesn't |
-| `create_followup` | 🟢 | An open loop with a `due_at` — closes automatically when the reply lands |
+| `create_draft` | 🟢 | ✅ `gmail.drafts.create`. Reaches nobody, so no allow-list and **no approval** — the overnight-preparation unlock. Verifiable, and the only outbound-shaped action that is fully reversible (`Discard it`) |
+| threading | 🟡 | ✅ `thread_id` on either mail action. Carries `In-Reply-To`/`References` read from the thread's **last** message — `threadId` alone convinces Gmail and nobody else |
+| attachments | 🟡 | ✅ `attach="…"`, resolved through the **folder grants** in `agents/file_tools.py`, so `attach ../../.ssh/id_rsa` hits the boundary that already answers it. Filenames are stripped of paths and CR/LF before they become a header |
+| `cc` | 🟡 | ✅ on both mail actions |
+| `schedule_send` | 🟡 | ⚠️ works via `execute()`'s `at` path; not surfaced as its own control |
+| `forward` | 🟡 | ❌ |
+| `label` / `move` | 🟡 | ❌ — though `mail_triage` already covers both verbs |
+| `create_followup` | 🟢 | ❌ An open loop with a `due_at` |
+
+**Why `create_draft` is green, and what that does not mean.** A draft sits in
+the user's own Drafts folder; they are the send button. An unattended agent
+reading a stranger's email *can* be talked into drafting one back — nothing
+sends it, and the card says **Draft**, never **Email**, because a person about
+to press send in Gmail has to be able to tell the two apart. Attachments do not
+rest on that argument: they go through the folder grants instead.
+
+**`create_draft` travels with `send_email` and never without it.** Not for
+permission reasons — it needs none — but an agent that can draft and cannot
+send has no way to finish the job, and its card looks like a send that quietly
+did not happen.
 
 **Acceptance — job 1, end to end:**
 
