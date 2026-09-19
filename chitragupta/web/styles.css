@@ -127,7 +127,11 @@ select:focus, input:focus, textarea:focus { outline: none; border-color: var(--a
   background: var(--ground);
   border: 1px solid var(--line); border-right: 0;
   border-radius: 18px 0 0 18px;
-  overflow-y: auto; min-height: 0; }
+  /* The RAIL does not scroll; the agent list inside it does. That is what lets
+     the navigation and the account sit on the floor: with the whole rail
+     scrolling, "bottom" meant the bottom of the content, so the nav rode up
+     under the last agent and drifted with the list. */
+  overflow: hidden; min-height: 0; }
 .collapse-btn { margin-left: auto; width: 22px; height: 22px; border-radius: 6px; background: transparent;
   color: var(--muted); font-size: 16px; line-height: 1; display: inline-flex; align-items: center; justify-content: center; }
 .collapse-btn:hover { color: var(--text); background: rgba(255,255,255,.06); }
@@ -155,6 +159,9 @@ select:focus, input:focus, textarea:focus { outline: none; border-color: var(--a
 .app.collapsed .agent, .app.collapsed .snav, .app.collapsed .user-chip { margin: 0 auto; }
 .app.collapsed .new-agent { margin: 6px auto 2px; }
 .app.collapsed .agents, .app.collapsed .side-nav { gap: 4px; }
+/* Collapsed there is no room for a row: the avatar and the gear go back to
+   being two stacked 40px squares like everything else in the rail. */
+.app.collapsed .side-foot { flex-direction: column; gap: 4px; }
 .app.collapsed .orb { width: 28px; height: 28px; }
 .app.collapsed .na-plus { width: 24px; height: 24px; }
 .app.collapsed .user-av { width: 26px; height: 26px; }
@@ -181,7 +188,11 @@ select:focus, input:focus, textarea:focus { outline: none; border-color: var(--a
 .side-add { width: 20px; height: 20px; border-radius: 6px; background: transparent;
   color: var(--muted); border: 1px solid var(--border2); font-size: 14px; line-height: 1; }
 .side-add:hover { color: var(--text); background: rgba(255,255,255,.05); }
-.agents { display: flex; flex-direction: column; gap: 2px; }
+/* The one part of the rail that grows and scrolls. Everything below it —
+   New Agent, the nav, the account — is pushed to the floor by this, without a
+   `margin-top: auto` anywhere: the list simply takes the slack. */
+.agents { display: flex; flex-direction: column; gap: 2px;
+  flex: 1; min-height: 0; overflow-y: auto; }
 .agent { display: flex; align-items: center; gap: 11px; padding: 9px 10px; border-radius: 12px;
   cursor: pointer; border: 1px solid transparent; position: relative; }
 .agent:hover { background: rgba(255,255,255,.035); }
@@ -207,12 +218,21 @@ select:focus, input:focus, textarea:focus { outline: none; border-color: var(--a
   background: transparent; color: var(--muted); font-size: 13.5px; text-align: left; }
 .snav:hover { background: rgba(255,255,255,.04); color: var(--text); }
 .snav-ic { width: 18px; text-align: center; opacity: .8; }
-/* Not `margin-top: auto`. Pinning the account to the floor left a long empty
-   strip between it and the navigation, and in a rail that is mostly icons
-   that gap reads as something failing to load. */
+/* The account and Settings share ONE row: identity on the left, the control on
+   the right, the way a footer bar reads rather than two more nav rows.
+
+   The note that used to sit here argued against pinning this to the floor,
+   because doing so left a long empty strip between the account and the
+   navigation above it. That was true of pinning the account ALONE. The whole
+   block travels together now — nav, then account — so they stay adjacent and
+   the slack ends up above all of it, where empty space in a rail belongs. */
 .side-foot { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line);
-  display: flex; flex-direction: column; gap: 2px; }
-.side-foot .snav { width: 100%; }
+  display: flex; flex-direction: row; align-items: center; gap: 6px; }
+.side-foot .user-chip { flex: 1; min-width: 0; }
+/* Icon only, so the row stays a row. The label is hidden, so the button needs
+   an aria-label — without one its accessible name would be empty. */
+.side-foot .snav { flex: none; width: auto; padding: 9px; }
+.side-foot .snav .snav-tx { display: none; }
 
 /* ── icons are drawn, never typed ──────────────────────────────────────────
    The ✕, ✓, 🔒, 📁 and ⌵ that used to sit in these controls were text: an
