@@ -163,6 +163,10 @@ window.addEventListener("keydown", (e) => {
   applyIcons();
   await loadProviders();
   loadAgents(); loadBrain(); loadTasks(); loadReminders(); loadRoutines();
+  // Awaited, unlike its neighbours: an action card rendered before the catalog
+  // arrives is a card with no editable fields and no Undo, and the first card
+  // of a session is the one most likely to need correcting.
+  await loadActionCatalog();
   updateBrainStatus();
   // No lead agent and nothing pre-added, so a new install has no agents at
   // all — the library is how you get one, and it opens itself once.

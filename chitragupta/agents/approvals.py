@@ -224,7 +224,8 @@ def approve(approval_id: str) -> dict:
     if row["status"] != "pending":
         return {"ok": False, "error": f"Already {row['status']}."}
 
-    outcome = run_now(row["action_type"], row["params"])
+    outcome = run_now(row["action_type"], row["params"],
+                      agent_id=row.get("agent_id", ""), origin="approval")
     detail = outcome.get("detail") or outcome.get("error") or ""
     _decide(approval_id, "approved", detail)
 
@@ -270,7 +271,8 @@ def run_or_queue(action_type: str, params: dict, *, routine_id: str = "",
 
     verdict = check(action_type, params)
     if verdict.allowed:
-        return run_now(action_type, params)
+        return run_now(action_type, params, agent_id=agent_id,
+                       origin="routine" if routine_id else "chat")
 
     queued = queue(action_type, params, reason=verdict.reason,
                    blocked=verdict.blocked_recipients,

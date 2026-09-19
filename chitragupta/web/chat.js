@@ -274,19 +274,135 @@ function updateConnectorPicker() {
 // actually read is not a confirmation.
 
 /** "notion-update-page" + "Notion" → "Update page in Notion". */
-//: Action types whose card the user can correct before confirming.
+//: The server's own description of every action — fields, risk tier, whether
+//: it can be undone. Fetched once from `/api/actions/catalog`.
 //:
-//: Opt-in rather than universal. The question is how much interpretation sits
-//: between what the user said and what would be stored: "82 this morning" is
-//: one number and `log_measurement` handles it as a tool with no card at all,
-//: while "5x5 squats, last one a grind, then some bench" is four numbers, a
-//: judgement and two exercise names. Editing is worth a card exactly where
-//: getting it wrong is easy and the mistake is found weeks later.
+//: This used to be `EDITABLE = { log_workout: true }`: a hand-kept list of
+//: which cards the user was allowed to correct, and it said no to `send_email`.
+//: The argument for opt-in was about *where a card is worth showing at all* —
+//: which is a real question, and a different one. Once a card exists, the user
+//: is being asked to approve what is on it, and a card you cannot fix a typo
+//: in is a card that sends you back to the agent to re-ask for the same email
+//: with one word changed.
+//:
+//: So every scalar field the registry declares is editable, and the registry is
+//: the only place that is decided. Structured values (`items`, `blocks`,
+//: `arguments`) are skipped by the generic editor and keep their own — a text
+//: box containing JSON is not a correction anybody can make safely.
 //:
 //: What executes is what is on the card at the moment Confirm is pressed —
 //: never what the model originally proposed. That is the point, and it is why
 //: the fields are read at click time rather than copied back into `p`.
-const EDITABLE = { log_workout: true };
+let ACTION_CATALOG = {};
+
+async function loadActionCatalog() {
+  try {
+    ACTION_CATALOG = (await api("/api/actions/catalog")).actions || {};
+  } catch {
+    // A card still renders and still confirms without the catalog; it just
+    // cannot offer the extras. Never a reason to fail the conversation.
+    ACTION_CATALOG = {};
+  }
+}
+
+//: Fields whose value is structured, or which the user must not retype. The
+//: agent id is bookkeeping, not content.
+const NOT_TYPEABLE = new Set(["items", "blocks", "arguments", "agent_id", "loop_id"]);
+
+//: A one-line input for a short field, a textarea for the long ones. The body
+//: of an email is the field most worth fixing and the one least suited to a
+//: 5em box.
+const LONG_FIELDS = new Set(["body", "text", "description", "instruction", "note"]);
+
+//: What the three tiers say on a card. The words are the user's, not the
+//: enum's: "green" means nothing to a person, "this reaches nobody" does.
+const RISK_NOTE = {
+  green: "Reaches nobody — nothing leaves your machine.",
+  amber: "This leaves your machine.",
+  red: "",       // the action's own `always_ask_because` is more specific
+};
+
+/** "3:42 PM" from an ISO stamp, or "" if it is not one. */
+function clockTime(stamp) {
+  if (!stamp) return "";
+  const d = new Date(stamp);
+  return Number.isNaN(d.getTime())
+    ? "" : d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+}
+
+/** The Undo button an action earns by having a real inverse.
+ *
+ * Offered only when the server said `reversible`, which it says only when the
+ * registry declares an `undo` for that action AND the action actually
+ * succeeded. A button that quietly does nothing is worse than no button, so
+ * this one is never rendered on a guess — a sent email has no undo and does
+ * not pretend to.
+ */
+function undoButton(result) {
+  const b = document.createElement("button");
+  b.className = "tiny ac-undo";
+  b.textContent = result.undo_label || "Undo";
+  b.onclick = async () => {
+    b.disabled = true;
+    const was = b.textContent;
+    b.textContent = "Undoing…";
+    try {
+      const out = await api("/api/actions/undo", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ log_id: result.log_id }) });
+      if (out.ok) {
+        b.replaceWith(Object.assign(document.createElement("span"),
+          { className: "muted ac-undone", textContent: " · " + (out.detail || "Undone") }));
+        loadReminders(); loadRoutines();
+      } else {
+        b.disabled = false; b.textContent = was;
+        toast(out.error || "That could not be undone.");
+      }
+    } catch (e) {
+      b.disabled = false; b.textContent = was;
+      toast(resultLine(e) || "That could not be undone.");
+    }
+  };
+  return b;
+}
+
+/** Real inputs for every scalar field the registry declares, in its order. */
+function actionFields(type, p) {
+  const spec = ACTION_CATALOG[type];
+  if (!spec || !Array.isArray(spec.fields)) return null;
+  const usable = spec.fields.filter(
+    (f) => !NOT_TYPEABLE.has(f) && (p[f] === undefined || p[f] === null
+      || typeof p[f] === "string" || typeof p[f] === "number"));
+  if (!usable.length) return null;
+
+  const wrap = document.createElement("div");
+  wrap.className = "ac-edit";
+  const inputs = {};
+  for (const name of usable) {
+    const row = document.createElement("label");
+    row.className = "ac-edit-row";
+    const tag = document.createElement("span");
+    tag.className = "ac-edit-label";
+    tag.textContent = humanKey(name);
+    const box = document.createElement(LONG_FIELDS.has(name) ? "textarea" : "input");
+    box.className = "ac-field ac-field-wide";
+    box.value = p[name] === null || p[name] === undefined ? "" : String(p[name]);
+    if (box.tagName === "TEXTAREA") box.rows = Math.min(10, Math.max(3,
+      String(box.value).split("\n").length + 1));
+    box.setAttribute("aria-label", humanKey(name));
+    inputs[name] = box;
+    row.appendChild(tag); row.appendChild(box);
+    wrap.appendChild(row);
+  }
+  //: Read at click time, never copied back — an edit the user made and a
+  //: confirm that ignored it would be the worst possible version of this.
+  wrap.readFields = () => {
+    const out = {};
+    for (const [name, box] of Object.entries(inputs)) out[name] = box.value;
+    return out;
+  };
+  return wrap;
+}
 
 //: One editable field. Kept as an element in a closure rather than found again
 //: with a selector: a card that reads the DOM back to itself can be handed a
@@ -530,25 +646,39 @@ function actionCard(a) {
        ${p.description ? `<div class="ac-body">${esc(p.description)}</div>` : ""}`;
   }
   const isEmail = a.type === "send_email";
+  const spec = ACTION_CATALOG[a.type] || {};
+  // The tier, in the user's words. A red action says why it always asks — that
+  // sentence is per action and comes from the registry, because "this always
+  // needs your approval" told about the wrong thing teaches nobody anything.
+  const note = spec.always_ask_because || RISK_NOTE[spec.risk] || "";
   const el = document.createElement("div");
   el.className = "action-card";
+  el.dataset.risk = spec.risk || "";
   el.innerHTML = `<div class="ac-head">${title}<span class="ac-tag">needs your confirmation</span></div>
     ${rows}
+    ${note ? `<div class="ac-row muted ac-risk">${esc(note)}</div>` : ""}
     <div class="ac-actions"><button class="ac-confirm">Confirm & ${verb}</button>
     <button class="ac-cancel ghost">Cancel</button></div>
     <div class="ac-result"></div>`;
   // Editable types grow real inputs. Held here, not looked up again later:
   // the values that execute are read off these elements at click time.
+  //
+  // Two editors, because two kinds of field. `workoutFields` understands a
+  // list of blocks; `actionFields` covers every scalar the registry declares.
+  // An action can have both — a session has blocks *and* a note.
   let editor = null;
-  if (EDITABLE[a.type] && a.type === "log_workout") {
+  if (a.type === "log_workout") {
     editor = workoutFields(Array.isArray(p.blocks) ? p.blocks : []);
     el.appendChild(editor);
   }
+  const fields = actionFields(a.type, p);
+  if (fields) el.appendChild(fields);
   el.querySelector(".ac-cancel").onclick = () => { el.querySelector(".ac-actions").innerHTML = "<span class='muted'>Cancelled</span>"; };
   // What is on the card now, not what was proposed. An edit the user made and
   // a confirm that ignored it would be the worst possible version of this.
   const editedParams = () => {
     const base = { ...p, agent_id: current };
+    if (fields && fields.readFields) Object.assign(base, fields.readFields());
     if (editor && editor.readBlocks) base.blocks = editor.readBlocks();
     return base;
   };
@@ -564,7 +694,15 @@ function actionCard(a) {
       // card — it is where "Notion cannot delete pages, do it there" comes from.
       const note = (r.agent_note || "").trim();
       if (r.ok) {
-        rr.innerHTML = `<span class="ac-ok">${IC.check} ${esc(resultLine(r.detail))}</span>`;
+        // Rung 5 on the card: "sent" is what we asked for, "confirmed 3:42 PM"
+        // is what the service says happened. Only shown when it was really
+        // checked — an unverified action says the plainer thing rather than
+        // claiming a confirmation nobody made.
+        const stamp = r.verified ? clockTime(r.verified_at) : "";
+        rr.innerHTML = `<span class="ac-ok">${IC.check} ${esc(resultLine(r.detail))}`
+          + (stamp ? `<span class="ac-verified"> · confirmed ${esc(stamp)}</span>` : "")
+          + `</span>`;
+        if (r.reversible && r.log_id) rr.appendChild(undoButton(r));
         loadReminders(); loadRoutines(); return;
       }
       rr.innerHTML = `<span class="ac-err">${esc(r.error || "Failed")}</span>`

@@ -42,6 +42,18 @@ permissions — and `library.py`, which is what Chitragupta *offers*.
 - A routine pre-authorises the routine, not the stranger who wrote the email it
   read. Outbound actions need a recipient on the explicit allow-list; everything
   else queues for one tap. Interactive chat is deliberately not gated.
+- **An action declares its own tier, in one place.** `actions.ActionSpec.risk`
+  is green (reaches nobody — runs unattended), amber (reaches someone — needs a
+  permitted recipient) or red (never unattended, never promotable).
+  `NEVER_UNATTENDED`, `OUTBOUND_ACTIONS` and `RECIPIENT_KINDS` are **derived**
+  from it; they used to be three hand-kept sets and the one you forget is
+  whichever is furthest from the code you are writing. An action nobody
+  declared is refused, not allowed.
+- **An action is the whole loop.** `verify` reads it back from the service,
+  `remember` writes it to the *brain* (not one agent's conversation), `undo` is
+  the inverse where one honestly exists — and `None` is the right answer for a
+  sent email. Everything lands in `action_log`. See
+  [`ACTION-COVERAGE.md`](../../docs/ACTION-COVERAGE.md).
 - **Every agent can notice, and every agent can ask for a browser.**
   `_PROACTIVE` (a reminder and a routine) is on all of them: neither reaches
   anybody, and a routine is the same agent later with the same tools — it

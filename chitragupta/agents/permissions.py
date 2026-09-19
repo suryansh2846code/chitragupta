@@ -27,10 +27,21 @@ import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
+from ..actions import CHAT_RECIPIENT, EMAIL_RECIPIENT, REGISTRY, Risk
 from ..config import get_settings
 from ..log import get_logger
 
 log = get_logger(__name__)
+
+#: Re-exported. The two allow-lists are defined in `actions.py`, beside the
+#: actions that name them; the *policy* that reads them lives here. One
+#: direction only, so an action never has to know about permissions.
+#:
+#: They stay separate, and `CHAT_RECIPIENT` stays scoped by app, because an
+#: email address is a global identifier and a chat id means nothing outside the
+#: app it came from. Allowing `@dana` on Telegram must not also allow a `#dana`
+#: in Slack; they are different people as often as not.
+__all__ = ["CHAT_RECIPIENT", "EMAIL_RECIPIENT"]
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS action_permissions (
@@ -44,30 +55,30 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_perm_kind_value
     ON action_permissions(kind, value);
 """
 
-EMAIL_RECIPIENT = "email_recipient"
-
-#: A conversation on a messaging app, stored as `app:chat` — `telegram:@dana`.
-#:
-#: A separate list from the email one, and separately scoped by app, because an
-#: email address is a global identifier and a chat id means nothing outside the
-#: app it came from. Allowing `@dana` on Telegram must not also allow a `#dana`
-#: in Slack; they are different people as often as not.
-CHAT_RECIPIENT = "chat_recipient"
-
 #: Actions whose effect reaches someone other than the user. These are the ones
 #: that need a permitted recipient before an unattended agent may run them.
-OUTBOUND_ACTIONS = {"send_email", "create_event", "message_send"}
+#:
+#: **Derived, not written.** This and the two sets below used to be three
+#: hand-maintained literals, and the failure mode was structural: adding an
+#: action meant remembering three places, and the one that gets forgotten is
+#: whichever is furthest from the code you are writing. An action now declares
+#: its own `Risk` in `actions.REGISTRY` and the tiers fall out of it, so the
+#: gate cannot disagree with the registry about what an action is.
+OUTBOUND_ACTIONS = frozenset(
+    name for name, spec in REGISTRY.items() if spec.risk is Risk.AMBER)
 
-#: Which allow-list each outbound action is judged against. A dict rather than
-#: a branch in `check`, so adding an action that reaches people is a line here
-#: and cannot be forgotten somewhere else.
+#: Which allow-list each outbound action is judged against. Read off the
+#: registry rather than restated, so an action that reaches people cannot be
+#: given a tier here and a different one there.
 RECIPIENT_KINDS = {
-    "send_email": EMAIL_RECIPIENT,
-    "create_event": EMAIL_RECIPIENT,
-    "message_send": CHAT_RECIPIENT,
+    name: spec.recipient_kind
+    for name, spec in REGISTRY.items() if spec.recipient_kind
 }
 
-#: Actions an unattended agent may never take, permitted recipient or not.
+#: Actions an unattended agent may never take, permitted recipient or not —
+#: `Risk.RED`. Two live here today and for unrelated reasons, which is why the
+#: sentence a user reads is per action rather than per set.
+#:
 #: `create_routine` is privilege escalation: a routine that creates routines can
 #: widen its own authority without the user ever seeing it.
 #:
@@ -82,17 +93,22 @@ RECIPIENT_KINDS = {
 #: It matters most for exactly the case that motivated this file: the text these
 #: connectors read — a Slack message, a GitHub issue body — is written by
 #: strangers, and it reaches an agent that can now act on their service.
-NEVER_UNATTENDED = {"create_routine", "mcp_action", "mail_triage"}
+#:
+#: `mail_triage` is the third, for the same input-side reason: a triage agent's
+#: whole input is text strangers sent, and *archive everything from the bank* is
+#: a sentence an email can contain. It now has an **undo** (`actions.py`), which
+#: is a reason to feel better about approving one — not a reason to stop asking.
+#: Promoting it would need its own argument and its own commit.
+NEVER_UNATTENDED = frozenset(
+    name for name, spec in REGISTRY.items() if spec.risk is Risk.RED)
 
-#: Why each of them waits, in the user's terms.
+#: Why each of them waits, in the user's terms — declared beside the action it
+#: describes, because a user told "creating automations always needs your
+#: approval" about a Slack message learns nothing except that the app is
+#: confused.
 _ALWAYS_ASK = {
-    "create_routine": "Creating automations always needs your approval.",
-    "mcp_action": "Anything a connector changes needs your approval.",
-    # The exact case this file was written for. A triage agent's whole input is
-    # text strangers sent, and "archive everything from the bank" is a sentence
-    # an email can contain. There is no recipient to check against an allow-list
-    # — the messages are already the user's own — so it waits for one tap.
-    "mail_triage": "Changing your inbox always needs your approval.",
+    name: spec.always_ask_because
+    for name, spec in REGISTRY.items() if spec.always_ask_because
 }
 
 _ADDRESS = re.compile(r"[^\s<>,;]+@[^\s<>,;]+")
@@ -216,14 +232,22 @@ def check(action_type: str, params: dict) -> Verdict:
     Interactive chat does not come through here — there the user sees a Confirm
     button, which is a stronger signal than any list.
     """
-    if action_type in NEVER_UNATTENDED:
-        # One reason per action, not one reason for the set. Both members are
-        # here for different causes, and a user told "creating automations
-        # always needs your approval" about a Slack message learns nothing
-        # except that the app is confused.
+    spec = REGISTRY.get(action_type)
+    if spec is None:
+        # An action nobody declared has no tier, so it has no permission to
+        # run. Failing closed here rather than falling through to `Verdict(True)`
+        # the way this used to: the old shape meant a typo in an action name
+        # read as "reaches nobody" and ran.
+        return Verdict(False, "That is not an action Chitragupta knows.")
+
+    if spec.risk is Risk.RED:
+        # One reason per action, not one reason for the set — see `_ALWAYS_ASK`.
         return Verdict(False, _ALWAYS_ASK[action_type])
 
-    if action_type not in OUTBOUND_ACTIONS:
+    if spec.risk is Risk.GREEN:
+        # Reaches nobody: a task, a draft, a reminder on the user's own laptop.
+        # There is no one to allow-list, so there is nothing to ask about. The
+        # action log is what makes this reviewable rather than invisible.
         return Verdict(True)
 
     targets = recipients_of(action_type, params)
