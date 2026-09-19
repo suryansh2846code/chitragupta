@@ -84,7 +84,12 @@ async function loadApprovals() {
       for (const value of who) {
         await api("/api/agents/permissions", {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ value, note: "allowed from an approval" }) });
+          // The list the SERVER said this action is judged against. Guessing
+          // it here wrote `telegram:@dana` onto the email list, which the gate
+          // for `message_send` never reads — so the tap did nothing and said
+          // it had worked.
+          body: JSON.stringify({ value, kind: row.kind || "",
+                                 note: "allowed from an approval" }) });
       }
     } catch (e) {
       toast(`Could not save that permission — ${String(e)}`);
@@ -242,11 +247,16 @@ async function loadAllowList() {
     ? rows.map((p) => `
         <div class="set-row" data-allow="${esc(p.value)}">
           <div class="set-main">
-            <div class="set-label">${esc(p.value)}</div>
+            <div class="set-label">${esc(p.value)}${
+              // Which list, when there is more than one it could be on. The
+              // same handle can be a person on two apps, and "remove" has to
+              // be unambiguous about which permission it takes away.
+              p.kind_label ? `<span class="set-tag">${esc(p.kind_label)}</span>` : ""}</div>
             <div class="set-desc">${esc(p.note || "Agents may reach them unattended.")}</div>
           </div>
           <div class="set-ctl">
-            <button class="tiny ghost" data-allowdel="${esc(p.value)}">Remove</button>
+            <button class="tiny ghost" data-allowdel="${esc(p.value)}"
+                    data-allowkind="${esc(p.kind || "")}">Remove</button>
           </div>
         </div>`).join("")
     // Not an error state, and said in the user's terms: the app is working
@@ -261,7 +271,9 @@ async function loadAllowList() {
       const value = b.dataset.allowdel;
       b.disabled = true;
       try {
-        await api(`/api/agents/permissions/${encodeURIComponent(value)}`,
+        const kind = b.dataset.allowkind || "";
+        await api(`/api/agents/permissions/${encodeURIComponent(value)}`
+                  + (kind ? `?kind=${encodeURIComponent(kind)}` : ""),
                   { method: "DELETE" });
         toast(`${value} will be asked about again`);
       } catch (e) {

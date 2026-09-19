@@ -281,6 +281,19 @@ def _public(row: dict) -> dict:
         row["blocked"] = json.loads(row.pop("blocked_json", None) or "[]")
     row.setdefault("blocked", [])
     row.pop("blocked_json", None)
+    # WHICH allow-list a grant for this action would go on. Sent rather than
+    # inferred in the frontend, because there is exactly one mapping from
+    # action to list and it lives in `permissions.RECIPIENT_KINDS`.
+    #
+    # Without it the UI granted everything as an email recipient: the "Always
+    # allow" button on a Telegram card wrote `telegram:@dana` onto the email
+    # list, told the user they would not be asked again, and then asked again
+    # every time — because `check()` reads the chat list for that action. The
+    # tap did nothing and said it had worked.
+    with suppressed("naming the allow-list an approval belongs to"):
+        from .permissions import RECIPIENT_KINDS
+        row["kind"] = RECIPIENT_KINDS.get(row.get("action_type", ""), "")
+    row.setdefault("kind", "")
     return row
 
 
