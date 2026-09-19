@@ -304,7 +304,176 @@ const CONNECTOR_HELP = {
   linear: `Read-only access to your Linear issues (status, priority, team).`,
   github: `Read-only access to the GitHub issues & PRs you're involved in.`,
 };
+// ── Telegram ─────────────────────────────────────────────────────────────
+//
+// The one connector whose backend shipped complete and unreachable. Six
+// endpoints and the whole Telethon flow existed; nothing in the frontend said
+// the word "telegram" except a label constant. So `message_send` was an action
+// the Inbox agent is taught and structurally could not take — the exact thing
+// `/CLAUDE.md` forbids: never show a control that cannot work.
+//
+// Signing in takes up to four steps and the server owns which one you are on.
+// `GET /api/telegram/status` is asked first and after anything that might have
+// moved, rather than the modal keeping its own idea: a wizard that tracks its
+// own position is a wizard that shows you step 2 after step 2 already
+// succeeded in another window.
+
+//: What each step of the sign-in asks for. The server decides which one is
+//: current; this only says how each looks.
+const TG_STEPS = {
+  credentials: {
+    title: "Connect Telegram",
+    blurb: `<p>Telegram needs its own app credentials — Chitragupta cannot
+      ship one, because an API ID identifies the app to Telegram and a shared
+      one would be every user's traffic under a single name.</p>
+      <ol>
+        <li>Open <b>my.telegram.org</b> and sign in with your phone.</li>
+        <li>Choose <b>API development tools</b> and fill the short form
+            (any app name will do).</li>
+        <li>Copy the <b>api_id</b> and <b>api_hash</b> it gives you.</li>
+      </ol>
+      <p style="margin:6px 0 12px"><a href="https://my.telegram.org/apps"
+         target="_blank" rel="noopener">Open my.telegram.org →</a></p>`,
+    fields: [["tgApiId", "api_id", "text", "1234567"],
+             ["tgApiHash", "api_hash", "password", "your api_hash"]],
+    button: "Save",
+  },
+  phone: {
+    title: "Sign in to Telegram",
+    blurb: `<p>Telegram will send a login code to this number, in the Telegram
+      app itself.</p>`,
+    fields: [["tgPhone", "Phone number, with country code", "tel", "+44…"]],
+    button: "Send me a code",
+  },
+  code: {
+    title: "Enter the code",
+    blurb: `<p>Telegram has sent a code to your phone — check the Telegram app
+      rather than your texts.</p>`,
+    fields: [["tgCode", "Login code", "text", "12345"]],
+    button: "Sign in",
+  },
+  password: {
+    title: "Two-factor password",
+    blurb: `<p>This account has a Telegram password (two-step verification).
+      It never leaves your Mac.</p>`,
+    fields: [["tgPassword", "Telegram password", "password", ""]],
+    button: "Finish",
+  },
+};
+
+function tgFields(step) {
+  return step.fields.map(([id, label, type, placeholder]) => `
+    <label class="t" style="display:block;margin:10px 0 4px">${esc(label)}</label>
+    <input id="${id}" type="${type}" autocomplete="off" spellcheck="false"
+           placeholder="${esc(placeholder)}"
+           style="width:100%;padding:8px 10px;border:1px solid var(--line);
+                  border-radius:8px;background:var(--bg);color:var(--text)" />`
+  ).join("");
+}
+
+/** Open the Telegram modal at whichever step the server says we are on. */
+async function telegramSetup(at = "") {
+  let state = {};
+  try {
+    state = await api("/api/telegram/status");
+  } catch {
+    // The probe shells out to Telethon and can be slow or absent. A modal that
+    // refuses to open teaches nobody anything; start at the beginning instead.
+    state = { configured: false, authorized: false };
+  }
+
+  if (state.authorized) {
+    openBrainModal("Telegram", `
+      <p>Connected as <b>${esc(state.account || "your account")}</b>.</p>
+      <p class="t">Your agents can read your chats, and send a message when you
+         confirm one. The session lives on this Mac only.</p>
+      <button id="tgOut" class="tiny ghost" style="margin-top:12px">Disconnect</button>`);
+    $("#tgOut").onclick = async () => {
+      $("#tgOut").disabled = true;
+      try {
+        const out = await api("/api/telegram/disconnect", { method: "POST" });
+        toast(out.detail || "Telegram disconnected");
+        $("#brainModal").hidden = true;
+        loadBrain();
+      } catch (e) { $("#tgOut").disabled = false; toast(String(e)); }
+    };
+    return;
+  }
+
+  // `at` lets a step move the flow on without re-asking; otherwise the server's
+  // own answer decides, which is what makes a second window harmless.
+  const which = at || (state.configured ? "phone" : "credentials");
+  const step = TG_STEPS[which];
+  openBrainModal(step.title, `${step.blurb}${tgFields(step)}
+    <div style="display:flex;gap:8px;margin-top:12px;align-items:center">
+      <button id="tgGo" class="tiny">${esc(step.button)}</button>
+      ${which === "credentials" ? "" :
+        `<button id="tgBack" class="tiny ghost">Start again</button>`}
+      <span id="tgSay" class="t"></span>
+    </div>
+    <p class="t" style="margin-top:10px">Everything here is stored on this Mac
+       only — never uploaded.</p>`);
+
+  const first = $(`#${step.fields[0][0]}`);
+  if (first) first.focus();
+  const say = (words) => { const el = $("#tgSay"); if (el) el.textContent = words; };
+  const back = $("#tgBack");
+  if (back) back.onclick = () => telegramSetup("credentials");
+
+  const go = $("#tgGo");
+  go.onclick = async () => {
+    const value = (id) => ($(`#${id}`)?.value || "").trim();
+    go.disabled = true;
+    say("…");
+    try {
+      let out;
+      if (which === "credentials") {
+        out = await api("/api/telegram/credentials", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ api_id: value("tgApiId"),
+                                 api_hash: value("tgApiHash") }) });
+        if (out.ok === false) throw new Error(out.error || "Telegram refused that");
+        return telegramSetup("phone");
+      }
+      if (which === "phone") {
+        out = await api("/api/telegram/login", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ phone: value("tgPhone") }) });
+        if (!out.ok) throw new Error(out.error || "Telegram refused that");
+        if (out.already) { toast("Already signed in"); return telegramSetup(); }
+        return telegramSetup("code");
+      }
+      const path = which === "code" ? "code" : "password";
+      out = await api(`/api/telegram/${path}`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(which === "code"
+          ? { code: value("tgCode") } : { password: value("tgPassword") }) });
+      if (out.needs_password) {
+        // Two-factor is on. Not a failure — the next step, and saying so is the
+        // difference between a wizard and a dead end.
+        return telegramSetup("password");
+      }
+      if (!out.ok) throw new Error(out.error || "Telegram refused that");
+      toast(out.detail || "Telegram connected");
+      $("#brainModal").hidden = true;
+      loadBrain();
+    } catch (e) {
+      go.disabled = false;
+      say(resultLine(e) || "That did not work.");
+    }
+  };
+  for (const [id] of step.fields) {
+    const box = $(`#${id}`);
+    if (box) box.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") go.click();
+    });
+  }
+}
+
 function connectorHelp(name) {
+  // Telegram is a sign-in, not a pasted key, so it does not fit the
+  // single-secret modal below.
+  if (name === "telegram") return telegramSetup();
   const c = CONNECTORS.find((x) => x.name === name);
   const f = c?.secret_field;
   if (f) {

@@ -778,6 +778,13 @@ function humanValue(v) {
 function resultLine(detail) {
   if (detail === null || detail === undefined || detail === "") return "Done";
   if (typeof detail === "string") return detail;
+  // An Error is an object whose `.name` is "Error", so without this it read as
+  // a named result and rendered "Done — Error" — over the top of whatever the
+  // server had actually explained. Every `catch (e) { resultLine(e) }` in the
+  // app was hitting it, the action card's Confirm included.
+  if (detail instanceof Error || (detail.message && detail.stack)) {
+    return String(detail.message) || "That did not work.";
+  }
   if (Array.isArray(detail)) return `Done — ${detail.length} item${detail.length === 1 ? "" : "s"}`;
   if (typeof detail === "object") {
     const named = detail.title || detail.name || detail.url || detail.id;
