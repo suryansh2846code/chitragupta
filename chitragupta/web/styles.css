@@ -114,10 +114,19 @@ select:focus, input:focus, textarea:focus { outline: none; border-color: var(--a
    icons floating in it while the conversation next to it was a raised card.
    Both are cards of the same material now, separated by a gutter — which is
    what "two different sections" has to mean when neither has a border. */
+/* The rail and the chat are ONE card now, split in two, not two cards with a
+   gutter between them. The facing corners are square and the facing borders are
+   gone, so the seam is a single hairline rather than two rounded edges with a
+   sliver of ground showing through.
+
+   The rail is a step darker than the chat it sits against (--ground, where the
+   chat is --surface). That one step is what still separates them now that the
+   gap does not: chrome recedes, the work comes forward. */
 .sidebar { display: flex; flex-direction: column; gap: 4px;
   margin: 9px 0 9px 9px; padding: 16px 12px;
-  background: var(--surface); border: 1px solid var(--line);
-  border-radius: 18px; box-shadow: 0 18px 50px rgba(0,0,0,.45);
+  background: var(--ground);
+  border: 1px solid var(--line); border-right: 0;
+  border-radius: 18px 0 0 18px;
   overflow-y: auto; min-height: 0; }
 .collapse-btn { margin-left: auto; width: 22px; height: 22px; border-radius: 6px; background: transparent;
   color: var(--muted); font-size: 16px; line-height: 1; display: inline-flex; align-items: center; justify-content: center; }
@@ -235,14 +244,22 @@ select:focus, input:focus, textarea:focus { outline: none; border-color: var(--a
   background: radial-gradient(circle at 32% 28%, #cfe0ff, #63708c 75%); }
 
 /* ── chat ─────────────────────────────────────────────────────────────── */
+/* The washes were blue (rgba(40,52,76) / rgba(46,50,68)) and survived the move
+   to charcoal, because they are painted over --surface rather than being a
+   token — so the largest surface in the product kept a cool cast in its corners
+   after everything around it had gone warm. Warm-grey now, same geometry.
+
+   The shadow is gone with the gutter: it existed to lift this card off the rail
+   behind it, and there is no gap left for it to fall into. The inset highlight
+   stays — that is the top edge catching light, not a drop shadow. */
 .chat { display: flex; flex-direction: column; min-width: 0; min-height: 0; position: relative;
-  margin: 9px; border-radius: 18px;
+  margin: 9px 9px 9px 0; border-radius: 0 18px 18px 0;
   background:
-    radial-gradient(78% 58% at 84% 92%, rgba(40,52,76,.22), transparent 62%),
-    radial-gradient(62% 44% at 10% 6%, rgba(46,50,68,.16), transparent 62%),
+    radial-gradient(78% 58% at 84% 92%, rgba(58,54,48,.22), transparent 62%),
+    radial-gradient(62% 44% at 10% 6%, rgba(52,50,46,.16), transparent 62%),
     var(--surface);
-  border: 1px solid var(--line);
-  box-shadow: inset 0 1px 0 rgba(223,231,242,.05), 0 18px 50px rgba(0,0,0,.45); }
+  border: 1px solid var(--line); border-left: 1px solid var(--line);
+  box-shadow: inset 0 1px 0 rgba(223,231,242,.05); }
 .chat-head { display: flex; align-items: center; justify-content: space-between;
   padding: 16px 26px; border-bottom: 1px solid var(--line); }
 .ch-agent { display: flex; align-items: center; gap: 12px; }
@@ -389,7 +406,12 @@ select:focus, input:focus, textarea:focus { outline: none; border-color: var(--a
   padding: 10px 11px 10px 16px;
   background: var(--panel-2);
   border: 1px solid var(--line2);
-  border-radius: 28px;
+  /* 18px, matching the cards. At 28px the radius was very nearly half the box's
+     own height, so the ends closed into semicircles and 840px of width between
+     them read as a stretched lozenge rather than as a field you type in. The
+     app's card language is 18px — the rail, the chat, the drawers — and the
+     composer is the one thing that was not speaking it. */
+  border-radius: 18px;
   box-shadow: 0 10px 34px rgba(0,0,0,.5), 0 2px 8px rgba(0,0,0,.35);
   transition: border-color .15s, box-shadow .15s;
 }
