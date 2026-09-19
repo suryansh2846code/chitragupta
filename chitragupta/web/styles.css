@@ -1065,10 +1065,10 @@ select:focus, input:focus, textarea:focus { outline: none; border-color: var(--a
 .cn-web-shelf { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
 .site-card { display: flex; align-items: center; gap: 12px;
   background: var(--panel-2); border-radius: 11px; padding: 11px 13px; }
-.site-mark { width: 30px; height: 30px; border-radius: 9px; flex: none;
-  display: inline-flex; align-items: center; justify-content: center;
-  background: rgba(223,231,242,.06); }
-.site-card.is-on .site-mark { background: rgba(245,200,119,.10); }
+/* Size only; `.logo-tile` carries the rest. The site's own tint already sets
+   both the icon colour and --brand at the render site, so a connected site
+   glows in its own colour on hover. */
+.site-mark { width: 32px; height: 32px; }
 .site-text { flex: 1; min-width: 0; }
 .site-nm { font-size: 13px; color: var(--star); }
 .site-sub { font-size: 11.5px; color: var(--faint); margin-top: 2px;
@@ -1369,9 +1369,9 @@ select:focus, input:focus, textarea:focus { outline: none; border-color: var(--a
   border-radius: 14px; overflow: hidden; }
 .cn-row { display: flex; align-items: center; gap: 13px; padding: 14px 16px; }
 .cn-row + .cn-row { border-top: 1px solid var(--line); }
-.cn-logo { width: 32px; height: 32px; border-radius: 9px; flex: none;
-  display: inline-flex; align-items: center; justify-content: center;
-  background: var(--panel-2); color: var(--muted); position: relative; }
+/* Size and state only — the disc, the hairline, the hover and the sheen all
+   come from `.logo-tile`, which the connected sites wear too. */
+.cn-logo { width: 34px; height: 34px; color: var(--muted); }
 .cn-logo svg { display: block; }
 /* A connected source is marked on its own logo rather than by a separate dot
    in the row: the mark is what the eye lands on first. */
@@ -2602,3 +2602,71 @@ button.tiny.running:hover { background: linear-gradient(to right,
 .ch-name .sk-line { width: 108px; height: 11px; margin: 3px 0; }
 .ch-role .sk-line { width: 76px; height: 9px; margin: 2px 0; }
 .ch-name .sk-line, .ch-role .sk-line { display: block; }
+
+/* ── logo tiles ──────────────────────────────────────────────────────────
+   One treatment for every third-party mark in the product — the connector
+   list, the MCP servers and custom apps in it, and the connected sites. They
+   were three separate little boxes with three sets of dimensions before; a
+   logo is a logo, and the shell around it should not change depending on which
+   screen you found it on.
+
+   After the Uiverse tile by Itskrish01: a glassy disc with a hairline, which on
+   hover lifts, tilts, takes the mark's OWN colour into its border and glow, and
+   passes a sheen across itself.
+
+   `--brand` is the whole mechanism. It defaults to the product's cool white and
+   is overridden per logo with the colour already inside that logo's artwork —
+   Gmail's red, Linear's indigo, iMessage's green — so the glow belongs to the
+   mark rather than being one house colour applied to everything. Set it inline
+   at the render site; nothing here needs to know the list.
+
+   The reference is Tailwind and this is not, so the utilities are translated
+   rather than approximated: p-5 → the size set by each caller, rounded-full,
+   border-white/10 → the --line token, the two gradients, duration-300 on the
+   tile and duration-700 on the sheen. */
+.logo-tile {
+  --brand: var(--star);
+  position: relative; flex: none;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: linear-gradient(to top right, rgba(0,0,0,.55), rgba(0,0,0,.35));
+  -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+  box-shadow: 0 2px 6px rgba(0,0,0,.30);
+  transition: transform .3s ease-out, box-shadow .3s ease-out,
+              border-color .3s ease-out, background .3s ease-out;
+}
+.logo-tile:hover {
+  transform: scale(1.1) rotate(3deg);
+  border-color: color-mix(in srgb, var(--brand) 50%, transparent);
+  background: linear-gradient(to top right,
+    color-mix(in srgb, var(--brand) 12%, transparent), rgba(0,0,0,.35));
+  box-shadow: 0 8px 22px color-mix(in srgb, var(--brand) 28%, transparent);
+}
+.logo-tile:active { transform: scale(.95) rotate(0deg); }
+/* The tilt alternates down a list. Every tile leaning the same way reads as the
+   whole column shearing; alternating reads as individual objects being picked
+   up. The reference does the same thing by hand across its four buttons. */
+.logo-tile:nth-of-type(even):hover { transform: scale(1.1) rotate(-3deg); }
+
+/* The sheen is a real child, not a pseudo-element on the tile, because clipping
+   it would need `overflow: hidden` on the tile — and that would also clip the
+   connected-state dot, which deliberately sits half outside the logo's edge.
+   The child clips itself instead and the tile stays whole. */
+.lt-sheen { position: absolute; inset: 0; border-radius: inherit;
+  overflow: hidden; pointer-events: none; }
+.lt-sheen::before {
+  content: ""; position: absolute; inset: 0;
+  background: linear-gradient(90deg, transparent,
+    color-mix(in srgb, var(--brand) 22%, transparent), transparent);
+  transform: translateX(-100%);
+  transition: transform .7s ease-out;
+}
+.logo-tile:hover .lt-sheen::before { transform: translateX(100%); }
+/* Over the sheen, always. */
+.logo-tile > svg, .logo-tile > span:not(.lt-sheen) { position: relative; z-index: 1; }
+
+@media (prefers-reduced-motion: reduce) {
+  .logo-tile, .logo-tile:hover, .logo-tile:active { transform: none; transition: none; }
+  .lt-sheen { display: none; }
+}
