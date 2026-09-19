@@ -126,6 +126,44 @@ class ActionSpec:
 EMAIL_RECIPIENT = "email_recipient"
 CHAT_RECIPIENT = "chat_recipient"
 
+#: A repository, as `owner/name`.
+#:
+#: The third list, and the first that is a **place** rather than a person. It
+#: exists because the tier test is not "does this reach somebody" — it is "can
+#: the gate *see* what it reaches". `update_event` went RED because the people
+#: a move touches are on the event and not in the params. A comment on
+#: `acme/api` reaches whoever watches `acme/api`, which nobody can enumerate —
+#: but the repository itself is right there in the URL, deterministically.
+#:
+#: So `acme/api` is a stable, comparable, revocable key, which makes "always
+#: allow comments on acme/api" a coherent offer in a way "always allow this
+#: argument blob" never was for `mcp_action`.
+REPO_RECIPIENT = "repo_recipient"
+
+_GITHUB_URL = re.compile(
+    r"github\.com/([\w.-]+)/([\w.-]+?)(?:\.git)?/(?:issues|pull)/(\d+)", re.I)
+_REPO_ONLY = re.compile(r"^([\w.-]+)/([\w.-]+?)(?:\.git)?/?$")
+
+
+def github_target(params: dict) -> tuple[str, str, str]:
+    """`(owner, repo, number)` from whatever the model put on the action.
+
+    A URL is preferred over three separate attributes because it is the thing
+    the user can check: `acme/api#87` and a link to it are the same fact, and
+    only one of them can be read at a glance on a card.
+    """
+    params = params or {}
+    url = str(params.get("url") or params.get("issue") or "").strip()
+    found = _GITHUB_URL.search(url)
+    if found:
+        return found.group(1), found.group(2), found.group(3)
+
+    repo = str(params.get("repo") or "").strip()
+    pair = _REPO_ONLY.match(repo)
+    if pair:
+        return pair.group(1), pair.group(2), str(params.get("number") or "")
+    return "", "", ""
+
 
 _PLAN_RE = re.compile(r"<plan(?:\s+([^>]*?))?>(.*?)</plan>", re.I | re.S)
 
@@ -735,6 +773,61 @@ def _undo_update(params: dict, result: dict) -> dict:
                               result.get("before") or {})
 
 
+def _github_comment(params: dict) -> dict:
+    owner, repo, number = github_target(params)
+    if not (owner and repo and number):
+        return {"ok": False, "error": "Give the issue or pull request URL — "
+                                      "github.com/owner/repo/issues/123."}
+    body = str(params.get("body") or params.get("comment") or "").strip()
+    if not body:
+        return {"ok": False, "error": "There is nothing to say."}
+    gh = _writer("github", "comment")
+    if gh is None:
+        return {"ok": False, "error": "GitHub is not connected."}
+    return gh.comment(owner, repo, int(number), body)
+
+
+def _github_create_issue(params: dict) -> dict:
+    owner, repo, _ = github_target(params)
+    if not (owner and repo):
+        return {"ok": False, "error": "Say which repository, as owner/name."}
+    title = str(params.get("title") or "").strip()
+    if not title:
+        return {"ok": False, "error": "An issue needs a title."}
+    labels = params.get("labels")
+    if isinstance(labels, str):
+        labels = [x.strip() for x in labels.split(",") if x.strip()]
+    gh = _writer("github", "create_issue")
+    if gh is None:
+        return {"ok": False, "error": "GitHub is not connected."}
+    return gh.create_issue(owner, repo, title,
+                           str(params.get("body") or ""), labels)
+
+
+def _verify_issue(params: dict, result: dict) -> dict:
+    gh = _writer("github", "issue_exists")
+    if gh is None:
+        return {}
+    return gh.issue_exists(str(result.get("owner") or ""),
+                           str(result.get("repo") or ""),
+                           int(result.get("id") or 0))
+
+
+def _remember_github(params: dict, result: dict) -> None:
+    _record(str(result.get("detail") or "Acted on GitHub") + ".",
+            title="GitHub")
+    _close_named_loop(params)
+
+
+def _undo_github_comment(params: dict, result: dict) -> dict:
+    gh = _writer("github", "delete_comment")
+    if gh is None:
+        return {"ok": False, "error": "GitHub is not connected."}
+    return gh.delete_comment(str(result.get("owner") or ""),
+                             str(result.get("repo") or ""),
+                             str(result.get("id") or ""))
+
+
 def _mcp_action(params: dict) -> dict:
     """Run one tool on a connector the user added.
 
@@ -1035,6 +1128,28 @@ REGISTRY: dict[str, ActionSpec] = {
         # No undo. Recreating it would be a NEW invitation with a new id, sent
         # to everybody who has already been told it was cancelled — which is
         # not the same event and not an undo. Same honesty as `send_email`.
+    ),
+    "github_comment": ActionSpec(
+        handler=_github_comment, label="Comment on GitHub",
+        fields=["url", "body"],
+        # **Amber, not red**, and the difference from `update_event` is the
+        # whole point of the tier test: the gate can SEE what this reaches.
+        # Nobody can enumerate who watches `acme/api`, but `acme/api` itself is
+        # in the URL — so it is a key an allow-list can compare against, and
+        # "always allow comments on acme/api" is a coherent thing to offer.
+        risk=Risk.AMBER, recipient_kind=REPO_RECIPIENT,
+        remember=_remember_github,
+        undo=_undo_github_comment, undo_label="Delete the comment",
+    ),
+    "github_create_issue": ActionSpec(
+        handler=_github_create_issue, label="Open a GitHub issue",
+        fields=["repo", "title", "body", "labels"],
+        risk=Risk.AMBER, recipient_kind=REPO_RECIPIENT,
+        verify=_verify_issue, remember=_remember_github,
+        # No undo. GitHub cannot delete an issue through the API, and closing
+        # one is not the inverse of opening it: it is still there, still
+        # numbered, and everybody watching has already been told. Offering
+        # "Undo" over that would be the button lying.
     ),
     "create_followup": ActionSpec(
         handler=_create_followup, label="Track a follow-up",

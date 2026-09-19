@@ -97,10 +97,14 @@ def test_the_tiers_hold_exactly_the_actions_they_are_meant_to():
       people they reach are on the existing event, not in the params, so
       `recipients_of` would find none and an allow-list would be checking
       nothing.
+    * `github_comment` / `github_create_issue` are AMBER for the mirror-image
+      reason: nobody can enumerate who watches `acme/api`, but `acme/api`
+      itself is in the URL — a key an allow-list can hold.
     """
     never = frozenset({"create_routine", "mcp_action", "mail_triage",
                        "update_event", "cancel_event"})
-    outbound = frozenset({"send_email", "create_event", "message_send"})
+    outbound = frozenset({"send_email", "create_event", "message_send",
+                          "github_comment", "github_create_issue"})
 
     assert never == set(permissions.NEVER_UNATTENDED)
     assert outbound == set(permissions.OUTBOUND_ACTIONS)

@@ -128,6 +128,16 @@ def describe(action_type: str, params: dict) -> str:
         line = about or (f"Waiting on {who}" if who else "a follow-up")
         when = str(params.get("due") or params.get("at") or "").strip()
         return f"Follow up: {line}" + (f" — chase after {when}" if when else "")
+    if action_type in ("github_comment", "github_create_issue"):
+        # WHERE it lands is what the user is approving — a comment on the
+        # wrong repository is public, permanent and somebody else's notification.
+        from ..actions import github_target
+
+        owner, repo, number = github_target(params)
+        where = f"{owner}/{repo}" if owner and repo else "an unknown repository"
+        if action_type == "github_create_issue":
+            return f"Open an issue on {where} — “{params.get('title') or 'untitled'}”"
+        return f"Comment on {where}#{number or '?'}"
     if action_type == "set_reminder":
         return f"Reminder: {params.get('message') or ''}"
     if action_type == "log_workout":

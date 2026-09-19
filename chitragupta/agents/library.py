@@ -93,6 +93,11 @@ _MAIL = ["search_source", "sync_source", "gmail_search",
 #: Telegram, Slack — one pair of tools across every app, not one pair each.
 #: Which apps are reachable at all: docs/MESSAGING.md.
 _MESSAGES = ["list_chats", "read_chat"]
+#: Writing into a repository, and the reading that has to come first: an
+#: agent that can file an issue and cannot search is an agent that files
+#: duplicates.
+_CODE = ["search_source", "sync_source"]
+_CODE_ACTIONS = ["github_comment", "github_create_issue"]
 #: `find_time` travels with the lookup: an agent that can read a diary
 #: and cannot find a gap in it answers "when suits you?", which is the
 #: job handed back.
@@ -137,6 +142,9 @@ _ALL_ACTIONS = ["create_draft", "send_email", "create_event", "update_event",
 #: to propose a change it has no tool to address is an agent that will claim it
 #: archived something.
 _COMMS_ACTIONS = [*_ALL_ACTIONS, "mail_triage", "message_send"]
+#: The generalist reaches the work surfaces too — it is the one agent
+#: with every tool, and an issue it cannot file is a job it hands back.
+_CHIEF_ACTIONS = [*_COMMS_ACTIONS, *_CODE_ACTIONS]
 
 #: Stands for "every tool there is" in a template's list.
 #:
@@ -244,7 +252,7 @@ TEMPLATES: tuple[Template, ...] = (
         # The one agent that does not stop to ask. Asking on every turn for the
         # agent whose whole job is "whatever you need" is a prompt nobody reads.
         unrestricted_connectors=True,
-        actions=_COMMS_ACTIONS,
+        actions=_CHIEF_ACTIONS,
         recall_sources=["gmail", "gcal"],
         works_with=["gmail", "gcal"],
     ),
@@ -331,8 +339,9 @@ TEMPLATES: tuple[Template, ...] = (
             "script over reasoning about what a program would print. When you "
             "are not sure a change is right, say which part you are unsure of."
         ),
-        tools=[*BASE_TOOLS, *_FILES, "run_python", *_TASKS, *_LOOPS],
-        actions=[*_PROACTIVE],
+        tools=[*BASE_TOOLS, *_FILES, "run_python", *_TASKS, *_LOOPS,
+               *_CODE],
+        actions=[*_PROACTIVE, *_CODE_ACTIONS],
         recall_sources=["github", "linear"],
         works_with=["github", "linear", "files"],
     ),

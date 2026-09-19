@@ -27,7 +27,13 @@ import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from ..actions import CHAT_RECIPIENT, EMAIL_RECIPIENT, REGISTRY, Risk
+from ..actions import (
+    CHAT_RECIPIENT,
+    EMAIL_RECIPIENT,
+    REGISTRY,
+    REPO_RECIPIENT,
+    Risk,
+)
 from ..config import get_settings
 from ..log import get_logger
 
@@ -41,7 +47,7 @@ log = get_logger(__name__)
 #: email address is a global identifier and a chat id means nothing outside the
 #: app it came from. Allowing `@dana` on Telegram must not also allow a `#dana`
 #: in Slack; they are different people as often as not.
-__all__ = ["CHAT_RECIPIENT", "EMAIL_RECIPIENT"]
+__all__ = ["CHAT_RECIPIENT", "EMAIL_RECIPIENT", "REPO_RECIPIENT"]
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS action_permissions (
@@ -134,6 +140,26 @@ def normalise(address: str) -> str:
     return (found.group(0) if found else (address or "")).strip().strip("<>").lower()
 
 
+def canonical(value: str, kind: str) -> str:
+    """The comparable form of a permission value, for its own list.
+
+    One function rather than the same conditional at every call site: `grant`,
+    `revoke` and `is_permitted` each had their own copy, and a list whose three
+    operations disagree about what equal means is one where a grant cannot be
+    revoked by the name it was granted under.
+
+    A repository is case-folded because GitHub is: `Acme/API` and `acme/api`
+    are the same repository, and a permission that depended on which spelling
+    appeared in a URL would be a permission that sometimes works.
+    """
+    raw = (value or "").strip()
+    if kind == EMAIL_RECIPIENT:
+        return normalise(raw)
+    if kind == REPO_RECIPIENT:
+        return raw.removesuffix("/").removesuffix(".git").lower()
+    return raw
+
+
 def _every_address_in(raw: str) -> list[str]:
     """Every address in one recipient field — not just the first.
 
@@ -168,6 +194,17 @@ def recipients_of(action_type: str, params: dict) -> list[str]:
         for one in attendees:
             out.extend(_every_address_in(str(one)))
         return list(dict.fromkeys(out))
+    if action_type in ("github_comment", "github_create_issue"):
+        # The repository, not the people. Nobody can enumerate who watches
+        # `acme/api`, and the gate's question is what it can *see* — which
+        # here is a key the user can read, compare and revoke.
+        from ..actions import github_target
+
+        owner, repo, _ = github_target(params)
+        # An unparseable target returns one anyway, so a malformed URL fails
+        # closed as an unknown recipient rather than reading as "reaches
+        # nobody" and running.
+        return [f"{owner}/{repo}" if owner and repo else "an unknown repository"]
     if action_type == "message_send":
         # Exactly one conversation, and the app is part of its identity. No
         # splitting: a chat id is opaque and picking addresses out of it the
@@ -215,12 +252,13 @@ def all_permissions() -> list[dict]:
 KIND_LABELS = {
     EMAIL_RECIPIENT: "Email",
     CHAT_RECIPIENT: "Messaging",
+    REPO_RECIPIENT: "Repository",
 }
 
 
 def grant(value: str, *, kind: str = EMAIL_RECIPIENT, note: str = "") -> dict:
     """Permit unattended actions toward `value`."""
-    clean = normalise(value) if kind == EMAIL_RECIPIENT else (value or "").strip()
+    clean = canonical(value, kind)
     if not clean:
         raise ValueError("a permission needs a value")
     conn = _conn()
@@ -234,7 +272,7 @@ def grant(value: str, *, kind: str = EMAIL_RECIPIENT, note: str = "") -> dict:
 
 
 def revoke(value: str, *, kind: str = EMAIL_RECIPIENT) -> bool:
-    clean = normalise(value) if kind == EMAIL_RECIPIENT else (value or "").strip()
+    clean = canonical(value, kind)
     conn = _conn()
     cur = conn.execute("DELETE FROM action_permissions WHERE kind=? AND value=?",
                        (kind, clean))
@@ -243,7 +281,7 @@ def revoke(value: str, *, kind: str = EMAIL_RECIPIENT) -> bool:
 
 
 def is_permitted(value: str, *, kind: str = EMAIL_RECIPIENT) -> bool:
-    clean = normalise(value) if kind == EMAIL_RECIPIENT else (value or "").strip()
+    clean = canonical(value, kind)
     row = _conn().execute(
         "SELECT 1 FROM action_permissions WHERE kind=? AND value=?",
         (kind, clean)).fetchone()
