@@ -2401,3 +2401,73 @@ button.tiny.running:hover { background: linear-gradient(to right,
 .cmp-opt span { color: var(--muted, #8a94a3); font-size: .76rem; }
 .cmp-opt:hover, .cmp-opt.on { background: var(--bg, #0b0d10); }
 .composer { position: relative; }
+
+/* ── skeletons ───────────────────────────────────────────────────────────
+   The shell paints instantly; the backend does not. Between those two moments
+   the rail and the conversation were simply blank, which reads as "broken" far
+   more readily than as "loading" — there is nothing on screen to suggest
+   anything is coming.
+
+   These stand in for the real rows at the real size, so the layout does not
+   jump when the data lands: an agent skeleton is the same 34px orb and the
+   same two lines of type as `.agent`, in the same padding. Placeholders that
+   are merely *near* the right size cost more than they save, because the reflow
+   when they are replaced is exactly the flicker they were meant to prevent.
+
+   The skeletons live in index.html, not in JS, so they are on screen at first
+   paint rather than one script-parse later. Each is replaced by the render that
+   fills its container — `loadAgents()` and `renderHistory()` both assign
+   innerHTML, so nothing has to remember to clear them.
+
+   Built from --star at low alpha rather than a flat grey: the rail (#03050a)
+   and the chat card (#080b12) are different grounds, and a translucent fill
+   sits correctly on both instead of needing one value per surface. */
+@keyframes sk-sheen {
+  from { background-position: -120% 0; }
+  to   { background-position: 120% 0; }
+}
+.sk {
+  --sk-base: rgba(223,231,242,.055);
+  --sk-sheen: rgba(223,231,242,.13);
+  border-radius: 999px;
+  background-color: var(--sk-base);
+  background-image: linear-gradient(90deg,
+    var(--sk-base) 0%, var(--sk-base) 34%, var(--sk-sheen) 50%,
+    var(--sk-base) 66%, var(--sk-base) 100%);
+  background-size: 220% 100%;
+  background-repeat: no-repeat;
+  animation: sk-sheen 1.5s linear infinite;
+}
+/* The sheen is the whole point of the effect and also the whole of its motion,
+   so under reduced-motion it becomes a plain resting fill — still obviously a
+   placeholder, just not a moving one. */
+@media (prefers-reduced-motion: reduce) {
+  .sk { animation: none; background-image: none; }
+}
+
+.sk-line { height: 9px; }
+.sk-orb { width: 34px; height: 34px; border-radius: 50%; flex: none; }
+
+/* the agent rail — mirrors `.agent` exactly */
+.sk-agent { display: flex; align-items: center; gap: 11px; padding: 9px 10px; }
+.sk-agent .sk-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+/* Ragged on purpose. Four rows of identical bars read as a table being drawn;
+   varying the widths reads as names and roles of different lengths, which is
+   what is actually coming. */
+.sk-agent:nth-child(1) .sk-name { width: 54%; } .sk-agent:nth-child(1) .sk-role { width: 76%; }
+.sk-agent:nth-child(2) .sk-name { width: 43%; } .sk-agent:nth-child(2) .sk-role { width: 63%; }
+.sk-agent:nth-child(3) .sk-name { width: 61%; } .sk-agent:nth-child(3) .sk-role { width: 51%; }
+.sk-agent:nth-child(4) .sk-name { width: 38%; } .sk-agent:nth-child(4) .sk-role { width: 70%; }
+
+/* the conversation — the shapes a turn actually takes */
+.sk-thread { display: flex; flex-direction: column; gap: 16px; width: 100%; }
+.sk-msg-user { align-self: flex-end; width: 46%; height: 42px; border-radius: 16px; }
+.sk-msg-bot { align-self: flex-start; width: 100%; display: flex; flex-direction: column; gap: 10px; }
+.sk-msg-bot .sk-line:nth-child(1) { width: 92%; }
+.sk-msg-bot .sk-line:nth-child(2) { width: 97%; }
+.sk-msg-bot .sk-line:nth-child(3) { width: 74%; }
+
+/* the chat header, where the agent's name and role arrive together */
+.ch-name .sk-line { width: 108px; height: 11px; margin: 3px 0; }
+.ch-role .sk-line { width: 76px; height: 9px; margin: 2px 0; }
+.ch-name .sk-line, .ch-role .sk-line { display: block; }

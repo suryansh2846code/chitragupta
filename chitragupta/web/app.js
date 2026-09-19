@@ -74,9 +74,33 @@ function agentDesc(a) {
 }
 
 
+// Skeletons (index.html) are normally cleared by whatever renders over them —
+// `loadAgents()` and `renderHistory()` both assign innerHTML. Two paths never
+// reach a render and would shimmer for ever: a first run with no agents, where
+// nothing is selected so no history is ever fetched, and a boot that throws.
+// Both call this, so "still loading" can never be what a stuck screen says.
+function clearSkeletons() {
+  const box = $("#messages");
+  if (box) {
+    box.querySelectorAll(".sk-thread").forEach((n) => n.remove());
+    box.removeAttribute("aria-busy");
+  }
+  const rail = $("#agentList");
+  if (rail) {
+    rail.querySelectorAll(".sk-agent").forEach((n) => n.remove());
+    rail.removeAttribute("aria-busy");
+  }
+  // Back to the placeholder the header shipped with, not to blank.
+  const nm = $("#agentName");
+  if (nm && nm.querySelector(".sk")) nm.textContent = "—";
+  const rl = $("#agentRole");
+  if (rl && rl.querySelector(".sk")) rl.textContent = "";
+}
+
 async function loadAgents() {
   const d = await api("/api/agents");
   agents = d.agents;
+  $("#agentList").removeAttribute("aria-busy");
   if (!agents.length) {
     // Nothing ships pre-added, so an empty rail is a real first run — not an
     // error. It has to lead somewhere rather than just being blank.
@@ -87,6 +111,7 @@ async function loadAgents() {
        </div>`;
     const go = $("#emptyToLibrary");
     if (go) go.onclick = () => { if (typeof openLibrary === "function") openLibrary(); };
+    clearSkeletons();   // no agent to select, so no history is coming
     return;
   }
   $("#agentList").innerHTML = agents.map((a) => {
@@ -159,17 +184,33 @@ window.addEventListener("keydown", (e) => {
 }, true);
 
 (async () => {
-  if (await maybeOnboard()) return;   // redirecting to onboarding — stop here
-  applyIcons();
-  await loadProviders();
-  loadAgents(); loadBrain(); loadTasks(); loadReminders(); loadRoutines();
-  updateBrainStatus();
-  // No lead agent and nothing pre-added, so a new install has no agents at
-  // all — the library is how you get one, and it opens itself once.
-  libraryOnFirstRun();
-  // poll the brain status often while it's building, and keep time-based panels fresh
-  setInterval(updateBrainStatus, 5000);
-  setInterval(() => { loadReminders(); loadRoutines(); }, 45000);
+  try {
+    if (await maybeOnboard()) return;   // redirecting to onboarding — stop here
+    applyIcons();
+    await loadProviders();
+    // loadAgents() gets its own catch: it is not awaited, so a rejection here
+    // would never reach the handler below, and the rail it was going to fill is
+    // the one still showing skeletons.
+    loadAgents().catch((e) => {
+      clearSkeletons();
+      toast(typeof e === "string" ? e : "Could not load your agents");
+    });
+    loadBrain(); loadTasks(); loadReminders(); loadRoutines();
+    updateBrainStatus();
+    // No lead agent and nothing pre-added, so a new install has no agents at
+    // all — the library is how you get one, and it opens itself once.
+    libraryOnFirstRun();
+    // poll the brain status often while it's building, and keep time-based panels fresh
+    setInterval(updateBrainStatus, 5000);
+    setInterval(() => { loadReminders(); loadRoutines(); }, 45000);
+  } catch (e) {
+    // The backend is unreachable or answered badly. Whatever the screen shows
+    // now, it must not be a shimmer — a placeholder that never resolves reads
+    // as a hang, and hides the fact that there is something to report.
+    clearSkeletons();
+    toast(typeof e === "string" ? e : "Could not reach the backend");
+    throw e;
+  }
 })();
 
 

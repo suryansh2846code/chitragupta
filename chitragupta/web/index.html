@@ -15,7 +15,15 @@
       <div class="brand"><span class="brand-mark"></span><span class="brand-word">Chitragupta</span><button id="collapseBtn" class="collapse-btn" title="Collapse sidebar" aria-label="Collapse sidebar" aria-expanded="true">‹</button></div>
 
       <div class="side-label">Agents</div>
-      <nav id="agentList" class="agents"></nav>
+      <!-- Skeletons, in the markup rather than injected by JS, so they are on
+           screen at first paint instead of one script-parse later. loadAgents()
+           assigns innerHTML over the top of them in both of its branches. -->
+      <nav id="agentList" class="agents" aria-busy="true">
+        <div class="sk-agent"><span class="sk sk-orb"></span><span class="sk-meta"><span class="sk sk-line sk-name"></span><span class="sk sk-line sk-role"></span></span></div>
+        <div class="sk-agent"><span class="sk sk-orb"></span><span class="sk-meta"><span class="sk sk-line sk-name"></span><span class="sk sk-line sk-role"></span></span></div>
+        <div class="sk-agent"><span class="sk sk-orb"></span><span class="sk-meta"><span class="sk sk-line sk-name"></span><span class="sk sk-line sk-role"></span></span></div>
+        <div class="sk-agent"><span class="sk sk-orb"></span><span class="sk-meta"><span class="sk sk-line sk-name"></span><span class="sk sk-line sk-role"></span></span></div>
+      </nav>
       <button id="newAgentRow" class="new-agent"><span class="na-plus">+</span><span class="na-tx">New Agent</span></button>
       <button id="newAgentBtn" hidden></button>
 
@@ -41,8 +49,9 @@
         <div class="ch-agent">
           <span class="orb" id="chOrb"></span>
           <div class="ch-meta">
-            <div class="ch-name" id="agentName">—</div>
-            <div class="ch-role" id="agentRole"></div>
+            <!-- selectAgent() writes textContent here, which replaces these. -->
+            <div class="ch-name" id="agentName"><span class="sk sk-line" aria-hidden="true"></span></div>
+            <div class="ch-role" id="agentRole"><span class="sk sk-line" aria-hidden="true"></span></div>
           </div>
           <button id="agentModelChip" class="agent-model-chip" title="Choose the model powering this agent">
             <span class="chip-dot" id="agentModelDot"></span>
@@ -57,7 +66,17 @@
         </div>
       </header>
 
-      <div id="messages" class="messages" role="log" aria-label="Conversation"></div>
+      <!-- aria-hidden: role="log" announces what lands in here, and a shimmering
+           placeholder is not something to read out. renderHistory() clears the
+           box before it draws, so this goes when the first turn arrives. -->
+      <div id="messages" class="messages" role="log" aria-label="Conversation" aria-busy="true">
+        <div class="sk-thread" aria-hidden="true">
+          <div class="sk sk-msg-user"></div>
+          <div class="sk-msg-bot"><span class="sk sk-line"></span><span class="sk sk-line"></span><span class="sk sk-line"></span></div>
+          <div class="sk sk-msg-user"></div>
+          <div class="sk-msg-bot"><span class="sk sk-line"></span><span class="sk sk-line"></span><span class="sk sk-line"></span></div>
+        </div>
+      </div>
 
       <form id="composer" class="composer">
         <input type="file" id="cmpFile" accept="image/png,image/jpeg,image/gif,image/webp" multiple hidden />

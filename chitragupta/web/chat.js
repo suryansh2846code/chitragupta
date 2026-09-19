@@ -98,7 +98,8 @@ async function maybeEnrichTip(div) {
 
 function renderHistory(history) {
   const box = $("#messages");
-  box.innerHTML = "";
+  box.innerHTML = "";              // also takes the boot skeleton with it
+  box.removeAttribute("aria-busy");
   const msgs = history.filter((m) => m.role === "user" || m.role === "assistant");
   if (!msgs.length) { box.appendChild(heroEmpty()); return; }
   for (const m of msgs) addMsg(m.role, m.content);   // so history shows action cards too
