@@ -93,8 +93,23 @@ const CONNECTOR_GROUPS = [
   { id: "other", title: "Custom sources",   sub: "Apps and servers you connected yourself." },
 ];
 
+//: The colour each mark already wears, lifted from its own artwork above, so a
+//: tile's glow is that product's colour and not one house colour applied to
+//: eleven different logos. Where the mark is monochrome (Notion, GitHub) the
+//: value is the ink it is drawn in. Anything missing falls through to --star
+//: via `.logo-tile`, which is the right answer for a custom app or an MCP
+//: server: we do not know its colour, so we do not invent one.
+const CONNECTOR_TINT = {
+  gmail: "#EA4335", gcal: "#4285F4", gdrive: "#0F9D58",
+  notion: "#ffffff", github: "#e6edf3", linear: "#5E6AD2",
+  imessage: "#34C759", apple_mail: "#1F8DFB", apple_calendar: "#FF3B30",
+  files: "#54A0FF", notes: "#FFD60A",
+};
 function connectorIcon(name) {
   return CONNECTOR_ICONS[name] || CONNECTOR_ICON_FALLBACK;
+}
+function connectorTint(name) {
+  return CONNECTOR_TINT[name] || "";
 }
 function connectorMeta(name) {
   return CONNECTOR_META[name] || { group: "other", desc: "" };
@@ -167,7 +182,9 @@ function _cnRowHtml(c, staleAfterMin) {
                <button class="tiny ghost cn-x" data-delmcp="${esc(c.name)}" title="Remove" aria-label="Remove ${esc(c.label)}">${IC.close}</button>` : "";
 
   return `<div class="cn-row" data-conn="${esc(c.name)}">
-    <span class="cn-logo" data-state="${state}">${connectorIcon(c.name)}</span>
+    <span class="cn-logo logo-tile" data-state="${state}"${
+      connectorTint(c.name) ? ` style="--brand:${connectorTint(c.name)}"` : ""
+    }><i class="lt-sheen"></i>${connectorIcon(c.name)}</span>
     <span class="cn-text">
       <span class="cn-name">${esc(c.label)}${badge}</span>
       <span class="cn-sub">${esc(status)}</span>
