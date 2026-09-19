@@ -41,9 +41,19 @@ cat > "$CONTENTS/Info.plist" <<EOF
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>CFBundleName</key><string>Chitragupta</string>
-  <key>CFBundleDisplayName</key><string>Chitragupta</string>
-  <key>CFBundleIdentifier</key><string>ai.chitragupta.app</string>
+  <!-- Named apart from the shipped build on purpose. Both can be installed at
+       once, and two rows reading "Chitragupta" in the Applications browser is
+       how you end up debugging the wrong one. -->
+  <key>CFBundleName</key><string>Chitragupta (dev)</string>
+  <key>CFBundleDisplayName</key><string>Chitragupta (dev)</string>
+  <!-- NOT ai.chitragupta.app. This bundle and the shipped one are different
+       apps — this launcher runs the checkout's venv — and when both claimed the
+       same identifier macOS treated them as one: the app vanished from the
+       macOS 26 Applications browser entirely, because the view dedupes by
+       identifier and resolved to the copy it would not list. They would also
+       have shared "Open With" defaults, TCC permission grants and window
+       state, so a dev build could silently answer for the installed one. -->
+  <key>CFBundleIdentifier</key><string>ai.chitragupta.app.dev</string>
   <key>CFBundleVersion</key><string>$VERSION</string>
   <key>CFBundleShortVersionString</key><string>$VERSION</string>
   <key>CFBundleExecutable</key><string>Chitragupta</string>
