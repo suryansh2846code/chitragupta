@@ -317,6 +317,57 @@ def _health_safety(tools: list[str] | None) -> str:
     return _HEALTH_SAFETY if _HEALTH_TOOLS & set(tools or []) else ""
 
 
+#: "Clear the emails that don't need my attention", in one card.
+#:
+#: The pieces for this all existed separately — `list_mail` for the ids, one
+#: `mail_triage` for the batch, `create_draft` for the replies, `<plan>` to put
+#: them under one button — and an agent handed four capabilities does not
+#: reliably assemble them into the one job people actually ask for. So the
+#: assembly is written down.
+#:
+#: Derived from tools and actions rather than written into the Inbox agent's
+#: prose, the same way `_health_safety` is: somebody who builds their own
+#: triage agent out of the same parts gets the same recipe, and the shipped one
+#: does not quietly own it.
+#:
+#: The four rules exist because each is a way the job goes wrong in a way the
+#: user finds out about late — an archived thread somebody was waiting on, a
+#: guessed id that archived the wrong message, a silent decision about what was
+#: left behind, and seventeen cards instead of one.
+_INBOX_RECIPE = (
+    "CLEARING THE INBOX — when the user asks you to clear, tidy, triage or "
+    "deal with their inbox, or asks what needs their attention:\n"
+    "1. Call `list_mail` first. Every id you act on MUST come from it — a "
+    "guessed id archives somebody else's message and nobody finds out.\n"
+    "2. Sort what comes back into four piles: NOISE (newsletters, promotions, "
+    "notifications) → archive. FYI (read it, nothing to do) → mark_read. "
+    "NEEDS A REPLY → draft one. IMPORTANT OR UNCLEAR → leave it alone.\n"
+    "3. Propose ONE plan: a single mail_triage action carrying every archive "
+    "and mark_read together, plus one create_draft per reply. Set "
+    "rationale to the counts the user should read first, e.g. "
+    '"17 emails — 9 newsletters, 5 to mark read, 2 need you".\n'
+    "4. NEVER archive or mark-read a message you are also drafting a reply "
+    "to, and say in your text which ones you left for them and why. An email "
+    "you quietly archived is one they will not know to look for."
+)
+
+
+def _inbox_recipe(tools: list[str] | None, actions: list[str]) -> str:
+    """Only for an agent that can do the whole job.
+
+    All three parts or none of it: an agent told to draft replies with no
+    `create_draft` will describe drafts it did not write, and one told to batch
+    with no `mail_triage` proposes a card it cannot fill. A recipe for a
+    capability the agent half-has is worse than no recipe.
+    """
+    has = set(tools or [])
+    if "list_mail" not in has:
+        return ""
+    if not {"mail_triage", "create_draft"} <= set(actions or []):
+        return ""
+    return _INBOX_RECIPE
+
+
 def _connector_reads(tools: list[str] | None) -> str:
     """The connectors this agent can question live, right now.
 
@@ -476,6 +527,12 @@ def build(*, name: str, role: str, system_prompt: str,
             lines.append(_SCHEDULING)
         if len(allowed) > 1:
             lines.append(_PLANNING)
+        # After the planning block, because it is an instance of it: the recipe
+        # tells the agent what to put in a plan, and reads as nonsense to one
+        # that has not just been told plans exist.
+        recipe = _inbox_recipe(tools, allowed)
+        if recipe:
+            lines.append(recipe)
         parts.append("\n".join(lines))
 
     safety = _health_safety(tools)

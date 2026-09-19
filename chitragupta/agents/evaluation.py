@@ -387,6 +387,59 @@ def run(*, include_slow: bool = True) -> Scorecard:
             and "Flash sale" in describe_action("mail_triage", {"items": batch})
             and "m1" not in describe_action("mail_triage", {"items": batch}))
 
+        # ── the whole job: "clear the emails that don't need me" ─────────
+        #
+        # Every part of this existed separately — ids from `list_mail`, one
+        # `mail_triage` for the batch, `create_draft` for the replies, `<plan>`
+        # to put them under one button — and four capabilities is not the same
+        # as the one job people actually ask for. This is the assembly, scored.
+        #
+        # The check that matters is not "did it emit a plan": it is that the
+        # message it drafted a reply to is NOT also in the archive batch. An
+        # email quietly archived under a reply is one the user will not know to
+        # look for, and it is the way this job fails silently.
+        from ..actions import parse_plans
+
+        tools_mod.TOOL_IMPLS["list_mail"] = lambda **kw: (
+            "- id=m1 thread=t1 [unread]\n  from: news@shop.test\n  subject: Flash sale\n"
+            "- id=m2 thread=t2\n  from: list@weekly.test\n  subject: Weekly newsletter\n"
+            "- id=m3 thread=t3 [unread]\n  from: ci@build.test\n  subject: Build passed\n"
+            "- id=m4 thread=t4 [unread]\n  from: rahul@work.test\n  subject: Proposal?")
+        provider = _scripted([
+            [("list_mail", {"query": "in:inbox"})],
+            "Four emails. Two are noise, one is an FYI, and Rahul is waiting.\n"
+            '<plan rationale="4 emails — 2 newsletters, 1 to mark read, 1 needs you">\n'
+            '<action type="mail_triage">'
+            '{"items":[{"id":"m1","do":"archive","subject":"Flash sale"},'
+            '{"id":"m2","do":"archive","subject":"Weekly newsletter"},'
+            '{"id":"m3","do":"mark_read","subject":"Build passed"}]}</action>\n'
+            '<action type="create_draft" to="rahul@work.test" '
+            'subject="Re: Proposal?" thread_id="t4">Sending it tonight.</action>\n'
+            "</plan>",
+        ])
+        use(provider)
+        cleared = runtime.run_turn("inbox", "clear the emails that don't need me",
+                                   effort="medium", connectors=["gmail"])
+        plans = parse_plans(cleared.reply or "")
+        steps = plans[0].steps if plans else []
+        triaged_ids = {i.get("id") for s in steps if s["type"] == "mail_triage"
+                       for i in s["params"].get("items", [])}
+        drafted = [s for s in steps if s["type"] == "create_draft"]
+
+        check("inbox_clearing",
+              "Clearing the inbox is one plan, not seventeen cards")(
+            len(plans) == 1 and len(steps) == 2,
+            f"{len(plans)} plan(s) of {len(steps)} step(s)")
+        check("inbox_clearing_drafts",
+              "What needs a reply gets a draft, not an archive")(
+            len(drafted) == 1 and "m4" not in triaged_ids,
+            f"{len(drafted)} draft(s); triaged {sorted(triaged_ids)}")
+        check("inbox_clearing_gate",
+              "The whole batch still waits for one tap")(
+            parse_plans(cleared.reply or "")[0].risk().value == "red"
+            if plans else False,
+            "a plan is as risky as its worst step")
+
         # ── messaging, across whichever app it is on ─────────────────────
         #
         # Two apps landed together because one app is a feature and two is a

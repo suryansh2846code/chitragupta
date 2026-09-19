@@ -196,7 +196,7 @@ run end to end through all seven steps, not when its endpoints exist.
 
 | # | The user says | Rungs needed | Phase |
 |---|---|---|---|
-| 1 | "Clear the emails that don't need me" | 1→6 | 1 |
+| 1 | "Clear the emails that don't need me" | 1→6 | ✅ done |
 | 2 | "Draft replies to anything waiting on me" | 1→3 | 1 |
 | 3 | "Reply to this thread saying X" | 1→6 | 1 |
 | 4 | "Send the latest proposal to Rahul" | 1→6 | 3 |
@@ -294,6 +294,39 @@ rest on that argument: they go through the folder grants instead.
 permission reasons — it needs none — but an agent that can draft and cannot
 send has no way to finish the job, and its card looks like a send that quietly
 did not happen.
+
+#### Job 1 — "clear the emails that don't need my attention" · ✅
+
+```
+Four emails. Two are noise, one is an FYI, and Rahul is waiting.
+I left Rahul's in your inbox as well, so you can see the thread.
+
+  4 emails — 2 newsletters, 1 to mark read, 1 needs you
+  Archive 2 emails, Mark read 1 email
+  Draft "Re: Proposal?" to rahul@work.test
+  Changing your inbox always needs your approval.
+                                           [ Approve & do all ]
+```
+
+Every piece already existed — `list_mail` for the ids, one `mail_triage` for
+the batch, `create_draft` for the replies, `<plan>` to put them under one
+button. **Four capabilities is not the same as the one job people ask for**, so
+the assembly is written down in `prompt._INBOX_RECIPE` and scored by three
+checks in `evaluation.py`.
+
+Derived from tools and actions, not from the Inbox template: somebody who
+builds their own triage agent out of the same parts gets the same recipe, and
+an agent missing any part gets none of it — a recipe for a capability an agent
+half-has is worse than no recipe.
+
+The rule that earns its place is *never archive or mark-read a message you are
+also drafting a reply to*. That is how this job fails silently: an email
+quietly archived under a draft is one the user will not know to look for. The
+scorecard breaks on exactly that, not merely on "did it emit a plan".
+
+The whole job is **reversible** — archive is a label pair, a draft is
+discardable — which is what makes one tap over fourteen emails a reasonable
+thing to ask somebody for.
 
 **Acceptance — job 1, end to end:**
 
