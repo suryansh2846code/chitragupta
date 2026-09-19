@@ -29,10 +29,12 @@
   /* top bars */
   .top{position:absolute;top:0;left:0;right:0;z-index:6;display:flex;align-items:center;justify-content:space-between;padding:30px 44px}
   .brand{display:flex;align-items:center;gap:12px;font-size:12px;letter-spacing:.42em;text-transform:uppercase}
-  /* Masked, so it is the one accent rather than a second gold baked into a file. */
-  .brand .mark{width:22px;height:22px;flex:none;background:var(--north);filter:drop-shadow(0 0 8px rgba(245,200,119,.35));
-    -webkit-mask:url("/static/brand-mark.png") center / contain no-repeat;
-    mask:url("/static/brand-mark.png") center / contain no-repeat}
+  /* The logo as drawn — ink on its own paper, the same tile the rail and the
+     Dock wear. It used to be masked and filled with --north, which made the
+     gold accent do double duty as the brand colour; the mark is art, not an
+     accent, and it is the same everywhere now. */
+  .brand .mark{width:22px;height:22px;flex:none;border-radius:5px;
+    background:url("/static/brand-tile.png") center / contain no-repeat}
   .topR{display:flex;align-items:center;gap:12px;transition:opacity .4s}
   .pill{font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--star);background:rgba(223,231,242,.04);border:1px solid var(--line2);border-radius:999px;padding:8px 15px;cursor:pointer;display:inline-flex;gap:7px;align-items:center;transition:all .18s}
   .pill:hover{border-color:var(--north);color:var(--north)}

@@ -131,19 +131,21 @@ select:focus, input:focus, textarea:focus { outline: none; border-color: var(--a
 .app.collapsed .user-av { width: 26px; height: 26px; }
 .brand { display: flex; align-items: center; gap: 11px; padding: 2px 6px 16px;
   font-family: var(--mono); letter-spacing: .32em; text-transform: uppercase; font-size: 13px; }
-/* The mark is a MASK, not an image: one asset, and it takes whatever colour
-   the surface around it uses — gold on the onboarding, text colour in the rail
-   — rather than baking a colour in and needing a second file the day the
-   palette moves.
+/* The mark is the artwork, on its own paper, in a tile — the same thing the
+   Dock icon shows. It used to be a MASK tinted by whatever surface it sat on,
+   which sounded economical and meant the logo was white here, gold on the
+   onboarding, and gold again in the tab: three colours, none of them the one
+   it was drawn in. The tile also carries its own ground, so the mark stays
+   legible anywhere, which the reversed-out version was not — it vanished on a
+   light browser tab strip.
 
    22px, not the 13px the old rotated square used. That square was two strokes
    and survived any size; this mark has a lotus, an inner square and a bindu
    inside it, and rendered at 18px they merge into a blob. Checked at size
    rather than assumed: below about 20px it stops being this mark and becomes
    a smudge, which is worse than the plain diamond it replaced. */
-.brand-mark { width: 22px; height: 22px; flex: none; background: var(--text);
-  -webkit-mask: url("/static/brand-mark.png") center / contain no-repeat;
-  mask: url("/static/brand-mark.png") center / contain no-repeat; }
+.brand-mark { width: 22px; height: 22px; flex: none; border-radius: 5px;
+  background: url("/static/brand-tile.png") center / contain no-repeat; }
 .side-label { display: flex; align-items: center; justify-content: space-between;
   font-family: var(--mono); font-size: 10px; letter-spacing: .18em; text-transform: uppercase;
   color: var(--faint); padding: 12px 8px 8px; }

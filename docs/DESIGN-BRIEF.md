@@ -36,24 +36,34 @@ rotated square, and the **bindu** at the centre. It is drawn art, and it is kept
 as drawn: the mark is not restyled per surface, and nothing is picked out of it
 for emphasis.
 
+**One appearance, everywhere.** The logo is the ink (`#1b1b19`) on its own paper
+(`#fdfcf8`), in a rounded tile — in the Dock, in the rail, on the onboarding and
+in the browser tab. Both colours are sampled from the drawing rather than taken
+from the tokens above: the brief governs the product's surfaces, and the logo is
+a specific piece of art. It is the one thing in the product the palette does not
+reach, and the tokens must not be applied to it.
+
+This replaced a masking scheme where each surface tinted the silhouette itself —
+white in the rail, `--north` gold on the onboarding, gold again in the tab. It
+saved a file and cost the identity: three colours, none of them the one the mark
+was drawn in. The tile also brings its own ground, so the mark survives any
+surface; the reversed-out version disappeared on a light browser tab strip.
+
 One master, `docs/brand/yantra.png` — 1024px, white, the shape carried entirely
 in the **alpha channel**. Nothing downstream is hand-cut:
 
-- `scripts/make-brand-assets.py` writes `brand-mark.png` (the rail and the
-  onboarding paint it with CSS `mask`, so it takes the colour of the surface it
-  sits on) and `favicon-32/64.png` (gold baked in — the tab is the one place CSS
-  cannot reach, and gold is the only hue that holds on a light *and* a dark tab).
-- `packaging/make-icon.py` renders `icon.icns` as the artwork itself: the ink
-  (`#1b1b19`) on its own paper (`#fdfcf8`), filling the tile. Both colours are
-  sampled from the drawing rather than taken from the tokens above — the brief
-  governs the product's surfaces, and the icon's job is to reproduce a specific
-  piece of art. It is the one place the palette does not apply.
+- `scripts/make-brand-assets.py` writes `brand-tile.png` (rail + onboarding) and
+  `favicon-32/64.png`.
+- `packaging/make-icon.py` writes `icon.icns`, which keeps Apple's exact
+  superellipse; the web tiles use a plain rounded rectangle, because below 128px
+  the two are indistinguishable.
 
 It does not shrink forever. Below ~20px the lotus and the gates merge and it
-stops being this mark, which is why the rail runs it at 22px. The app icon keeps
-one treatment at every size regardless: a simplified small size would mean the
-icon in a Finder list is a different shape from the icon in the Dock, and ink on
-paper survives the shrink better than a reversed-out mark does anyway.
+stops being this mark, which is why the rail runs it at 22px. Nothing simplifies
+the mark at small sizes — not the favicon, not the icon. A simplified small size
+would mean the logo in a Finder list is a different shape from the logo in the
+Dock, and ink on paper survives the shrink better than a reversed-out mark does
+anyway: the contrast is higher and the mark sits bigger in frame.
 
 ## Type
 - **Mono-forward** (system mono: `ui-monospace, 'SF Mono', 'JetBrains Mono',

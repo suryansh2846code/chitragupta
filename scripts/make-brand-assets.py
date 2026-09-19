@@ -1,23 +1,20 @@
 #!/usr/bin/env python3
-"""Derive the web brand assets from the one master mark.
+"""Derive every brand asset the web UI uses from the one master mark.
 
 The mark is the yantra in `docs/brand/yantra.png` — a 1024px **alpha
-silhouette**, white pixels throughout, shape carried entirely in the alpha
-channel. It is stored that way on purpose: every surface that wears the mark
-(`.brand-mark` in the rail, `.brand .mark` on onboarding) paints it with CSS
-`mask`, taking its colour from the surface around it. A file with a colour baked
-in would need a second file the day the palette moves.
+silhouette**, white throughout, shape carried entirely in the alpha channel.
 
-From that one master this script writes:
+Everywhere the logo appears it appears the same way: the ink on its own paper,
+in a rounded tile, exactly as the Dock icon wears it. That is a deliberate
+change from what these assets used to be. They were a *mask* — a silhouette the
+surface painted in its own colour, white in the rail and gold on the onboarding
+— which meant the logo was a different colour in every place it appeared and
+none of them was the colour it was drawn in. One artwork, one appearance.
 
-* `brand-mark.png` (128) — white + alpha, the mask source for both surfaces.
-* `favicon-64.png` / `favicon-32.png` — gold (`--north`) + alpha. The tab is the
-  one place CSS cannot reach, so the accent is baked in there; gold is the only
-  hue in the palette that holds against both a light and a dark tab strip.
-
-The 3% bleed matches what the mark carried before, so swapping the file does not
-change the optical weight of the rail. Sizes follow the `<link rel="icon">`
-tags in `index.html` and `onboarding.html`.
+The dark UI is why a tile is needed rather than the ink alone: `#1b1b19` on the
+`#03050a` rail is invisible. The tile carries its own paper with it, so the mark
+is legible on any ground, including a light browser tab strip — which the gold
+favicon it replaces was never reliable on.
 
     ./.venv/bin/python scripts/make-brand-assets.py
 
@@ -35,33 +32,42 @@ import argparse
 from pathlib import Path
 
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageDraw
 
 ROOT = Path(__file__).resolve().parent.parent
 MASTER = ROOT / "docs" / "brand" / "yantra.png"
 WEB = ROOT / "chitragupta" / "web"
 
-NORTH = (245, 200, 119)          # #f5c877 — --north, the one accent
-STAR = (255, 255, 255)           # the mask source is pure white; CSS colours it
+# ── Sampled from the artwork, not from the brief ─────────────────────────────
+# `docs/DESIGN-BRIEF.md` governs the product's surfaces; the logo is a specific
+# piece of art, and these are its own two colours. Kept identical to the pair in
+# `packaging/make-icon.py` so the tile and the Dock icon cannot drift apart.
+PAPER = (253, 252, 248)
+INK = (27, 27, 25)
 
-#: (path, pixel size, RGB to flood behind the alpha)
+MARK_FRAC = 0.78                 # mark width as a fraction of the tile
+RADIUS_FRAC = 0.225              # corner radius, matching macOS proportions
+SUPERSAMPLE = 4                  # draw big, downsample — Pillow has no AA
+
+#: (path, pixel size). Sizes follow the `<link rel="icon">` tags in index.html
+#: and onboarding.html, plus one tile big enough for the rail at 2x.
 TARGETS = [
-    (WEB / "brand-mark.png", 128, STAR),
-    (WEB / "favicon-64.png", 64, NORTH),
-    (WEB / "favicon-32.png", 32, NORTH),
+    (WEB / "brand-tile.png", 128),
+    (WEB / "favicon-64.png", 64),
+    (WEB / "favicon-32.png", 32),
 ]
 
-
-#: Measured off the artwork: the paper sits at ~251 and the ink at ~25-35. They
-#: are read as levels rather than thresholded so the drawing's own antialiasing
-#: survives into the alpha channel — a hard cut would leave the lotus edges
-#: jagged at every size below 128.
-ART_PAPER, ART_INK = 250.0, 35.0
-BLEED = 0.03                     # the margin the mark carried before this file
+ART_PAPER, ART_INK = 250.0, 35.0  # measured off the drawing: paper ~251, ink ~25-35
+BLEED = 0.03                      # the margin the mark carried before this file
 
 
 def master_from_art(art: Path, size: int = 1024) -> Image.Image:
-    """Ink-on-paper artwork -> the square alpha silhouette we keep as master."""
+    """Ink-on-paper artwork -> the square alpha silhouette we keep as master.
+
+    Read as levels rather than thresholded, so the drawing's own antialiasing
+    survives into the alpha channel — a hard cut leaves the lotus edges jagged
+    at every size below 128.
+    """
     grey = np.asarray(Image.open(art).convert("L"), dtype=np.float32)
     coverage = np.clip((ART_PAPER - grey) / (ART_PAPER - ART_INK), 0.0, 1.0)
     alpha = Image.fromarray((coverage * 255).round().astype(np.uint8), "L")
@@ -73,15 +79,36 @@ def master_from_art(art: Path, size: int = 1024) -> Image.Image:
     side = round(max(w, h) * (1 + 2 * BLEED))
     square = Image.new("L", (side, side), 0)
     square.paste(alpha, ((side - w) // 2, (side - h) // 2))
-    return tint(square.resize((size, size), Image.Resampling.LANCZOS), STAR)
+    square = square.resize((size, size), Image.Resampling.LANCZOS)
 
-
-def tint(alpha: Image.Image, rgb: tuple[int, int, int]) -> Image.Image:
-    """A flat colour cut to `alpha` — the shape lives only in the alpha channel."""
-    flat = Image.new("RGB", alpha.size, rgb)
-    out = flat.convert("RGBA")
-    out.putalpha(alpha)
+    out = Image.new("RGBA", (size, size), (255, 255, 255, 0))
+    out.putalpha(square)
     return out
+
+
+def tile(size: int) -> Image.Image:
+    """The logo as it is worn everywhere: ink on paper, in a rounded tile.
+
+    A circular-corner rounded rectangle, not the superellipse the Dock icon
+    uses. At 16-128px the two are indistinguishable — the difference is what
+    Apple's shape does over hundreds of pixels — and `packaging/make-icon.py`
+    keeps the exact geometry for the one place it shows.
+    """
+    s = size * SUPERSAMPLE
+
+    shape = Image.new("L", (s, s), 0)
+    ImageDraw.Draw(shape).rounded_rectangle(
+        [0, 0, s - 1, s - 1], radius=s * RADIUS_FRAC, fill=255)
+
+    art = Image.new("RGBA", (s, s), (*PAPER, 255))
+    mark_px = round(s * MARK_FRAC)
+    alpha = Image.open(MASTER).convert("RGBA").getchannel("A")
+    alpha = alpha.resize((mark_px, mark_px), Image.Resampling.LANCZOS)
+    offset = round((s - mark_px) / 2.0)
+    art.paste(INK, (offset, offset), alpha)
+
+    art.putalpha(shape)
+    return art.resize((size, size), Image.Resampling.LANCZOS)
 
 
 def main() -> int:
@@ -95,11 +122,8 @@ def main() -> int:
         master_from_art(args.from_art).save(MASTER)
         print(f"✓ {MASTER.relative_to(ROOT)}  (master, from {args.from_art})")
 
-    master = Image.open(MASTER).convert("RGBA").getchannel("A")
-    for path, size, rgb in TARGETS:
-        # LANCZOS on the alpha alone: resampling the composite would drag the
-        # colour into the transparent margin and fringe the edge.
-        tint(master.resize((size, size), Image.Resampling.LANCZOS), rgb).save(path)
+    for path, size in TARGETS:
+        tile(size).save(path)
         print(f"✓ {path.relative_to(ROOT)}  ({size}px)")
     return 0
 
