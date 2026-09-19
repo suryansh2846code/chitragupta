@@ -126,9 +126,96 @@ EMAIL_RECIPIENT = "email_recipient"
 CHAT_RECIPIENT = "chat_recipient"
 
 
+_PLAN_RE = re.compile(r"<plan(?:\s+([^>]*?))?>(.*?)</plan>", re.I | re.S)
+
+
+@dataclass(frozen=True)
+class ActionPlan:
+    """Several actions the user approves once, as one piece of work.
+
+    *"Clear the emails that don't need my attention"* is seventeen decisions
+    and one intention. Rendering it as seventeen cards asks a person to make
+    the same judgement seventeen times, and the second one is already being
+    made without reading.
+
+    So a model may wrap its proposals in `<plan>`, and the card shows what it
+    understood, what it will do, and one button.
+
+    **Attended only.** `parse_actions` still finds every `<action>` inside a
+    plan, so an *unattended* routine keeps putting each one through
+    `agents/approvals.run_or_queue` on its own merits — which is stricter than
+    plan-level approval and needs no change to `routines.py`. The wrapper
+    groups a decision a person is present to make; it never widens one.
+    """
+
+    rationale: str
+    steps: list[dict]
+
+    def risk(self) -> Risk:
+        """The highest rung any step reaches.
+
+        A plan is as risky as its worst step, not its average one — nine green
+        archives beside one amber send is a card that sends an email, and
+        saying "reaches nobody" because eight of nine steps do would be the
+        card lying about the only step that matters.
+        """
+        worst = Risk.GREEN
+        for step in self.steps:
+            spec = REGISTRY.get(step.get("type", ""))
+            if spec is None:
+                continue
+            if spec.risk is Risk.RED:
+                return Risk.RED
+            if spec.risk is Risk.AMBER:
+                worst = Risk.AMBER
+        return worst
+
+    def as_dict(self) -> dict[str, Any]:
+        return {"rationale": self.rationale, "steps": list(self.steps),
+                "risk": self.risk().value}
+
+
+def parse_plans(text: str) -> list[ActionPlan]:
+    """Extract `<plan>…</plan>` groups from a model reply.
+
+    A plan with no usable steps is dropped rather than shown as an empty card,
+    the same rule `parse_actions` applies to a malformed action: half-parsing a
+    model's proposal and running the result is how an action does something
+    nobody proposed.
+    """
+    plans = []
+    for attrs, plan_body in _PLAN_RE.findall(text or ""):
+        # `plan_body` is a slice of the model's own reply, which is the only
+        # thing `parse_actions` may ever be handed —
+        # `test_only_the_reply_is_ever_handed_to_parse_actions` greps for that
+        # by argument name, so this one is spelled to say where it came from
+        # rather than reusing a name any regex group could carry.
+        steps = parse_actions(plan_body)
+        if not steps:
+            continue
+        found = dict(_ATTR_RE.findall(attrs or ""))
+        rationale = (found.get("rationale") or "").strip()
+        plans.append(ActionPlan(rationale=rationale, steps=steps))
+    return plans
+
+
+def strip_plans(text: str) -> str:
+    """The reply with plan wrappers removed, leaving the actions to be parsed.
+
+    Only the tags go; the actions inside them stay where they were, so a caller
+    that does not understand plans sees exactly what it saw before.
+    """
+    return _PLAN_RE.sub(lambda m: m.group(2), text or "")
+
+
 def parse_actions(text: str) -> list[dict]:
     """Extract <action …>…</action> proposals from a model reply (server-side
-    twin of the UI parser) so routines can auto-execute them."""
+    twin of the UI parser) so routines can auto-execute them.
+
+    Finds them inside a `<plan>` as well as outside one — deliberately. The
+    unattended path judges every action on its own, and a wrapper the model
+    wrote must not be able to change that.
+    """
     out = []
     for attrs, inner in _ACTION_RE.findall(text or ""):
         a: dict = {"params": {}}
@@ -764,6 +851,89 @@ def run_now(action_type: str, params: dict, *, agent_id: str = "",
         result = {"ok": False, "error": "that action returned nothing usable"}
     return _finish(action_type, spec, params, result,
                    agent_id=agent_id, origin=origin)
+
+
+def run_plan(steps: list[dict], *, agent_id: str = "",
+             origin: str = "chat") -> dict:
+    """Run an approved plan in order, and say exactly how far it got.
+
+    **In order, and stopping at the first failure.** Both halves are
+    deliberate. Order, because a plan is a sequence a person read as one —
+    "draft the reply, then archive the rest" reversed is a different plan.
+    Stopping, because the steps after a failure were written on the assumption
+    that the one before it worked, and running them anyway is the app deciding
+    that assumption did not matter.
+
+    What it must never do is go quiet about the difference. `_mail_triage`
+    learned this first: *"It failed" after eight of twelve moved is a worse
+    answer than the truth.* So every step that ran is reported with its own
+    result and its own log id, and the ones that never started are named as
+    not started rather than left for the user to infer from a count.
+    """
+    done: list[dict] = []
+    failed: dict | None = None
+
+    for index, step in enumerate(steps or []):
+        action_type = str(step.get("type") or "")
+        params = dict(step.get("params") or {})
+        if agent_id:
+            params.setdefault("agent_id", agent_id)
+        result = run_now(action_type, params, agent_id=agent_id, origin=origin)
+        entry = {"index": index, "type": action_type,
+                 "summary": _summary(action_type, params), "result": result}
+        done.append(entry)
+        if not result.get("ok"):
+            failed = entry
+            break
+
+    skipped = [
+        {"index": i, "type": str(s.get("type") or ""),
+         "summary": _summary(str(s.get("type") or ""), dict(s.get("params") or {}))}
+        for i, s in enumerate(steps or []) if i >= len(done)
+    ]
+    ran = [d for d in done if d["result"].get("ok")]
+    return {
+        "ok": failed is None,
+        "steps": done,
+        "skipped": skipped,
+        "detail": _plan_detail(len(ran), len(steps or []), failed),
+        "error": (failed["result"].get("error") or "") if failed else "",
+        # Everything that can still be taken back, newest first — which is the
+        # order it has to be undone in.
+        "undoable": [d["result"]["log_id"] for d in reversed(ran)
+                     if d["result"].get("reversible") and d["result"].get("log_id")],
+        "log_ids": [d["result"].get("log_id", "") for d in done],
+    }
+
+
+def _plan_detail(ran: int, total: int, failed: dict | None) -> str:
+    if failed is None:
+        return f"All {total} done." if total != 1 else "Done."
+    if ran == 0:
+        return f"Nothing was done — the first step failed. {total - 1} not started."
+    return (f"{ran} of {total} done, then “{failed['summary']}” failed. "
+            f"{total - ran - 1} not started.")
+
+
+def undo_plan(log_ids: list[str]) -> dict:
+    """Take back as much of a plan as can be taken back, newest first.
+
+    Reverse order because the steps ran forwards: a plan that created a thing
+    and then referred to it has to be unwound the way it was wound.
+
+    Reports per step rather than as one verdict. Some of a plan is undoable
+    and some is not — a sent email among four archived threads — and a single
+    "undone" over that would be claiming something untrue about the email.
+    """
+    results = []
+    for log_id in log_ids or []:
+        out = undo(log_id)
+        results.append({"log_id": log_id, **out})
+    reversed_count = sum(1 for r in results if r.get("ok"))
+    return {"ok": reversed_count > 0, "reversed": reversed_count,
+            "steps": results,
+            "detail": (f"Took back {reversed_count} of {len(results)}."
+                       if results else "There was nothing to take back.")}
 
 
 def undo(log_id: str) -> dict:

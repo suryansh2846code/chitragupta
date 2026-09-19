@@ -587,7 +587,12 @@ def test_only_the_reply_is_ever_handed_to_parse_actions():
     import pathlib
 
     root = pathlib.Path(runtime.__file__).resolve().parents[1]
-    allowed = {"res.reply", "text", "reply"}
+    # `plan_body` is the inside of a `<plan>` tag — a slice of the same reply,
+    # taken by `actions.parse_plans` so several proposals can share one
+    # approval. Named for where it came from rather than for the regex group
+    # it happens to be, so this list stays a list of *reply* spellings and not
+    # a hole any local variable can walk through.
+    allowed = {"res.reply", "text", "reply", "plan_body"}
     offenders = []
     for path in root.rglob("*.py"):
         for num, line in enumerate(path.read_text().splitlines(), 1):

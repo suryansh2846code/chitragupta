@@ -105,6 +105,34 @@ function renderHistory(history) {
   box.scrollTop = box.scrollHeight;
 }
 
+/** Plans first, then whatever actions were left loose.
+ *
+ * A model may wrap several proposals in `<plan rationale="…">`. Seventeen
+ * emails is seventeen decisions and one judgement, and seventeen cards ask a
+ * person to make that judgement seventeen times — the second one is already
+ * being made without reading.
+ *
+ * Plans are lifted out before `parseActions` runs, so the actions inside one
+ * are claimed by their plan and never also rendered as loose cards. Mirrors
+ * `actions.parse_plans` on the server, and like it, a plan with no usable
+ * steps is dropped rather than shown as an empty card.
+ */
+function parsePlans(text) {
+  const plans = [];
+  const rest = String(text || "").replace(
+    /<plan(\s+[^>]*?)?>([\s\S]*?)<\/plan>/gi, (m, attrs, inner) => {
+      const { actions } = parseActions(inner);
+      if (!actions.length) return "";
+      let rationale = "";
+      const found = /rationale="([^"]*)"/i.exec(attrs || "");
+      if (found) rationale = found[1].trim();
+      plans.push({ rationale, steps: actions });
+      return "";
+    });
+  const { clean, actions } = parseActions(rest);
+  return { clean, plans, actions };
+}
+
 function parseActions(text) {
   const actions = [];
   const clean = text.replace(/<action\s+([^>]*?)>([\s\S]*?)<\/action>/gi, (m, attrs, inner) => {
@@ -321,6 +349,155 @@ const RISK_NOTE = {
   amber: "This leaves your machine.",
   red: "",       // the action's own `always_ask_because` is more specific
 };
+
+/** Several actions, one judgement, one button.
+ *
+ * The card shows what the agent understood (`rationale`), every step it means
+ * to take in the order it will take them, and the tier of the worst one — a
+ * plan is as risky as its worst step, and nine green archives beside one amber
+ * send is a card that sends an email.
+ *
+ * Steps are **not** individually editable here. A card that lets you correct
+ * one of seventeen is a card you have to read seventeen times, which is the
+ * thing this replaces; correcting one means asking the agent, and the single
+ * action card is where correcting belongs.
+ */
+function planCard(plan) {
+  const steps = Array.isArray(plan.steps) ? plan.steps : [];
+  // Grouped by what each step does, because the same verb repeated eleven
+  // times is one line to a person and eleven to a list.
+  const counts = new Map();
+  for (const s of steps) {
+    const label = (ACTION_CATALOG[s.type] && ACTION_CATALOG[s.type].label)
+      || String(s.type || "").replace(/_/g, " ");
+    counts.set(label, (counts.get(label) || 0) + 1);
+  }
+  const worst = steps.reduce((acc, s) => {
+    const r = (ACTION_CATALOG[s.type] || {}).risk;
+    if (r === "red" || acc === "red") return "red";
+    if (r === "amber" || acc === "amber") return "amber";
+    return acc || "green";
+  }, "green");
+  const note = steps
+    .map((s) => (ACTION_CATALOG[s.type] || {}).always_ask_because)
+    .find(Boolean) || RISK_NOTE[worst] || "";
+
+  const rows = [...counts].map(([label, n]) =>
+    `<div class="ac-row"><b>${esc(label)}</b> ${n === 1 ? "once" : `${n} times`}</div>`
+  ).join("");
+  const listed = steps.slice(0, PLAN_NAMED_MAX).map((s) =>
+    `<div class="pl-step">${esc(actionSummary(s))}</div>`).join("");
+  const rest = steps.length - Math.min(steps.length, PLAN_NAMED_MAX);
+
+  const el = document.createElement("div");
+  el.className = "action-card";
+  el.dataset.risk = worst;
+  el.innerHTML = `<div class="ac-head">${
+      steps.length} action${steps.length === 1 ? "" : "s"} ready<span class="ac-tag">needs your confirmation</span></div>
+    ${plan.rationale ? `<div class="ac-row muted pl-why">${esc(plan.rationale)}</div>` : ""}
+    ${rows}
+    <div class="pl-steps">${listed}${
+      rest > 0 ? `<div class="pl-step muted">and ${rest} more</div>` : ""}</div>
+    ${note ? `<div class="ac-row muted ac-risk">${esc(note)}</div>` : ""}
+    <div class="ac-actions"><button class="ac-confirm">Approve &amp; do ${
+      steps.length === 1 ? "it" : "all"}</button>
+    <button class="ac-cancel ghost">Cancel</button></div>
+    <div class="ac-result"></div>`;
+
+  el.querySelector(".ac-cancel").onclick = () => {
+    el.querySelector(".ac-actions").innerHTML = "<span class='muted'>Cancelled</span>";
+  };
+  el.querySelector(".ac-confirm").onclick = async () => {
+    const btns = el.querySelector(".ac-actions");
+    btns.innerHTML = "<span class='muted'>Working…</span>";
+    const rr = el.querySelector(".ac-result");
+    try {
+      const r = await api("/api/actions/execute-plan", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ steps, agent_id: current }) });
+      // Every step is reported, including the ones that never started. "Six of
+      // nine" does not tell anybody WHICH three did not happen, and a plan that
+      // half-ran is exactly when a person needs to know.
+      rr.innerHTML =
+        `<div class="${r.ok ? "ac-ok" : "ac-err"}">${
+          r.ok ? IC.check : IC.close} ${esc(r.detail || "")}</div>`
+        + (r.steps || []).map((s) => {
+            const ok = s.result && s.result.ok;
+            return `<div class="pl-done" data-state="${ok ? "ok" : "err"}">${
+              ok ? IC.check : IC.close} ${esc(s.summary || s.type)}${
+              ok ? "" : ` — ${esc((s.result && s.result.error) || "failed")}`}</div>`;
+          }).join("")
+        + (r.skipped || []).map((s) =>
+            `<div class="pl-done" data-state="skip">${esc(s.summary || s.type)} — not started</div>`
+          ).join("");
+      const note2 = (r.agent_note || "").trim();
+      if (note2) rr.innerHTML += `<div class="ac-note">${md(note2)}</div>`;
+      if ((r.undoable || []).length) rr.appendChild(undoAllButton(r.undoable));
+      loadReminders(); loadRoutines(); loadActionLog();
+    } catch (e) {
+      rr.innerHTML = `<span class="ac-err">${esc(resultLine(e) || "That did not go through.")}</span>`;
+    }
+  };
+  return el;
+}
+
+//: Beyond this the card gives a count instead of a list nobody reads to the
+//: end — the same limit and the same reason as the mail card's.
+const PLAN_NAMED_MAX = 6;
+
+/** One plan step in the user's terms. Falls back to the type rather than
+ *  showing raw params, which is a card asking to be trusted rather than read. */
+function actionSummary(step) {
+  const p = step.params || {};
+  switch (step.type) {
+    case "send_email": return `Email “${p.subject || "(no subject)"}” to ${p.to || "someone"}`;
+    case "create_event": return `Event “${p.title || "untitled"}” on ${p.start || "a date"}`;
+    case "set_reminder": return `Reminder: ${p.message || ""}`;
+    case "message_send": return `Message ${p.chat || p.to || "someone"} on ${
+      MESSAGING_APPS[(p.app || "").toLowerCase()] || p.app || "an app"}`;
+    case "mail_triage": {
+      const items = Array.isArray(p.items) ? p.items : [];
+      return `${items.length} inbox change${items.length === 1 ? "" : "s"}`;
+    }
+    case "mcp_action": return humanAction(p.tool, p.connector || p.server_id);
+    default: return String(step.type || "an action").replace(/_/g, " ");
+  }
+}
+
+/** Take back as much of a plan as can be taken back.
+ *
+ *  Labelled by how many, never "Undo" alone: some of a plan is undoable and
+ *  some is not, and a button that says "Undo" over a sent email is promising
+ *  something it cannot do.
+ */
+function undoAllButton(logIds) {
+  const b = document.createElement("button");
+  b.className = "tiny ac-undo";
+  b.textContent = logIds.length === 1
+    ? "Undo that" : `Undo ${logIds.length} of them`;
+  b.onclick = async () => {
+    b.disabled = true;
+    const was = b.textContent;
+    b.textContent = "Undoing…";
+    try {
+      const out = await api("/api/actions/undo", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ log_ids: logIds }) });
+      if (out.ok) {
+        b.replaceWith(Object.assign(document.createElement("span"),
+          { className: "muted ac-undone", textContent: " · " + (out.detail || "Undone") }));
+        loadReminders(); loadRoutines(); loadActionLog();
+      } else {
+        b.disabled = false; b.textContent = was;
+        toast(out.detail || out.error || "None of that could be undone.");
+      }
+    } catch (e) {
+      b.disabled = false; b.textContent = was;
+      toast(resultLine(e) || "That could not be undone.");
+    }
+  };
+  return b;
+}
 
 /** "3:42 PM" from an ISO stamp, or "" if it is not one. */
 function clockTime(stamp) {
@@ -908,7 +1085,7 @@ function addMsg(role, text, images) {
       box.scrollTop = box.scrollHeight;
       return;
     }
-    const { clean, actions } = parseActions(text);
+    const { clean, plans, actions } = parsePlans(text);
     const el = document.createElement("div");
     el.className = "msg assistant";
     // No avatar on each turn. Which agent is answering is already said by the
@@ -934,6 +1111,9 @@ function addMsg(role, text, images) {
       }, 1400);
     };
     box.appendChild(el);
+    // Plans first: they are the agent's answer to what was asked, and a loose
+    // action beside one is usually an afterthought.
+    for (const p of plans) box.appendChild(planCard(p));
     for (const a of actions) box.appendChild(actionCard(a));
     box.scrollTop = 1e9; return el;
   }

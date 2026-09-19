@@ -216,6 +216,30 @@ _BLOCKS: dict[str, str] = {
     ),
 }
 
+#: Grouping several proposals into one approval.
+#:
+#: Only offered when an agent has more than one action to group — an agent that
+#: can do exactly one thing has nothing to make a plan out of, and teaching it
+#: the tag anyway is a control that cannot work.
+#:
+#: The rule about *one intention* is the load-bearing half. Without it a model
+#: wraps every reply in `<plan>` and the user is back to approving unrelated
+#: things in a batch, which is worse than the seventeen cards this replaces:
+#: one tap now covers work they did not read as belonging together.
+_PLANNING = (
+    "SEVERAL ACTIONS AT ONCE: when the user asked for ONE thing that takes "
+    "several actions, wrap them in a plan so they approve once:\n"
+    '<plan rationale="17 emails; 9 are newsletters, 2 need you">\n'
+    "<action …>…</action>\n"
+    "<action …>…</action>\n"
+    "</plan>\n"
+    "`rationale` is one line saying what you understood — it is the sentence "
+    "the user reads before approving. They run IN ORDER and stop at the first "
+    "failure, so put anything the later steps depend on first. Use a plan ONLY "
+    "for actions that belong to one request; two unrelated things are two "
+    "proposals, because one button over both is approval they did not give."
+)
+
 #: Only meaningful when something can actually be sent or scheduled.
 _SCHEDULING = (
     'To send or create something at a FUTURE time, add an at="…" attribute — '
@@ -429,6 +453,8 @@ def build(*, name: str, role: str, system_prompt: str,
         lines += [_BLOCKS[a] for a in KNOWN_ACTIONS if a in allowed]
         if "send_email" in allowed or "create_event" in allowed:
             lines.append(_SCHEDULING)
+        if len(allowed) > 1:
+            lines.append(_PLANNING)
         parts.append("\n".join(lines))
 
     safety = _health_safety(tools)

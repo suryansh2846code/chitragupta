@@ -30,16 +30,37 @@ from chitragupta.agents import permissions
 
 @pytest.fixture(autouse=True)
 def _fresh_log(tmp_path):
-    """A log per test, so `(entry,) = recent()` means what it says.
+    """A log per test, so `(entry,) = recent()` means what it says — and no
+    reminders or automations left behind.
 
     Points the log's own file at `tmp_path` rather than moving
     `settings.home` — every other store in the process is a cached singleton
     holding that directory, and repointing it mid-run leaves one of them bound
     to a path pytest is about to delete.
+
+    Reminders and routines *do* live in the shared home, and these tests make
+    plenty of both. `reminders.upcoming()` returns the twenty soonest, so ours
+    can bury a row another module created and then went looking for. Snapshot
+    and remove exactly what this test added; clearing the tables would delete
+    something somebody else was relying on.
     """
+    from chitragupta.reminders import get_reminders
+    from chitragupta.routines import get_routines
+
+    reminders, routines = get_reminders(), get_routines()
+    had_reminders = {r["id"] for r in reminders.upcoming(limit=500)}
+    had_routines = {r["id"] for r in routines.list()}
+
     action_log.reset_for_tests(tmp_path / "actions.db")
     yield
     action_log.reset_for_tests()
+
+    for row in reminders.upcoming(limit=500):
+        if row["id"] not in had_reminders:
+            reminders.delete(row["id"])
+    for row in routines.list():
+        if row["id"] not in had_routines:
+            routines.delete(row["id"])
 
 
 # ── the tiers are one declaration ──────────────────────────────────────────

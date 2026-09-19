@@ -15,7 +15,8 @@ import path from "node:path";
 import { appSource } from "./_app_source.mjs";
 
 const APP_JS = process.argv[2];
-const { action, result, edits, catalog, undoResult } = JSON.parse(fs.readFileSync(0, "utf8"));
+const { action, plan, reply, result, edits, catalog, undoResult } =
+  JSON.parse(fs.readFileSync(0, "utf8"));
 
 const makeEl = (tag = "div") => {
   const node = {
@@ -101,6 +102,8 @@ globalThis.fetch = async (url, options) => {
 
 new Function(appSource(path.dirname(APP_JS)) +
   "\nglobalThis.__card = actionCard;" +
+  "\nglobalThis.__plan = planCard;" +
+  "\nglobalThis.__parsePlans = parsePlans;" +
   "\nglobalThis.__esc = esc;" +
   // `ACTION_CATALOG` is a `let` inside this scope and is normally filled by
   // `loadActionCatalog()` at boot. The harness does not boot, so a card would
@@ -149,9 +152,23 @@ const visibleText = (node) => {
   return out;
 };
 
+// `reply` exercises the split — which cards a whole model reply produces, and
+// that an action inside a plan is never ALSO rendered as a loose card.
+let parsed = null;
+if (reply !== undefined) {
+  const out = globalThis.__parsePlans(reply);
+  parsed = {
+    clean: out.clean,
+    plans: out.plans.map((p) => ({ rationale: p.rationale,
+                                   steps: p.steps.map((s) => s.type) })),
+    loose: out.actions.map((a) => a.type),
+  };
+}
+
 let error = null, card = null;
 try {
-  card = globalThis.__card(action);
+  if (plan) card = globalThis.__plan(plan);
+  else if (action) card = globalThis.__card(action);
 } catch (e) {
   error = `${e.constructor.name}: ${e.message}`;
 }
@@ -209,6 +226,7 @@ if (undoBtn && undoBtn.onclick) {
 
 console.log(JSON.stringify({
   error,
+  parsed,
   html: card ? card.innerHTML : "",
   text: card ? visibleText(card).replace(/\s+/g, " ").trim() : "",
   afterConfirm: confirmed,
