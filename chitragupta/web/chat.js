@@ -610,8 +610,13 @@ let attachments = [];                       // {name, dataUrl, size}
 let sentImages = [];                        // the set belonging to the turn in flight
 
 function modelSeesImages() {
-  const pid = ($("#provider") && $("#provider").value) || localStorage.getItem("chitragupta_provider") || "";
-  const mid = localStorage.getItem("chitragupta_model") || "";
+  // The agent's binding, for the same reason the turn uses it: this decides
+  // whether to refuse an image BEFORE spending, and refusing against a stale
+  // localStorage pair means refusing on behalf of a model that is not the one
+  // about to answer.
+  const b = (typeof AGENT_MODEL_BINDING !== "undefined" && AGENT_MODEL_BINDING) || null;
+  const pid = (b && (b.configured_provider || b.provider)) || "";
+  const mid = (b && b.configured_model) || "";
   const prov = (MODEL_CATALOG || []).find((p) => p.id === pid);
   if (!prov) return { ok: true };           // unknown is not "no"
   // No model chosen means Auto, which resolves to the best one available —
@@ -1056,30 +1061,45 @@ async function send(text) {
 // naming each tool as it runs. Falls back to the plain endpoint if streaming is
 // unavailable for any reason — a user whose stream broke wants an answer, not a
 // second kind of error.
-// Which provider this turn runs on.
+// `chosenProvider()` lived here and is gone. Its history is worth keeping,
+// because it is the same bug twice and the second fix has to not be the third.
 //
-// This read `$("#provider").value`, a hidden <select> that is EMPTY until
-// loadProviders() fills it — and loadProviders fetches the model catalog,
-// measured cold at ~10s. For those ten seconds the composer showed the
-// provider read from localStorage while the request carried nothing, the
-// server fell back to settings.model_provider (`mock` on a fresh install),
-// and the offline model answered in a real model's clothes. Two messages in a
-// row came back as a truncated echo of the recall block.
+// It first read `$("#provider").value`, a hidden <select> empty until
+// loadProviders() fills it — ~10s cold. For those ten seconds the request
+// carried nothing, the server fell back to settings.model_provider (`mock` on
+// a fresh install), and the offline model answered while the composer showed a
+// real one. The fix was to read localStorage instead, which the picker writes
+// synchronously.
 //
-// localStorage is the store the picker actually writes to (setActiveModel),
-// and it is readable synchronously on the first paint. The select is a slow
-// copy of it, kept only as a fallback for anything that still writes there.
-function chosenProvider() {
-  const saved = (localStorage.getItem("chitragupta_provider") || "").trim();
-  if (saved) return saved;
-  const sel = $("#provider");
-  return (sel && sel.value) || undefined;
-}
+// That made the CLIENT authoritative, and `run_turn` treats a provider on the
+// request as an override beating `agent.model_provider` — so when the stored
+// value went stale, it beat a perfectly good agent binding on every turn and
+// the same symptom came back with the causes reversed.
+//
+// Both versions failed the same way: the value on screen and the value in the
+// request came from different places. There is one place now — the agent
+// binding, which the picker writes, both labels render, and the server
+// resolves — and the request names no provider at all.
 
 async function streamTurn(text, think) {
   const body = JSON.stringify({
-    message: text, provider: chosenProvider(),
-    model: localStorage.getItem("chitragupta_model") || undefined,
+    // NO provider/model. The agent's own binding decides, server-side.
+    //
+    // These used to be sent from localStorage, and `run_turn` treats a provider
+    // on the request as an OVERRIDE that beats `agent.model_provider`. So a
+    // stale global — `chitragupta_provider` had been left on "mock" — silently
+    // won every turn, while the chip and the composer pill went on rendering
+    // the agent binding they read from /api/agents/{id}/model. The screen said
+    // "Claude Opus 5" and the reply came back from the offline mock, with
+    // nothing anywhere to show which one was real.
+    //
+    // The binding is already the source of truth: the composer pill POSTs to
+    // /api/agents/{id}/model when you pick, both labels render what that
+    // returns, and run_turn resolves it when the request stays quiet. Omitting
+    // these is what makes the thing shown and the thing used the same thing.
+    // An agent with no binding falls to settings.model_provider — which is
+    // exactly what the "Auto" label means.
+    message: text,
     effort: localStorage.getItem("chitragupta_effort") || undefined,
     turn_id: turnId || undefined,
     // Granted for this turn only. The server never stores these.
