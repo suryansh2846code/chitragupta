@@ -1,0 +1,75 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>follow</title>
+<style>body{margin:0;background:#111;font:14px monospace;color:#ddd}
+#a{position:absolute;left:560px;top:280px;width:200px;height:200px}
+#out{position:absolute;left:20px;top:20px;white-space:pre}</style>
+</head><body>
+<div id="a"></div><pre id="out">running</pre>
+<script src="../dist/character.global.js"></script>
+<script>
+/**
+ * Does the character actually turn toward the pointer?
+ *
+ * Asserted on the rendered path, not on the controller's internal numbers. The
+ * pose can be perfectly correct while nothing reaches the screen — that is
+ * exactly what a broken redraw looks like — so the only honest check is that
+ * the SVG the browser is painting changed, and changed in the right direction.
+ */
+const doc = Character.generateScene("follow-test");
+doc.scene.follow = Object.assign({}, doc.scene.follow, {
+  enabled: true, scope: "window", yawRange: 40, pitchRange: 24, stiffness: 14, blink: false,
+});
+const inst = Character.createCharacter("#a", doc);
+const el = document.querySelector("#a svg");
+const out = document.getElementById("out");
+const log = [];
+
+// The body path, not `querySelector("path")` — the first path in the document
+// is the clip path in `<defs>`, which never moves no matter how badly the
+// follow loop is broken. Reading it made this test pass on a corpse.
+const firstX = () => {
+  const d = el.querySelector("g > g > path").getAttribute("d");
+  return parseFloat(d.slice(2).split(" ")[0]);
+};
+
+let seen = 0;
+window.addEventListener("pointermove", () => { seen++; });
+
+function move(x, y) {
+  window.dispatchEvent(new PointerEvent("pointermove", { clientX: x, clientY: y, bubbles: true }));
+}
+
+let frames = 0;
+const probe = new Character.FollowController(
+  document.getElementById("a"),
+  { enabled: true, scope: "window", yawRange: 40, pitchRange: 24, stiffness: 14, blink: false },
+  () => { frames++; },
+  1,
+);
+
+const at0 = el.innerHTML;
+const x0 = firstX();
+
+move(40, 360);                                  // pointer far left
+setTimeout(() => {
+  const xLeft = firstX();
+  move(1240, 360);                              // pointer far right
+  setTimeout(() => {
+    const xRight = firstX();
+    log.push("probe pose:       " + JSON.stringify(probe.pose));
+    log.push("probe cfg scope:  " + probe.cfg.scope + " yaw " + probe.cfg.yawRange);
+    log.push("probe enabled:    " + probe.enabled + " visible " + probe.visible);
+    log.push("frames:           " + frames + " events " + seen + " active " + Character._activeCount());
+    log.push("reduced motion:   " + matchMedia("(prefers-reduced-motion: reduce)").matches);
+    log.push("rAF available:    " + (typeof requestAnimationFrame === "function"));
+    log.push("changed on move:  " + (el.innerHTML !== at0));
+    log.push("left  silhouette: " + xLeft.toFixed(2));
+    log.push("right silhouette: " + xRight.toFixed(2));
+    log.push("turned both ways: " + (Math.abs(xRight - xLeft) > 1));
+    log.push("rest x was:       " + x0.toFixed(2));
+    log.push("RESULT " + (el.innerHTML !== at0 && Math.abs(xRight - xLeft) > 1 ? "PASS" : "FAIL"));
+    out.textContent = log.join("\n");
+    document.title = log[log.length - 1];
+  }, 700);
+}, 700);
+</script></body></html>
