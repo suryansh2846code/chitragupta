@@ -17,7 +17,26 @@
  */
 
 const $ = (s) => document.querySelector(s);
-const api = (p, o) => fetch(p, o).then((r) => r.ok ? r.json() : r.json().then((e) => Promise.reject(e.detail || r.statusText)));
+// A plain object body is encoded here rather than at each call site.
+//
+// `fetch` stringifies whatever it is given, so `body: { url }` went out as the
+// literal text "[object Object]" with no content type — and every endpoint
+// taking a JSON body answered 422. It was live on `/api/open-browser` from
+// both sign-in buttons, hidden because the only caller had a `catch` that fell
+// back to `window.open`: the button worked, by accident, down the path nobody
+// meant to take. Two dozen other call sites spell out `JSON.stringify` and a
+// header, so the mistake is not knowing which of two forms this helper wanted.
+//
+// Strings, FormData, Blob and friends pass through untouched, and an explicit
+// Content-Type always wins.
+function _encodeBody(o) {
+  if (!o || !o.body || typeof o.body !== "object") return o;
+  if (o.body instanceof FormData || o.body instanceof Blob
+      || o.body instanceof URLSearchParams || o.body instanceof ArrayBuffer) return o;
+  const headers = { "Content-Type": "application/json", ...(o.headers || {}) };
+  return { ...o, headers, body: JSON.stringify(o.body) };
+}
+const api = (p, o) => fetch(p, _encodeBody(o)).then((r) => r.ok ? r.json() : r.json().then((e) => Promise.reject(e.detail || r.statusText)));
 
 function toast(m) { const t = $("#toast"); t.textContent = m; t.classList.add("show"); setTimeout(() => t.classList.remove("show"), 2200); }
 // Has the user asked the system for less motion? A *function declaration*, not

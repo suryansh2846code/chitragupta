@@ -25,7 +25,8 @@ from ..log import suppressed
 KNOWN_ACTIONS = ("create_draft", "send_email", "create_event", "update_event",
                  "cancel_event", "create_followup", "set_reminder",
                  "create_routine", "mail_triage", "message_send",
-                 "github_comment", "github_create_issue", "log_workout")
+                 "github_comment", "github_create_issue", "log_workout",
+                 "create_task")
 
 #: Argument names listed per connector tool. Enough for a model to fill a call
 #: in correctly; few enough that twenty tools do not become the system prompt.
@@ -208,6 +209,16 @@ _BLOCKS: dict[str, str] = {
         "closes itself when they reply; without one it is a note that stays "
         "true forever. Not the same as set_reminder: a reminder pings the "
         "user at a time, a follow-up tracks somebody else's answer."
+    ),
+    "create_task": (
+        '<action type="create_task" due="friday" thread_id="t7">'
+        'Send Rahul the revised figures</action>\n'
+        "For something the USER has to do. `thread_id` is what makes it worth "
+        "having: months later the task says what to do and the conversation "
+        "that asked for it is one click away, instead of a search. Pass it "
+        "whenever the task came out of a thread you read.\n"
+        "Not `create_followup` — that is for what somebody owes THEM. If the "
+        "user is waiting, it is a follow-up; if the user owes it, it is a task."
     ),
     "set_reminder": (
         '<action type="set_reminder" at="tomorrow 3pm">Call the supplier</action>'
@@ -471,6 +482,35 @@ _REPLY_RECIPE = (
 )
 
 
+#: "Turn this thread into a task."
+#:
+#: Every part of this existed and the job still did not work, because the two
+#: halves were never connected: `read_thread` could read it and `add_task`
+#: could store a sentence, and nothing carried the thread across. The task
+#: said *"send Rahul the revised figures"* and the user went looking for the
+#: email anyway — which is the work they asked to have taken off them.
+#:
+#: Rule 3 is the one a model gets wrong by being agreeable. A long thread
+#: contains several things somebody could do; turning all of them into tasks
+#: produces a list nobody reads, and the user asked for *a* task.
+_THREAD_TASK_RECIPE = (
+    "TURNING A CONVERSATION INTO A TASK — when the user asks you to make a "
+    "task, todo or reminder out of a thread, message or email:\n"
+    "1. `read_thread` it first. The task is what they have to DO, which is "
+    "rarely the subject line — it is usually one sentence near the end.\n"
+    "2. Always pass `thread_id`. It is what makes the task worth having: "
+    "weeks later it says what to do AND which conversation asked for it, "
+    "instead of sending them back to search their inbox.\n"
+    "3. ONE task unless they asked for more. A long thread contains several "
+    "things somebody could do, and a list of nine is a list nobody reads.\n"
+    "4. Use `create_task` for what the USER owes, and `create_followup` for "
+    "what somebody owes THEM. A thread often produces one of each — say so "
+    "rather than filing both as tasks.\n"
+    "5. Carry the due date the thread states. \"Before Friday\" in the email "
+    "is a due date, not a detail to drop."
+)
+
+
 #: "Reply to this thread saying X."
 #:
 #: One conversation, and the user has already decided what to say — so the
@@ -587,6 +627,19 @@ def _followup_recipe(tools: list[str] | None, actions: list[str]) -> str:
     if not {"create_draft", "create_followup"} & set(actions or []):
         return ""
     return _FOLLOWUP_RECIPE
+
+
+def _thread_task_recipe(tools: list[str] | None, actions: list[str]) -> str:
+    """Only for an agent that can read a conversation AND file one.
+
+    `read_thread` is rule 1 and `create_task` is the whole point — an agent
+    with the recipe and neither would describe filing a task it did not file.
+    """
+    if "read_thread" not in set(tools or []):
+        return ""
+    if "create_task" not in set(actions or []):
+        return ""
+    return _THREAD_TASK_RECIPE
 
 
 def _reply_recipe(tools: list[str] | None, actions: list[str]) -> str:
@@ -799,6 +852,7 @@ def build(*, name: str, role: str, system_prompt: str,
         for recipe in (_inbox_recipe(tools, allowed),
                        _reply_recipe(tools, allowed),
                        _thread_reply_recipe(tools, allowed),
+                       _thread_task_recipe(tools, allowed),
                        _followup_recipe(tools, allowed),
                        _calendar_recipe(tools, allowed),
                        _attach_recipe(tools, allowed)):

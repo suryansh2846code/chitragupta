@@ -107,7 +107,9 @@ _CODE_ACTIONS = ["github_comment", "github_create_issue"]
 #: `find_time` travels with the lookup: an agent that can read a diary
 #: and cannot find a gap in it answers "when suits you?", which is the
 #: job handed back.
-_DIARY = ["calendar_lookup", "find_time", "sync_source"]
+#: `meeting_prep` is a lookup plus a search per attendee, done in one call so
+#: the one an agent forgets is not the one that mattered.
+_DIARY = ["calendar_lookup", "find_time", "meeting_prep", "sync_source"]
 #: Numbers over time. The agent that plans training and food had none of these
 #: and was still asked to "review honestly" — so every answer about progress was
 #: a model estimating from recalled prose. See `chitragupta/metrics.py`.
@@ -129,7 +131,12 @@ _TRAINING = ["list_exercises", "lift_progress", "training_load"]
 #: own brain, and its whole value is that the agent writes one at the moment it
 #: sends the thing being waited on — an agent that has to be asked to track a
 #: follow-up is one that will be asked after it has been forgotten.
-_PROACTIVE = ["set_reminder", "create_routine", "create_followup"]
+#: `create_task` is its mirror and is here for the same reason — one row in
+#: the user's own list, reaching nobody. The pair matters: an agent given only
+#: `create_followup` records what other people owe and has no way to write
+#: down what the user does, which is most of what a thread actually produces.
+_PROACTIVE = ["set_reminder", "create_routine", "create_followup",
+              "create_task"]
 
 #: `create_draft` travels with `send_email` and never without it.
 #:

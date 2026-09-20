@@ -92,7 +92,12 @@ def _list_tasks(when: str | None = None) -> str:
     lines = []
     for t in tasks:
         due = f"  ·  due {t['due']}" if t["due"] else ""
-        lines.append(f"- {t['title']}{due}  (id {t['id'][:6]})")
+        # The thread it came out of, where there is one. Without this an agent
+        # asked "what was that about?" has to guess, and the id is exactly
+        # what `read_thread` needs to actually answer.
+        src = (f"  ·  from email thread {t['source_ref']}"
+               if t.get("source") == "email" and t.get("source_ref") else "")
+        lines.append(f"- {t['title']}{due}{src}  (id {t['id'][:6]})")
     return "\n".join(lines)
 
 
@@ -137,6 +142,11 @@ def _awaiting_reply(stale_days: int = 3) -> ToolResult:
 def _needs_reply(min_days: int = 1, limit: int = 12) -> ToolResult:
     from .reply_tools import needs_reply
     return needs_reply(min_days=min_days, limit=limit)
+
+
+def _meeting_prep(which: str = "next", horizon_days: int = 14) -> ToolResult:
+    from .prep_tools import meeting_prep
+    return meeting_prep(which=which, horizon_days=horizon_days)
 
 
 def _what_i_did(days: int = 7) -> ToolResult:
@@ -336,6 +346,7 @@ TOOL_IMPLS = {
     "list_open_loops": _list_open_loops,
     "awaiting_reply": _awaiting_reply,
     "needs_reply": _needs_reply,
+    "meeting_prep": _meeting_prep,
     "find_time": _find_time,
     "what_i_did": _what_i_did,
     "complete_open_loop": _complete_open_loop,
@@ -947,6 +958,24 @@ TOOL_DEFS: dict[str, Tool] = {
             },
         },
     ),
+    "meeting_prep": Tool(
+        name="meeting_prep",
+        description=(
+            "A brief for the user's next meeting: when it is, who is coming, "
+            "what the brain knows about each of them, and what is still open "
+            "with those people. Use this for 'prep me', 'what's my next "
+            "meeting about', or before joining a call — it is one call "
+            "instead of a calendar lookup plus a search per attendee."),
+        parameters={
+            "type": "object",
+            "properties": {
+                "horizon_days": {
+                    "type": "integer",
+                    "description": "How far ahead to look for the next "
+                                   "meeting. Default 14."},
+            },
+        },
+    ),
     "needs_reply": Tool(
         name="needs_reply",
         description=(
@@ -1081,6 +1110,7 @@ _LABELS: dict[str, tuple[str, str]] = {
     "list_open_loops":          ("Pending",   "Tasks"),
     "awaiting_reply":           ("Waiting on", "Tasks"),
     "needs_reply":              ("Owed",      "Email"),
+    "meeting_prep":             ("Prep",      "Calendar"),
     "what_i_did":               ("History",   "Automations"),
     "complete_open_loop":       ("Close",     "Tasks"),
     # The things it can reach

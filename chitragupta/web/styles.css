@@ -926,6 +926,11 @@ textarea.ac-field-wide { resize: vertical; min-height: 58px; line-height: 1.45; 
 .task .body { flex: 1; min-width: 0; } .task .ttl { line-height: 1.35; }
 .task .due { font-size: 11px; color: var(--muted); margin-top: 2px; } .task .due.today { color: var(--accent-2); } .task .due.over { color: var(--danger); }
 .task .del { color: var(--faint); cursor: pointer; opacity: 0; font-size: 12px; } .task:hover .del { opacity: 1; }
+/* Where a task came from. Quiet by default — it is provenance, not the task —
+   and takes the accent on hover so it reads as the link it is. */
+.task-src { cursor: pointer; display: inline-flex; align-items: center; gap: 3px; }
+.task-src:hover { color: var(--accent-2); }
+.task-src svg { width: 11px; height: 11px; }
 .tasks-empty { color: var(--faint); font-size: 12.5px; padding: 2px; }
 .addbox { display: flex; flex-direction: column; gap: 6px; }
 .brain-io { display: inline-flex; gap: 4px; } .brain-io button { font-size: 12px; }

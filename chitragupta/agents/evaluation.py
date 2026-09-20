@@ -574,6 +574,107 @@ def run(*, include_slow: bool = True) -> Scorecard:
             "rahul@work.test" in str(one_params.get("to", "")),
             f"to={one_params.get('to')!r}")
 
+        # ── job 13: "turn this thread into a task" ───────────────────────
+        #
+        # Every part of this existed and the job did not work, because the
+        # sentence was all that survived: `add_task` was a TOOL, so the task
+        # never reached the action log and nothing carried the thread across.
+        # Three weeks later the task says what to do and the user searches
+        # their inbox for the conversation anyway.
+        #
+        # So the scored fact is the link, not the filing.
+        tools_mod.TOOL_IMPLS["read_thread"] = lambda **kw: (
+            "rahul@work.test: can you send the revised figures before Friday?")
+        provider = _scripted([
+            [("read_thread", {"thread_id": "t_budget"})],
+            "Filed it, with a way back to the thread.\n"
+            '<action type="create_task" due="friday" thread_id="t_budget">'
+            'Send Rahul the revised figures</action>',
+        ])
+        use(provider)
+        filed = runtime.run_turn(
+            "inbox", "turn this thread into a task", effort="medium",
+            connectors=["gmail"])
+        reply = filed.reply or ""
+        filed_props = parse_actions(reply)
+        filed_params = filed_props[0]["params"] if filed_props else {}
+
+        check("thread_to_task",
+              "A conversation becomes a task that knows where it came from")(
+            len(filed_props) == 1
+            and filed_props[0]["type"] == "create_task"
+            and filed_params.get("thread_id") == "t_budget",
+            f"{len(filed_props)} action(s), "
+            f"thread_id={filed_params.get('thread_id')!r}")
+
+        # And the round trip, because the card is not the capability: the
+        # action has to actually store the link, verify itself and be
+        # reversible — the rungs `add_task` never reached.
+        from ..actions import run_now as _run_now
+        from ..tasks import get_tasks as _get_tasks
+
+        made = _run_now("create_task", {"title": "Send the figures",
+                                        "thread_id": "t_budget"})
+        stored = _get_tasks().get(made.get("id") or "") or {}
+        check("thread_to_task_round_trip",
+              "The task is verified, logged, and can be taken back")(
+            made.get("ok") and made.get("verified") is True
+            and bool(made.get("log_id")) and made.get("reversible") is True
+            and stored.get("source_ref") == "t_budget",
+            f"verified={made.get('verified')} log={bool(made.get('log_id'))} "
+            f"ref={stored.get('source_ref')!r}")
+        # The scorecard runs against the user's real stores, so it puts back
+        # what it created rather than leaving a task nobody asked for.
+        from ..actions import REGISTRY as _REGISTRY
+
+        _undo = _REGISTRY["create_task"].undo
+        if _undo is not None:                       # declared, and checked above
+            _undo({}, made)
+
+        # ── job 9: "prep me for my next meeting" ─────────────────────────
+        #
+        # Five lookups behind one question, and the one an agent skips is
+        # always the same one — it stops as soon as it can write a paragraph
+        # that sounds prepared. So the assembly is a tool, and what is scored
+        # is that the agent reaches for it rather than rebuilding it badly
+        # out of `calendar_lookup` plus a guess.
+        tools_mod.TOOL_IMPLS["meeting_prep"] = lambda **kw: (
+            "NEXT: “Budget review” — Mon 21 Sep, 2:00 PM\n\n"
+            "WHO: rahul@work.test, dana@work.test\n\n"
+            "WHAT YOU KNOW:\n"
+            "rahul@work.test:\n  - asked for the revised figures\n\n"
+            "dana@work.test: nothing in the brain about them yet.\n\n"
+            "YOU OWE:\n- Send Rahul the revised figures (due 2026-09-25)")
+        provider = _scripted([
+            [("meeting_prep", {})],
+            "Budget review at 2, with Rahul and Dana. Rahul is still waiting "
+            "on the revised figures — that is the thing to have ready. I have "
+            "nothing on Dana yet.",
+        ])
+        use(provider)
+        prepped = runtime.run_turn(
+            "chief-of-staff", "prep me for my next meeting", effort="medium",
+            connectors=["gcal"])
+        prep_used = [s.name for s in prepped.trace
+                     if s.kind == "tool_result" and s.name != "auto_recall"]
+        # Named `reply` for the source guard in
+        # `test_only_the_reply_is_ever_handed_to_parse_actions`.
+        reply = prepped.reply or ""
+        prep_text = reply.lower()
+
+        check("meeting_prep_used",
+              "Prepping for a meeting is one call, not five it might skip")(
+            prep_used[:1] == ["meeting_prep"],
+            f"tools used: {prep_used}")
+        check("meeting_prep_surfaces_what_you_owe",
+              "The brief leads with the thing the user has not done")(
+            "figures" in prep_text,
+            prep_text[:70])
+        check("meeting_prep_acts_on_nothing",
+              "Job 9 stops at prepared — it is a briefing, not a decision")(
+            parse_actions(reply) == [],
+            "it proposed an action nobody asked for")
+
         # ── chasing only the people who actually owe an answer ───────────
         #
         # The failure worth scoring is not "did it draft a chase". It is

@@ -561,6 +561,75 @@ def _undo_followup(params: dict, result: dict) -> dict:
             else "That was already gone"}
 
 
+def _create_task(params: dict) -> dict:
+    """Something the USER owes, with a way back to where it came from.
+
+    The mirror of `create_followup`, which records what somebody owes *them*.
+
+    `add_task` has been a tool since long before actions existed, and that is
+    the gap this closes rather than the storing: a tool call leaves no row in
+    the action log, so *"what did you do this week?"* never mentioned a task,
+    there was no card to correct before it landed, and nothing could take one
+    back. Rungs 4 to 6 for a capability that had been stuck at 3.
+
+    Green: one row in the user's own task list, reaching nobody.
+    """
+    from .tasks import get_tasks
+
+    title = (params.get("title") or params.get("task")
+             or params.get("about") or "").strip()
+    if not title:
+        return {"ok": False, "error": "say what the task is"}
+
+    due = (params.get("due") or params.get("at") or "").strip()
+    # The thread this came out of. Named `source_ref` rather than `thread_id`
+    # in storage because the next source will not be email — but the action's
+    # field stays `thread_id`, which is the word the model and every mail tool
+    # already use.
+    thread_id = str(params.get("thread_id") or params.get("source_ref") or "")
+    source = "email" if thread_id else str(params.get("source") or "")
+
+    task = get_tasks().add(title, due or None,
+                           source=source, source_ref=thread_id)
+    if not task:                                        # pragma: no cover
+        return {"ok": False, "error": "that task could not be saved"}
+
+    when = f" — due {task['due']}" if task.get("due") else ""
+    return {"ok": True, "id": task["id"],
+            "detail": f"Added task: {task['title']}{when}"}
+
+
+def _verify_task(params: dict, result: dict) -> dict:
+    """Read it back. A task the store silently dropped is one the user is
+    counting on and will not find."""
+    from .tasks import get_tasks
+
+    tid = str(result.get("id") or "")
+    if not tid:
+        return {"verified": False, "detail": ""}
+    task = get_tasks().get(tid)
+    if task is None:
+        return {"verified": False, "detail": "it is not in your task list"}
+    return {"verified": True, "detail": f"on your list: {task['title']}"}
+
+
+def _undo_task(params: dict, result: dict) -> dict:
+    """Deleted, not completed.
+
+    The opposite of `create_followup`, deliberately. A cancelled follow-up is
+    provenance — the user really was waiting on somebody. A task created by
+    mistake is not a task they finished, and leaving it on the done list would
+    put work they never did into *"what did you do this week?"*.
+    """
+    from .tasks import get_tasks
+
+    tid = str(result.get("id") or "")
+    if not tid:
+        return {"ok": False, "error": "that task cannot be found."}
+    gone = get_tasks().delete(tid)
+    return {"ok": True, "detail": "Removed it" if gone else "That was already gone"}
+
+
 def _mail_triage(params: dict) -> dict:
     """Apply one approved batch of inbox changes.
 
@@ -1217,6 +1286,14 @@ REGISTRY: dict[str, ActionSpec] = {
         # Green: one row in the user's own brain, reaching nobody.
         risk=Risk.GREEN,
         undo=_undo_followup, undo_label="Stop tracking it",
+    ),
+    "create_task": ActionSpec(
+        handler=_create_task, label="Add task",
+        fields=["title", "due", "thread_id"],
+        # Green: one row in the user's own task list, reaching nobody.
+        risk=Risk.GREEN,
+        verify=_verify_task,
+        undo=_undo_task, undo_label="Remove it",
     ),
     "set_reminder": ActionSpec(
         handler=_set_reminder, label="Set reminder",
