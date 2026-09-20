@@ -3,6 +3,7 @@
  "DELETE /api/agents/folders",
  "DELETE /api/agents/permissions/{value}",
  "DELETE /api/agents/roster/{template_id}",
+ "DELETE /api/agents/{agent_id}/avatar",
  "DELETE /api/agents/{agent_id}/connectors/{connector}",
  "DELETE /api/agents/{agent_id}/model",
  "DELETE /api/brain/memories/{memory_id}",
@@ -16,6 +17,7 @@
  "GET /",
  "GET /api/agents",
  "GET /api/agents/approvals",
+ "GET /api/agents/avatars",
  "GET /api/agents/connector-gaps",
  "GET /api/agents/effort",
  "GET /api/agents/evaluate",
@@ -23,6 +25,7 @@
  "GET /api/agents/library",
  "GET /api/agents/permissions",
  "GET /api/agents/tools",
+ "GET /api/agents/{agent_id}/avatar",
  "GET /api/agents/{agent_id}/connectors",
  "GET /api/agents/{agent_id}/history",
  "GET /api/agents/{agent_id}/model",
@@ -157,5 +160,6 @@
  "POST /api/telegram/login",
  "POST /api/telegram/password",
  "POST /api/usage/reset",
+ "PUT /api/agents/{agent_id}/avatar",
  "PUT /api/agents/{agent_id}/model"
 ]

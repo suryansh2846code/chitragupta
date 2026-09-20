@@ -26,8 +26,12 @@ async function selectAgent(id) {
   const oid = agentOrbId(a);
   $("#agentName").textContent = a.name;
   $("#agentRole").textContent = a.role;
-  const chOrb = $("#chOrb"); if (chOrb) chOrb.style.cssText = orbStyle(oid);
-  const ctxOrb = $("#ctxOrb"); if (ctxOrb) ctxOrb.style.cssText = orbStyle(oid);
+  // The chat header is the one avatar on screen the whole time someone is
+  // working, so it is live — it follows the pointer. The context card's is not:
+  // it sits behind a panel that is usually closed, and a character nobody can
+  // see should not be costing frames.
+  const chOrb = $("#chOrb"); if (chOrb) paintAvatar(chOrb, oid, { live: true, title: a.name });
+  const ctxOrb = $("#ctxOrb"); if (ctxOrb) paintAvatar(ctxOrb, oid, { size: 96, title: a.name });
   if ($("#ctxAgentName")) $("#ctxAgentName").textContent = a.name;
   if ($("#ctxAgentRole")) $("#ctxAgentRole").textContent = a.role;
   if ($("#ctxAgentDesc")) $("#ctxAgentDesc").textContent = agentDesc(a);
@@ -57,7 +61,7 @@ function heroEmpty() {
   div.className = "hero-empty";
   div.innerHTML = `
     <div class="he-top">
-      <span class="orb orb-xl" style="${orbStyle(agentOrbId(a))}"></span>
+      <span class="orb orb-xl"></span>
       <div>
         <h1 class="he-hi">${greet}.</h1>
         <p class="he-sub">Your second brain, always on your side. Ask ${esc(a.name)} anything — it already knows your world.</p>
@@ -69,6 +73,9 @@ function heroEmpty() {
       <button class="he-card" data-fill="Find "><span class="hc-ic">${IC.search}</span><b>Find something</b><span>Search across my apps &amp; notes.</span></button>
       <button class="he-card" data-q="Help me plan my day and week."><span class="hc-ic">${IC.spark}</span><b>Help me plan</b><span>Plan my day / week.</span></button>
     </div>`;
+  // The greeting is the first thing on an empty conversation and the largest
+  // the character is ever drawn, so this one is live too.
+  paintAvatar(div.querySelector(".orb-xl"), agentOrbId(a), { live: true, title: a.name });
   div.querySelectorAll(".he-card").forEach((c) => c.onclick = () => {
     if (c.dataset.fill) { $("#input").value = c.dataset.fill; $("#input").focus(); autoGrow(); }
     else send(c.dataset.q);

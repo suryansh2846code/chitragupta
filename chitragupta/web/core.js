@@ -38,14 +38,114 @@ function esc(s) {
   return t.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 
-// gradient orb avatar per agent (stable colour from the id; the lead is always blue)
-const ORB_COLORS = [["#8fb0ff", "#2f3a5e"], ["#7fd8b0", "#1f4636"], ["#c3a0f5", "#382a54"],
-  ["#e0b489", "#48331f"], ["#e79aa0", "#48232e"], ["#9ad0e0", "#1e444f"], ["#b8c0cf", "#2b3140"]];
-function orbPair(id) {
-  let h = 0; for (const ch of String(id || "")) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
-  return ORB_COLORS[h % ORB_COLORS.length];
+// ── agent avatars ──────────────────────────────────────────────────────────
+//
+// Every agent has a face, and it is never blank: `character.js` composes one
+// deterministically from the agent's id, so a first launch with an empty
+// database still shows a full roster of distinct characters. A row in
+// `agent_avatars` is an *override* — what a person built in Appearance — and
+// deleting it returns that agent to its generated character rather than to
+// nothing.
+//
+// The gradient orbs this replaced were a stable colour per id and nothing more.
+// They were never wrong, but seven colours across a roster meant two agents in
+// the same rail regularly shared one, and a colour is not a face.
+
+//: agent id -> the document a person saved for it. Filled once at boot by
+//: `loadAgentAvatars()`; empty is the normal state, not a failure.
+const AGENT_AVATARS = new Map();
+
+//: agent id -> generated document, memoised. Generating is cheap but not free,
+//: and the rail repaints on every agent switch.
+const _generated = new Map();
+
+// Whether the renderer loaded at all. A missing bundle must cost the avatars
+// and nothing else — `paintAvatar` falls back to a plain tinted disc, and the
+// workspace stays entirely usable. A ReferenceError here would take the whole
+// script down with it, and this file is the one every other one depends on.
+function _characterReady() {
+  return typeof Character !== "undefined" && Character && typeof Character.renderToString === "function";
 }
-function orbStyle(id) { const [a, b] = orbPair(id); return `background:radial-gradient(circle at 32% 26%, ${a}, ${b} 74%)`; }
+
+// A live character builds real SVG elements and subscribes to the pointer; a
+// static one is a string. Environments that can do the second but not the first
+// are real and worth serving rather than crashing in: the frontend test
+// harnesses evaluate this app against a minimal DOM, and an avatar is never the
+// thing they are testing. Falling back to the static render keeps the face and
+// drops only the motion.
+function _canMountLive() {
+  return typeof document !== "undefined" && typeof document.createElementNS === "function"
+    && typeof Character.createCharacter === "function";
+}
+
+function agentScene(id) {
+  const saved = AGENT_AVATARS.get(id);
+  if (saved) return saved;
+  let made = _generated.get(id);
+  if (!made) {
+    made = Character.generateScene(String(id || "agent"));
+    _generated.set(id, made);
+  }
+  return made;
+}
+
+/**
+ * Draw an agent's character into an element.
+ *
+ * `live: true` mounts a following instance — the character watches the pointer.
+ * Reserved for the few avatars a person is actually looking at (the rail, the
+ * chat header). Everywhere else gets a static string, which the browser treats
+ * as an image instead of something competing for frames; a roster of thirty
+ * live instances is thirty springs integrating on every pointer move.
+ *
+ * The character is drawn with no frame of its own. The slot it lands in already
+ * has a border-radius — a 50% disc in the rail, a 10px square on a Library card
+ * — and letting CSS do the clipping is what keeps one renderer serving every
+ * shape of hole without knowing about any of them.
+ */
+function paintAvatar(el, id, opts) {
+  if (!el) return null;
+  const o = opts || {};
+  if (!_characterReady()) {
+    // The last-resort face: a flat tint, still stable per id, still distinct
+    // enough to tell two agents apart in a rail.
+    let h = 0; for (const ch of String(id || "")) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+    el.style.background = `hsl(${h % 360} 42% 62%)`;
+    return null;
+  }
+  const scene = JSON.parse(JSON.stringify(agentScene(id)));
+  scene.scene.camera.frame = "none";
+  // The character's own drop shadow is drawn *inside* its box, and the box here
+  // is a slot CSS has already clipped to a disc or a rounded square. So the
+  // shadow does not fall behind the avatar — it smears across one side of it,
+  // and at 34px that is most of the face. The slot's own `box-shadow` provides
+  // the lift instead, and dropping this is the single biggest thing that made
+  // the small avatars read as crisp rather than muddy.
+  scene.scene.effects.showAvatarShadow = false;
+  scene.scene.camera.padding = 4;
+  if (o.live && _canMountLive()) {
+    if (el._character) el._character.destroy();
+    el._character = Character.createCharacter(el, scene, { title: o.title || id });
+    return el._character;
+  }
+  if (el._character) { el._character.destroy(); el._character = null; }
+  el.innerHTML = Character.renderToString(scene, { size: o.size || 64, title: o.title || id });
+  return null;
+}
+
+/** Load every saved avatar before the first paint, so no face arrives late. */
+async function loadAgentAvatars() {
+  try {
+    const r = await api("/api/agents/avatars");
+    AGENT_AVATARS.clear();
+    for (const [id, row] of Object.entries(r.avatars || {})) {
+      if (row && row.scene) AGENT_AVATARS.set(id, row.scene);
+    }
+  } catch (_) {
+    // An agent with no custom avatar still has its generated one, so failing
+    // here costs the overrides for this launch and nothing visible otherwise.
+  }
+}
 
 // ── minimal line icons (no emoji) ───────────────────────────────────────────
 const _S = (p, s = 16) => `<svg viewBox="0 0 16 16" width="${s}" height="${s}" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">${p}</svg>`;
@@ -88,6 +188,10 @@ const IC = {
   library: _S('<rect x="2.4" y="2.8" width="2.7" height="10.4" rx="0.8"/><rect x="6" y="4.4" width="2.7" height="8.8" rx="0.8"/><path d="M10.2 5.1l2.5.7-2 7.6-2.5-.7z"/>'),
   tools: _S('<path d="M2 5h6M11 5h3M2 11h3M8 11h6"/><circle cx="9.3" cy="5" r="1.5"/><circle cx="6" cy="11" r="1.5"/>'),
   model: _S('<circle cx="8" cy="8" r="5.6"/><path d="M8 2.4a5.6 5.6 0 0 1 0 11.2z" fill="currentColor" stroke="none"/>'),
+  // A face in a rounded frame — what this screen edits, drawn the same way
+  // every other icon here is. `applyIcons` keys off data-msnav, so the name
+  // must stay "appearance".
+  appearance: _S('<rect x="2.4" y="2.4" width="11.2" height="11.2" rx="3.2"/><rect x="5.6" y="5.9" width="1.5" height="3.4" rx=".75" fill="currentColor" stroke="none"/><rect x="8.9" y="5.9" width="1.5" height="3.4" rx=".75" fill="currentColor" stroke="none"/>'),
   copy: _S('<rect x="5.5" y="5.5" width="8" height="8" rx="1.6"/><path d="M10.5 5.5v-1a1.5 1.5 0 0 0-1.5-1.5H4a1.5 1.5 0 0 0-1.5 1.5v5A1.5 1.5 0 0 0 4 11h1"/>', 14),
   tick: _S('<path d="M3.5 8.5l3 3 6-6.5"/>', 14),
   inbox: _S('<path d="M2.2 9h3.4l1 2h6.8l1-2h3.4"/><path d="M2.2 9 4.6 3.3h6.8L13.8 9v3.6a1.2 1.2 0 0 1-1.2 1.2H3.4a1.2 1.2 0 0 1-1.2-1.2z"/>'),
