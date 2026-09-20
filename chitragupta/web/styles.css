@@ -2679,6 +2679,8 @@ button.tiny.running:hover { background: linear-gradient(to right,
 @media (prefers-reduced-motion: reduce) {
   .logo-tile, .logo-tile:hover, .logo-tile:active { transform: none; transition: none; }
   .lt-sheen { display: none; }
+}
+
 /* ── Appearance ───────────────────────────────────────────────────────────
    The roster of agents, and the avatar editor beneath it. The editor itself
    is `character.js`'s own panel — it is restyled entirely through the six
