@@ -179,6 +179,11 @@ appears on an approval card when `blocked` is non-empty. Extend it to
 `(server_id, tool)` and the third identical approval offers the grant instead of
 asking a fourth time.
 
+> **Built.** `mcp_action` moved 🔴 → 🟡 with `TOOL_RECIPIENT` as its list and
+> `connector_tool_key()` as its key. This is the one change in this whole
+> document that *relaxes* a gate, so the argument and its limits are written
+> out in [Per-tool grants](#per-tool-grants) rather than left implicit.
+
 ### 🔴 Red — always explicit, never promotable
 
 ```
@@ -599,8 +604,8 @@ allow-list can hold, and *"always allow comments on acme/api"* is a coherent
 offer. `REPO_RECIPIENT` is that list, case-folded because GitHub is.
 
 That is the same argument as **per-tool grants** for `mcp_action`
-(`(server_id, tool)` as the key), which remains the last unbuilt rung. GitHub
-is its proof of concept.
+(`(server_id, tool)` as the key). GitHub was its proof of concept; the grant
+itself is built — see *Per-tool grants* below.
 
 Starting this phase turned up a live bug first: the two allow-lists that
 already existed were plumbed as one. The *"Always allow"* button on a Telegram
@@ -626,6 +631,59 @@ user watches it happen, and per-action confirmation rather than per-session.
 
 **Do not start this until Phase 0 exists.** Undo and an audit log are what make
 it survivable.
+
+---
+
+## Per-tool grants
+
+The **Promote** rung, and the only place this project has made a gate *looser*.
+It deserves the argument written down, because "we relaxed a security control
+and the tests went green" is a sentence that should never stand on its own.
+
+**What changed.** `mcp_action` was 🔴 — refused unattended, unpromotable,
+forever. It is now 🟡 against a list of `server:tool` keys
+(`actions.connector_tool_key`, `permissions.TOOL_RECIPIENT`).
+
+**Why the old tier was wrong.** Red was never a judgement that connector writes
+are the most dangerous thing here — `send_email` is amber and mail is
+irreversible. It was a judgement that *the gate could not see what it reached*,
+which was true while the only candidate key was somebody else's argument blob.
+`linear:create_comment` is a key: stable, comparable, revocable, and readable
+by the person granting it. That is the same move `REPO_RECIPIENT` made for
+GitHub, and the tier test is unchanged — the key got better, so the tier
+followed.
+
+**What now carries the weight red used to.** Four things, and the second is the
+one that makes this safe rather than merely defensible:
+
+1. **Nothing is granted by default.** An unconfigured install refuses every
+   connector write, exactly as before. A grant exists only where a person
+   tapped for it.
+2. **A grant cannot cover a verb nobody can take back.**
+   `ActionSpec.always_ask_when` is consulted *before* the tier, so
+   `demo:delete_project` is refused even to a user who granted precisely that
+   tool — and told why. `mcp_source.is_irreversible` is the classifier;
+   it reads the tool's own verb and errs toward asking.
+3. **The grant is one tool, not one server.** Allowing
+   `linear:create_comment` does nothing for `linear:create_issue`, and an
+   action arriving without both halves of its key fails closed against a
+   placeholder no grant can match.
+4. **It is visible and revocable, and every use is logged.** The allow-list
+   screen shows it tagged *Connector tool*; `action_log` records each run.
+
+**What got worse.** Honestly: a user who grants a write tool has made a
+standing decision, and a prompt-injected agent that reaches that exact tool can
+now use it without a tap. Before, it could not. That is the trade — it is the
+same trade already made for `send_email`, bounded harder here by (2), and it is
+the trade that makes a repeated write stop asking a fourth time.
+
+**What this cost in tests.** Six tests asserted `"mcp_action" in
+NEVER_UNATTENDED`. That membership was a *proxy* for "a connector write cannot
+run unattended", and the proxy stopped being the mechanism. Each was rewritten
+to assert the behaviour instead — refused with nothing granted — and each was
+watched failing against a gate with its recipient lookup removed. One got
+strictly stronger: `test_a_connector_write_still_needs_a_tap_when_nobody_is_
+watching` now grants `x:delete_everything` and asserts it is *still* refused.
 
 ---
 

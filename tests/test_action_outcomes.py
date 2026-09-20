@@ -126,8 +126,18 @@ def test_nothing_happens_without_an_agent_to_tell(scripted):
     assert "agent_note" not in out
 
 
-def test_connector_writes_are_still_never_unattended():
-    from chitragupta.agents.permissions import NEVER_UNATTENDED
+def test_connector_writes_are_still_refused_unattended_by_default():
+    """Reporting an outcome back to the agent must not have taught anything
+    upstream that a connector write may run on its own.
 
-    assert "mcp_action" in NEVER_UNATTENDED
+    Asserted as behaviour rather than as `"mcp_action" in NEVER_UNATTENDED`:
+    that membership stopped being the mechanism when connector writes became
+    grantable per `server:tool`, and a test pinned to the mechanism would have
+    gone green against a gate that no longer refuses anything.
+    """
+    from chitragupta.agents.permissions import NEVER_UNATTENDED, check
+
     assert "create_routine" in NEVER_UNATTENDED
+    verdict = check("mcp_action", {"server_id": "linear", "tool": "create_issue"})
+    assert not verdict.allowed, "a connector write ran with nothing granted"
+    assert verdict.blocked_recipients == ("linear:create_issue",)

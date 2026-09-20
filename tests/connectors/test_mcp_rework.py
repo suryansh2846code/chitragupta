@@ -240,13 +240,31 @@ def test_malformed_arguments_are_dropped_rather_than_guessed():
 
 def test_a_connector_write_still_needs_a_tap_when_nobody_is_watching():
     """Nothing about making writes proposable may let an unattended routine
-    take one."""
-    from chitragupta.agents.permissions import NEVER_UNATTENDED, check
+    take one.
 
-    assert "mcp_action" in NEVER_UNATTENDED
-    verdict = check("mcp_action", {"server_id": "x", "tool": "delete_everything"})
+    A connector write is grantable per `server:tool` — but a grant is a
+    statement about a tool the user has seen, and "delete everything" is the
+    case where standing consent is exactly what you do not want them to be
+    able to give. So this asserts the harder half: refused with nothing
+    granted, and refused again once that very tool IS granted.
+    """
+    from chitragupta.agents import permissions
+    from chitragupta.agents.permissions import check
+
+    params = {"server_id": "x", "tool": "delete_everything"}
+
+    verdict = check("mcp_action", params)
     assert not verdict.allowed
     assert verdict.reason
+
+    permissions.grant("x:delete_everything", kind=permissions.TOOL_RECIPIENT)
+    try:
+        verdict = check("mcp_action", params)
+        assert not verdict.allowed, (
+            "a standing grant covered an irreversible tool")
+        assert "cannot be undone" in verdict.reason
+    finally:
+        permissions.revoke("x:delete_everything", kind=permissions.TOOL_RECIPIENT)
 
 
 def test_the_confirmation_card_shows_what_will_be_written():

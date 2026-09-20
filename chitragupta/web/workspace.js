@@ -14,6 +14,17 @@
  * mean is better than describing where it is.
  */
 
+// What is actually on the list this grant would join. The plural used to be
+// hard-coded "people", which is wrong about a repository and wrong about a
+// connector tool — and "2 people won't be asked about again" after approving a
+// write to `linear` is not a sentence the user can check.
+const GRANT_NOUNS = {
+  repo_recipient: ["repository", "repositories"],
+  connector_tool: ["connector tool", "connector tools"],
+};
+const grantNoun = (kind, n) =>
+  (GRANT_NOUNS[kind] || ["person", "people"])[n === 1 ? 0 : 1];
+
 async function loadApprovals() {
   const box = $("#approvals");
   if (!box) return;
@@ -35,7 +46,8 @@ async function loadApprovals() {
       // `to:` field contained. Empty means no grant could help — an action in
       // NEVER_UNATTENDED — and a button that cannot work must not be shown.
       const blocked = Array.isArray(a.blocked) ? a.blocked : [];
-      const who = blocked.length === 1 ? blocked[0] : `${blocked.length} people`;
+      const who = blocked.length === 1
+        ? blocked[0] : `${blocked.length} ${grantNoun(a.kind, blocked.length)}`;
       // Spelled out in the label, never "Always allow this": a standing grant
       // the user cannot read is a tap, not consent. Secondary styling, and
       // second in the row, so approving once stays the easy answer.
@@ -97,7 +109,8 @@ async function loadApprovals() {
       return;
     }
     toast(who.length === 1 ? `${who[0]} won't be asked about again`
-                           : `${who.length} recipients won't be asked about again`);
+                           : `${who.length} ${grantNoun(row && row.kind, who.length)}`
+                             + ` won't be asked about again`);
     decide(id, "approve", "approve");
   };
 

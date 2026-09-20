@@ -89,6 +89,18 @@ class ActionSpec:
     #: Slack message learns nothing except that the app is confused.
     always_ask_because: str = ""
 
+    #: `(params) -> reason`, for an action that is usually promotable and is
+    #: not *this time*. Returning a sentence forces a tap whatever the tier and
+    #: whatever the user has allowed; "" leaves the tier to decide.
+    #:
+    #: The tier answers "what kind of thing is this action", and that is the
+    #: right question for every action but one. A connector tool is not one
+    #: kind of thing: `linear:create_comment` and `linear:delete_project` are
+    #: the same *action* with different arguments, and a grant that could not
+    #: tell them apart would be the allow-list `mcp_action` spent three phases
+    #: refusing to have.
+    always_ask_when: Callable[[dict], str] | None = None
+
     #: Rung 5. `(params, result) -> dict` merged into the result. Reads the
     #: thing back from the service that now holds it, so "sent" is something we
     #: checked rather than something we assumed from a 200.
@@ -139,6 +151,33 @@ CHAT_RECIPIENT = "chat_recipient"
 #: allow comments on acme/api" a coherent offer in a way "always allow this
 #: argument blob" never was for `mcp_action`.
 REPO_RECIPIENT = "repo_recipient"
+
+#: One tool on one connector, as `server_id:tool`.
+#:
+#: `agents/permissions.py` argued for three phases that `mcp_action` could
+#: never be allow-listed, and it was right about the thing it was looking at:
+#: *"a Slack tool's `channel` and a Jira tool's `assignee` are not the same
+#: field and never will be"*. There is no recipient to read out of somebody
+#: else's arguments.
+#:
+#: But the arguments were never the only candidate key. **The tool is.**
+#: `linear:create_comment` is stable, comparable, revocable and legible — a
+#: user can read it, decide about it, and take it back — where "always allow
+#: this argument blob" was none of those things. GitHub proved the shape one
+#: commit ago with `acme/api`; this is the same move one level in.
+#:
+#: What it deliberately does NOT do is promote the action wholesale. Every
+#: connector write still collects a card until the user allows that exact tool,
+#: and `always_ask_when` keeps the irreversible verbs off the list entirely.
+TOOL_RECIPIENT = "connector_tool"
+
+
+def connector_tool_key(params: dict) -> str:
+    """`server:tool` — what a standing grant for a connector write names."""
+    params = params or {}
+    server = str(params.get("server_id") or params.get("server") or "").strip()
+    tool = str(params.get("tool") or "").strip()
+    return f"{server}:{tool}" if server and tool else ""
 
 _GITHUB_URL = re.compile(
     r"github\.com/([\w.-]+)/([\w.-]+?)(?:\.git)?/(?:issues|pull)/(\d+)", re.I)
@@ -828,6 +867,27 @@ def _undo_github_comment(params: dict, result: dict) -> dict:
                              str(result.get("id") or ""))
 
 
+def _irreversible_tool_asks(params: dict) -> str:
+    """Why this particular connector call cannot be allow-listed.
+
+    A standing grant is a statement about the future, and the future of
+    `delete_project` is not one anybody can inspect before agreeing to it. So
+    the destructive verbs stay per-use: approve one, as often as you like, and
+    never sign a blank cheque for it.
+
+    Name-based, because the gate cannot make a network call to ask the server —
+    and a grant that waited on a listing would be a gate that fails open when
+    the server is slow.
+    """
+    from .connectors.mcp_source import is_irreversible
+
+    tool = str((params or {}).get("tool") or "")
+    if tool and is_irreversible(tool):
+        return (f"“{tool}” cannot be undone, so it needs your approval every "
+                "time — it is not something you can allow in advance.")
+    return ""
+
+
 def _mcp_action(params: dict) -> dict:
     """Run one tool on a connector the user added.
 
@@ -1176,8 +1236,17 @@ REGISTRY: dict[str, ActionSpec] = {
     "mcp_action": ActionSpec(
         handler=_mcp_action, label="Connector action",
         fields=["server_id", "tool", "arguments"],
-        risk=Risk.RED,
-        always_ask_because="Anything a connector changes needs your approval.",
+        # **Amber now, and the argument that kept it red is answered rather
+        # than dropped.** The old reasoning was that an allow-list needs
+        # something to compare against and somebody else's arguments are not
+        # it. True — and the *tool* always was. `linear:create_comment` is a
+        # key a person can read, decide about and revoke.
+        #
+        # Nothing is promoted by default: with no grant this behaves exactly
+        # as it did, one card per call. The change is only that the fifth
+        # identical approval can now be the last one.
+        risk=Risk.AMBER, recipient_kind=TOOL_RECIPIENT,
+        always_ask_when=_irreversible_tool_asks,
         remember=_remember_connector_action,
         # No undo: the verb belongs to somebody else's server and nothing tells
         # us what its inverse is — or whether it has one.
