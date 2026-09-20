@@ -52,6 +52,12 @@ and that document is the one to update when the rule changes.
 | `metrics.py` · `training.py` | numbers over time — measurements and sets/reps/load, kept as numbers not prose |
 | `config.py` · `log.py` | settings and logging. Leaf utilities — keep them that way |
 
+Plus one directory that is **not** part of the Python package:
+
+| | |
+|---|---|
+| `character/` | the avatar renderer — a standalone, dependency-free JS package with its own README, tests and MIT licence. Nothing in `chitragupta/` imports it; `scripts/sync-character.sh` copies its bundle to `chitragupta/web/character.js` and `tests/test_character_asset.py` fails if the copy drifts. Published standalone at **[github.com/suryansh2846code/character](https://github.com/suryansh2846code/character)** — that repo is the upstream; this copy is the vendored one. Fix bugs here, then mirror them there (or the reverse), and run the sync script. |
+
 Full ownership table and the allowed dependency direction:
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) §2–3.
 
@@ -184,6 +190,14 @@ even when every test is green. Reasoning and measurements:
   commit that adds it.
 
 **Frontend — `web/`**
+- **Every agent has a face, and it is never blank.** `character.js` composes one
+  from the agent's id, so a first launch with an empty database still shows a
+  full roster. A stored avatar is an *override*; deleting it returns the agent to
+  its generated character, never to nothing.
+- **A live avatar follows the cursor and costs frames; a static one does not.**
+  `live: true` is for the rail and the chat header. A list of thirty gets
+  strings — a roster of live instances is thirty springs integrating on every
+  pointer move.
 - **Escape before applying inline markdown**, the way `md()` does. The link
   regex is safe only because quotes are already `&quot;`.
 - Relative API paths only. Never a host or port.
@@ -329,6 +343,7 @@ The boundaries and what each must name:
 | the macOS window and sign-in card | [`docs/DESKTOP-SIGNIN.md`](docs/DESKTOP-SIGNIN.md) |
 | why `app.js` cannot be split yet | [`docs/development/frontend-testing.md`](docs/development/frontend-testing.md) |
 | the first-run flow | [`docs/development/onboarding-flow.md`](docs/development/onboarding-flow.md) |
+| the avatar renderer, its document format and its editor | [`character/README.md`](character/README.md) |
 | frontend defects found and deliberately left | [`docs/development/frontend-parked.md`](docs/development/frontend-parked.md) |
 | the brain's data model | [`docs/BRAIN-V1.5.md`](docs/BRAIN-V1.5.md) |
 | connectors | [`docs/CONNECTORS.md`](docs/CONNECTORS.md) |
