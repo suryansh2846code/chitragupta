@@ -245,6 +245,70 @@ def clear_agent_model_endpoint(agent_id: str):
     return {"cleared": cleared}
 
 
+# ── what an agent looks like ─────────────────────────────────────────────────
+# Every agent already has a character: the workspace generates one from the
+# agent id, so a fresh install has a full roster of distinct faces with nothing
+# stored. These three endpoints only deal in *overrides* — a row exists here
+# because a person opened the editor and made one.
+#
+# `/api/agents/avatars` is one call on purpose. The agent rail paints before
+# anything else, and an avatar arriving per-agent afterwards is a visible
+# flicker of the wrong face on every launch.
+
+class AgentAvatarIn(BaseModel):
+    #: A `character.scene` document. Validated for shape and size in
+    #: `agents/avatars.py`, and for meaning by the renderer that draws it —
+    #: deliberately not re-described here, because a second copy of that schema
+    #: is a second copy to keep current.
+    scene: dict[str, Any]
+
+
+@router.get("/api/agents/avatars")
+def agent_avatars():
+    from ...agents.avatars import list_agent_avatars
+    return {"avatars": list_agent_avatars()}
+
+
+@router.get("/api/agents/{agent_id}/avatar")
+def get_agent_avatar_endpoint(agent_id: str):
+    from ...agents.avatars import get_agent_avatar
+    from ...agents.presets import get_agent
+    try:
+        get_agent(agent_id)
+    except KeyError:
+        raise HTTPException(404, f"unknown agent '{agent_id}'") from None
+    # `null` rather than a 404: "this agent uses its generated character" is a
+    # normal answer, not a missing resource, and a 404 here would make every
+    # caller treat the ordinary case as an error.
+    return {"agent_id": agent_id, "scene": get_agent_avatar(agent_id)}
+
+
+@router.put("/api/agents/{agent_id}/avatar")
+def set_agent_avatar_endpoint(agent_id: str, body: AgentAvatarIn):
+    from ...agents.avatars import AvatarRejectedError, set_agent_avatar
+    from ...agents.presets import get_agent
+    try:
+        get_agent(agent_id)
+    except KeyError:
+        raise HTTPException(404, f"unknown agent '{agent_id}'") from None
+    try:
+        return set_agent_avatar(agent_id, body.scene)
+    except AvatarRejectedError as exc:
+        # The message is written to be read by the person who pressed Save.
+        raise HTTPException(400, str(exc)) from None
+
+
+@router.delete("/api/agents/{agent_id}/avatar")
+def clear_agent_avatar_endpoint(agent_id: str):
+    from ...agents.avatars import clear_agent_avatar
+    from ...agents.presets import get_agent
+    try:
+        get_agent(agent_id)
+    except KeyError:
+        raise HTTPException(404, f"unknown agent '{agent_id}'") from None
+    return {"cleared": clear_agent_avatar(agent_id)}
+
+
 class NewAgent(BaseModel):
     name: str
     role: str = ""

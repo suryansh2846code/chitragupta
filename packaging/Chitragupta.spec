@@ -132,6 +132,12 @@ app = BUNDLE(
         "CFBundleVersion": VERSION,
         "LSMinimumSystemVersion": "11.0",
         "NSHighResolutionCapable": True,
+        # macOS 26 replaced Launchpad with a Spotlight "Applications" browser
+        # that groups by category, and an app with no category has no bucket to
+        # land in — it is simply not listed. The bundle was installed, signed,
+        # registered and Spotlight-indexed, and still did not appear anywhere a
+        # user would look for it. Nothing warns you; the key just has to be here.
+        "LSApplicationCategoryType": "public.app-category.productivity",
         # Chitragupta is a window, not a menu-bar accessory. (An accessory policy
         # is what would let the sign-in card float over another app's
         # full-screen Space — see docs/DESKTOP-SIGNIN.md for why that trade was

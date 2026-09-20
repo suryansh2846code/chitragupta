@@ -1,5 +1,5 @@
 #!/bin/bash
-# Build a double-clickable "Chitragupta.app" for THIS machine, for development.
+# Build a double-clickable "Chitragupta (dev).app" for THIS machine.
 #
 # The launcher it writes runs this checkout's virtualenv, so the bundle contains
 # no Python and works nowhere else. That is the point — it is a fast way to get
@@ -15,7 +15,13 @@ PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 # pyproject.toml said 0.1.0.
 VERSION="$(sed -n 's/^version = "\(.*\)"/\1/p' "$PROJECT_DIR/pyproject.toml" | head -1)"
 VENV="$PROJECT_DIR/.venv"
-APP_DIR="${1:-$HOME/Applications}/Chitragupta.app"
+# "(dev)" is in the directory name, not just the plist. macOS labels an app in
+# Finder, the Dock and the Applications browser by its bundle's FILENAME —
+# CFBundleDisplayName does not override that here. Naming only the plist left
+# two rows both reading "Chitragupta", which is exactly the confusion this is
+# meant to prevent: one of them is a frozen build and one runs your checkout,
+# and you cannot tell which you just launched.
+APP_DIR="${1:-$HOME/Applications}/Chitragupta (dev).app"
 CONTENTS="$APP_DIR/Contents"
 
 if [ ! -x "$VENV/bin/chitragupta" ]; then
@@ -41,15 +47,30 @@ cat > "$CONTENTS/Info.plist" <<EOF
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>CFBundleName</key><string>Chitragupta</string>
-  <key>CFBundleDisplayName</key><string>Chitragupta</string>
-  <key>CFBundleIdentifier</key><string>ai.chitragupta.app</string>
+  <!-- Named apart from the shipped build on purpose. Both can be installed at
+       once, and two rows reading "Chitragupta" in the Applications browser is
+       how you end up debugging the wrong one. -->
+  <key>CFBundleName</key><string>Chitragupta (dev)</string>
+  <key>CFBundleDisplayName</key><string>Chitragupta (dev)</string>
+  <!-- NOT ai.chitragupta.app. This bundle and the shipped one are different
+       apps — this launcher runs the checkout's venv — and when both claimed the
+       same identifier macOS treated them as one: the app vanished from the
+       macOS 26 Applications browser entirely, because the view dedupes by
+       identifier and resolved to the copy it would not list. They would also
+       have shared "Open With" defaults, TCC permission grants and window
+       state, so a dev build could silently answer for the installed one. -->
+  <key>CFBundleIdentifier</key><string>ai.chitragupta.app.dev</string>
   <key>CFBundleVersion</key><string>$VERSION</string>
   <key>CFBundleShortVersionString</key><string>$VERSION</string>
   <key>CFBundleExecutable</key><string>Chitragupta</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>LSMinimumSystemVersion</key><string>11.0</string>
   <key>NSHighResolutionCapable</key><true/>
+  <!-- macOS 26 replaced Launchpad with a Spotlight "Applications" browser that
+       groups by category. Without this key the app has no bucket and is not
+       listed at all — installed, signed and indexed, but nowhere a user can
+       find it. Nothing warns you, so it is easy to lose an afternoon to. -->
+  <key>LSApplicationCategoryType</key><string>public.app-category.productivity</string>
 </dict>
 </plist>
 EOF
@@ -66,3 +87,4 @@ fi
 
 echo "✓ Built $APP_DIR"
 echo "  Open it from $HOME/Applications (or double-click). First launch: right-click → Open."
+echo "  It runs $PROJECT_DIR — edits to the checkout show up on next launch."

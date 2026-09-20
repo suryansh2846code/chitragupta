@@ -1,22 +1,39 @@
 :root {
   /* ── Living Constellation (docs/DESIGN-BRIEF.md) ───────────────────────
-     The workspace now stands on the same ground as the onboarding the user
-     just walked through — same near-black, same cool-white, same gold — so
-     arriving here does not feel like arriving in a different product.
+     The workspace stands on the same ground as the onboarding the user just
+     walked through — same charcoal, same cool-white, same gold — so arriving
+     here does not feel like arriving in a different product. Both palettes are
+     declared separately (onboarding is a standalone page) and must move
+     together; changing one alone is how the seam comes back.
      GOLD IS THE ONLY INTERACTIVE COLOUR: live, hover, focus, primary. Green
      and red survive only where they carry a meaning gold cannot (connected
      vs failed). Blue is deliberately gone: it was the generic-AI default the
      brief exists to avoid, and it was doing 40 different jobs here. */
-  --ground: #05070d;                     /* cool near-black — the night sky */
-  --ground-2: #0b0f18;                   /* panel */
+  /* CHARCOAL, not the blue near-black this shipped with. The ground reads as a
+     blackboard: a slate you write on, which is what the product is. The old
+     #05070d family was cool — every surface carried a blue cast, and against
+     gold it pulled the whole shell toward "console". Charcoal is quieter and it
+     lets the one accent be the only colour in the room.
+
+     The hue is a hair warm (~30°, ~4% saturation) rather than dead neutral. A
+     perfectly grey charcoal goes slightly blue next to the gold and next to the
+     cream of the brand tile; a trace of warmth holds against both. */
+  --ground: #191817;                     /* charcoal — the board */
+  --ground-2: #232120;                   /* panel */
   /* The shell is TWO surfaces, not one flat field. The rail is the chrome the
      workspace floats on; the workspace is a raised card. --surface sits
      deliberately BETWEEN --rail and --panel so every card already drawn in
-     --panel (composer, hero cards, doc cards) still reads as raised above it. */
-  --rail: #03050a;                       /* sidebar + the gutter around the card */
-  --surface: #080b12;                    /* the chat card itself */
+     --panel (composer, hero cards, doc cards) still reads as raised above it.
+     The steps below are spaced to keep that order intact at the new lightness —
+     they are a ramp, not seven independent colours. */
+  --rail: #151413;                       /* sidebar + the gutter around the card */
+  --surface: #1d1c1a;                    /* the chat card itself */
   --star: #dfe7f2;                       /* cool white — particles and text */
-  --muted: #7a8397; --faint: #5c6473;
+  /* Neutralised with the ground. These were blue-greys picked against a blue
+     ground; left alone on charcoal they read as a mistake rather than as a
+     shade. The contrast ratios are matched to what they replaced (~2.8:1 and
+     ~2.1:1 on the ground), so nothing gets harder to read than it was. */
+  --muted: #928c85; --faint: #756f68;
   --line: rgba(223,231,242,.10); --line2: rgba(223,231,242,.18);
   --north: #f5c877;                      /* the pole star — the ONE accent */
   --north-dim: rgba(245,200,119,.14);  /* tinted fills */
@@ -32,7 +49,7 @@
   /* Legacy names. Every existing rule keeps working, and the ~40 sites that
      said "blue" now say gold by pointing here rather than by 40 edits. */
   --bg: var(--ground); --panel: var(--ground-2);
-  --panel-2: #111826; --raise: #19212f; --user: #151d2b;
+  --panel-2: #2a2826; --raise: #35322f; --user: #2f2d2b;
   --text: var(--star); --accent: var(--north); --accent-2: var(--ok);
 
   --sans: -apple-system, "SF Pro Text", "SF Pro Display", system-ui, "Helvetica Neue", Arial, sans-serif;
@@ -44,9 +61,12 @@
 html, body { height: 100%; margin: 0; }
 body {
   font: 14px/1.55 var(--sans); color: var(--text);
+  /* Two soft washes so the board is not a flat fill — chalk dust catching the
+     light, not a gradient for its own sake. Warm-grey now; these were blue and
+     were the loudest remaining source of the cast. */
   background:
-    radial-gradient(80% 60% at 82% 90%, rgba(30,40,60,.25), transparent 60%),
-    radial-gradient(70% 50% at 12% 8%, rgba(40,44,60,.18), transparent 60%),
+    radial-gradient(80% 60% at 82% 90%, rgba(58,54,48,.28), transparent 60%),
+    radial-gradient(70% 50% at 12% 8%, rgba(52,50,46,.20), transparent 60%),
     var(--bg);
 }
 /* The row is minmax(0,1fr), not auto, and both columns get min-height:0 —
@@ -80,11 +100,21 @@ select, .ctx-input, .addtask input, .addbox textarea, #rmName, #rmInterval,
   border: 1px solid var(--border); border-radius: 10px; padding: 9px 11px; font: inherit; font-size: 13px; }
 select:focus, input:focus, textarea:focus { outline: none; border-color: var(--accent); }
 
-/* ── orb avatars ──────────────────────────────────────────────────────── */
+/* ── agent avatars ────────────────────────────────────────────────────── */
+/* The slot keeps the hole; `character.js` draws the face into it with no frame
+   of its own (`paintAvatar`, core.js). One renderer serves the 50% disc in the
+   rail and the 10px square on a Library card without knowing about either.
+   The gradient below is the empty state — visible for the instant before the
+   character mounts, and permanently if the renderer failed to load. */
 .orb { width: 34px; height: 34px; border-radius: 50%; flex: none; position: relative;
+  overflow: hidden; isolation: isolate;
   background: radial-gradient(circle at 32% 26%, #7b8aa5, #2b3242 72%);
   box-shadow: inset 0 2px 5px rgba(255,255,255,.22), inset 0 -7px 12px rgba(0,0,0,.5),
     0 2px 8px rgba(0,0,0,.4); }
+/* No inset shadow over a drawn face — it reads as a smudge across the eyes,
+   which at 34px is most of the face. The outer shadow lifts the slot and stays. */
+.orb:has(svg) { box-shadow: 0 2px 8px rgba(0,0,0,.4); }
+.orb svg, .lib-orb svg { display: block; width: 100%; height: 100%; }
 .orb-lg { width: 44px; height: 44px; }
 .orb-xl { width: 80px; height: 80px; }
 
@@ -94,11 +124,24 @@ select:focus, input:focus, textarea:focus { outline: none; border-color: var(--a
    icons floating in it while the conversation next to it was a raised card.
    Both are cards of the same material now, separated by a gutter — which is
    what "two different sections" has to mean when neither has a border. */
+/* The rail and the chat are ONE card now, split in two, not two cards with a
+   gutter between them. The facing corners are square and the facing borders are
+   gone, so the seam is a single hairline rather than two rounded edges with a
+   sliver of ground showing through.
+
+   The rail is a step darker than the chat it sits against (--ground, where the
+   chat is --surface). That one step is what still separates them now that the
+   gap does not: chrome recedes, the work comes forward. */
 .sidebar { display: flex; flex-direction: column; gap: 4px;
   margin: 9px 0 9px 9px; padding: 16px 12px;
-  background: var(--surface); border: 1px solid var(--line);
-  border-radius: 18px; box-shadow: 0 18px 50px rgba(0,0,0,.45);
-  overflow-y: auto; min-height: 0; }
+  background: var(--ground);
+  border: 1px solid var(--line); border-right: 0;
+  border-radius: 18px 0 0 18px;
+  /* The RAIL does not scroll; the agent list inside it does. That is what lets
+     the navigation and the account sit on the floor: with the whole rail
+     scrolling, "bottom" meant the bottom of the content, so the nav rode up
+     under the last agent and drifted with the list. */
+  overflow: hidden; min-height: 0; }
 .collapse-btn { margin-left: auto; width: 22px; height: 22px; border-radius: 6px; background: transparent;
   color: var(--muted); font-size: 16px; line-height: 1; display: inline-flex; align-items: center; justify-content: center; }
 .collapse-btn:hover { color: var(--text); background: rgba(255,255,255,.06); }
@@ -126,31 +169,43 @@ select:focus, input:focus, textarea:focus { outline: none; border-color: var(--a
 .app.collapsed .agent, .app.collapsed .snav, .app.collapsed .user-chip { margin: 0 auto; }
 .app.collapsed .new-agent { margin: 6px auto 2px; }
 .app.collapsed .agents, .app.collapsed .side-nav { gap: 4px; }
+/* Collapsed there is no room for a row: the avatar and the gear go back to
+   being two stacked 40px squares like everything else in the rail. The bleed
+   has to follow the rail's own padding, which is 8px here rather than 12px —
+   otherwise the rule overshoots the edges by 4px a side. */
+.app.collapsed .side-foot { flex-direction: column; gap: 4px;
+  margin-left: -8px; margin-right: -8px; padding-left: 8px; padding-right: 8px; }
 .app.collapsed .orb { width: 28px; height: 28px; }
 .app.collapsed .na-plus { width: 24px; height: 24px; }
 .app.collapsed .user-av { width: 26px; height: 26px; }
 .brand { display: flex; align-items: center; gap: 11px; padding: 2px 6px 16px;
   font-family: var(--mono); letter-spacing: .32em; text-transform: uppercase; font-size: 13px; }
-/* The mark is a MASK, not an image: one asset, and it takes whatever colour
-   the surface around it uses — gold on the onboarding, text colour in the rail
-   — rather than baking a colour in and needing a second file the day the
-   palette moves.
+/* The mark is the artwork, on its own paper, in a tile — the same thing the
+   Dock icon shows. It used to be a MASK tinted by whatever surface it sat on,
+   which sounded economical and meant the logo was white here, gold on the
+   onboarding, and gold again in the tab: three colours, none of them the one
+   it was drawn in. The tile also carries its own ground, so the mark stays
+   legible anywhere, which the reversed-out version was not — it vanished on a
+   light browser tab strip.
 
    22px, not the 13px the old rotated square used. That square was two strokes
    and survived any size; this mark has a lotus, an inner square and a bindu
    inside it, and rendered at 18px they merge into a blob. Checked at size
    rather than assumed: below about 20px it stops being this mark and becomes
    a smudge, which is worse than the plain diamond it replaced. */
-.brand-mark { width: 22px; height: 22px; flex: none; background: var(--text);
-  -webkit-mask: url("/static/brand-mark.png") center / contain no-repeat;
-  mask: url("/static/brand-mark.png") center / contain no-repeat; }
+.brand-mark { width: 22px; height: 22px; flex: none; border-radius: 5px;
+  background: url("/static/brand-tile.png") center / contain no-repeat; }
 .side-label { display: flex; align-items: center; justify-content: space-between;
   font-family: var(--mono); font-size: 10px; letter-spacing: .18em; text-transform: uppercase;
   color: var(--faint); padding: 12px 8px 8px; }
 .side-add { width: 20px; height: 20px; border-radius: 6px; background: transparent;
   color: var(--muted); border: 1px solid var(--border2); font-size: 14px; line-height: 1; }
 .side-add:hover { color: var(--text); background: rgba(255,255,255,.05); }
-.agents { display: flex; flex-direction: column; gap: 2px; }
+/* The one part of the rail that grows and scrolls. Everything below it —
+   New Agent, the nav, the account — is pushed to the floor by this, without a
+   `margin-top: auto` anywhere: the list simply takes the slack. */
+.agents { display: flex; flex-direction: column; gap: 2px;
+  flex: 1; min-height: 0; overflow-y: auto; }
 .agent { display: flex; align-items: center; gap: 11px; padding: 9px 10px; border-radius: 12px;
   cursor: pointer; border: 1px solid transparent; position: relative; }
 .agent:hover { background: rgba(255,255,255,.035); }
@@ -170,18 +225,36 @@ select:focus, input:focus, textarea:focus { outline: none; border-color: var(--a
 .new-agent:hover { background: rgba(255,255,255,.04); color: var(--text); }
 .na-plus { width: 26px; height: 26px; border-radius: 50%; border: 1px dashed var(--border2);
   display: inline-flex; align-items: center; justify-content: center; font-size: 15px; }
-.side-nav { display: flex; flex-direction: column; gap: 2px; margin-top: 12px;
-  border-top: 1px solid var(--line); padding-top: 12px; }
+/* No rule above this group. There were two — one here and one above the account
+   — which cut the bottom of the rail into three slivers and made Inbox/Brain
+   look like a section of their own rather than part of the block they sit in.
+   One line, above the account, is the whole separation the rail needs. */
+.side-nav { display: flex; flex-direction: column; gap: 2px; margin-top: 16px; }
 .snav { display: flex; align-items: center; gap: 11px; padding: 9px 12px; border-radius: 10px;
   background: transparent; color: var(--muted); font-size: 13.5px; text-align: left; }
 .snav:hover { background: rgba(255,255,255,.04); color: var(--text); }
 .snav-ic { width: 18px; text-align: center; opacity: .8; }
-/* Not `margin-top: auto`. Pinning the account to the floor left a long empty
-   strip between it and the navigation, and in a rail that is mostly icons
-   that gap reads as something failing to load. */
-.side-foot { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line);
-  display: flex; flex-direction: column; gap: 2px; }
-.side-foot .snav { width: 100%; }
+/* The account and Settings share ONE row: identity on the left, the control on
+   the right, the way a footer bar reads rather than two more nav rows.
+
+   The note that used to sit here argued against pinning this to the floor,
+   because doing so left a long empty strip between the account and the
+   navigation above it. That was true of pinning the account ALONE. The whole
+   block travels together now — nav, then account — so they stay adjacent and
+   the slack ends up above all of it, where empty space in a rail belongs. */
+/* FULL BLEED. The rail pads its children by 12px a side, so a plain border here
+   stopped 12px short at each end and read as a dash floating in the middle of
+   the rail rather than as the floor of it. The negative margins reach back out
+   to the rail's edges and the matching padding puts the content back where it
+   was, so only the rule moves. */
+.side-foot { margin: 12px -12px 0; padding: 12px 12px 0;
+  border-top: 1px solid var(--line);
+  display: flex; flex-direction: row; align-items: center; gap: 6px; }
+.side-foot .user-chip { flex: 1; min-width: 0; }
+/* Icon only, so the row stays a row. The label is hidden, so the button needs
+   an aria-label — without one its accessible name would be empty. */
+.side-foot .snav { flex: none; width: auto; padding: 9px; }
+.side-foot .snav .snav-tx { display: none; }
 
 /* ── icons are drawn, never typed ──────────────────────────────────────────
    The ✕, ✓, 🔒, 📁 and ⌵ that used to sit in these controls were text: an
@@ -213,14 +286,22 @@ select:focus, input:focus, textarea:focus { outline: none; border-color: var(--a
   background: radial-gradient(circle at 32% 28%, #cfe0ff, #63708c 75%); }
 
 /* ── chat ─────────────────────────────────────────────────────────────── */
+/* The washes were blue (rgba(40,52,76) / rgba(46,50,68)) and survived the move
+   to charcoal, because they are painted over --surface rather than being a
+   token — so the largest surface in the product kept a cool cast in its corners
+   after everything around it had gone warm. Warm-grey now, same geometry.
+
+   The shadow is gone with the gutter: it existed to lift this card off the rail
+   behind it, and there is no gap left for it to fall into. The inset highlight
+   stays — that is the top edge catching light, not a drop shadow. */
 .chat { display: flex; flex-direction: column; min-width: 0; min-height: 0; position: relative;
-  margin: 9px; border-radius: 18px;
+  margin: 9px 9px 9px 0; border-radius: 0 18px 18px 0;
   background:
-    radial-gradient(78% 58% at 84% 92%, rgba(40,52,76,.22), transparent 62%),
-    radial-gradient(62% 44% at 10% 6%, rgba(46,50,68,.16), transparent 62%),
+    radial-gradient(78% 58% at 84% 92%, rgba(58,54,48,.22), transparent 62%),
+    radial-gradient(62% 44% at 10% 6%, rgba(52,50,46,.16), transparent 62%),
     var(--surface);
-  border: 1px solid var(--line);
-  box-shadow: inset 0 1px 0 rgba(223,231,242,.05), 0 18px 50px rgba(0,0,0,.45); }
+  border: 1px solid var(--line); border-left: 1px solid var(--line);
+  box-shadow: inset 0 1px 0 rgba(223,231,242,.05); }
 .chat-head { display: flex; align-items: center; justify-content: space-between;
   padding: 16px 26px; border-bottom: 1px solid var(--line); }
 .ch-agent { display: flex; align-items: center; gap: 12px; }
@@ -360,14 +441,28 @@ select:focus, input:focus, textarea:focus { outline: none; border-color: var(--a
   z-index: 2;
   width: min(840px, calc(100% - 52px));
   margin: 0 auto;
+  /* TWO ROWS: the message on top, its controls underneath. They used to sit
+     side by side, which made the field a narrow slot in the middle of a strip
+     of chips — the wider the window, the more it read as a toolbar that happens
+     to accept text. Stacked, the first row is unmistakably the thing you type
+     in and the second is unmistakably about what you type.
+
+     align-items must be stretch, not flex-end: in a column that property runs
+     horizontally, and flex-end would shrink both rows to their content width
+     and pin them to the right. */
   display: flex;
-  flex-direction: row;
-  align-items: flex-end;
-  gap: 10px;
-  padding: 10px 11px 10px 16px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  padding: 14px 14px 12px;
   background: var(--panel-2);
   border: 1px solid var(--line2);
-  border-radius: 28px;
+  /* 18px, matching the cards. At 28px the radius was very nearly half the box's
+     own height, so the ends closed into semicircles and 840px of width between
+     them read as a stretched lozenge rather than as a field you type in. The
+     app's card language is 18px — the rail, the chat, the drawers — and the
+     composer is the one thing that was not speaking it. */
+  border-radius: 18px;
   box-shadow: 0 10px 34px rgba(0,0,0,.5), 0 2px 8px rgba(0,0,0,.35);
   transition: border-color .15s, box-shadow .15s;
 }
@@ -384,6 +479,7 @@ select:focus, input:focus, textarea:focus { outline: none; border-color: var(--a
 }
 .composer textarea {
   flex: 1;
+  width: 100%;
   background: transparent;
   border: 0;
   color: var(--text);
@@ -391,8 +487,12 @@ select:focus, input:focus, textarea:focus { outline: none; border-color: var(--a
   font-size: 14.5px;
   resize: none;
   line-height: 1.5;
+  /* A floor, not a height — it still grows with the text up to max-height. One
+     line of type in a box this wide reads as a search field; the extra room is
+     what says "write something". */
+  min-height: 42px;
   max-height: 150px;
-  padding: 8px 2px;
+  padding: 4px 2px 0;
 }
 .composer textarea:focus {
   outline: none;
@@ -400,25 +500,6 @@ select:focus, input:focus, textarea:focus { outline: none; border-color: var(--a
 .composer textarea::placeholder {
   color: var(--faint);
   opacity: 0.85;
-}
-.cmp-ic {
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  background: transparent;
-  color: var(--muted);
-  font-size: 16px;
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: none;
-  cursor: pointer;
-  transition: background .15s, color .15s;
-}
-.cmp-ic:hover {
-  background: rgba(255,255,255,.06);
-  color: var(--text);
 }
 @media (max-width: 720px) {
   .composer { width: calc(100% - 24px); bottom: 12px; }
@@ -455,9 +536,10 @@ select:focus, input:focus, textarea:focus { outline: none; border-color: var(--a
 .cmp-bottom-bar {
   display: flex;
   align-items: center;
+  justify-content: space-between;   /* context left, actions right */
   gap: 8px;
+  width: 100%;
   flex: none;
-  padding-bottom: 2px;
 }
 .cmp-bar-left {
   display: flex;
@@ -825,14 +907,64 @@ select:focus, input:focus, textarea:focus { outline: none; border-color: var(--a
 .think-fill { height: 100%; width: 0; background: var(--accent); border-radius: 2px; transition: width .18s linear; }
 @keyframes think-pulse { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: .35; transform: scale(.65); } }
 
-/* action cards (confirm-before-execute) */
-.action-card { align-self: flex-start; max-width: 100%; background: var(--panel);
-  border: 1px solid var(--accent); border-radius: 14px; padding: 13px 15px; }
-.ac-head { display: flex; justify-content: space-between; align-items: center; font-weight: 600; margin-bottom: 8px; }
-.ac-tag { font-size: 10.5px; text-transform: uppercase; letter-spacing: .5px; color: var(--north); background: var(--north-dim); padding: 2px 7px; border-radius: 20px; }
+/* ── action cards (confirm-before-execute) ───────────────────────────────
+   A little application window, after the Uiverse "Mac-Style Code Preview": the
+   three chrome dots, a title, the details, and the payload in an inset panel
+   the agent is effectively handing you to read before you sign it.
+
+   That is the point of the borrowed shape. An agent asking permission is a
+   *different kind of thing* from a reply, and a window says so instantly —
+   where the old card said it with a gold outline that had to compete with the
+   gold chip and the gold button inside it. Three golds for one message. The
+   outline is gone; the chip and the confirm button still carry the signal.
+
+   The reference's palette is not copied. It is #000 with #0d1117 panels — a
+   blue-black, which is the exact cast the charcoal ground removed, and it would
+   have put a cold rectangle in the middle of a warm room. The RELATIONSHIPS are
+   what carry the look, so they are kept: the card sits darker than the surface
+   behind it, the panel inside sits lighter than the card, and a hairline
+   separates them. */
+/* Bounded, like the reference's 400px, rather than stretching the full width of
+   the conversation. A window that spans the column stops reading as an object
+   the agent handed you and starts reading as another paragraph with a border —
+   and the mono panel inside becomes 110 characters wide, which is past the line
+   length anyone reads comfortably. Wider than 400 because these rows carry a
+   label AND a value, which 400 wraps. */
+.action-card { align-self: flex-start; width: min(520px, 100%);
+  background: var(--rail); border: 1px solid var(--line);
+  border-radius: 12px; padding: 16px 18px 15px;
+  box-shadow: 0 4px 14px rgba(0,0,0,.35);
+  transition: transform .2s, box-shadow .2s; }
+/* The lift is the reference's, at less than half the distance. -5px on a card
+   that sits inline in a scrolling conversation reads as the message jumping;
+   -2px reads as it coming forward under the cursor. No `cursor: pointer` —
+   the reference's card is clickable as a whole and this one is not, and a
+   pointer over dead space is a promise the card cannot keep. */
+.action-card:hover { transform: translateY(-2px); box-shadow: 0 8px 22px rgba(0,0,0,.45); }
+@media (prefers-reduced-motion: reduce) {
+  .action-card, .action-card:hover { transform: none; transition: none; }
+}
+.ac-chrome { display: flex; align-items: center; gap: 7px; margin-bottom: 13px; }
+.ac-dot { width: 11px; height: 11px; border-radius: 50%; display: inline-block; flex: none; }
+.ac-dot.red { background: #ff5f57; } .ac-dot.yellow { background: #ffbd2e; } .ac-dot.green { background: #28c941; }
+.ac-head { font-size: 16px; font-weight: 700; margin-bottom: 6px; color: var(--text); }
+/* Below the title, the way the reference puts its tag — and still gold,
+   because it is the one line on the card that says you have to do something. */
+.ac-tag { display: inline-block; font-size: 10px; text-transform: uppercase; letter-spacing: .5px;
+  color: var(--north); background: var(--north-dim); padding: 4px 8px;
+  border-radius: 5px; margin-bottom: 12px; }
 .ac-row { font-size: 13px; margin: 3px 0; } .ac-row b { color: var(--muted); font-weight: 500; margin-right: 6px; }
-.ac-body { background: var(--panel-2); border: 1px solid var(--border); border-radius: 9px; padding: 8px 10px; margin: 8px 0; font-size: 12.5px; white-space: pre-wrap; max-height: 200px; overflow-y: auto; }
-.ac-actions { display: flex; gap: 8px; margin-top: 8px; align-items: center; }
+/* The "code editor": what the agent is actually going to act on, inset and
+   mono, so it reads as quoted material rather than as more of the card's own
+   prose. Scrolls rather than grows — a long payload must not push the Confirm
+   button off the bottom of a conversation. */
+.ac-body { background: var(--panel-2); border: 1px solid var(--line2);
+  border-radius: 6px; padding: 13px 14px; margin: 11px 0;
+  font-family: var(--mono); font-size: 12.5px; line-height: 1.55;
+  color: var(--text); white-space: pre-wrap; max-height: 200px; overflow-y: auto; }
+.ac-body::-webkit-scrollbar { width: 8px; }
+.ac-body::-webkit-scrollbar-thumb { background: var(--line2); border-radius: 4px; }
+.ac-actions { display: flex; gap: 8px; margin-top: 12px; align-items: center; }
 .ac-confirm { background: var(--north); color: var(--north-ink); border-radius: 8px; padding: 8px 14px; font-weight: 600; }
 .ac-result { margin-top: 8px; font-size: 13px; } .ac-ok { color: var(--accent-2); } .ac-err { color: var(--danger); }
 
@@ -983,10 +1115,10 @@ textarea.ac-field-wide { resize: vertical; min-height: 58px; line-height: 1.45; 
 .cn-web-shelf { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
 .site-card { display: flex; align-items: center; gap: 12px;
   background: var(--panel-2); border-radius: 11px; padding: 11px 13px; }
-.site-mark { width: 30px; height: 30px; border-radius: 9px; flex: none;
-  display: inline-flex; align-items: center; justify-content: center;
-  background: rgba(223,231,242,.06); }
-.site-card.is-on .site-mark { background: rgba(245,200,119,.10); }
+/* Size only; `.logo-tile` carries the rest. The site's own tint already sets
+   both the icon colour and --brand at the render site, so a connected site
+   glows in its own colour on hover. */
+.site-mark { width: 32px; height: 32px; }
 .site-text { flex: 1; min-width: 0; }
 .site-nm { font-size: 13px; color: var(--star); }
 .site-sub { font-size: 11.5px; color: var(--faint); margin-top: 2px;
@@ -1294,9 +1426,9 @@ textarea.ac-field-wide { resize: vertical; min-height: 58px; line-height: 1.45; 
   border-radius: 14px; overflow: hidden; }
 .cn-row { display: flex; align-items: center; gap: 13px; padding: 14px 16px; }
 .cn-row + .cn-row { border-top: 1px solid var(--line); }
-.cn-logo { width: 32px; height: 32px; border-radius: 9px; flex: none;
-  display: inline-flex; align-items: center; justify-content: center;
-  background: var(--panel-2); color: var(--muted); position: relative; }
+/* Size and state only — the disc, the hairline, the hover and the sheen all
+   come from `.logo-tile`, which the connected sites wear too. */
+.cn-logo { width: 34px; height: 34px; color: var(--muted); }
 .cn-logo svg { display: block; }
 /* A connected source is marked on its own logo rather than by a separate dot
    in the row: the mark is what the eye lands on first. */
@@ -1425,7 +1557,9 @@ textarea.ac-field-wide { resize: vertical; min-height: 58px; line-height: 1.45; 
 }
 
 /* full-screen brain screen */
-.brainscreen { position: fixed; inset: 0; z-index: 70; background: #05070d; overflow: hidden; }
+/* The token, not a copy of it — this hardcoded the old ground and would have
+   stayed blue while everything around it went charcoal. */
+.brainscreen { position: fixed; inset: 0; z-index: 70; background: var(--ground); overflow: hidden; }
 .brainscreen[hidden] { display: none; }
 #bsCanvas { position: absolute; inset: 0; width: 100%; height: 100%; }
 .bs-side { position: absolute; left: 28px; top: 74px; bottom: 28px; width: 330px; z-index: 3;
@@ -1486,12 +1620,12 @@ textarea:focus-visible, a:focus-visible, [tabindex]:focus-visible,
 }
 
 /* ── line icons (no emoji) ────────────────────────────────────────────── */
-.snav-ic, .cmp-ic, .cmp-send, .hc-ic, .pb-ic { display: inline-flex; align-items: center; justify-content: center; }
+.snav-ic, .cmp-send, .hc-ic, .pb-ic { display: inline-flex; align-items: center; justify-content: center; }
 .snav-ic { width: 18px; color: var(--muted); }
 .snav:hover .snav-ic { color: var(--text); }
 .hc-ic { color: var(--muted); }
 .hc-ic svg { width: 19px; height: 19px; }
-.cmp-ic svg, .cmp-send svg { width: 17px; height: 17px; }
+.cmp-send svg { width: 17px; height: 17px; }
 .pb-ic svg { width: 12px; height: 12px; }
 
 /* model usage box */
@@ -2253,9 +2387,18 @@ button.tiny.running:hover { background: linear-gradient(to right,
 }
 
 
+/* Below 1080px the rail COLLAPSES to icons; it does not disappear. Hiding it
+   took Inbox, Brain, Account and Settings off the screen with nothing standing
+   in for them — survivable when the rail was one way in among several, and not
+   survivable now that everything you configure lives behind Settings. That
+   would have been the whole of the app's navigation gone on a narrow window.
+
+   The collapsed column (74px) comes from `.app.collapsed`, which app.js forces
+   at this width, so there is one description of the icon rail rather than two
+   that drift. The toggle hides because there is nothing here to toggle. */
 @media (max-width: 1080px) {
-  .app { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
-  .sidebar, .ctx { display: none; }
+  .ctx { display: none; }
+  .collapse-btn { display: none; }
 }
 
 /* CLI sign-in instructions (Cursor, Claude Code) — the command is the action,
@@ -2399,7 +2542,7 @@ button.tiny.running:hover { background: linear-gradient(to right,
 }
 .lib-card.is-mine { border-color: color-mix(in srgb, var(--accent, #6c8cff) 45%, transparent); }
 .lib-card-head { display: flex; align-items: center; gap: 11px; }
-.lib-orb { width: 34px; height: 34px; border-radius: 10px; flex: 0 0 auto; }
+.lib-orb { width: 34px; height: 34px; border-radius: 10px; flex: 0 0 auto; overflow: hidden; }
 .lib-cat-tag {
   font-size: .64rem; letter-spacing: .1em; text-transform: uppercase;
   color: var(--muted, #8a94a3);
@@ -2468,3 +2611,180 @@ button.tiny.running:hover { background: linear-gradient(to right,
 .cmp-opt span { color: var(--muted, #8a94a3); font-size: .76rem; }
 .cmp-opt:hover, .cmp-opt.on { background: var(--bg, #0b0d10); }
 .composer { position: relative; }
+
+/* ── skeletons ───────────────────────────────────────────────────────────
+   The shell paints instantly; the backend does not. Between those two moments
+   the rail and the conversation were simply blank, which reads as "broken" far
+   more readily than as "loading" — there is nothing on screen to suggest
+   anything is coming.
+
+   These stand in for the real rows at the real size, so the layout does not
+   jump when the data lands: an agent skeleton is the same 34px orb and the
+   same two lines of type as `.agent`, in the same padding. Placeholders that
+   are merely *near* the right size cost more than they save, because the reflow
+   when they are replaced is exactly the flicker they were meant to prevent.
+
+   The skeletons live in index.html, not in JS, so they are on screen at first
+   paint rather than one script-parse later. Each is replaced by the render that
+   fills its container — `loadAgents()` and `renderHistory()` both assign
+   innerHTML, so nothing has to remember to clear them.
+
+   Built from --star at low alpha rather than a flat grey: the rail (#151413)
+   and the chat card (#1d1c1a) are different grounds, and a translucent fill
+   sits correctly on both instead of needing one value per surface. */
+@keyframes sk-sheen {
+  from { background-position: -120% 0; }
+  to   { background-position: 120% 0; }
+}
+.sk {
+  --sk-base: rgba(223,231,242,.055);
+  --sk-sheen: rgba(223,231,242,.13);
+  border-radius: 999px;
+  background-color: var(--sk-base);
+  background-image: linear-gradient(90deg,
+    var(--sk-base) 0%, var(--sk-base) 34%, var(--sk-sheen) 50%,
+    var(--sk-base) 66%, var(--sk-base) 100%);
+  background-size: 220% 100%;
+  background-repeat: no-repeat;
+  animation: sk-sheen 1.5s linear infinite;
+}
+/* The sheen is the whole point of the effect and also the whole of its motion,
+   so under reduced-motion it becomes a plain resting fill — still obviously a
+   placeholder, just not a moving one. */
+@media (prefers-reduced-motion: reduce) {
+  .sk { animation: none; background-image: none; }
+}
+
+.sk-line { height: 9px; }
+.sk-orb { width: 34px; height: 34px; border-radius: 50%; flex: none; }
+
+/* the agent rail — mirrors `.agent` exactly */
+.sk-agent { display: flex; align-items: center; gap: 11px; padding: 9px 10px; }
+.sk-agent .sk-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+/* Ragged on purpose. Four rows of identical bars read as a table being drawn;
+   varying the widths reads as names and roles of different lengths, which is
+   what is actually coming. */
+.sk-agent:nth-child(1) .sk-name { width: 54%; } .sk-agent:nth-child(1) .sk-role { width: 76%; }
+.sk-agent:nth-child(2) .sk-name { width: 43%; } .sk-agent:nth-child(2) .sk-role { width: 63%; }
+.sk-agent:nth-child(3) .sk-name { width: 61%; } .sk-agent:nth-child(3) .sk-role { width: 51%; }
+.sk-agent:nth-child(4) .sk-name { width: 38%; } .sk-agent:nth-child(4) .sk-role { width: 70%; }
+
+/* the conversation — the shapes a turn actually takes */
+.sk-thread { display: flex; flex-direction: column; gap: 16px; width: 100%; }
+.sk-msg-user { align-self: flex-end; width: 46%; height: 42px; border-radius: 16px; }
+.sk-msg-bot { align-self: flex-start; width: 100%; display: flex; flex-direction: column; gap: 10px; }
+.sk-msg-bot .sk-line:nth-child(1) { width: 92%; }
+.sk-msg-bot .sk-line:nth-child(2) { width: 97%; }
+.sk-msg-bot .sk-line:nth-child(3) { width: 74%; }
+
+/* the chat header, where the agent's name and role arrive together */
+.ch-name .sk-line { width: 108px; height: 11px; margin: 3px 0; }
+.ch-role .sk-line { width: 76px; height: 9px; margin: 2px 0; }
+.ch-name .sk-line, .ch-role .sk-line { display: block; }
+
+/* ── logo tiles ──────────────────────────────────────────────────────────
+   One treatment for every third-party mark in the product — the connector
+   list, the MCP servers and custom apps in it, and the connected sites. They
+   were three separate little boxes with three sets of dimensions before; a
+   logo is a logo, and the shell around it should not change depending on which
+   screen you found it on.
+
+   After the Uiverse tile by Itskrish01: a glassy disc with a hairline, which on
+   hover lifts, tilts, takes the mark's OWN colour into its border and glow, and
+   passes a sheen across itself.
+
+   `--brand` is the whole mechanism. It defaults to the product's cool white and
+   is overridden per logo with the colour already inside that logo's artwork —
+   Gmail's red, Linear's indigo, iMessage's green — so the glow belongs to the
+   mark rather than being one house colour applied to everything. Set it inline
+   at the render site; nothing here needs to know the list.
+
+   The reference is Tailwind and this is not, so the utilities are translated
+   rather than approximated: p-5 → the size set by each caller, rounded-full,
+   border-white/10 → the --line token, the two gradients, duration-300 on the
+   tile and duration-700 on the sheen. */
+.logo-tile {
+  --brand: var(--star);
+  position: relative; flex: none;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: linear-gradient(to top right, rgba(0,0,0,.55), rgba(0,0,0,.35));
+  -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+  box-shadow: 0 2px 6px rgba(0,0,0,.30);
+  transition: transform .3s ease-out, box-shadow .3s ease-out,
+              border-color .3s ease-out, background .3s ease-out;
+}
+.logo-tile:hover {
+  transform: scale(1.1) rotate(3deg);
+  border-color: color-mix(in srgb, var(--brand) 50%, transparent);
+  background: linear-gradient(to top right,
+    color-mix(in srgb, var(--brand) 12%, transparent), rgba(0,0,0,.35));
+  box-shadow: 0 8px 22px color-mix(in srgb, var(--brand) 28%, transparent);
+}
+.logo-tile:active { transform: scale(.95) rotate(0deg); }
+/* The tilt alternates down a list. Every tile leaning the same way reads as the
+   whole column shearing; alternating reads as individual objects being picked
+   up. The reference does the same thing by hand across its four buttons. */
+.logo-tile:nth-of-type(even):hover { transform: scale(1.1) rotate(-3deg); }
+
+/* The sheen is a real child, not a pseudo-element on the tile, because clipping
+   it would need `overflow: hidden` on the tile — and that would also clip the
+   connected-state dot, which deliberately sits half outside the logo's edge.
+   The child clips itself instead and the tile stays whole. */
+.lt-sheen { position: absolute; inset: 0; border-radius: inherit;
+  overflow: hidden; pointer-events: none; }
+.lt-sheen::before {
+  content: ""; position: absolute; inset: 0;
+  background: linear-gradient(90deg, transparent,
+    color-mix(in srgb, var(--brand) 22%, transparent), transparent);
+  transform: translateX(-100%);
+  transition: transform .7s ease-out;
+}
+.logo-tile:hover .lt-sheen::before { transform: translateX(100%); }
+/* Over the sheen, always. */
+.logo-tile > svg, .logo-tile > span:not(.lt-sheen) { position: relative; z-index: 1; }
+
+@media (prefers-reduced-motion: reduce) {
+  .logo-tile, .logo-tile:hover, .logo-tile:active { transform: none; transition: none; }
+  .lt-sheen { display: none; }
+}
+
+/* ── Appearance ───────────────────────────────────────────────────────────
+   The roster of agents, and the avatar editor beneath it. The editor itself
+   is `character.js`'s own panel — it is restyled entirely through the six
+   custom properties it publishes on `.ce`, never by overriding its rules, so
+   updating that package cannot break this screen's styling. */
+.ap-roster { display: flex; flex-wrap: wrap; gap: 12px; }
+.ap-card {
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+  width: 104px; padding: 12px 8px 10px; cursor: pointer;
+  border: 1px solid var(--line, #1e232b); border-radius: 14px;
+  background: var(--panel, #12161c); color: inherit; font: inherit;
+}
+.ap-card:hover { border-color: var(--muted, #8a94a3); }
+.ap-card.is-on { border-color: var(--accent, #6c8cff); }
+.ap-card-orb { width: 64px; height: 64px; border-radius: 16px; overflow: hidden; flex: none; }
+.ap-card-orb svg { display: block; width: 100%; height: 100%; }
+.ap-card-name {
+  font-size: .82rem; max-width: 100%;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ap-card-tag {
+  font-size: .6rem; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--accent, #6c8cff);
+}
+.ap-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.ap-head-actions { display: flex; gap: 8px; flex: none; }
+.ap-editor { margin-top: 18px; }
+.ap-editor .ce {
+  --ce-bg: var(--bg, #0b0d10);
+  --ce-panel: var(--panel, #12161c);
+  --ce-raised: var(--raise, #19212f);
+  --ce-line: var(--line, rgba(223,231,242,.10));
+  --ce-text: var(--text, #dfe7f2);
+  --ce-dim: var(--muted, #8a94a3);
+  --ce-accent: var(--accent, #6c8cff);
+  --ce-accent-soft: color-mix(in srgb, var(--accent, #6c8cff) 18%, transparent);
+  --ce-font: var(--sans, ui-sans-serif, system-ui, sans-serif);
+}

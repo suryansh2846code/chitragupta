@@ -49,6 +49,23 @@ where today's code does not yet match it.
 | **web** | `chitragupta/web/` | browser UI, presentation, browser-side state | anything the server can decide |
 | *(workspace features)* | `actions.py`, `routines.py`, `tasks.py`, `reminders.py`, `scheduled.py`, `scheduler.py`, `usage.py`, `notify.py` | the user-facing productivity layer and the background sync loop | — see §6.3, these have no package of their own yet |
 | *(leaf utilities)* | `config.py`, `log.py` | settings, paths, the secrets file, logging and `suppressed()` | everything else — these are imported by 45 modules each and must stay dependency-free |
+| **character** | `/character` *(not in the Python package)* | the avatar renderer: the `character.scene` document format, its 3D-to-SVG projection, the follow-the-cursor loop, and the editor | anything about Chitragupta — it must stay liftable into its own repository |
+
+**`/character` is outside the dependency graph entirely**, and that is the
+point. It is a standalone, dependency-free JavaScript package with its own
+README, tests and MIT licence, published into the app as a build artifact by
+`scripts/sync-character.sh` and pinned by `tests/test_character_asset.py`.
+Nothing in `chitragupta/` imports it; `web/` calls its global, and
+`agents/avatars.py` stores its documents **without parsing them** — a second
+copy of that schema in Python would be a second copy to keep current.
+
+It now lives publicly at
+**[github.com/suryansh2846code/character](https://github.com/suryansh2846code/character)**
+(MIT, CI on Node 18/20/22). That repo is upstream; the directory here is a
+vendored copy of the same files. There is deliberately no submodule and no npm
+dependency: the app must build with no network and no toolchain beyond Python,
+and a copy plus a test that proves it current is the cheapest honest way to get
+that. When you change one, mirror it to the other in the same commit.
 
 ---
 
