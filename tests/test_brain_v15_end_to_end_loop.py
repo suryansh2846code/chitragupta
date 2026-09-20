@@ -19,14 +19,31 @@ from chitragupta.core.models import MemoryStatus, MemoryType, OpenLoopPriority
 
 @pytest.fixture
 def clean_env(tmp_path, monkeypatch):
+    """A brain of this test's own — including its STORE.
+
+    `get_brain` and `get_store` are cached separately, and this cleared only
+    the first. So a "clean" brain here was handed the singleton store built
+    against the real home, and every test in this file has in fact been
+    writing into the shared one. Nothing failed, because these tests assert
+    that a specific memory comes back from `recall()` — which it did, while
+    the shared store stayed sparse enough for it to rank.
+
+    It stopped being sparse. The fix is the isolation the fixture always
+    claimed: recall ranking is not something a test should be able to lose by
+    running after somebody else.
+    """
     settings = get_settings()
     monkeypatch.setattr(settings, "home", tmp_path)
     monkeypatch.setattr(settings, "model_provider", "mock")
     monkeypatch.setattr(settings, "model_name", "mock-v1")
     from chitragupta.brain.brain import get_brain
+    from chitragupta.core.store import get_store
+
     get_brain.cache_clear()
+    get_store.cache_clear()
     yield tmp_path
     get_brain.cache_clear()
+    get_store.cache_clear()
 
 
 def test_end_to_end_agent_brain_loop(clean_env):

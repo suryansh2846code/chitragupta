@@ -217,11 +217,11 @@ run end to end through all seven steps, not when its endpoints exist.
 | 6 | "Move tomorrow's client meeting to Friday afternoon" | 1→6 | ✅ done |
 | 7 | "Cancel Thursday and tell everyone why" | 1→6 | ✅ done |
 | 8 | "Find a time with Rahul next week" | 1→6 | ✅ done |
-| 9 | "Prep me for my next meeting" | 1→3 | 2 |
+| 9 | "Prep me for my next meeting" | 1→3 | ✅ done |
 | 10 | "Tell Rahul I'll send it tonight" | 1→6 | 3 |
 | 11 | "Chase this in two days if nothing happens" | 1→6 | ✅ done |
 | 12 | "What am I waiting on, and who's waiting on me?" | 1→2 | ✅ done |
-| 13 | "Turn this thread into a task" | 1→6 | 0 |
+| 13 | "Turn this thread into a task" | 1→6 | ✅ done |
 | 14 | "File an issue for this" | 1→6 | ✅ done |
 | 15 | "Comment on that PR for me" | 1→6 | ✅ done |
 | 16 | "Write this up as a document" | 1→3 | 3 |
@@ -405,6 +405,48 @@ Six checks in `evaluation.py`, and the scored facts are the ones that bite:
 `needs_reply` is called before anything else, the COULD-NOT-CHECK thread is
 left alone, nothing is sent, and the single reply is addressed to whoever
 wrote last.
+
+#### Job 13 — "turn this thread into a task" · ✅
+
+Every part existed and the job did not work, for two reasons that never threw.
+
+**`add_task` was a tool, not an action.** So a task never reached the action
+log — *"what did you do this week?"* has never once mentioned one — there was
+no card to correct before it landed, and nothing could take one back. Rungs 4
+to 6 missing from a capability that looked finished at 3. `create_task` is
+🟢 (one row in the user's own list, reaching nobody), verified by reading it
+back, and reversible.
+
+> **Undo deletes rather than completes**, the opposite of `create_followup`.
+> A cancelled follow-up is provenance: the user really was waiting on
+> somebody. A task created by mistake is not a task they *finished*, and
+> marking it done would put work they never did into job 18's answer.
+
+**And nothing carried the thread across.** `read_thread` could read it,
+`add_task` could store a sentence, and the sentence was all that survived —
+so three weeks later the task says *"send Rahul the revised figures"* and the
+user goes and searches their inbox for the conversation, which is the work
+they asked to have taken off them. `source` / `source_ref` are an additive
+migration on `tasks.db`, and the task row carries a link straight back.
+
+#### Job 9 — "prep me for my next meeting" · ✅
+
+One question, five lookups: which meeting, who is coming, what was said last
+time, what is still open with those people, what the user owes them. An agent
+can make all five — and the one it skips is always the same one, because the
+model stops as soon as it can write a paragraph that *sounds* prepared. So the
+assembly is a tool.
+
+Three things it refuses to get wrong, each a way a brief is worse than nothing:
+
+* **The next meeting is the next one that has not started.** A brief for the
+  11am stand-up, read at 4pm, is not a mistake anybody catches.
+* **An empty attendee list is not a meeting alone.** Saying "nobody else is
+  coming" invents a fact out of an event that simply carries no attendees.
+* **A memory is never attributed to somebody it does not mention.** Recall is
+  semantic, so asking about one attendee returns a memory about the other —
+  and printing it under their name invents a fact about a person the user is
+  about to be in a room with. This was live when the tests were written.
 
 #### Job 5 — "follow up with whoever hasn't replied" · ✅
 

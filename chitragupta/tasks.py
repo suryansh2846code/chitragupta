@@ -27,6 +27,22 @@ CREATE INDEX IF NOT EXISTS idx_tasks_due ON tasks(due, done);
 """
 
 
+def _migrate(conn: sqlite3.Connection) -> None:
+    """Additive only, so an existing tasks.db opens unchanged.
+
+    `source` is where the task came from — an email thread, usually. A task
+    that says *"send Rahul the revised figures"* and cannot say which
+    conversation asked for it makes the user go and find it again, which is
+    the work they asked to have taken off them.
+    """
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(tasks)")}
+    if "source" not in cols:
+        conn.execute("ALTER TABLE tasks ADD COLUMN source TEXT")
+    if "source_ref" not in cols:
+        conn.execute("ALTER TABLE tasks ADD COLUMN source_ref TEXT")
+    conn.commit()
+
+
 def _now() -> str:
     return datetime.now(UTC).isoformat()
 
@@ -74,15 +90,22 @@ class TaskStore:
         self._c = sqlite3.connect(str(path), check_same_thread=False)
         self._c.row_factory = sqlite3.Row
         self._c.executescript(_SCHEMA)
+        _migrate(self._c)
 
-    def add(self, title: str, due: str | None = None) -> dict:
+    def add(self, title: str, due: str | None = None, *,
+            source: str = "", source_ref: str = "") -> dict:
+        """`source` is what kind of thing this came from ("email"), and
+        `source_ref` is which one (a thread id). Both optional: a task typed
+        into the box has no origin, and that is not a missing value."""
         tid = str(uuid.uuid4())
         # prefer an explicit due; otherwise recover one from the title itself
         iso_due = parse_due(due) or parse_due(title)
         clean_title = _strip_due_phrase(title.strip()) if iso_due else title.strip()
         self._c.execute(
-            "INSERT INTO tasks (id,title,due,done,created_at) VALUES (?,?,?,0,?)",
-            (tid, clean_title, iso_due, _now()),
+            "INSERT INTO tasks (id,title,due,done,created_at,source,source_ref) "
+            "VALUES (?,?,?,0,?,?,?)",
+            (tid, clean_title, iso_due, _now(),
+             (source or "").strip(), (source_ref or "").strip()),
         )
         self._c.commit()
         return self.get(tid)

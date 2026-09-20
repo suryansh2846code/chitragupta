@@ -128,6 +128,16 @@ def describe(action_type: str, params: dict) -> str:
         line = about or (f"Waiting on {who}" if who else "a follow-up")
         when = str(params.get("due") or params.get("at") or "").strip()
         return f"Follow up: {line}" + (f" — chase after {when}" if when else "")
+    if action_type == "create_task":
+        # The same argument as `create_followup` above: this row is read weeks
+        # later, and "Add task" says nothing about which one. The thread is
+        # deliberately NOT named here — the id means nothing to a person, and
+        # the task row in the workspace carries the link they can actually use.
+        title = str(params.get("title") or params.get("task")
+                    or params.get("about") or "").strip()
+        when = str(params.get("due") or params.get("at") or "").strip()
+        return (f"Task: {title or 'something to do'}"
+                + (f" — due {when}" if when else ""))
     if action_type in ("github_comment", "github_create_issue"):
         # WHERE it lands is what the user is approving — a comment on the
         # wrong repository is public, permanent and somebody else's notification.

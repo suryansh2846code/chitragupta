@@ -343,15 +343,36 @@ async function loadTasks() {
   }
   $("#taskList").innerHTML = d.tasks.map((t) => {
     const due = dueLabel(t.due);
+    // Where it came from. A task made out of a thread is worth more than the
+    // same sentence typed by hand precisely because it can go back — without
+    // this the user reads "send Rahul the revised figures" in three weeks and
+    // searches their inbox anyway, which is the work they asked to be rid of.
+    // Shown only when there is somewhere to go: never a control that cannot
+    // work.
+    const from = t.source === "email" && t.source_ref
+      ? `<span class="task-src" data-thread="${esc(t.source_ref)}"
+               title="Open the email this came from">${IC.external} email</span>`
+      : "";
     return `<div class="task">
       <span class="check" data-done="${t.id}">${IC.check}</span>
       <div class="body">
         <div class="ttl">${esc(t.title)}</div>
-        ${due.text ? `<div class="due ${due.cls}">${due.text}</div>` : ""}
+        ${due.text || from
+          ? `<div class="due ${due.cls}">${due.text}${
+              due.text && from ? " · " : ""}${from}</div>`
+          : ""}
       </div>
       <span class="del" data-del-task="${t.id}">${IC.close}</span>
     </div>`;
   }).join("");
+  document.querySelectorAll("[data-thread]").forEach((el) => el.onclick = async () => {
+    try {
+      await api("/api/open-browser", { method: "POST", body: {
+        url: `https://mail.google.com/mail/#all/${el.dataset.thread}` } });
+    } catch (e) {
+      toast(`Could not open that email — ${String(e)}`);
+    }
+  });
   document.querySelectorAll("[data-done]").forEach((el) => el.onclick = async () => {
     await api(`/api/tasks/${el.dataset.done}/complete`, { method: "POST" });
     toast("Task done"); loadTasks();
