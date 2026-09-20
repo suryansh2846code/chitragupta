@@ -199,16 +199,10 @@ def test_an_action_that_cannot_name_who_it_reaches_still_asks_every_time():
     for a user to read, and "always allow" would be a button that agreed to
     something nobody could show them.
 
-    The two Notion actions joined them for a different version of the same
-    reason: a page is identified by a uuid and nothing else, so the row on
-    the allow-list screen would read `notion:a1b2c3d4-…`. That is an internal
-    shown to the user, and a permission nobody can read is one nobody can
-    audit or withdraw on purpose.
     """
     unpromotable = {n for n, s in REGISTRY.items() if s.risk is Risk.RED}
     assert unpromotable == {"update_event", "cancel_event",
-                            "mail_triage", "create_routine",
-                            "notion_append", "notion_create_page"}
+                            "mail_triage", "create_routine"}
 
     for action_type in unpromotable:
         verdict = permissions.check(action_type, {})

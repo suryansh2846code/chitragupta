@@ -20,7 +20,6 @@ from . import (
     mail_tools,
     mcp_tools,
     message_tools,
-    notion_tools,
     source_tools,
     training_tools,
 )
@@ -340,7 +339,6 @@ TOOL_IMPLS = {
     "training_load": training_tools.training_load,
     "list_chats": message_tools.list_chats,
     "read_chat": message_tools.read_chat,
-    "notion_pages": notion_tools.notion_pages,
     "search_source": source_tools.search_source,
     "add_task": _add_task,
     "list_tasks": _list_tasks,
@@ -979,24 +977,6 @@ TOOL_DEFS: dict[str, Tool] = {
             },
         },
     ),
-    "notion_pages": Tool(
-        name="notion_pages",
-        description=(
-            "Notion pages this integration can reach, each with the page_id "
-            "needed to write to it. Call this BEFORE notion_append or "
-            "notion_create_page — a page id cannot be guessed, and it is the "
-            "only way to turn a page the user named into one you can address."),
-        parameters={
-            "type": "object",
-            "properties": {
-                "about": {"type": "string",
-                          "description": "Words from the page's title. Leave "
-                                         "empty to list what is reachable."},
-                "limit": {"type": "integer",
-                          "description": "How many to list. Default 10."},
-            },
-        },
-    ),
     "meeting_prep": Tool(
         name="meeting_prep",
         description=(
@@ -1150,7 +1130,6 @@ _LABELS: dict[str, tuple[str, str]] = {
     "awaiting_reply":           ("Waiting on", "Tasks"),
     "needs_reply":              ("Owed",      "Email"),
     "meeting_prep":             ("Prep",      "Calendar"),
-    "notion_pages":             ("Pages",     "Notion"),
     "what_i_did":               ("History",   "Automations"),
     "complete_open_loop":       ("Close",     "Tasks"),
     # The things it can reach

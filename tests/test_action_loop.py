@@ -107,26 +107,21 @@ def test_the_tiers_hold_exactly_the_actions_they_are_meant_to():
       connects" was not. Two things carry the weight the tier used to:
       `always_ask_when` refuses an irreversible verb even to a user who
       granted exactly that tool, and nothing is ever granted by default.
-    * The two Notion actions are RED, and the roadmap predicted amber. Same
-      test, opposite answer from Linear's: a Notion page is identified by
-      nothing but a uuid, so `notion:a1b2c3d4-…` is what an allow-list row
-      would say — an internal surfaced to the user, and a grant nobody can
-      read is a grant nobody can audit.
-    * `linear_*` are AMBER because a Linear team IS a readable key, exactly
-      as a repository is. `drive_create_doc` is GREEN for `create_draft`'s
-      reason: it lands in the user's own Drive and reaches nobody until
-      they share it. `drive_share` is AMBER against the EMAIL list, because
-      that is genuinely who it reaches — with `always_ask_when` refusing a
-      public link, which has no recipient to allow-list.
+    * `drive_create_doc` is GREEN for `create_draft`'s reason: it lands in
+      the user's own Drive and reaches nobody until they share it.
+      `drive_share` is AMBER against the EMAIL list, because that is
+      genuinely who it reaches — with `always_ask_when` refusing a public
+      link, which has no recipient to allow-list.
+    * Notion and Linear appear in neither set. They are reached as custom
+      sources, so a write to either is an `mcp_action`, which is already
+      amber against its own per-tool list. Two routes to one connector meant
+      the agent could pick the one the user had not set up.
     """
     never = frozenset({"create_routine", "mail_triage",
-                       "update_event", "cancel_event",
-                       "notion_append", "notion_create_page"})
+                       "update_event", "cancel_event"})
     outbound = frozenset({"send_email", "create_event", "message_send",
                           "github_comment", "github_create_issue",
-                          "mcp_action", "drive_share",
-                          "linear_create_issue", "linear_comment",
-                          "linear_update_issue"})
+                          "mcp_action", "drive_share"})
 
     assert never == set(permissions.NEVER_UNATTENDED)
     assert outbound == set(permissions.OUTBOUND_ACTIONS)

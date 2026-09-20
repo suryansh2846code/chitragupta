@@ -128,35 +128,6 @@ def describe(action_type: str, params: dict) -> str:
         line = about or (f"Waiting on {who}" if who else "a follow-up")
         when = str(params.get("due") or params.get("at") or "").strip()
         return f"Follow up: {line}" + (f" — chase after {when}" if when else "")
-    if action_type == "linear_create_issue":
-        team = str(params.get("team_key") or params.get("team") or "").strip()
-        title = str(params.get("title") or "untitled").strip()
-        return (f"File “{title}” in Linear"
-                + (f" ({team})" if team else ""))
-    if action_type == "linear_comment":
-        return f"Comment on Linear {params.get('issue') or 'an issue'}"
-    if action_type == "linear_update_issue":
-        # What is CHANGING is the decision, the same as `update_event`. A card
-        # reading "Change an issue" asks somebody to approve a diff they were
-        # not shown, and the thing being approved lands on a board other
-        # people are working from.
-        bits = []
-        if params.get("assignee"):
-            bits.append(f"assign it to {params['assignee']}")
-        if params.get("state") or params.get("status"):
-            bits.append(f"move it to {params.get('state') or params['status']}")
-        what = " and ".join(bits) or "change it"
-        return f"Linear {params.get('issue') or 'an issue'} — {what}"
-    if action_type in ("notion_append", "notion_create_page"):
-        # NOT the page id. It is a uuid, it means nothing to a person, and it
-        # is exactly the internal `/CLAUDE.md` forbids in user-facing text.
-        # What the user is judging is the words that will appear.
-        body = " ".join(str(params.get("text") or params.get("body") or "").split())
-        if action_type == "notion_create_page":
-            return f"New Notion page “{params.get('title') or 'untitled'}”"
-        preview = body[:80] + ("…" if len(body) > 80 else "")
-        return f"Add to a Notion page: “{preview}”" if preview \
-            else "Add to a Notion page"
     if action_type == "drive_create_doc":
         return f"New document “{params.get('title') or 'untitled'}” in your Drive"
     if action_type == "drive_share":

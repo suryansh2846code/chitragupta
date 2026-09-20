@@ -99,13 +99,6 @@ FIRST_PARTY_TOOLS: dict[str, str] = {
     "browse_open": "browser",
     "browse_read": "browser",
     "browse_find": "browser",
-    # Searches the user's Notion live. Added with the tool and not after it,
-    # because the comment at the top of this map is about exactly this: the
-    # gate once stopped an agent reading a Notion page through MCP and let it
-    # read the whole inbox through `list_mail`, since only one of the two was
-    # listed here. A first-party tool that reaches a connector belongs in this
-    # map on the day it is written.
-    "notion_pages": "notion",
 }
 
 

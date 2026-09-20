@@ -105,24 +105,17 @@ _MESSAGES = ["list_chats", "read_chat"]
 #: agent that can file an issue and cannot search is an agent that files
 #: duplicates.
 _CODE = ["search_source", "sync_source"]
-#: GitHub and Linear together: they are the same job on two surfaces, and a
-#: team that tracks work in one usually does not track it in the other — so
-#: an agent handed only GitHub tells a Linear user it cannot file anything.
-#: Each still refuses on its own if that connector is not set up.
-_CODE_ACTIONS = ["github_comment", "github_create_issue",
-                 "linear_create_issue", "linear_comment",
-                 "linear_update_issue"]
-#: Writing things down where the user's team reads them. Notion is where a
-#: decision gets recorded; Drive is where a document gets written — and
-#: `drive_create_doc` is GREEN, so it is the one an agent can prepare
-#: overnight without a tap.
-_DOC_ACTIONS = ["notion_append", "notion_create_page",
-                "drive_create_doc", "drive_share"]
-# The read that has to come first — `notion_pages` — is not listed here,
-# because the only holder of these actions is the generalist, which takes
-# every tool there is. The rule that it MUST travel with them is a test
-# instead of a list: `test_work_surfaces.py` fails if an agent is ever given
-# a Notion action without a way to find a page id.
+_CODE_ACTIONS = ["github_comment", "github_create_issue"]
+#: Writing a document where the user's team reads it. `drive_create_doc` is
+#: GREEN — it lands in their own Drive and reaches nobody until they share it
+#: — so it is the one an agent can prepare overnight without a tap.
+#:
+#: Linear and Notion are NOT here. They are reached as custom sources, and a
+#: write to either goes through `mcp_action` with a per-tool grant. One route,
+#: not two: the named actions that used to sit here drove the built-in
+#: connectors, which want a pasted secret and give a fraction of what the
+#: vendor's own server does.
+_DOC_ACTIONS = ["drive_create_doc", "drive_share"]
 #: `find_time` travels with the lookup: an agent that can read a diary
 #: and cannot find a gap in it answers "when suits you?", which is the
 #: job handed back.

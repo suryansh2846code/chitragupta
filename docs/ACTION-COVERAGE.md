@@ -703,70 +703,45 @@ it.
 
 ### Phase 4 — Work surfaces · ✅
 
-Four connectors that read and cannot write. All four can now.
-
-| Connector | Actions | Risk |
+| Connector | How a write happens | Risk |
 |---|---|---|
-| GitHub | ✅ `github_comment` · `github_create_issue` | 🟡 |
-| Linear | ✅ `linear_create_issue` · `linear_comment` · `linear_update_issue` (assign and move state, in one patch) | 🟡 |
-| Notion | ✅ `notion_append` · `notion_create_page` | 🔴 |
-| Drive | ✅ `drive_create_doc` · `drive_share` | 🟢 / 🟡 |
+| GitHub | ✅ `github_comment` · `github_create_issue` — first-party, allow-listed by repository | 🟡 |
+| Drive | ✅ `drive_create_doc` · `drive_share` — first-party, on Google OAuth | 🟢 / 🟡 |
+| Linear · Notion | ✅ through `mcp_action`, with a per-tool grant | 🟡 |
 
-**The tier of each was the work, not the API calls.** One question settles all
-seven, and it is the question `update_event` and `mcp_action` were settled by:
-*can the gate see a key a **person** could read and revoke?*
+**One route per connector, and for Linear and Notion that route is MCP.**
 
-* **Linear is amber** because `ENG` is in every one of that team's issue ids.
-  *"Always allow filing into ENG"* is something somebody can agree to and
-  later withdraw — the same argument `acme/api` made for GitHub. Both the
-  filing action and the commenting action key on `linear:eng`, deliberately:
-  keyed by whichever string the model happened to use, *"Engineering"* and
-  `ENG-12` would have been two grants for one team. Each would work, so
-  nothing unsafe — but the user is asked twice for one decision and cannot
-  see why.
-* **Notion is red, and this document predicted amber.** A page is identified
-  by a uuid and nothing else, so the allow-list row would read
-  `notion:a1b2c3d4-…` — an internal surfaced to the user, which `/CLAUDE.md`
-  forbids first, and a permission nobody can read is one nobody can audit.
-  One tap each, until there is a key worth showing. That is the second time
-  the tier test has overruled a prediction here, and both times for the same
-  reason.
-* **`drive_create_doc` is green**, for `create_draft`'s reason exactly: it
-  lands in the user's own Drive and reaches nobody until they share it. This
-  is the overnight-preparation rung for documents.
-* **`drive_share` is amber against the EMAIL list** — sharing a document with
-  Rahul is the same kind of decision as emailing him one, so it is the same
-  list rather than a fourth one nobody would think to look at. Except for a
-  public link, which `always_ask_when` refuses every time: *"anyone with the
-  link"* is not a recipient an allow-list can hold.
+Both shipped first as named actions on the built-in connectors — a pasted API
+key or integration secret, five hand-written methods each. A user then
+connected the same two as **custom sources**, which is the vendor's own MCP
+server over OAuth, and the result was a card that rendered, asked for
+approval, and failed with *"Notion is not connected"* in front of a screen
+showing a green **CONNECTED** badge. Two routes to one connector means the
+agent can pick the one the user did not set up, and nothing in the prompt can
+reliably stop it.
 
-**The scope we had to ask for is `drive.file`, not `drive`.** It reaches only
-files this app itself created — so a write cannot touch anything that was
-already in the user's Drive, and `share` cannot hand out a file we did not
-make. A token issued before we asked for it is told to reconnect *before*
-anything is proposed, which is the `gmail.modify` lesson: never approve a card
-that cannot work.
+So the built-in write path is gone for both. What it cost and what it bought:
 
-**The allow-list is a place, not a person — and that is the first time.**
-The tier test has never been "does this reach somebody", it is *can the gate
-see what it reaches*. `update_event` went RED because the people a move touches
-are on the event and not in the params. Nobody can enumerate who watches
-`acme/api` either — but `acme/api` **is** in the URL, so it is a key an
-allow-list can hold, and *"always allow comments on acme/api"* is a coherent
-offer. `REPO_RECIPIENT` is that list, case-folded because GitHub is.
+* **Lost:** named cards (*"Add to a Notion page"* rather than *"Run
+  notion-update-page on Notion"*), and the `verify` / `undo` those actions
+  declared. The undo is less than it sounds — it only ever worked on the
+  built-in path, because the MCP tool returns no block ids to remove.
+* **Gained:** 45 Notion tools instead of 5, maintained by Notion. One OAuth
+  button instead of pasting a secret *and* adding the integration to every
+  page by hand. And the write path is the one the user has actually
+  exercised, rather than code that had never run against the real API.
 
-That is the same argument as **per-tool grants** for `mcp_action`
-(`(server_id, tool)` as the key). GitHub was its proof of concept; the grant
-itself is built — see *Per-tool grants* below.
+Reading stays available both ways, because they answer different questions:
+the connector syncs into the brain, MCP answers about *right now*. Writing is
+one route, because a write that goes to the wrong place is not a difference of
+freshness.
 
-Starting this phase turned up a live bug first: the two allow-lists that
-already existed were plumbed as one. The *"Always allow"* button on a Telegram
-card wrote onto the **email** list, which `message_send` never reads — so the
-tap did nothing and said it had worked. Fixed in `3c7c1c3` before any of the
-above.
+**The gate is unchanged.** `mcp_action` is 🟡 against a per-`server:tool`
+allow-list, nothing is granted by default, and `always_ask_when` refuses an
+irreversible verb even to a user who granted that exact tool.
 
-`create_branch` / `create_pr` / `review_pr` are deliberately **out of scope**.
-They are a different product, and the 18 jobs do not need them.
+`create_branch` / `create_pr` / `review_pr` remain deliberately **out of
+scope**. They are a different product, and the 18 jobs do not need them.
 
 ---
 

@@ -27,10 +27,10 @@ KNOWN_ACTIONS = ("create_draft", "send_email", "create_event", "update_event",
                  "create_routine", "mail_triage", "message_send",
                  "github_comment", "github_create_issue", "log_workout",
                  "create_task",
-                 # Phase 4 — the work surfaces.
-                 "linear_create_issue", "linear_comment",
-                 "linear_update_issue", "notion_append",
-                 "notion_create_page", "drive_create_doc", "drive_share")
+                 # Phase 4. Notion and Linear are deliberately absent: they
+                 # are reached as custom sources through `mcp_action`, which
+                 # is one route rather than two. See `docs/ACTION-COVERAGE.md`.
+                 "drive_create_doc", "drive_share")
 
 #: Argument names listed per connector tool. Enough for a model to fill a call
 #: in correctly; few enough that twenty tools do not become the system prompt.
@@ -223,49 +223,6 @@ _BLOCKS: dict[str, str] = {
         "whenever the task came out of a thread you read.\n"
         "Not `create_followup` — that is for what somebody owes THEM. If the "
         "user is waiting, it is a follow-up; if the user owes it, it is a task."
-    ),
-    "linear_create_issue": (
-        '<action type="linear_create_issue" team_key="ENG" '
-        'title="Search returns stale results">What is wrong, what you '
-        "expected, and where you saw it.</action>\n"
-        "`team_key` is the SHORT prefix Linear puts in front of that team's "
-        "issue numbers - the ENG in ENG-142 - not the long team name. It is "
-        "what the user's permission is remembered against, so filing and "
-        "commenting stay one decision instead of two. Check with "
-        "`search_source` that you are not filing a duplicate."
-    ),
-    "linear_comment": (
-        '<action type="linear_comment" issue="ENG-142">'
-        "What you want to say.</action>\n"
-        "`issue` is the identifier the user reads, like ENG-142 - never a "
-        "uuid. A comment can be deleted afterwards, so this is the safe one "
-        "of the Linear actions."
-    ),
-    "linear_update_issue": (
-        '<action type="linear_update_issue" issue="ENG-142" '
-        'assignee="rahul@work.test" state="In Progress" />\n'
-        "Assign an issue, move it, or both. Pass ONLY what is changing - the "
-        "issue keeps its labels, estimate and project. `state` must be a "
-        "status that team's board actually has; if you are not sure, say so "
-        "rather than guessing a name."
-    ),
-    "notion_append": (
-        '<action type="notion_append" page_id="…">'
-        "The text to add.</action>\n"
-        "Adds to the END of a page. `page_id` MUST come from `notion_pages` "
-        "- it is the only thing that returns one, and a page id cannot be "
-        "guessed. If Notion is not connected, `notion_pages` says so; repeat "
-        "what it said and never invent an authorization step anywhere else. "
-        "This "
-        "always asks the user, every time: a page id is not something they "
-        "can be shown well enough to approve in advance."
-    ),
-    "notion_create_page": (
-        '<action type="notion_create_page" parent_id="…" title="Meeting notes">'
-        "The body.</action>\n"
-        "Notion has no loose pages - every new page lives inside another, so "
-        "`parent_id` is required and comes from `notion_pages`. If the user "
-        "has not said where it goes, ASK; do not pick a page for them."
     ),
     "drive_create_doc": (
         '<action type="drive_create_doc" title="Q3 proposal">'
