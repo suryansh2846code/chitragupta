@@ -184,6 +184,12 @@ REPO_RECIPIENT = "repo_recipient"
 #: and `always_ask_when` keeps the irreversible verbs off the list entirely.
 TOOL_RECIPIENT = "connector_tool"
 
+#: Linear teams, as `linear:eng`. A team is a place, the way a repository is:
+#: nobody can enumerate who watches it, and nobody needs to — the key is in
+#: the params, a person can read it, and *"always allow filing into
+#: Engineering"* is a thing somebody can agree to and later withdraw.
+LINEAR_RECIPIENT = "linear_team"
+
 
 def connector_tool_key(params: dict) -> str:
     """`server:tool` — what a standing grant for a connector write names."""
@@ -1244,6 +1250,221 @@ def _undo_row(store_name: str, label: str):
 #: hand-maintained sets in `agents/permissions.py` — an action added to two of
 #: them and forgotten in the third is a gap nobody sees until something has
 #: already been sent — and that module now reads these as data instead.
+# ── work surfaces: Linear, Notion, Drive ─────────────────────────────────
+#
+# Three connectors that could read and not write. Each gets the same shape
+# GitHub got: a named handler, a verify that reads it back, and an undo where
+# one honestly exists.
+#
+# **Which allow-list each is judged against is the interesting decision**, and
+# it is the same question every time: what can the gate SEE that a person
+# could read and revoke? Not "who does this reach" — nobody can enumerate who
+# watches a Linear team or a Notion page either.
+
+
+def _linear_create_issue(params: dict) -> dict:
+    conn = _writer("linear", "create_issue")
+    if conn is None:
+        return {"ok": False, "error": "Linear is not connected."}
+    return conn.create_issue(str(params.get("title") or ""),
+                             str(params.get("body")
+                                 or params.get("description") or ""),
+                             str(params.get("team_key")
+                                 or params.get("team") or ""))
+
+
+def _verify_linear_issue(params: dict, result: dict) -> dict:
+    conn = _writer("linear", "issue_exists")
+    if conn is None:
+        return {}
+    found = conn.issue_exists(str(result.get("id") or ""))
+    if not found.get("ok"):
+        return {}
+    return {"verified": True, "link": found.get("url") or ""}
+
+
+def _linear_comment(params: dict) -> dict:
+    conn = _writer("linear", "comment")
+    if conn is None:
+        return {"ok": False, "error": "Linear is not connected."}
+    return conn.comment(str(params.get("issue") or ""),
+                        str(params.get("body") or ""))
+
+
+def _undo_linear_comment(params: dict, result: dict) -> dict:
+    conn = _writer("linear", "delete_comment")
+    if conn is None:
+        return {"ok": False, "error": "Linear is not connected."}
+    return conn.delete_comment(str(result.get("id") or ""))
+
+
+def _notion_append(params: dict) -> dict:
+    conn = _writer("notion", "append_block")
+    if conn is None:
+        return {"ok": False, "error": "Notion is not connected."}
+    return conn.append_block(str(params.get("page_id") or params.get("page") or ""),
+                             str(params.get("text") or params.get("body") or ""))
+
+
+def _undo_notion_append(params: dict, result: dict) -> dict:
+    conn = _writer("notion", "delete_blocks")
+    if conn is None:
+        return {"ok": False, "error": "Notion is not connected."}
+    return conn.delete_blocks(list(result.get("block_ids") or []))
+
+
+def _notion_create_page(params: dict) -> dict:
+    conn = _writer("notion", "create_page")
+    if conn is None:
+        return {"ok": False, "error": "Notion is not connected."}
+    return conn.create_page(str(params.get("parent_id") or params.get("parent") or ""),
+                            str(params.get("title") or ""),
+                            str(params.get("text") or params.get("body") or ""))
+
+
+def _verify_notion_page(params: dict, result: dict) -> dict:
+    conn = _writer("notion", "page_exists")
+    if conn is None:
+        return {}
+    found = conn.page_exists(str(result.get("id") or ""))
+    if not found.get("ok"):
+        return {}
+    return {"verified": True, "link": found.get("url") or ""}
+
+
+def _undo_notion_page(params: dict, result: dict) -> dict:
+    conn = _writer("notion", "archive_page")
+    if conn is None:
+        return {"ok": False, "error": "Notion is not connected."}
+    return conn.archive_page(str(result.get("id") or ""))
+
+
+def _drive_create_doc(params: dict) -> dict:
+    conn = _writer("gdrive", "create_doc")
+    if conn is None:
+        return {"ok": False, "error": "Google Drive is not connected."}
+    return conn.create_doc(str(params.get("title") or ""),
+                           str(params.get("text") or params.get("body") or ""))
+
+
+def _verify_drive_doc(params: dict, result: dict) -> dict:
+    conn = _writer("gdrive", "doc_exists")
+    if conn is None:
+        return {}
+    found = conn.doc_exists(str(result.get("id") or ""))
+    if not found.get("ok"):
+        return {}
+    return {"verified": True, "link": found.get("url") or ""}
+
+
+def _undo_drive_doc(params: dict, result: dict) -> dict:
+    conn = _writer("gdrive", "trash_doc")
+    if conn is None:
+        return {"ok": False, "error": "Google Drive is not connected."}
+    return conn.trash_doc(str(result.get("id") or ""))
+
+
+def _drive_share(params: dict) -> dict:
+    conn = _writer("gdrive", "share")
+    if conn is None:
+        return {"ok": False, "error": "Google Drive is not connected."}
+    return conn.share(str(params.get("file_id") or params.get("doc") or ""),
+                      email=str(params.get("email") or params.get("to") or ""),
+                      role=str(params.get("role") or "reader"),
+                      anyone=_truthy(params.get("anyone")))
+
+
+def _undo_drive_share(params: dict, result: dict) -> dict:
+    conn = _writer("gdrive", "unshare")
+    if conn is None:
+        return {"ok": False, "error": "Google Drive is not connected."}
+    return conn.unshare(str(params.get("file_id") or params.get("doc") or ""),
+                        str(result.get("id") or ""))
+
+
+def _truthy(value: object) -> bool:
+    """A model writes `anyone="true"` in an XML attribute, not a bool."""
+    if isinstance(value, bool):
+        return value
+    return str(value or "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def _public_share_asks(params: dict) -> str:
+    """A link anybody can open is not a recipient an allow-list can hold.
+
+    `share` is amber against the email list, which works because the person
+    is named in the params and is exactly the kind of key a user can read and
+    revoke. "Anyone with the link" is the opposite of that: there is nobody
+    to put on a list, the audience is unbounded and unknowable, and a
+    standing grant made about Rahul must never quietly cover it.
+    """
+    if _truthy((params or {}).get("anyone")):
+        return ("Sharing with anyone who has the link needs your approval "
+                "every time — there is no one person to allow in advance.")
+    return ""
+
+
+def notion_page_key(params: dict) -> str:
+    """`notion:<page id>` — what a standing grant for a Notion write names."""
+    page = str((params or {}).get("page_id")
+               or (params or {}).get("page")
+               or (params or {}).get("parent_id")
+               or (params or {}).get("parent") or "").strip()
+    return f"notion:{page}" if page else ""
+
+
+def _linear_update_issue(params: dict) -> dict:
+    conn = _writer("linear", "update_issue")
+    if conn is None:
+        return {"ok": False, "error": "Linear is not connected."}
+    return conn.update_issue(str(params.get("issue") or ""),
+                             assignee=str(params.get("assignee") or ""),
+                             state=str(params.get("state")
+                                       or params.get("status") or ""))
+
+
+def _undo_linear_update(params: dict, result: dict) -> dict:
+    conn = _writer("linear", "restore_issue")
+    if conn is None:
+        return {"ok": False, "error": "Linear is not connected."}
+    return conn.restore_issue(str(result.get("id") or ""),
+                              dict(result.get("before") or {}))
+
+
+def linear_issue_key(params: dict) -> str:
+    """`linear:<team>` for an issue named like `ENG-12`.
+
+    Linear's identifier prefix IS the team key — `ENG-12` is the twelfth
+    issue on team ENG — so this reads the team off the issue rather than
+    inferring it. The same shape as keying a GitHub comment by repository.
+    """
+    issue = str((params or {}).get("issue") or "").strip()
+    prefix = issue.split("-", 1)[0].strip().lower()
+    return f"linear:{prefix}" if prefix else ""
+
+
+def linear_team_key(params: dict) -> str:
+    """`linear:<team key>` — a team is a place, the way a repository is.
+
+    Nobody can enumerate who watches a Linear team, and nobody needs to: the
+    team is in the params, a person can read it, and *"always allow filing
+    into ENG"* is a coherent thing to agree to and later withdraw.
+
+    **The key, not the name.** Linear gives a team both — `Engineering` and
+    `ENG` — and the identifier prefix is the key, so a comment on `ENG-12`
+    keys as `linear:eng`. Keyed by whichever string the model happened to use,
+    filing into "Engineering" and commenting on `ENG-12` would be two separate
+    grants for one team: each works, so nothing is unsafe, but the user is
+    asked twice for one decision and cannot see why. `team_key` is read first
+    and the prompt asks for it; a bare name still resolves at execution time
+    because the connector matches on either.
+    """
+    team = str((params or {}).get("team_key")
+               or (params or {}).get("team") or "").strip().lower()
+    return f"linear:{team}" if team else ""
+
+
+
 REGISTRY: dict[str, ActionSpec] = {
     "send_email": ActionSpec(
         handler=_send_email, label="Send email", schedulable=True,
@@ -1411,6 +1632,95 @@ REGISTRY: dict[str, ActionSpec] = {
         fields=["blocks", "at", "note"],
         # Green: it writes one row in the user's own training log.
         risk=Risk.GREEN,
+    ),
+
+    # ── work surfaces ────────────────────────────────────────────────────
+    #
+    # The tier of each is decided by one question, the same one every time:
+    # **can the gate see a key a person could read and revoke?**
+    #
+    # Linear's answer is yes, and it is the same answer GitHub gave. Nobody
+    # can enumerate who watches team ENG — and nobody needs to, because `ENG`
+    # is right there in the identifier, and *"always allow filing into
+    # Engineering"* is something a user can agree to and later take back.
+    #
+    # Notion's answer is no, and that is why its two actions are RED below.
+    "linear_create_issue": ActionSpec(
+        handler=_linear_create_issue, label="File a Linear issue",
+        # `team_key` first: it is the short prefix (ENG) that also appears in
+        # every one of that team's issue ids, so filing and commenting land
+        # on the SAME allow-list row. See `linear_team_key`.
+        fields=["team_key", "title", "body"],
+        risk=Risk.AMBER, recipient_kind=LINEAR_RECIPIENT,
+        verify=_verify_linear_issue,
+        # No undo: Linear can archive an issue, not unmake it, and everybody
+        # subscribed to the team has already been notified. Offering "Undo"
+        # over that would be the button lying.
+    ),
+    "linear_comment": ActionSpec(
+        handler=_linear_comment, label="Comment on a Linear issue",
+        fields=["issue", "body"],
+        risk=Risk.AMBER, recipient_kind=LINEAR_RECIPIENT,
+        undo=_undo_linear_comment, undo_label="Delete the comment",
+    ),
+    "linear_update_issue": ActionSpec(
+        handler=_linear_update_issue, label="Assign or move a Linear issue",
+        fields=["issue", "assignee", "state"],
+        risk=Risk.AMBER, recipient_kind=LINEAR_RECIPIENT,
+        # Reversible for real, not nominally: the handler reads the issue
+        # BEFORE changing it, so undo restores the assignee and status it
+        # actually had rather than guessing at them.
+        undo=_undo_linear_update, undo_label="Put it back",
+    ),
+
+    # **Notion is RED, and the roadmap predicted amber.** The tier test is
+    # whether the gate can see a key a PERSON can read, and a Notion page is
+    # identified by nothing but a uuid. `notion:a1b2c3d4-…` on the allow-list
+    # screen is an internal surfaced to the user — the thing `/CLAUDE.md`
+    # forbids first — and a grant nobody can read is a grant nobody can
+    # audit. One tap each, until there is a key worth showing.
+    "notion_append": ActionSpec(
+        handler=_notion_append, label="Add to a Notion page",
+        fields=["page_id", "text"],
+        risk=Risk.RED,
+        always_ask_because=("Writing into a Notion page always needs your "
+                            "approval — a page id is not something I can "
+                            "show you well enough to allow in advance."),
+        undo=_undo_notion_append, undo_label="Remove what I added",
+    ),
+    "notion_create_page": ActionSpec(
+        handler=_notion_create_page, label="Create a Notion page",
+        fields=["parent_id", "title", "text"],
+        risk=Risk.RED,
+        always_ask_because=("Creating a Notion page always needs your "
+                            "approval — a page id is not something I can "
+                            "show you well enough to allow in advance."),
+        verify=_verify_notion_page,
+        undo=_undo_notion_page, undo_label="Move it to Notion's trash",
+    ),
+
+    "drive_create_doc": ActionSpec(
+        handler=_drive_create_doc, label="Create a document",
+        fields=["title", "text"],
+        # Green, and for exactly `create_draft`'s reason: it lands in the
+        # user's own Drive and nobody else can see it until they share it.
+        # This is the overnight-preparation rung for documents.
+        risk=Risk.GREEN,
+        verify=_verify_drive_doc,
+        undo=_undo_drive_doc, undo_label="Move it to the bin",
+    ),
+    "drive_share": ActionSpec(
+        handler=_drive_share, label="Share a document",
+        fields=["file_id", "email", "role"],
+        # Amber against the EMAIL list, because that is genuinely who it
+        # reaches and the address is on the card. Sharing a document with
+        # Rahul is the same kind of decision as emailing him one.
+        risk=Risk.AMBER, recipient_kind=EMAIL_RECIPIENT,
+        # Except when it is not. "Anyone with the link" has no recipient to
+        # allow-list: the audience is unbounded and a standing grant made
+        # about one person must never quietly cover it.
+        always_ask_when=_public_share_asks,
+        undo=_undo_drive_share, undo_label="Take access back",
     ),
 }
 

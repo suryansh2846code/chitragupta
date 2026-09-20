@@ -40,12 +40,12 @@ Measured against the code, not against intent.
 | **Email** | **4⁻** | `send_email` and `mail_triage` work. **No draft** — rung 3 is missing entirely. No reply-in-thread, no forward, no attachment (`gmail.py:181` is a bare `MIMEText`). Verify fires only on failure. Remember writes to the conversation, never the brain |
 | **Calendar** | **4⁻** | `create_event` only. No reschedule, cancel, attendee change, location, notes — `gcal.py` has one write method |
 | **Messaging** | **4** | ~~no UI to connect Telegram~~ — **shipped.** `message_send` can now actually fire: the four-screen sign-in lives in `connectors.js`, driven by `GET /api/telegram/status` rather than by its own step counter |
-| **Files** | **4** | `find_file` searches the granted folders and reports each match's **modified date**, so "the latest" is a claim the user can check. `attach=` sends it. Still no rename, move or convert |
+| **Files** | **5** | `find_file` searches the granted folders and reports each match's **modified date**, so "the latest" is a claim the user can check. `attach=` sends it, and `move_file` renames or moves inside them — both ends checked |
 | **GitHub** | **5** | `github_comment` (reversible) and `github_create_issue` (not — GitHub has no delete-issue API). Allow-listed **by repository**, the first grant that is a place rather than a person |
-| **Linear · Notion · Drive** | **1** | Read-only sync. Zero actions. The tokens are stored and the SDKs installed; the write half was never built |
+| **Linear · Notion · Drive** | **6** | ~~Read-only sync. Zero actions.~~ All three write now, each verified and each with an undo where one honestly exists. Linear is allow-listed by team, Notion asks every time (a page id is not a key a person can read), Drive creates in the user's own space under `drive.file` |
 
-~~Thirteen~~ **Twelve of fifteen connectors are read-only.** Only Gmail, GCal, Slack,
-Telegram and MCP can push anything back out.
+~~Thirteen~~ ~~Twelve~~ **Eight of fifteen connectors are read-only.** Gmail, GCal, Slack,
+Telegram, GitHub, Linear, Notion, Drive and MCP can all push something back out.
 
 ---
 
@@ -688,33 +688,62 @@ re-resolved through `_resolve` on the way out. Two checks rather than one on
 purpose: the search could be widened one day and the send must not widen with
 it.
 
-### Phase 3 — the rest · ~1 week
-
-`create_followup` 🟢 landed early, with job 5. What is left:
+### Phase 3 — the rest · ✅
 
 | | |
 |---|---|
-| `draft_message` 🟢 | the messaging twin of `create_draft` — prepare a reply without sending it |
-| `schedule_message` 🟡 | `execute()`'s `at` path already schedules mail; messaging does not use it |
-| `rename` 🟢 · `move` 🟡 | inside granted roots |
-| `convert` 🟢 · `generate_document` 🟢 | job 16, *"write this up as a document"* |
-
-None of these is a new mechanism. `draft_message` is `create_draft` pointed at
-a different connector; `rename` and `move` are `_resolve` twice and a call to
-`Path.rename`.
+| `schedule_message` | ✅ and it was a **live bug**, not a missing feature — see job 10. `execute()` honoured `at` for a hardcoded pair of actions, so "tell Rahul at six" sent immediately. Scheduling is `ActionSpec.schedulable` now, and an action that cannot be scheduled refuses a time rather than running now |
+| `move_file` | ✅ rename and move in one tool, `_resolve` on **both** ends. Checking only the source would let `move("notes.md", "~/Library/LaunchAgents/x.plist")` walk a file out of the sandbox the grant defines. Refuses to overwrite: a move that silently replaces something is a deletion nobody was shown |
+| `generate_document` | ✅ as `drive_create_doc` 🟢 — a Doc in the user's own Drive, which is the honest home for "write this up" rather than a local file they then have to find |
+| `draft_message` | **deliberately not built.** There is no drafts folder in Telegram or Slack to put one in, so it would mean inventing a local queue and a screen to review it — and the approval card already IS that review, at the moment the user is looking. `create_draft` exists because Gmail has Drafts; copying the shape without the folder would be copying the wrong half |
 
 ---
 
-### Phase 4 — Work surfaces · **GitHub done**
+### Phase 4 — Work surfaces · ✅
 
-Four connectors that read and cannot write. One of them can now.
+Four connectors that read and cannot write. All four can now.
 
 | Connector | Actions | Risk |
 |---|---|---|
-| GitHub | ✅ `github_comment` · `github_create_issue`. `assign`, `label`, `close_issue` not yet | 🟡 |
-| Linear | `create_issue`, `comment`, `assign`, `move_state` | 🟡 |
-| Notion | `append_block`, `create_page` | 🟡 |
-| Drive | `create_doc`, `share` | 🟡 / 🔴 (share) |
+| GitHub | ✅ `github_comment` · `github_create_issue` | 🟡 |
+| Linear | ✅ `linear_create_issue` · `linear_comment` · `linear_update_issue` (assign and move state, in one patch) | 🟡 |
+| Notion | ✅ `notion_append` · `notion_create_page` | 🔴 |
+| Drive | ✅ `drive_create_doc` · `drive_share` | 🟢 / 🟡 |
+
+**The tier of each was the work, not the API calls.** One question settles all
+seven, and it is the question `update_event` and `mcp_action` were settled by:
+*can the gate see a key a **person** could read and revoke?*
+
+* **Linear is amber** because `ENG` is in every one of that team's issue ids.
+  *"Always allow filing into ENG"* is something somebody can agree to and
+  later withdraw — the same argument `acme/api` made for GitHub. Both the
+  filing action and the commenting action key on `linear:eng`, deliberately:
+  keyed by whichever string the model happened to use, *"Engineering"* and
+  `ENG-12` would have been two grants for one team. Each would work, so
+  nothing unsafe — but the user is asked twice for one decision and cannot
+  see why.
+* **Notion is red, and this document predicted amber.** A page is identified
+  by a uuid and nothing else, so the allow-list row would read
+  `notion:a1b2c3d4-…` — an internal surfaced to the user, which `/CLAUDE.md`
+  forbids first, and a permission nobody can read is one nobody can audit.
+  One tap each, until there is a key worth showing. That is the second time
+  the tier test has overruled a prediction here, and both times for the same
+  reason.
+* **`drive_create_doc` is green**, for `create_draft`'s reason exactly: it
+  lands in the user's own Drive and reaches nobody until they share it. This
+  is the overnight-preparation rung for documents.
+* **`drive_share` is amber against the EMAIL list** — sharing a document with
+  Rahul is the same kind of decision as emailing him one, so it is the same
+  list rather than a fourth one nobody would think to look at. Except for a
+  public link, which `always_ask_when` refuses every time: *"anyone with the
+  link"* is not a recipient an allow-list can hold.
+
+**The scope we had to ask for is `drive.file`, not `drive`.** It reaches only
+files this app itself created — so a write cannot touch anything that was
+already in the user's Drive, and `share` cannot hand out a file we did not
+make. A token issued before we asked for it is told to reconnect *before*
+anything is proposed, which is the `gmail.modify` lesson: never approve a card
+that cannot work.
 
 **The allow-list is a place, not a person — and that is the first time.**
 The tier test has never been "does this reach somebody", it is *can the gate

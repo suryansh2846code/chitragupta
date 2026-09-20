@@ -28,6 +28,12 @@ SCOPES = [
     "https://www.googleapis.com/auth/gmail.send",
     "https://www.googleapis.com/auth/gmail.modify",
     "https://www.googleapis.com/auth/drive.readonly",
+    # `drive.file`, NOT `drive`. It grants access only to files this app
+    # itself created — so a document we write can be read back, shared and
+    # trashed, and the rest of the user's Drive stays as unreachable for
+    # writing as it was. The full `drive` scope would have bought nothing the
+    # 18 jobs need and asked for everything.
+    "https://www.googleapis.com/auth/drive.file",
     "https://www.googleapis.com/auth/calendar.readonly",
     "https://www.googleapis.com/auth/calendar.events",
 ]
@@ -127,6 +133,27 @@ def may_modify_mail() -> bool:
 #: because the connector, the action and the agent's prompt all say it.
 NEEDS_MODIFY_SCOPE = (
     "Gmail is connected for reading and sending, but not for changing messages. "
+    "Reconnect Google under Connectors and approve the extra permission, then "
+    "this will work."
+)
+
+
+def may_write_drive() -> bool:
+    """Can we create a document in the user's Drive?
+
+    Not derivable from "is Drive connected". A token issued before we asked
+    for `drive.file` carries read and nothing else, so every create it makes
+    comes back 403. Asked BEFORE proposing anything, exactly as
+    `may_modify_mail` is, so the user is told to reconnect rather than
+    approving a card that cannot work.
+    """
+    return any("drive.file" in s for s in granted_scopes())
+
+
+#: What to tell the user when the token predates the drive.file scope. Named
+#: once because the connector, the action and the agent's prompt all say it.
+NEEDS_DRIVE_SCOPE = (
+    "Google Drive is connected for reading, but not for creating documents. "
     "Reconnect Google under Connectors and approve the extra permission, then "
     "this will work."
 )

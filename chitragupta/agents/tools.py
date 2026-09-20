@@ -317,6 +317,7 @@ TOOL_IMPLS = {
     "find_file": file_tools.find_file,
     "read_file": file_tools.read_file,
     "write_file": file_tools.write_file,
+    "move_file": file_tools.move_file,
     "run_python": code_tools.run_python,
     "browse_open": browse_tools.browse_open,
     "browse_read": browse_tools.browse_read,
@@ -721,6 +722,24 @@ TOOL_DEFS: dict[str, Tool] = {
                     "what is actually there.",
         parameters={"type": "object", "properties": {
             "path": {"type": "string"}}, "required": ["path"]},
+    ),
+    "move_file": Tool(
+        name="move_file",
+        description=(
+            "Rename a file, or move it to another folder. Both the file and "
+            "where it is going must be inside a folder the user opened to "
+            "agents. Refuses to overwrite anything."),
+        parameters={
+            "type": "object",
+            "properties": {
+                "path": {"type": "string",
+                         "description": "The file to move, as it is now."},
+                "to": {"type": "string",
+                       "description": "Its new path, or just its new name to "
+                                      "rename it where it is."},
+            },
+            "required": ["path", "to"],
+        },
     ),
     "write_file": Tool(
         name="write_file",
@@ -1143,6 +1162,7 @@ _LABELS: dict[str, tuple[str, str]] = {
     "find_file":                ("Find",      "Your Mac"),
     "read_file":                ("Read",      "Your Mac"),
     "write_file":               ("Write",     "Your Mac"),
+    "move_file":                ("Move",      "Your Mac"),
     "run_python":               ("Run",       "Your Mac"),
     # Agents — asking the rest of the team, and thinking out loud
     "ask_agent":                ("Ask",       "Agents"),

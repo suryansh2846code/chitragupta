@@ -80,7 +80,9 @@ BASE_TOOLS = [
 #: `find_file` travels with them: an agent that can read a file and
 #: cannot find one can only open what it was handed the path to, and
 #: "the latest proposal" is a description, not a path.
-_FILES = ["list_dir", "find_file", "read_file", "write_file"]
+_FILES = ["list_dir", "find_file", "read_file", "write_file",
+          # Renaming and moving, both ends inside a granted folder.
+          "move_file"]
 
 _TASKS = ["add_task", "list_tasks", "complete_task"]
 _LOOPS = ["create_open_loop", "list_open_loops", "complete_open_loop",
@@ -103,7 +105,19 @@ _MESSAGES = ["list_chats", "read_chat"]
 #: agent that can file an issue and cannot search is an agent that files
 #: duplicates.
 _CODE = ["search_source", "sync_source"]
-_CODE_ACTIONS = ["github_comment", "github_create_issue"]
+#: GitHub and Linear together: they are the same job on two surfaces, and a
+#: team that tracks work in one usually does not track it in the other — so
+#: an agent handed only GitHub tells a Linear user it cannot file anything.
+#: Each still refuses on its own if that connector is not set up.
+_CODE_ACTIONS = ["github_comment", "github_create_issue",
+                 "linear_create_issue", "linear_comment",
+                 "linear_update_issue"]
+#: Writing things down where the user's team reads them. Notion is where a
+#: decision gets recorded; Drive is where a document gets written — and
+#: `drive_create_doc` is GREEN, so it is the one an agent can prepare
+#: overnight without a tap.
+_DOC_ACTIONS = ["notion_append", "notion_create_page",
+                "drive_create_doc", "drive_share"]
 #: `find_time` travels with the lookup: an agent that can read a diary
 #: and cannot find a gap in it answers "when suits you?", which is the
 #: job handed back.
@@ -157,7 +171,7 @@ _ALL_ACTIONS = ["create_draft", "send_email", "create_event", "update_event",
 _COMMS_ACTIONS = [*_ALL_ACTIONS, "mail_triage", "message_send"]
 #: The generalist reaches the work surfaces too — it is the one agent
 #: with every tool, and an issue it cannot file is a job it hands back.
-_CHIEF_ACTIONS = [*_COMMS_ACTIONS, *_CODE_ACTIONS]
+_CHIEF_ACTIONS = [*_COMMS_ACTIONS, *_CODE_ACTIONS, *_DOC_ACTIONS]
 
 #: Stands for "every tool there is" in a template's list.
 #:

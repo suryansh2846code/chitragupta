@@ -30,6 +30,7 @@ from datetime import UTC, datetime
 from ..actions import (
     CHAT_RECIPIENT,
     EMAIL_RECIPIENT,
+    LINEAR_RECIPIENT,
     REGISTRY,
     REPO_RECIPIENT,
     TOOL_RECIPIENT,
@@ -48,8 +49,8 @@ log = get_logger(__name__)
 #: email address is a global identifier and a chat id means nothing outside the
 #: app it came from. Allowing `@dana` on Telegram must not also allow a `#dana`
 #: in Slack; they are different people as often as not.
-__all__ = ["CHAT_RECIPIENT", "EMAIL_RECIPIENT", "REPO_RECIPIENT",
-           "TOOL_RECIPIENT"]
+__all__ = ["CHAT_RECIPIENT", "EMAIL_RECIPIENT", "LINEAR_RECIPIENT",
+           "REPO_RECIPIENT", "TOOL_RECIPIENT"]
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS action_permissions (
@@ -222,6 +223,29 @@ def recipients_of(action_type: str, params: dict) -> list[str]:
         # An action missing either half cannot be granted and must not read as
         # "reaches nobody" — it fails closed like every other unreadable target.
         return [key or "an unidentified connector tool"]
+    if action_type == "drive_share":
+        # Whoever is being given access. Same list as email, because it is
+        # the same kind of fact about the same person — and the same
+        # fail-closed rule as every other opaque target: a share we cannot
+        # address is not a share that reaches nobody.
+        #
+        # A public link never gets here: `always_ask_when` refuses it before
+        # the tier is consulted, because "anyone" is not a recipient.
+        return (_every_address_in(str(params.get("email")
+                                      or params.get("to") or ""))
+                or ["an unidentified recipient"])
+    if action_type in ("linear_comment", "linear_update_issue"):
+        # The team, read off the identifier: `ENG-12` IS the twelfth issue on
+        # team ENG, so this is a fact about the argument rather than a guess.
+        from ..actions import linear_issue_key
+
+        return [linear_issue_key(params) or "an unidentified Linear issue"]
+    if action_type == "linear_create_issue":
+        from ..actions import linear_team_key
+
+        # A team we were not told is one the gate cannot show the user, so it
+        # fails closed rather than letting the connector pick for us.
+        return [linear_team_key(params) or "an unspecified Linear team"]
     if action_type in ("github_comment", "github_create_issue"):
         # The repository, not the people. Nobody can enumerate who watches
         # `acme/api`, and the gate's question is what it can *see* — which
@@ -290,6 +314,7 @@ KIND_LABELS = {
     CHAT_RECIPIENT: "Messaging",
     REPO_RECIPIENT: "Repository",
     TOOL_RECIPIENT: "Connector tool",
+    LINEAR_RECIPIENT: "Linear team",
 }
 
 
@@ -332,6 +357,7 @@ def is_permitted(value: str, *, kind: str = EMAIL_RECIPIENT) -> bool:
 _REFUSAL_NOUN = {
     REPO_RECIPIENT: "the repository ",
     TOOL_RECIPIENT: "the connector tool ",
+    LINEAR_RECIPIENT: "the Linear team ",
 }
 
 
