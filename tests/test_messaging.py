@@ -216,12 +216,29 @@ def test_a_chat_permission_is_not_an_email_permission():
 
 
 def test_an_unknown_chat_fails_closed():
-    """A missing conversation must never read as "reaches nobody"."""
-    assert recipients_of("message_send", {"app": "telegram", "chat": ""}) == []
-    # …and with no recipient the action cannot name one, so it refuses on the
-    # way in rather than sending to nowhere.
-    assert not actions.run_now("message_send",
-                               {"app": "telegram", "chat": "", "text": "hi"})["ok"]
+    """A missing conversation must never read as "reaches nobody".
+
+    This test asserted `recipients_of(...) == []` for its first two years,
+    which is *literally* "reaches nobody" — the opposite of its own docstring.
+    It stayed green because the second assertion held: the handler refuses to
+    send to an empty chat. So the protection was real but it was at the wrong
+    end, and `permissions.check()` — which reads an empty recipient list as
+    "nothing to allow-list" and returns allowed — was letting the action past
+    the gate entirely. An unattended agent proposing a message with an
+    unreadable `chat` got no card, and whether anything reached a person came
+    down to a handler's argument validation.
+
+    Both halves now, gate first.
+    """
+    from chitragupta.agents.permissions import check
+
+    params = {"app": "telegram", "chat": "", "text": "hi"}
+
+    assert recipients_of("message_send", params) == ["an unidentified conversation"]
+    assert not check("message_send", params).allowed, (
+        "the gate let an unaddressed message through")
+    # …and the handler still refuses too, rather than sending to nowhere.
+    assert not actions.run_now("message_send", params)["ok"]
 
 
 # ── the card ─────────────────────────────────────────────────────────────
