@@ -44,8 +44,10 @@ Measured against the code, not against intent.
 | **GitHub** | **5** | `github_comment` (reversible) and `github_create_issue` (not — GitHub has no delete-issue API). Allow-listed **by repository**, the first grant that is a place rather than a person |
 | **Linear · Notion · Drive** | **6** | ~~Read-only sync. Zero actions.~~ All three write now, each verified and each with an undo where one honestly exists. Linear is allow-listed by team, Notion asks every time (a page id is not a key a person can read), Drive creates in the user's own space under `drive.file` |
 
-~~Thirteen~~ ~~Twelve~~ **Eight of fifteen connectors are read-only.** Gmail, GCal, Slack,
-Telegram, GitHub, Linear, Notion, Drive and MCP can all push something back out.
+~~Thirteen~~ ~~Twelve~~ **Seven of fifteen connectors are read-only** — the Apple ones,
+Google Fit, local files and notes. The other eight write: Gmail, GCal, Gmail's
+labels, Slack, Telegram, GitHub, Linear, Notion and Drive. MCP reaches whatever
+else the user has connected.
 
 ---
 
