@@ -119,7 +119,7 @@ async function loadAgents() {
     <div class="agent ${a.id === current ? "active" : ""}" data-id="${a.id}"
          role="button" tabindex="0" aria-pressed="${a.id === current}"
          aria-label="${esc(a.name)} — ${esc(a.role)}">
-      <span class="orb" style="${orbStyle(agentOrbId(a))}"></span>
+      <span class="orb"></span>
       <div class="a-meta">
         <div class="n">${esc(a.name)}</div>
         <div class="r">${esc(a.role)}</div>
@@ -128,6 +128,15 @@ async function loadAgents() {
         : (a.id === current ? `<span class="dot"></span>` : "")}
     </div>`; }).join("");
   document.querySelectorAll(".agent").forEach((el) => {
+    // Mounted after the markup, never inside it: a character is a live instance
+    // with a pointer subscription and an observer, and an `innerHTML` template
+    // can only produce a string. Painting here also means the rail's own
+    // template stays readable — the alternative was an SVG document inlined
+    // into the middle of it.
+    const orb = el.querySelector(".orb");
+    const agent = agents.find((a) => a.id === el.dataset.id);
+    if (orb) paintAvatar(orb, agentOrbId(agent), { live: true, title: agent ? agent.name : "" });
+
     el.onclick = (e) => {
       if (e.target.closest("[data-del-agent]")) return;   // handled below
       selectAgent(el.dataset.id);
@@ -188,6 +197,13 @@ window.addEventListener("keydown", (e) => {
     if (await maybeOnboard()) return;   // redirecting to onboarding — stop here
     applyIcons();
     await loadProviders();
+    // Awaited, and before `loadAgents()`: the rail paints an avatar per agent,
+    // and a custom one that arrives after that paint is a visible flicker of the
+    // wrong face on every launch. It is one small request and it cannot fail in
+    // a way that blocks — `loadAgentAvatars` swallows its own errors, because an
+    // agent with no override still has its generated character. That is also
+    // why it sits inside the try but needs no catch of its own.
+    await loadAgentAvatars();
     // loadAgents() gets its own catch: it is not awaited, so a rejection here
     // would never reach the handler below, and the rail it was going to fill is
     // the one still showing skeletons.
