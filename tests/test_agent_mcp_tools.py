@@ -325,13 +325,16 @@ def test_the_category_is_not_offered_when_there_is_nothing_behind_it(connectors)
 # ── the standing decision ────────────────────────────────────────────────────
 
 def test_connector_writes_still_wait_for_a_tap():
-    """`mcp_action` is unattended-forbidden, and reading tools does not change it."""
+    """Exposing a server's READ tools to the loop must not have made its write
+    tools runnable — nothing here grants anything."""
     from chitragupta.agents import permissions
 
-    assert "mcp_action" in permissions.NEVER_UNATTENDED
-    verdict = permissions.check("mcp_action", {"tool": "create_issue"})
+    verdict = permissions.check(
+        "mcp_action", {"server_id": "linear", "tool": "create_issue"})
     assert not verdict.allowed
     assert "approval" in verdict.reason.lower()
+    assert "linear:create_issue" in verdict.reason, (
+        "the user is told which tool, not just that something was refused")
 
 
 # ── how many at once ─────────────────────────────────────────────────────────

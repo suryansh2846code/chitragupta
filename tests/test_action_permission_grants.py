@@ -71,7 +71,10 @@ def test_every_blocked_recipient_is_listed_not_just_the_first(clean_slate):
 
 
 def test_an_action_no_allow_list_can_clear_offers_no_grant(clean_slate):
-    """`create_routine` and `mcp_action` are refused whatever the list says.
+    """`create_routine` is refused whatever the list says.
+
+    (`mcp_action` used to be in this sentence. It is grantable now — per
+    `server:tool` — except for irreversible verbs, which still land here.)
 
     Offering "always allow" there would be a button that cannot work, which is
     the failure mode `CLAUDE.md` names first: it reads as the app being broken.

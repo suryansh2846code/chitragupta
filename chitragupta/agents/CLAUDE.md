@@ -44,7 +44,13 @@ permissions — and `library.py`, which is what Chitragupta *offers*.
   else queues for one tap. Interactive chat is deliberately not gated.
 - **An action declares its own tier, in one place.** `actions.ActionSpec.risk`
   is green (reaches nobody — runs unattended), amber (reaches someone — needs a
-  permitted recipient) or red (never unattended, never promotable).
+  permitted recipient) or red (never unattended, never promotable). The tier
+  test is not "does this reach somebody" — it is **can the gate SEE what it
+  reaches**: red is where no key exists that a person could read and revoke.
+  A fourth switch cuts across all three: `always_ask_when(params)` returns a
+  sentence for the case that is promotable in general and not *this time*, and
+  it is consulted **before** the tier — that is what stops a standing grant
+  from covering `delete_project`.
   `NEVER_UNATTENDED`, `OUTBOUND_ACTIONS` and `RECIPIENT_KINDS` are **derived**
   from it; they used to be three hand-kept sets and the one you forget is
   whichever is furthest from the code you are writing. An action nobody

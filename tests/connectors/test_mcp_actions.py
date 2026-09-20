@@ -167,7 +167,10 @@ def test_a_queued_connector_action_is_described_in_the_users_terms():
     assert "Writes Source" in row["summary"]
     assert "automation" not in row["reason"], (
         "a connector action borrowed create_routine's reason")
-    assert "connector" in row["reason"].lower()
+    assert "connector tool" in row["reason"].lower(), (
+        "the reason must say what kind of thing was refused — `http:send_message` "
+        "on its own reads like a typo, not like something to approve")
+    assert "http:send_message" in row["reason"], "and which one"
 
 
 def test_approving_later_runs_what_was_proposed():
@@ -205,10 +208,17 @@ def test_there_is_one_approval_system_not_two():
     queue, the notification, the history and the approval list rather than
     carrying a private confirmation flag of its own."""
     from chitragupta.actions import REGISTRY
-    from chitragupta.agents.permissions import NEVER_UNATTENDED
+    from chitragupta.agents.permissions import (
+        RECIPIENT_KINDS,
+        TOOL_RECIPIENT,
+        check,
+    )
 
     assert "mcp_action" in REGISTRY
-    assert "mcp_action" in NEVER_UNATTENDED
+    # It is refused by the same `check()` every other action goes through,
+    # against the same allow-list table, keyed by the same recipient machinery.
+    assert RECIPIENT_KINDS["mcp_action"] == TOOL_RECIPIENT
+    assert not check("mcp_action", {"server_id": "l", "tool": "create_issue"}).allowed
 
 
 def test_the_endpoint_runs_a_confirmed_action():

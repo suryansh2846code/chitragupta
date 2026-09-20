@@ -168,12 +168,17 @@ def test_an_agent_that_cannot_delegate_is_not_given_a_roster():
 # ── what it still will not do without a tap ──────────────────────────────
 def test_acting_on_the_world_still_goes_through_the_user():
     """Having every tool is not the same as acting unattended."""
-    from chitragupta.agents.permissions import NEVER_UNATTENDED
+    from chitragupta.agents.permissions import NEVER_UNATTENDED, check
 
-    assert "mcp_action" in NEVER_UNATTENDED
     assert "create_routine" in NEVER_UNATTENDED
     assert "mail_triage" in NEVER_UNATTENDED, (
         "the one agent that never asks to READ still asks before it CHANGES")
+    # Connector writes are grantable per `server:tool` rather than forbidden
+    # outright, so the claim here is the behavioural one: this agent reaches
+    # every connector the user owns and still cannot write to one it was not
+    # given.
+    assert not check(
+        "mcp_action", {"server_id": "notion", "tool": "create_page"}).allowed
     # Pinned as "what can this agent do WITHOUT a tap", not as an inventory of
     # its actions. The inventory form broke twice in a row on actions that
     # reach nobody — a draft, a follow-up — which is not the thing this test

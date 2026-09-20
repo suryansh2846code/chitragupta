@@ -10,7 +10,10 @@ One class per source, registered in `__init__.py::REGISTRY`.
   method reachable only through a confirmed action in `actions.py::REGISTRY`.
   `mcp_source.py` is the same rule for somebody else's server, and `perform()`'s
   `confirmed` gate is required rather than defaulted, so a caller that forgets
-  it fails closed.
+  it fails closed. *Confirmed* now includes a standing per-`server:tool` grant
+  the user made deliberately — except for a verb `is_irreversible()` recognises,
+  which asks every time and cannot be granted in advance.
+  [`ACTION-COVERAGE.md § Per-tool grants`](../../docs/ACTION-COVERAGE.md)
 - **A connector that carries conversations implements three methods** — `chats`,
   `history`, `send` — and `../messaging.py` finds it by duck typing. `history`
   returns **oldest first**; every chat API returns the opposite, and a

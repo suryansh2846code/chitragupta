@@ -100,11 +100,19 @@ def test_the_tiers_hold_exactly_the_actions_they_are_meant_to():
     * `github_comment` / `github_create_issue` are AMBER for the mirror-image
       reason: nobody can enumerate who watches `acme/api`, but `acme/api`
       itself is in the URL — a key an allow-list can hold.
+    * `mcp_action` moved RED → AMBER once a grant could name `server:tool`
+      rather than "connectors" as a whole category. The tier test is whether
+      the gate can SEE what an action reaches, and `linear:create_comment` is
+      a key an allow-list can hold; "any tool on any server the user ever
+      connects" was not. Two things carry the weight the tier used to:
+      `always_ask_when` refuses an irreversible verb even to a user who
+      granted exactly that tool, and nothing is ever granted by default.
     """
-    never = frozenset({"create_routine", "mcp_action", "mail_triage",
+    never = frozenset({"create_routine", "mail_triage",
                        "update_event", "cancel_event"})
     outbound = frozenset({"send_email", "create_event", "message_send",
-                          "github_comment", "github_create_issue"})
+                          "github_comment", "github_create_issue",
+                          "mcp_action"})
 
     assert never == set(permissions.NEVER_UNATTENDED)
     assert outbound == set(permissions.OUTBOUND_ACTIONS)

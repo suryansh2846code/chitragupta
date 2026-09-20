@@ -440,6 +440,40 @@ def _is_write(name: str, annotations: Any, schema: dict | None = None) -> bool:
     return True
 
 
+#: Verbs whose effect cannot be taken back, or cannot be seen afterwards.
+#:
+#: Used for ONE thing: deciding which connector tools a user may put on a
+#: standing allow-list. Every write still collects an approval card by default;
+#: this only says which ones can never be promoted past that.
+#:
+#: A denylist, which `_is_write` above argues against — and the difference is
+#: what it is guarding. There the denylist was the *only* control, so a verb
+#: nobody thought of became a tool the model could call unasked. Here the
+#: control is an explicit per-tool grant the user typed a name into; this list
+#: only removes the worst verbs from being grantable at all. A verb missing
+#: from it is still approved every single time until the user deliberately
+#: allows that exact tool on that exact server.
+_IRREVERSIBLE_STEMS = (
+    "delete", "destroy", "drop", "purge", "remove", "erase", "wipe", "trash",
+    "revoke", "disable", "deactivate", "reset", "clear", "truncate",
+    "merge", "publish", "deploy", "release", "transfer", "pay", "charge",
+    "refund", "cancel", "close", "archive", "ban", "kick", "uninstall",
+)
+
+
+def is_irreversible(name: str) -> bool:
+    """Would allowing this tool once mean allowing something unrecoverable?
+
+    Asked of the *verb*, the same way `_is_write` asks: a leading verb is the
+    reliable part of a tool name, and `issue_delete` is not a read merely
+    because it begins with a noun — so both ends are checked.
+    """
+    head = (name or "").lower().split("__")[-1]
+    segments = [seg for seg in re.split(r"[^a-z0-9]+", head) if seg]
+    return any(seg.startswith(stem)
+               for seg in segments for stem in _IRREVERSIBLE_STEMS)
+
+
 def classify_tools(tools: list[Any]) -> ToolKinds:
     """Sort a server's tools into what a sync may use.
 

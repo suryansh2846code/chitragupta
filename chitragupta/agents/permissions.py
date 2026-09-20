@@ -32,6 +32,7 @@ from ..actions import (
     EMAIL_RECIPIENT,
     REGISTRY,
     REPO_RECIPIENT,
+    TOOL_RECIPIENT,
     Risk,
 )
 from ..config import get_settings
@@ -47,7 +48,8 @@ log = get_logger(__name__)
 #: email address is a global identifier and a chat id means nothing outside the
 #: app it came from. Allowing `@dana` on Telegram must not also allow a `#dana`
 #: in Slack; they are different people as often as not.
-__all__ = ["CHAT_RECIPIENT", "EMAIL_RECIPIENT", "REPO_RECIPIENT"]
+__all__ = ["CHAT_RECIPIENT", "EMAIL_RECIPIENT", "REPO_RECIPIENT",
+           "TOOL_RECIPIENT"]
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS action_permissions (
@@ -82,29 +84,39 @@ RECIPIENT_KINDS = {
 }
 
 #: Actions an unattended agent may never take, permitted recipient or not —
-#: `Risk.RED`. Two live here today and for unrelated reasons, which is why the
-#: sentence a user reads is per action rather than per set.
+#: `Risk.RED`. Each is here for its own reason, which is why the sentence a
+#: user reads is per action rather than per set.
 #:
 #: `create_routine` is privilege escalation: a routine that creates routines can
 #: widen its own authority without the user ever seeing it.
 #:
-#: `mcp_action` is here for a different reason, and a permanent one: the tool
-#: belongs to somebody else's server, so we cannot read a recipient out of its
-#: arguments the way `recipients_of` reads one out of an email. An allow-list
-#: needs something to compare against, and there is nothing — a Slack tool's
-#: `channel` and a Jira tool's `assignee` are not the same field and never will
-#: be. So the honest answer is that every connector write waits for one tap,
-#: rather than an allow-list that quietly checks nothing.
+#: `update_event` / `cancel_event` reach everybody on a meeting, and *who* that
+#: is lives on the event rather than in the action's own parameters — so there
+#: is nothing for an allow-list to compare against, and amber would have read
+#: that absence as "reaches nobody".
 #:
-#: It matters most for exactly the case that motivated this file: the text these
-#: connectors read — a Slack message, a GitHub issue body — is written by
-#: strangers, and it reaches an agent that can now act on their service.
+#: `mail_triage` is here for an **input-side** reason, and it is the one that
+#: does not expire: a triage agent's whole input is text strangers sent, and
+#: *archive everything from the bank* is a sentence an email can contain. The
+#: damage is that it removes things from view, so the user cannot notice it
+#: happened. It has an undo now, which is a reason to feel better about
+#: approving one — not a reason to stop asking.
 #:
-#: `mail_triage` is the third, for the same input-side reason: a triage agent's
-#: whole input is text strangers sent, and *archive everything from the bank* is
-#: a sentence an email can contain. It now has an **undo** (`actions.py`), which
-#: is a reason to feel better about approving one — not a reason to stop asking.
-#: Promoting it would need its own argument and its own commit.
+#: **`mcp_action` used to be here and is not any more.** The argument was that
+#: an allow-list needs something to compare against and somebody else's
+#: arguments are not it — *"a Slack tool's `channel` and a Jira tool's
+#: `assignee` are not the same field and never will be"*. That was right about
+#: arguments and wrong to stop there: the **tool** is a key, and
+#: `linear:create_comment` is stable, comparable, revocable and legible in a
+#: way an argument blob never was.
+#:
+#: What survives from the old reasoning is kept where it belongs. Nothing is
+#: promoted by default — with no grant, every connector write still collects a
+#: card, exactly as before. And the verbs whose effect cannot be inspected
+#: after the fact stay per-use whatever the user allows, through
+#: `ActionSpec.always_ask_when`: a standing grant is a statement about the
+#: future, and the future of `delete_project` is not one anybody can agree to
+#: in advance.
 NEVER_UNATTENDED = frozenset(
     name for name, spec in REGISTRY.items() if spec.risk is Risk.RED)
 
@@ -194,6 +206,16 @@ def recipients_of(action_type: str, params: dict) -> list[str]:
         for one in attendees:
             out.extend(_every_address_in(str(one)))
         return list(dict.fromkeys(out))
+    if action_type == "mcp_action":
+        # The TOOL, not the arguments. Three phases of this file argued that
+        # somebody else's arguments are not a key — which was right, and never
+        # ruled out the one thing that is.
+        from ..actions import connector_tool_key
+
+        key = connector_tool_key(params)
+        # An action missing either half cannot be granted and must not read as
+        # "reaches nobody" — it fails closed like every other unreadable target.
+        return [key or "an unidentified connector tool"]
     if action_type in ("github_comment", "github_create_issue"):
         # The repository, not the people. Nobody can enumerate who watches
         # `acme/api`, and the gate's question is what it can *see* — which
@@ -253,6 +275,7 @@ KIND_LABELS = {
     EMAIL_RECIPIENT: "Email",
     CHAT_RECIPIENT: "Messaging",
     REPO_RECIPIENT: "Repository",
+    TOOL_RECIPIENT: "Connector tool",
 }
 
 
@@ -288,6 +311,24 @@ def is_permitted(value: str, *, kind: str = EMAIL_RECIPIENT) -> bool:
     return row is not None
 
 
+#: What to call the thing that was not allowed, when the bare value does not
+#: read as one. An address speaks for itself; `http:send_message` does not, and
+#: "http:send_message is not on your allowed list" reads like a typo rather
+#: than like a connector the user has not approved.
+_REFUSAL_NOUN = {
+    REPO_RECIPIENT: "the repository ",
+    TOOL_RECIPIENT: "the connector tool ",
+}
+
+
+def _refusal(kind: str, blocked: tuple[str, ...]) -> str:
+    noun = _REFUSAL_NOUN.get(kind, "")
+    return ("Waiting for your approval — "
+            + ", ".join(noun + b for b in blocked)
+            + (" is not" if len(blocked) == 1 else " are not")
+            + " on your allowed list.")
+
+
 def check(action_type: str, params: dict) -> Verdict:
     """May an unattended agent run this action right now?
 
@@ -301,6 +342,14 @@ def check(action_type: str, params: dict) -> Verdict:
         # the way this used to: the old shape meant a typo in an action name
         # read as "reaches nobody" and ran.
         return Verdict(False, "That is not an action Chitragupta knows.")
+
+    # Before the tier, because it overrides it. An action can be promotable in
+    # general and not with these arguments, and the answer has to be no even
+    # when the user has already allowed the action's own key.
+    if spec.always_ask_when is not None:
+        why = spec.always_ask_when(params or {})
+        if why:
+            return Verdict(False, why)
 
     if spec.risk is Risk.RED:
         # One reason per action, not one reason for the set — see `_ALWAYS_ASK`.
@@ -320,11 +369,6 @@ def check(action_type: str, params: dict) -> Verdict:
     kind = RECIPIENT_KINDS.get(action_type, EMAIL_RECIPIENT)
     blocked = tuple(t for t in targets if not is_permitted(t, kind=kind))
     if blocked:
-        return Verdict(
-            False,
-            "Waiting for your approval — "
-            + ", ".join(blocked)
-            + (" is not" if len(blocked) == 1 else " are not")
-            + " on your allowed list.",
-            blocked_recipients=blocked)
+        return Verdict(False, _refusal(kind, blocked),
+                       blocked_recipients=blocked)
     return Verdict(True)

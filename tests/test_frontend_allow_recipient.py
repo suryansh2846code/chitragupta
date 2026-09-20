@@ -147,6 +147,43 @@ def test_two_recipients_are_counted_rather_than_crammed_into_the_label():
     assert 'title="dana@work.test, billing@acme.test"' in out["html"]
 
 
+#: A connector write. The allow-list holds `server:tool`, which is a thing and
+#: not a person — and the card is the only place the user reads what they are
+#: agreeing to stop being asked about.
+BLOCKED_TOOL = {
+    "id": "a3",
+    "summary": 'Run "create_issue" on Linear',
+    "reason": ("Waiting for your approval — the connector tool "
+               "linear:create_issue is not on your allowed list."),
+    "blocked": ["linear:create_issue"],
+    "kind": "connector_tool",
+}
+
+
+def test_a_connector_tool_is_granted_onto_the_connector_list():
+    """The bug this repeats: "Always allow" wrote a Telegram handle onto the
+    EMAIL list, so the gate for `message_send` never read it — the tap did
+    nothing and said it had worked. `kind` comes from the server, per action.
+    """
+    out = _run([BLOCKED_TOOL])
+    posts = [c["body"] for c in out["calls"]
+             if c["url"] == "/api/agents/permissions" and c["method"] == "POST"]
+
+    assert posts == [{"value": "linear:create_issue", "kind": "connector_tool",
+                      "note": "allowed from an approval"}]
+
+
+def test_a_connector_tool_is_not_described_as_a_person():
+    """"2 people won't be asked about again" after approving a write to Linear
+    is not a sentence the user can check against anything."""
+    out = _run([{**BLOCKED_TOOL,
+                 "blocked": ["linear:create_issue", "linear:create_comment"]}])
+
+    assert "Always allow 2 connector tools" in out["html"]
+    assert "people" not in out["html"]
+    assert not any("people" in t for t in out["toasts"]), out["toasts"]
+
+
 def test_a_row_without_the_field_at_all_is_safe():
     """An approval stored before `blocked_json` shipped has no `blocked`.
 

@@ -353,6 +353,36 @@ def run(*, include_slow: bool = True) -> Scorecard:
               "An agent asks before it reaches a connector")(
             bool(refused), refused[0].result[:48] if refused else "reached it anyway")
 
+        # ── a connector WRITE, and the standing grant for one ────────────
+        #
+        # The capability is not "can it write" — it could always do that after
+        # a tap. It is that the repeated write stops asking, per `server:tool`,
+        # without that being a blank cheque for the server. Three facts, and
+        # the third is the one worth a case: a grant is a statement about a
+        # tool the user saw, so it cannot cover a verb nobody can take back.
+        from . import permissions as _perm
+
+        _tool = {"server_id": "demo", "tool": "create_item"}
+        before = _perm.check("mcp_action", _tool)
+        _perm.grant("demo:create_item", kind=_perm.TOOL_RECIPIENT,
+                    note="scorecard")
+        try:
+            after = _perm.check("mcp_action", _tool)
+            sibling = _perm.check("mcp_action",
+                                  {"server_id": "demo", "tool": "delete_item"})
+        finally:
+            _perm.revoke("demo:create_item", kind=_perm.TOOL_RECIPIENT)
+
+        check("connector_write_grant",
+              "A repeated connector write can stop asking, one tool at a time")(
+            not before.allowed and after.allowed and not sibling.allowed,
+            f"before={before.allowed} after={after.allowed} "
+            f"sibling={sibling.allowed}")
+        check("connector_write_grant_bounded",
+              "No standing grant can cover a write that cannot be undone")(
+            not sibling.allowed and "cannot be undone" in sibling.reason,
+            sibling.reason[:60])
+
         # ── changing the inbox, as one approved batch ────────────────────
         #
         # An agent could send mail for as long as this project existed and
