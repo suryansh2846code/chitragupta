@@ -321,6 +321,7 @@
       <nav class="ms-nav-list">
         <button class="ms-nav-item" data-msnav="connectors"><span class="ms-nav-ic" aria-hidden="true"></span><span>Connectors</span></button>
         <button class="ms-nav-item is-active" data-msnav="model" aria-current="page"><span class="ms-nav-ic" aria-hidden="true"></span><span>Model</span></button>
+        <button class="ms-nav-item" data-msnav="appearance"><span class="ms-nav-ic" aria-hidden="true"></span><span>Appearance</span></button>
       </nav>
     </aside>
 
@@ -617,6 +618,35 @@
         </div>
       </section>
     </div>
+
+    <!-- ── panel: appearance ───────────────────────────────────────────────
+         What each agent looks like. Every agent already has a character —
+         `character.js` composes one from its id — so this screen is never
+         empty and never asks anyone to make one before they can see anything.
+         Picking an agent swaps the editor beneath the roster; the editor
+         itself is mounted by `appearance.js` into #apEditor. -->
+    <div class="ms-body sp" data-sp="appearance" hidden>
+      <h1 class="ms-h1">Appearance</h1>
+      <p class="ms-sub" style="margin-bottom:26px">Give each of your agents a face. Pick one to edit — it follows your cursor while you work.</p>
+
+      <section class="ms-sec">
+        <div id="apRoster" class="ap-roster"></div>
+      </section>
+
+      <section class="ms-sec">
+        <div class="ap-head">
+          <div>
+            <h2 class="ms-h2" id="apEditingName">Choose an agent</h2>
+            <p class="ms-sub" id="apEditingNote">Its character is used everywhere that agent appears.</p>
+          </div>
+          <div class="ap-head-actions">
+            <button id="apReset" class="tiny ghost" hidden>Use the generated one</button>
+            <button id="apSave" class="tiny" hidden>Save</button>
+          </div>
+        </div>
+        <div id="apEditor" class="ap-editor"></div>
+      </section>
+    </div>
     </div>
   </div>
 
@@ -715,6 +745,12 @@
   <!-- Order is the dependency graph: core.js defines $, api, esc, md, toast and
        the icon set, which app.js uses from its first lines. Plain scripts in one
        shared scope — not modules; see docs/development/frontend-testing.md. -->
+  <!-- `character.js` is a build artifact of the standalone package in
+       `/character`, copied here by `scripts/sync-character.sh` and pinned by
+       `tests/test_character_asset.py` so the served copy cannot drift from its
+       source. It defines one global, `Character`, and must load before
+       `core.js`, which draws every agent's avatar with it. -->
+  <script src="/static/character.js"></script>
   <script src="/static/core.js"></script>
   <script src="/static/providers.js"></script>
   <script src="/static/models.js"></script>
@@ -728,6 +764,7 @@
   <script src="/static/tools.js"></script>
   <script src="/static/diagnostics.js"></script>
   <script src="/static/browser.js"></script>
+  <script src="/static/appearance.js"></script>
   <script src="/static/app.js"></script>
 </body>
 </html>
