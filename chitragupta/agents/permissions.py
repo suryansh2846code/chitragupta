@@ -197,7 +197,13 @@ def recipients_of(action_type: str, params: dict) -> list[str]:
     """Everyone this action would reach. Empty means it reaches nobody."""
     params = params or {}
     if action_type == "send_email":
-        return _every_address_in(str(params.get("to") or ""))
+        # A `to` we cannot read is not an email to nobody — see the note on
+        # `message_send` below, and the blanket rule in `check()` this guards
+        # against. `_every_address_in` already returns an unparseable token
+        # rather than dropping it; this covers the case where there is no
+        # token at all.
+        return (_every_address_in(str(params.get("to") or ""))
+                or ["an unidentified recipient"])
     if action_type == "create_event":
         attendees = params.get("attendees") or []
         if isinstance(attendees, str):
@@ -235,7 +241,15 @@ def recipients_of(action_type: str, params: dict) -> list[str]:
         from ..messaging import target
 
         chat = str(params.get("chat") or params.get("to") or "").strip()
-        return [target(params.get("app") or "", chat)] if chat else []
+        # A message always reaches a person — that is what the action IS. So a
+        # chat we cannot read means "we do not know who", never "nobody", and
+        # returning `[]` here let it through: `check()` reads an empty list as
+        # reaching nobody and allows it, which is right for a calendar entry
+        # with no attendees and catastrophically wrong for this. The other two
+        # opaque-key actions already failed closed this way; this one was
+        # written first and was missed.
+        return [target(params.get("app") or "", chat) if chat
+                else "an unidentified conversation"]
     return []
 
 
@@ -363,7 +377,16 @@ def check(action_type: str, params: dict) -> Verdict:
 
     targets = recipients_of(action_type, params)
     if not targets:
-        # A calendar entry with no attendees reaches nobody but the user.
+        # **`create_event` is the only action this is true of.** A calendar
+        # entry with no attendees reaches nobody but the user, so there is
+        # genuinely nobody to allow-list.
+        #
+        # For every other outbound action an empty list means "we could not
+        # read the target", which is the opposite of "there is no target" —
+        # and this rule, written for the calendar, was silently granting it.
+        # Each such branch of `recipients_of` now names a placeholder instead;
+        # `test_asks_once.py` holds the whole set to that, so the next action
+        # added cannot inherit this by forgetting.
         return Verdict(True)
 
     kind = RECIPIENT_KINDS.get(action_type, EMAIL_RECIPIENT)
