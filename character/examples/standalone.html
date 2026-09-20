@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>character — avatar builder</title>
+<style>
+  :root { color-scheme: dark; }
+  body {
+    margin: 0; padding: 28px; background: #0b0b0d; color: #ecedf0;
+    font: 14px/1.5 ui-sans-serif, -apple-system, "Segoe UI", system-ui, sans-serif;
+  }
+  header { max-width: 1100px; margin: 0 auto 22px; }
+  h1 { font-size: 19px; margin: 0 0 4px; letter-spacing: -.01em; }
+  p.lede { margin: 0; color: #8d8f97; }
+  main { max-width: 1100px; margin: 0 auto; }
+  section { margin-top: 34px; }
+  h2 { font-size: 12px; letter-spacing: .09em; text-transform: uppercase; color: #8d8f97; margin: 0 0 12px; }
+  .rail { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-end; }
+  .rail figure { margin: 0; text-align: center; width: 84px; }
+  .rail .slot { width: 84px; height: 84px; }
+  .rail figcaption { font-size: 11px; color: #8d8f97; margin-top: 6px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sizes { display: flex; gap: 18px; align-items: flex-end; }
+  .sizes div { display: grid; place-items: center; }
+</style>
+</head>
+<body>
+<header>
+  <h1>character</h1>
+  <p class="lede">Move your pointer around the page — every character below is watching it.</p>
+</header>
+
+<main>
+  <section>
+    <h2>Editor</h2>
+    <div id="editor"></div>
+  </section>
+
+  <section>
+    <h2>Generated from a seed — the same string always gives the same character</h2>
+    <div class="rail" id="rail"></div>
+  </section>
+
+  <section>
+    <h2>One document, every size</h2>
+    <div class="sizes" id="sizes"></div>
+  </section>
+</main>
+
+<script src="../dist/character.global.js"></script>
+<script>
+  // A character in the URL wins, so a shared link opens on what was shared.
+  const shared = Character.fromURL(location.href);
+
+  Character.mountEditor("#editor", {
+    document: shared || Character.generateScene("character"),
+    shareBase: location.href.split("?")[0],
+  });
+
+  const SEEDS = ["inbox", "launch", "research", "personal", "scout", "archivist",
+                 "ops@example.com", "agent:health", "agent:finance", "nova"];
+  const rail = document.getElementById("rail");
+  for (const seed of SEEDS) {
+    const fig = document.createElement("figure");
+    const slot = document.createElement("div");
+    slot.className = "slot";
+    const cap = document.createElement("figcaption");
+    cap.textContent = seed;
+    fig.append(slot, cap);
+    rail.appendChild(fig);
+    Character.createCharacter(slot, Character.generateScene(seed), { title: seed });
+  }
+
+  const sizes = document.getElementById("sizes");
+  const one = Character.generateScene("one document");
+  for (const px of [28, 40, 64, 96, 144]) {
+    const box = document.createElement("div");
+    box.style.width = px + "px";
+    box.style.height = px + "px";
+    sizes.appendChild(box);
+    Character.createCharacter(box, one, { title: "Sized " + px });
+  }
+</script>
+</body>
+</html>

@@ -702,7 +702,7 @@ function loadAgentModelMatrix() {
       return `
         <div class="matrix-row">
           <div class="matrix-agent">
-            <span class="orb orb-sm" style="${orbStyle(oid)}"></span>
+            <span class="orb orb-sm" data-avatar="${esc(oid)}"></span>
             <div>
               <div class="matrix-nm">${esc(a.name)}</div>
               <div class="matrix-role">${esc(a.role || "")}</div>
@@ -718,6 +718,10 @@ function loadAgentModelMatrix() {
       `;
     }).join("");
 
+    // Static characters: this is a settings list, read top to bottom once.
+    matrix.querySelectorAll("[data-avatar]").forEach((el) => {
+      paintAvatar(el, el.dataset.avatar, { size: 40 });
+    });
     matrix.querySelectorAll(".matrix-btn").forEach((btn) => {
       btn.onclick = () => openAgentModelModal(btn.dataset.agent);
     });
@@ -994,6 +998,7 @@ document.querySelectorAll(".ms-nav-item").forEach((b) => {
     if (to === "connectors") return openConnectorsScreen();
     if (to === "inbox") return openInboxScreen();
     if (to === "tools") return openToolsScreen();
+    if (to === "appearance") return openAppearanceScreen();
     // Leaves the app entirely, so nothing after it runs and the screen does not
     // need closing — the navigation replaces the document.
     if (to === "onboarding") { window.location.href = "/onboarding?replay=1"; return; }

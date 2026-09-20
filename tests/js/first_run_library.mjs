@@ -23,6 +23,11 @@ const makeEl = () => {
     classList: { add() {}, remove() {}, toggle() {}, contains: () => false },
     querySelector: () => makeEl(), querySelectorAll: () => [],
     addEventListener() {}, setAttribute() {}, getAttribute: () => null,
+    // `clearSkeletons()` drops `aria-busy` when the rail turns out to be empty,
+    // which is exactly the path this harness exercises. A fake element without
+    // this method does not fail the assertion under test — it throws before the
+    // assertion is ever reached.
+    removeAttribute() {},
     focus() {}, select() {}, remove() {}, closest: () => null,
     scrollIntoView() {}, appendChild(c) { this.children.push(c); return c; },
   };
