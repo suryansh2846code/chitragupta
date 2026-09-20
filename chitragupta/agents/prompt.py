@@ -269,7 +269,9 @@ _BLOCKS: dict[str, str] = {
         "See you at six.</action>\n"
         "`app` and `chat` must both come from `list_chats` - you cannot guess a "
         "conversation id. The message itself is the tag's inner text. One "
-        "action per message. Use send_email for email; this is not that."
+        "action per message. Use send_email for email; this is not that.\n"
+        "For a time they named, add `at=\"6pm\"` and it waits until then - "
+        "never send now and mention the time in the message instead."
     ),
     "mail_triage": (
         "To CHANGE emails — archive, label, mark read — propose ONE action "
@@ -482,6 +484,43 @@ _REPLY_RECIPE = (
 )
 
 
+#: "Tell Rahul I'll send it tonight."
+#:
+#: The messaging mirror of `_THREAD_REPLY_RECIPE`, and the stakes are higher
+#: for a reason that has nothing to do with the words: **there is no draft.**
+#: An email to the wrong person can be prepared and looked at; a message is
+#: delivered the instant it is approved, to somebody's phone, and no
+#: messaging app this talks to lets us take it back.
+#:
+#: So rule 1 is the whole recipe. The user says "Rahul"; the action needs a
+#: chat id, which means the model is doing a name→id lookup, and a model that
+#: guesses one sends a private message to a stranger. `list_chats` is the only
+#: thing that knows.
+#:
+#: Rule 2 exists because the helpful failure is picking. Two Rahuls, or a
+#: Rahul in Slack and a Rahul in Telegram, is a question — and asking it costs
+#: one turn, where getting it wrong costs a message that cannot be unsent.
+_MESSAGE_RECIPE = (
+    "SENDING A MESSAGE — when the user asks you to tell, message, ping or "
+    "reply to somebody on a messaging app:\n"
+    "1. Call `list_chats` FIRST and take the app and the conversation id from "
+    "what it returns. NEVER invent or guess a chat id — there is no draft "
+    "step here and no undo: an approved message is on somebody's phone, and "
+    "a guessed id sends it to a stranger.\n"
+    "2. If more than one conversation could be the one they mean — two people "
+    "with the same name, or the same person on two apps — ASK which. Asking "
+    "costs one turn; picking wrong cannot be taken back.\n"
+    "3. `read_chat` before you write, unless they dictated the message word "
+    "for word. What was last said decides whether \"I'll send it tonight\" is "
+    "an answer or a non-sequitur.\n"
+    "4. Say what they told you to say, in their voice, short. A message is "
+    "not an email — nobody wants three paragraphs on their phone.\n"
+    "5. If they named a time (\"tell him at six\"), pass it as `at` and the "
+    "message waits until then. Do NOT send it now and mention the time in "
+    "the text."
+)
+
+
 #: "Turn this thread into a task."
 #:
 #: Every part of this existed and the job still did not work, because the two
@@ -627,6 +666,20 @@ def _followup_recipe(tools: list[str] | None, actions: list[str]) -> str:
     if not {"create_draft", "create_followup"} & set(actions or []):
         return ""
     return _FOLLOWUP_RECIPE
+
+
+def _message_recipe(tools: list[str] | None, actions: list[str]) -> str:
+    """Only for an agent that can find a conversation AND send in one.
+
+    `list_chats` is rule 1 and rule 1 is the point: an agent told to message
+    people with no way to look up a conversation is the agent that guesses a
+    chat id, which is the single outcome this recipe exists to prevent.
+    """
+    if "list_chats" not in set(tools or []):
+        return ""
+    if "message_send" not in set(actions or []):
+        return ""
+    return _MESSAGE_RECIPE
 
 
 def _thread_task_recipe(tools: list[str] | None, actions: list[str]) -> str:
@@ -853,6 +906,7 @@ def build(*, name: str, role: str, system_prompt: str,
                        _reply_recipe(tools, allowed),
                        _thread_reply_recipe(tools, allowed),
                        _thread_task_recipe(tools, allowed),
+                       _message_recipe(tools, allowed),
                        _followup_recipe(tools, allowed),
                        _calendar_recipe(tools, allowed),
                        _attach_recipe(tools, allowed)):

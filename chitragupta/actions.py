@@ -101,6 +101,19 @@ class ActionSpec:
     #: refusing to have.
     always_ask_when: Callable[[dict], str] | None = None
 
+    #: Does an `at` on this action mean *later*?
+    #:
+    #: Declared here rather than as a tuple inside `execute()`, for the reason
+    #: every other tier moved onto the spec: the tuple held `send_email` and
+    #: `create_event`, and `message_send` was added to the registry without
+    #: anybody thinking about it. So *"tell Rahul at six that I am running
+    #: late"* parsed the time, dropped it, and sent the message immediately —
+    #: no error, and the user finds out from Rahul.
+    #:
+    #: False is the honest default: an action that cannot be scheduled must
+    #: never silently run now. Anything with this False refuses an `at`.
+    schedulable: bool = False
+
     #: Rung 5. `(params, result) -> dict` merged into the result. Reads the
     #: thing back from the service that now holds it, so "sent" is something we
     #: checked rather than something we assumed from a 200.
@@ -725,6 +738,52 @@ def _message_send(params: dict) -> dict:
     return connector.send(chat, text)
 
 
+def _verify_message(params: dict, result: dict) -> dict:
+    """Read the conversation back and look for what we just sent.
+
+    A `send` that returns without raising is the app saying it accepted the
+    request, which is not the same as the message being in the conversation —
+    a Telegram bot removed from a group, or a Slack channel it was kicked
+    from, fails in ways that look like success from here.
+
+    **Unverified is not failed.** If the history cannot be read, the result
+    says the message was sent and not confirmed, rather than claiming a check
+    nobody made — the same line `mail_triage` and the follow-ups draw.
+    """
+    from .messaging import get_app
+
+    text = str(params.get("text") or params.get("body") or "").strip()
+    app = str(params.get("app") or "").strip().lower()
+    chat = str(params.get("chat") or params.get("to") or "").strip()
+    if not (text and app and chat):
+        return {"verified": False, "detail": ""}
+
+    connector = get_app(app)
+    if connector is None or not hasattr(connector, "history"):
+        return {"verified": False, "detail": ""}
+
+    recent: list = []
+    # `suppressed` rather than a bare except, per `/CLAUDE.md`: an unreadable
+    # conversation is an ordinary outcome here and must still be visible in
+    # the log rather than vanishing.
+    with suppressed("reading a conversation back to verify a message"):
+        recent = list(connector.history(chat, limit=10) or [])
+    if not recent:
+        return {"verified": False, "detail": ""}
+
+    # Compared on a trimmed prefix: apps re-wrap, trim and occasionally append
+    # to what they were handed, and an exact match would report every
+    # successfully delivered message as unconfirmed.
+    needle = " ".join(text.split())[:60].lower()
+    for message in reversed(recent):
+        body = " ".join(str(
+            (message or {}).get("text") or (message or {}).get("body") or ""
+        ).split()).lower()
+        if needle and needle in body:
+            return {"verified": True, "detail": "it is in the conversation"}
+    return {"verified": False, "detail": ""}
+
+
 def _writer(source: str, capability: str):
     """The connector for `source`, only if it can actually perform `capability`.
 
@@ -1187,7 +1246,7 @@ def _undo_row(store_name: str, label: str):
 #: already been sent — and that module now reads these as data instead.
 REGISTRY: dict[str, ActionSpec] = {
     "send_email": ActionSpec(
-        handler=_send_email, label="Send email",
+        handler=_send_email, label="Send email", schedulable=True,
         fields=["to", "cc", "subject", "body", "attach"],
         risk=Risk.AMBER, recipient_kind=EMAIL_RECIPIENT,
         verify=_verify_email, remember=_remember_email,
@@ -1225,6 +1284,7 @@ REGISTRY: dict[str, ActionSpec] = {
     ),
     "create_event": ActionSpec(
         handler=_create_event, label="Create calendar event",
+        schedulable=True,
         fields=["title", "start", "end", "description", "attendees"],
         risk=Risk.AMBER, recipient_kind=EMAIL_RECIPIENT,
         verify=_verify_event, remember=_remember_event,
@@ -1337,8 +1397,13 @@ REGISTRY: dict[str, ActionSpec] = {
     ),
     "message_send": ActionSpec(
         handler=_message_send, label="Send a message",
-        fields=["app", "chat", "text"],
+        # `at` is on the card because "tell Rahul at six" is a thing people
+        # say, and a field the user cannot see is a decision they cannot
+        # correct before it fires.
+        fields=["app", "chat", "text", "at"],
         risk=Risk.AMBER, recipient_kind=CHAT_RECIPIENT,
+        schedulable=True,
+        verify=_verify_message,
         remember=_remember_message,
     ),
     "log_workout": ActionSpec(
@@ -1581,7 +1646,7 @@ def execute(action_type: str, params: dict, *, origin: str = "chat") -> dict:
     agent_id = str(params.get("agent_id") or "")
 
     at = (params.get("at") or "").strip()
-    if at and action_type in ("send_email", "create_event"):
+    if at and spec.schedulable:
         from datetime import datetime
 
         from .reminders import parse_when
@@ -1593,13 +1658,31 @@ def execute(action_type: str, params: dict, *, origin: str = "chat") -> dict:
         row = get_scheduled().add(action_type, sched_params, fire_at,
                                   params.get("agent_id")) or {}
         nice = datetime.fromisoformat(fire_at).strftime("%a %b %d, %-I:%M %p")
-        verb = "Email" if action_type == "send_email" else "Event"
+        # From the spec, not a conditional. The old form said "Email" for
+        # everything that was not an event, so the third schedulable action
+        # would have been announced as an email.
         queued = {"ok": True, "scheduled": True, "id": row.get("id", ""),
-                  "detail": f"{verb} scheduled — will fire automatically at {nice}"}
+                  "detail": f"{spec.label} — scheduled for {nice}, "
+                            f"and it will happen on its own"}
         # Logged as its own event, and reversible whatever the action itself is:
         # a *scheduled* send has not left the machine yet, so cancelling it is a
         # real inverse even though sending it would not have been.
         return _log_scheduled(action_type, params, queued, agent_id)
+
+    if at and "at" not in spec.fields:
+        # A time we cannot honour is refused, never ignored. Running now is
+        # the one outcome the user definitely did not ask for, and for
+        # anything outbound they find out from the person who received it.
+        #
+        # `"at" in fields` is the exception and it is not a special case: for
+        # `set_reminder`, `create_routine` and `log_workout` the time IS the
+        # action's own argument — when to ping, when to run, when the workout
+        # happened — and the handler is the thing that owns it. Scheduling
+        # those would be scheduling a scheduler.
+        return {"ok": False,
+                "error": f"“{spec.label}” cannot be scheduled for later, so I "
+                         f"have not done it. Ask me again when you want it to "
+                         f"happen."}
 
     return run_now(action_type, params, agent_id=agent_id, origin=origin)
 
