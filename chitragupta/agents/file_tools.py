@@ -300,3 +300,60 @@ def write_file(path: str, content: str) -> ToolResult:
 
     verb = "Replaced" if existed else "Wrote"
     return ToolResult(f"{verb} {real} ({len(body):,} characters).")
+
+
+def move_file(path: str, to: str) -> ToolResult:
+    """Rename or move a file, with BOTH ends inside a granted folder.
+
+    `_resolve` twice, deliberately. Checking only the source would let
+    `move("notes.md", "~/Library/LaunchAgents/x.plist")` walk a file straight
+    out of the sandbox the grant exists to define — the destination is the
+    half that decides where the file ends up, so it is the half that matters
+    most.
+
+    Refuses to overwrite. A move that silently replaces something is a
+    deletion nobody was shown, and the user finds out when they look for the
+    file that used to be there.
+    """
+    source, why = _resolve(path)
+    if source is None:
+        return ToolResult.failed(why)
+    target, why = _resolve(to)
+    if target is None:
+        # Said in terms of the destination, so the user is not left thinking
+        # the file they named is the problem.
+        return ToolResult.failed(
+            f"I cannot put it there — {why[0].lower()}{why[1:]}")
+
+    if not source.exists():
+        return ToolResult.failed(f"{source.name} is not there.")
+    if source.is_dir():
+        return ToolResult.failed(
+            f"{source.name} is a folder. I only move files.")
+    if target.exists():
+        return ToolResult.failed(
+            f"There is already a {target.name} there. Pick another name, or "
+            f"the user can move the existing one first.")
+
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        source.rename(target)
+    except OSError as exc:
+        # A rename across two filesystems fails with EXDEV rather than
+        # copying, and "Invalid cross-device link" is not a sentence anybody
+        # should be shown.
+        if getattr(exc, "errno", None) == 18:
+            import shutil
+
+            try:
+                shutil.move(str(source), str(target))
+            except OSError as second:
+                return ToolResult.failed(
+                    f"Could not move {source.name}: {second}")
+        else:
+            return ToolResult.failed(f"Could not move {source.name}: {exc}")
+
+    renamed = source.parent == target.parent
+    verb = "Renamed" if renamed else "Moved"
+    where = target.name if renamed else str(target)
+    return ToolResult(f"{verb} {source.name} to {where}.")

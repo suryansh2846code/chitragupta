@@ -256,3 +256,181 @@ class GoogleDriveConnector(Connector):
                 if shape.has_text_frame and shape.text_frame.text.strip():
                     parts.append(shape.text_frame.text)
         return "\n".join(parts)
+
+    # ── writes ───────────────────────────────────────────────────────────
+    #
+    # Named methods, never part of `sync()`. Everything here runs under
+    # `drive.file`, which reaches only documents this app itself created —
+    # so a write cannot touch anything that was already in the user's Drive,
+    # and `share` cannot hand out a file we did not make.
+
+    def _service(self, interactive: bool = False):
+        """(service, problem). Never raises — a missing scope is a sentence."""
+        from .google_auth import NEEDS_DRIVE_SCOPE, may_write_drive
+
+        ready, why = google_ready()
+        if not ready:
+            return None, (why or "Google Drive is not connected.")
+        if not may_write_drive():
+            # Asked before anything is proposed, so the user never approves a
+            # card that cannot work — the `gmail.modify` lesson.
+            return None, NEEDS_DRIVE_SCOPE
+        try:
+            from googleapiclient.discovery import build  # lazy
+
+            creds = get_credentials(interactive=interactive)
+            if creds is None:
+                return None, "Google Drive is not connected."
+            return build("drive", "v3", credentials=creds,
+                         cache_discovery=False), ""
+        except Exception as exc:                       # pragma: no cover
+            return None, str(exc)[:160]
+
+    @staticmethod
+    def _refusal(exc: Exception) -> dict:
+        said = str(exc)
+        if "403" in said or "insufficient" in said.lower():
+            from .google_auth import NEEDS_DRIVE_SCOPE
+
+            return {"ok": False, "reauth": True, "error": NEEDS_DRIVE_SCOPE}
+        if "404" in said:
+            return {"ok": False, "error":
+                    "Drive cannot see that document. Chitragupta can only "
+                    "reach files it created itself."}
+        return {"ok": False, "error": said[:200]}
+
+    def create_doc(self, title: str, text: str = "") -> dict:
+        """Create a Google Doc in the user's Drive (WRITE).
+
+        Reaches nobody: it lands in their own Drive and no one else can see
+        it until they share it. That is why the action is green, and it is
+        the same argument `create_draft` makes about the Drafts folder.
+        """
+        title = (title or "").strip()
+        if not title:
+            return {"ok": False, "error": "A document needs a title."}
+
+        service, problem = self._service()
+        if service is None:
+            return {"ok": False, "error": problem}
+
+        try:
+            from googleapiclient.http import MediaIoBaseUpload  # lazy
+
+            body = {"name": title, "mimeType": EXPORT_AS_TEXT}
+            media = MediaIoBaseUpload(
+                io.BytesIO((text or "").encode("utf-8")),
+                mimetype="text/plain", resumable=False)
+            # Uploaded as text/plain and converted on the way in, which is how
+            # Drive turns a body into a real Doc rather than an attached file.
+            made = service.files().create(
+                body=body, media_body=media,
+                fields="id, name, webViewLink").execute()
+        except Exception as exc:
+            return self._refusal(exc)
+
+        file_id = str((made or {}).get("id") or "")
+        if not file_id:
+            return {"ok": False, "error": "Drive did not create that document."}
+        return {"ok": True, "id": file_id,
+                "url": str((made or {}).get("webViewLink") or ""),
+                "detail": f"Created “{title}” in your Drive"}
+
+    def trash_doc(self, file_id: str) -> dict:
+        """Move a document we created to the Drive bin (WRITE).
+
+        The inverse of `create_doc`. Trashed rather than deleted: Drive keeps
+        it for thirty days and the user can put it back, which is what makes
+        this an honest undo instead of a destructive one.
+        """
+        if not file_id:
+            return {"ok": False, "error": "That document cannot be found."}
+        service, problem = self._service()
+        if service is None:
+            return {"ok": False, "error": problem}
+        try:
+            service.files().update(fileId=file_id, body={"trashed": True}).execute()
+        except Exception as exc:
+            return self._refusal(exc)
+        return {"ok": True, "detail": "Moved it to your Drive bin"}
+
+    def doc_exists(self, file_id: str) -> dict:
+        """Read one back, for rung 5."""
+        if not file_id:
+            return {"ok": False}
+        service, _ = self._service()
+        if service is None:
+            return {"ok": False}
+        try:
+            found = service.files().get(
+                fileId=file_id, fields="id, trashed, webViewLink").execute()
+        except Exception:
+            return {"ok": False}
+        return {"ok": not (found or {}).get("trashed", False),
+                "url": str((found or {}).get("webViewLink") or "")}
+
+    def share(self, file_id: str, email: str = "", role: str = "reader",
+              anyone: bool = False) -> dict:
+        """Give somebody access to a document we created (WRITE).
+
+        `anyone=True` is a public link and is deliberately a different kind of
+        decision — see `actions.py`, which refuses to let a standing grant
+        cover it. A named person can be allow-listed; "everybody on the
+        internet" is not a recipient anybody can put on a list.
+        """
+        if not file_id:
+            return {"ok": False, "error": "Which document?"}
+        role = (role or "reader").strip().lower()
+        if role not in ("reader", "commenter", "writer"):
+            return {"ok": False, "error":
+                    f"“{role}” is not a kind of access. It is reader, "
+                    f"commenter or writer."}
+
+        service, problem = self._service()
+        if service is None:
+            return {"ok": False, "error": problem}
+
+        if anyone:
+            permission = {"type": "anyone", "role": role}
+            who = "anyone with the link"
+        else:
+            email = (email or "").strip()
+            if not email:
+                return {"ok": False, "error": "Share it with whom?"}
+            permission = {"type": "user", "role": role, "emailAddress": email}
+            who = email
+
+        try:
+            made = service.permissions().create(
+                fileId=file_id, body=permission,
+                # False: Drive's own notification mail is the one thing the
+                # user did not ask us to send, and it goes out in their name.
+                sendNotificationEmail=False,
+                fields="id").execute()
+        except Exception as exc:
+            return self._refusal(exc)
+
+        permission_id = str((made or {}).get("id") or "")
+        if not permission_id:
+            return {"ok": False, "error": "Drive did not share that."}
+        return {"ok": True, "id": permission_id, "shared_with": who,
+                "detail": f"Shared with {who} as {role}"}
+
+    def unshare(self, file_id: str, permission_id: str) -> dict:
+        """Take access back (WRITE) — the inverse of `share`.
+
+        Honest about what it is: the document may already have been opened,
+        and nothing here un-reads it. What this restores is future access.
+        """
+        if not (file_id and permission_id):
+            return {"ok": False, "error": "That share cannot be found."}
+        service, problem = self._service()
+        if service is None:
+            return {"ok": False, "error": problem}
+        try:
+            service.permissions().delete(
+                fileId=file_id, permissionId=permission_id).execute()
+        except Exception as exc:
+            return self._refusal(exc)
+        return {"ok": True,
+                "detail": "Access removed — they may already have opened it"}

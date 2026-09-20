@@ -110,7 +110,10 @@ def _scripted(script, **kw):
 
 def run(*, include_slow: bool = True) -> Scorecard:
     """Run every capability check and return the scorecard."""
+    import inspect as _inspect
+
     from . import delegation, grounding, runtime
+    from . import file_tools as file_tools_mod
     from . import mcp_tools as mcp
     from . import tools as tools_mod
     from .effort import get_effort
@@ -725,6 +728,73 @@ def run(*, include_slow: bool = True) -> Scorecard:
         # genuine `list_chats` against a fake connector, and a canned string
         # left in its place made it report that the user had no conversations.
         tools_mod.TOOL_IMPLS["list_chats"] = saved_impls["list_chats"]
+
+        # ── phase 4: the work surfaces can be written to ─────────────────
+        #
+        # Three connectors that could read and not write. What is scored is
+        # not "does the API call work" — no network runs here — it is that
+        # each arrived with a TIER somebody argued for, a card a person can
+        # judge, and an undo where one honestly exists.
+        #
+        # The tier is the whole decision, and one question settles all seven:
+        # can the gate see a key a PERSON could read and revoke?
+        from ..actions import Risk
+
+        surfaces = ("linear_create_issue", "linear_comment",
+                    "linear_update_issue", "notion_append",
+                    "notion_create_page", "drive_create_doc", "drive_share")
+        from .approvals import describe as _describe
+
+        cards = {n: _describe(n, {
+            "team_key": "ENG", "issue": "ENG-12", "title": "Search is slow",
+            "page_id": "a1b2c3d4-e5f6", "parent_id": "a1b2c3d4-e5f6",
+            "text": "Decision: ship it", "file_id": "f1",
+            "email": "rahul@work.test", "role": "reader"}) for n in surfaces}
+
+        check("work_surfaces_write",
+              "Linear, Notion and Drive can be written to, not only read")(
+            all(n in _REGISTRY for n in surfaces),
+            f"missing: {[n for n in surfaces if n not in _REGISTRY]}")
+        check("work_surfaces_cards",
+              "Each write is described in words the user can judge")(
+            all(cards[n] and n not in cards[n] for n in surfaces)
+            and "a1b2c3d4" not in cards["notion_append"],
+            "a card showed an internal or the action's own name")
+        check("work_surfaces_tiers",
+              "A page id cannot be allow-listed; a Linear team can")(
+            _REGISTRY["notion_append"].risk is Risk.RED
+            and _REGISTRY["linear_comment"].risk is Risk.AMBER
+            and _REGISTRY["drive_create_doc"].risk is Risk.GREEN,
+            "the tiers stopped following the key the gate can see")
+
+        _perm.grant("linear:eng", kind=_perm.LINEAR_RECIPIENT, note="scorecard")
+        try:
+            # Not `filed` — that name already holds a TurnResult from job
+            # 13 further up, and mypy is the only thing that noticed.
+            on_eng = _perm.check("linear_comment",
+                                 {"issue": "ENG-12", "body": "x"})
+            on_ops = _perm.check("linear_comment",
+                                 {"issue": "OPS-3", "body": "x"})
+        finally:
+            _perm.revoke("linear:eng", kind=_perm.LINEAR_RECIPIENT)
+        check("work_surfaces_grant",
+              "Allowing one Linear team allows that team and no other")(
+            on_eng.allowed and not on_ops.allowed,
+            f"eng={on_eng.allowed} ops={on_ops.allowed}")
+
+        public = _perm.check("drive_share",
+                             {"file_id": "f1", "anyone": "true"})
+        check("work_surfaces_public_link",
+              "A link anybody can open is never covered by a standing grant")(
+            not public.allowed and "anyone" in public.reason,
+            public.reason[:60])
+
+        # ── renaming and moving, with both ends inside a granted folder ──
+        check("move_file",
+              "A file can be renamed or moved, and never out of the sandbox")(
+            "move_file" in tools_mod.TOOL_DEFS
+            and "_resolve(to)" in _inspect.getsource(file_tools_mod.move_file),
+            "the destination is not checked against the folder grants")
 
         # ── chasing only the people who actually owe an answer ───────────
         #

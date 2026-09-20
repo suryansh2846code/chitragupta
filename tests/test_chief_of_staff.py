@@ -194,4 +194,12 @@ def test_acting_on_the_world_still_goes_through_the_user():
     assert {a for a in held if REGISTRY[a].risk is not Risk.GREEN} == {
         "send_email", "create_event", "update_event", "cancel_event",
         "mail_triage", "message_send", "create_routine",
-        "github_comment", "github_create_issue"}
+        "github_comment", "github_create_issue",
+        # Phase 4. The generalist reaches the work surfaces because it is the
+        # one agent with every tool, and an issue it cannot file is a job it
+        # hands back. Each is gated on its own terms: Linear against the team,
+        # Notion never promotable, Drive sharing against the email list.
+        # `drive_create_doc` is absent from this set on purpose — it is GREEN,
+        # because a document in the user's own Drive reaches nobody.
+        "linear_create_issue", "linear_comment", "linear_update_issue",
+        "notion_append", "notion_create_page", "drive_share"}
