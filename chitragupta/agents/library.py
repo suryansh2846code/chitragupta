@@ -118,6 +118,11 @@ _CODE_ACTIONS = ["github_comment", "github_create_issue",
 #: overnight without a tap.
 _DOC_ACTIONS = ["notion_append", "notion_create_page",
                 "drive_create_doc", "drive_share"]
+# The read that has to come first — `notion_pages` — is not listed here,
+# because the only holder of these actions is the generalist, which takes
+# every tool there is. The rule that it MUST travel with them is a test
+# instead of a list: `test_work_surfaces.py` fails if an agent is ever given
+# a Notion action without a way to find a page id.
 #: `find_time` travels with the lookup: an agent that can read a diary
 #: and cannot find a gap in it answers "when suits you?", which is the
 #: job handed back.

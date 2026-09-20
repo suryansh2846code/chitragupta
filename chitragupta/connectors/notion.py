@@ -306,3 +306,44 @@ class NotionConnector(Connector):
             return {"ok": False}
         return {"ok": not (page or {}).get("archived", False),
                 "url": str((page or {}).get("url") or "")}
+
+    def search_pages(self, about: str = "", limit: int = 10) -> dict:
+        """Pages this integration can see, WITH the id needed to write to one.
+
+        The id is the whole point, and its absence was the bug. `notion_append`
+        and `notion_create_page` both address a page by uuid; the sync has
+        stored that uuid in each memory's metadata since it was written, and
+        nothing ever showed it to an agent. So an agent asked to add a line to
+        "Mera store" could find the page, describe it, quote it back — and had
+        no way to name it. The same gap `list_mail` and `calendar_lookup` each
+        had, and the same fix: show what you already know.
+
+        Live rather than from the brain, because a page created since the last
+        sync is exactly the one somebody is most likely to mean, and because
+        Notion's own search already ranks by relevance.
+        """
+        notion, problem = self._client()
+        if notion is None:
+            return {"ok": False, "error": problem, "pages": []}
+        try:
+            found = notion.search(
+                query=(about or "").strip(),
+                filter={"property": "object", "value": "page"},
+                page_size=max(1, min(int(limit or 10), 50)))
+        except Exception as exc:
+            refused = self._refusal(exc)
+            refused["pages"] = []
+            return refused
+
+        pages = []
+        for page in (found or {}).get("results", []):
+            page_id = str(page.get("id") or "")
+            if not page_id:
+                continue
+            pages.append({
+                "id": page_id,
+                "title": self._page_title(page) or "(untitled)",
+                "url": str(page.get("url") or ""),
+                "edited": str(page.get("last_edited_time") or "")[:10],
+            })
+        return {"ok": True, "pages": pages}

@@ -252,8 +252,11 @@ _BLOCKS: dict[str, str] = {
     "notion_append": (
         '<action type="notion_append" page_id="…">'
         "The text to add.</action>\n"
-        "Adds to the END of a page. `page_id` must come from something you "
-        "read - `search_source` or a Notion tool - never invented. This "
+        "Adds to the END of a page. `page_id` MUST come from `notion_pages` "
+        "- it is the only thing that returns one, and a page id cannot be "
+        "guessed. If Notion is not connected, `notion_pages` says so; repeat "
+        "what it said and never invent an authorization step anywhere else. "
+        "This "
         "always asks the user, every time: a page id is not something they "
         "can be shown well enough to approve in advance."
     ),
@@ -261,8 +264,8 @@ _BLOCKS: dict[str, str] = {
         '<action type="notion_create_page" parent_id="…" title="Meeting notes">'
         "The body.</action>\n"
         "Notion has no loose pages - every new page lives inside another, so "
-        "`parent_id` is required. If the user has not said where it goes, "
-        "ASK; do not pick a page for them."
+        "`parent_id` is required and comes from `notion_pages`. If the user "
+        "has not said where it goes, ASK; do not pick a page for them."
     ),
     "drive_create_doc": (
         '<action type="drive_create_doc" title="Q3 proposal">'
