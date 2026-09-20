@@ -31,6 +31,8 @@ def _block_text(block: dict) -> str:
 class NotionConnector(Connector):
     name = "notion"
     label = "Notion"
+    #: The vendor ships an MCP server. See `Connector.prefer_mcp`.
+    prefer_mcp = "notion"
     auto_sync = True
     # Notion search has no "changed since" filter we can rely on; paging the
     # whole result set is the only honest option.

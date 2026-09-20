@@ -346,6 +346,7 @@ The boundaries and what each must name:
 | the avatar renderer, its document format and its editor | [`character/README.md`](character/README.md) |
 | frontend defects found and deliberately left | [`docs/development/frontend-parked.md`](docs/development/frontend-parked.md) |
 | the brain's data model | [`docs/BRAIN-V1.5.md`](docs/BRAIN-V1.5.md) |
+| which way to reach an app at all | [`docs/REACHING-AN-APP.md`](docs/REACHING-AN-APP.md) |
 | connectors | [`docs/CONNECTORS.md`](docs/CONNECTORS.md) |
 | connecting Telegram | [`docs/development/telegram.md`](docs/development/telegram.md) |
 | measurements, and the health boundary | [`docs/development/health.md`](docs/development/health.md) |

@@ -27,11 +27,39 @@ def connectors():
     brain = get_brain()
     state = brain.store.all_connector_state()
     out = []
+    # Servers the user has added, so a built-in can stand down for the one
+    # that supersedes it.
+    from ...connectors.mcp_source import list_servers as _mcp_servers
+
+    added = {str(getattr(s, "id", "")).lower() for s in _mcp_servers()}
+
     for name, cls in REGISTRY.items():
         if not cls.supported_here():
             continue                      # hide macOS-only connectors off macOS
         inst = cls()
         ready, reason = inst.is_configured()
+        # **A source is offered one way, never two.**
+        #
+        # Two rules, and the difference between them is whether somebody has
+        # already chosen. Both exist because the screen listed Notion twice —
+        # built-in with a *Connect* button, custom source with a green
+        # CONNECTED badge — and an agent proposed a write down the route the
+        # user had not set up.
+        #
+        # RETIRED: the vendor ships a server that does this better, so the
+        # built-in is not offered at all. See `Connector.prefer_mcp`.
+        if cls.prefer_mcp and not ready:
+            continue
+        # DEDUPED: whatever we think is better, the user has added a server
+        # for this source. Showing an unconfigured built-in beside it is
+        # offering a second way to connect a thing already connected.
+        #
+        # Only when the built-in is NOT set up: one that is working is one
+        # they can see, and hiding it would take away state they still own —
+        # including, for Gmail and Calendar, the connector every mail and
+        # diary action in this app is built on.
+        if not ready and name.lower() in added:
+            continue
         # `fix` is additive and usually None. It names a refusal the user can
         # clear themselves — read straight after `is_configured()`, which is
         # when the connector sets it — so the card can offer the button instead

@@ -2,6 +2,12 @@
 
 One class per source, registered in `__init__.py::REGISTRY`.
 
+- **A source is reached ONE way.** Where the vendor ships an MCP server that is
+  the route — it feeds the brain *and* acts, over OAuth, with the vendor's own
+  schema. A connector exists where nothing else can reach: the eight on-device
+  sources. Offering both is how an agent writes down the route the user did not
+  set up, which is exactly what it did.
+  [`docs/REACHING-AN-APP.md`](../../docs/REACHING-AN-APP.md)
 - Sync idempotently, redact secrets on ingest, survive a crash without taking the
   whole sync down, and stay cancellable.
 - **A connector's writes are named methods, never part of `sync()`.** Sync only

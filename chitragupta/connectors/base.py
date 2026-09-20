@@ -74,6 +74,22 @@ class Connector:
     label: str = "Base"
     #: True when the connector can run with no extra credentials/config.
     always_available: bool = False
+    #: The MCP server id that does this better, if one exists.
+    #:
+    #: **A source the user can connect two ways is a source they will connect
+    #: the wrong way.** Notion and Linear were offered here *and* as custom
+    #: sources, and the Connectors screen showed both — so an agent proposed a
+    #: write down the built-in path while the vendor's own server sat
+    #: connected beside it, and the card failed with "Notion is not connected"
+    #: in front of a green CONNECTED badge.
+    #:
+    #: Where the vendor ships a server, it wins: OAuth instead of a pasted
+    #: secret, the vendor's own schema, and far more of it — forty-five Notion
+    #: tools against the five that were hand-written here. So a connector that
+    #: names one is not OFFERED. It is still shown to anybody who already had
+    #: it configured, because hiding something somebody set up is how you lose
+    #: their state to our change of mind.
+    prefer_mcp: str = ""
     #: Connectors that authenticate with a single pasted token declare it here,
     #: so the UI renders an in-app field (no .env editing). Example:
     #:   secret_field = {"key": "NOTION_TOKEN", "label": "Integration secret",

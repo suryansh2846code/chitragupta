@@ -26,6 +26,8 @@ QUERY = """
 class LinearConnector(Connector):
     name = "linear"
     label = "Linear"
+    #: The vendor ships an MCP server. See `Connector.prefer_mcp`.
+    prefer_mcp = "linear"
     auto_sync = True          # see GitHub — same silent omission
     incremental = True
     secret_field = {
