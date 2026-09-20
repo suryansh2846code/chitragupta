@@ -899,11 +899,43 @@ function actionCard(a) {
     const rest = items.length - named.length;
     rows = rows + (rest > 0 ? `<div class="ac-row muted">and ${rest} more</div>` : "")
       + `<div class="ac-row muted">Nothing is deleted — archiving takes an email out of your inbox and keeps it.</div>`;
-  } else {
+  } else if (a.type === "create_event") {
     title = "Create calendar event"; verb = "create";
     rows = `<div class="ac-row"><b>Title</b> ${esc(p.title || "")}</div>
        <div class="ac-row"><b>When</b> ${esc(p.start || "")}${p.end ? " → " + esc(p.end) : ""}</div>
        ${p.description ? `<div class="ac-body">${esc(p.description)}</div>` : ""}`;
+  } else {
+    // **Anything this chain does not name renders from the REGISTRY.**
+    //
+    // This branch used to be `create_event`'s, with no condition on it — so
+    // every action the chain had not been taught about was presented as
+    // "Create calendar event". A card described something other than what its
+    // button ran, which is the one thing a card may never do.
+    //
+    // It has happened twice. `mcp_action` hit it and was fixed by adding a
+    // branch above; eight actions added later — the Notion, Linear and Drive
+    // writes, and `create_task` — hit the same trap, and one of them showed a
+    // user a Notion write titled "Create calendar event". A special case per
+    // action is not a fix, it is a queue of the next occurrence.
+    //
+    // The registry already publishes a label and the fields for every action
+    // and the frontend was ignoring both. So an unknown action now says its
+    // own name and shows its own values, and the worst a future action can do
+    // is look plain.
+    title = ACTION_CATALOG[a.type] && ACTION_CATALOG[a.type].label
+      ? ACTION_CATALOG[a.type].label : "Confirm this action";
+    verb = "do it";
+    const shown = (ACTION_CATALOG[a.type] && ACTION_CATALOG[a.type].fields) || [];
+    rows = shown.filter((f) => p[f] !== undefined && p[f] !== "")
+      .map((f) => {
+        const value = typeof p[f] === "object"
+          ? JSON.stringify(p[f]) : String(p[f]);
+        // The long one reads as the body, the way every other card's does.
+        return value.length > 80
+          ? `<div class="ac-row"><b>${esc(humanKey(f))}</b></div>
+             <div class="ac-body">${esc(value)}</div>`
+          : `<div class="ac-row"><b>${esc(humanKey(f))}</b> ${esc(value)}</div>`;
+      }).join("");
   }
   const isEmail = a.type === "send_email";
   const spec = ACTION_CATALOG[a.type] || {};

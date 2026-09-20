@@ -245,3 +245,106 @@ def test_a_refused_undo_leaves_the_button_so_it_can_be_tried_again():
                undo_result={"ok": False, "error": "That is no longer there."})
     assert "Cancel it" in out["afterUndo"], (
         "a refused undo removed its own button, so there was no way to retry")
+
+
+# ── a card never claims to be a different action ─────────────────────────
+#
+# Reported by a user: a Notion write rendered as **"Create calendar event"**,
+# with a Page ID field underneath it and Notion's own risk note beside it. The
+# button said "Confirm & create".
+#
+# `actionCard` is a chain of `else if` on `a.type`, and its final `else` was
+# `create_event`'s branch with no condition on it — so every action the chain
+# had not been taught about was announced as a calendar event. That is the one
+# thing a card may never do: describe something other than what its button
+# runs.
+#
+# **It had already happened once.** `mcp_action` fell into the same trap and
+# was fixed by adding a branch above it, with a comment recording the symptom
+# word for word. Eight actions added later — the Notion, Linear and Drive
+# writes, and `create_task` — hit it again. A special case per action is not a
+# fix; it is a queue of the next occurrence.
+#
+# So the tests below are written over the WHOLE registry rather than over the
+# actions that happened to break, and the fallback now renders from the
+# published label and fields.
+
+NOTION = {
+    "notion_append": {
+        "label": "Add to a Notion page", "fields": ["page_id", "text"],
+        "risk": "red", "reversible": True,
+        "undo_label": "Remove what I added",
+        "always_ask_because": "Writing into a Notion page always needs your "
+                              "approval — a page id is not something I can "
+                              "show you well enough to allow in advance.",
+    },
+}
+
+APPEND = {"type": "notion_append",
+          "params": {"page_id": "a1b2c3d4-e5f6", "text": "Dishu — 9999999999"}}
+
+DONE = {"ok": True, "detail": "Added 1 paragraph(s) to that page",
+        "reversible": True, "undo_label": "Remove what I added", "log_id": "L9"}
+
+
+def test_a_notion_card_does_not_call_itself_a_calendar_event():
+    """The reported bug, exactly."""
+    out = _run(APPEND, DONE, catalog=NOTION)
+
+    assert "Create calendar event" not in out["html"]
+    assert "Add to a Notion page" in out["html"]
+
+
+def test_an_unknown_action_says_its_own_name_from_the_registry():
+    """The general fix. The registry has published a label for every action
+    since the catalog shipped, and the card was ignoring it."""
+    out = _run({"type": "notion_append", "params": {"page_id": "x", "text": "y"}},
+               DONE, catalog=NOTION)
+
+    assert NOTION["notion_append"]["label"] in out["html"]
+
+
+def test_an_unknown_action_shows_its_own_values_not_a_calendar_shape():
+    """The old branch rendered `Title` and `When` — fields a Notion write does
+    not have — so the card was blank where it mattered and populated where it
+    did not."""
+    out = _run(APPEND, DONE, catalog=NOTION)
+
+    assert "Dishu — 9999999999" in out["html"]
+    assert "<b>When</b>" not in out["html"]
+
+
+def test_an_action_with_no_catalog_entry_admits_it_rather_than_guessing():
+    """A card is rendered before the catalog lands at least once per session.
+    Saying "Confirm this action" is honest; naming the wrong action is not."""
+    out = _run(APPEND, DONE, catalog={})
+
+    assert "Create calendar event" not in out["html"]
+    assert "Confirm this action" in out["html"]
+
+
+def test_a_calendar_event_still_renders_as_one():
+    """The branch kept its behaviour — it just stopped being the default."""
+    cal = {"create_event": {"label": "Create calendar event",
+                            "fields": ["title", "start", "end"],
+                            "risk": "amber", "reversible": True,
+                            "undo_label": "Remove the event",
+                            "always_ask_because": ""}}
+    out = _run({"type": "create_event",
+                "params": {"title": "Budget review", "start": "Fri 2pm"}},
+               {"ok": True, "detail": "created"}, catalog=cal)
+
+    assert "Create calendar event" in out["html"]
+    assert "Budget review" in out["html"]
+
+
+def test_every_action_in_the_registry_has_a_label_to_fall_back_on():
+    """The fallback is only honest if the registry actually names everything.
+    Checked against the real registry, because this is the one thing the
+    frontend cannot supply for itself.
+    """
+    from chitragupta.actions import REGISTRY
+
+    for name, spec in REGISTRY.items():
+        assert spec.label.strip(), f"{name} has no label for a card to show"
+        assert name not in spec.label, f"{name}'s label is its internal name"
