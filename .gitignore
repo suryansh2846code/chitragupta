@@ -25,6 +25,15 @@ build/
 *.dmg
 *.spec.bak
 
+# …except the character package's bundle, which is a SHIPPED artefact, not a
+# local build output. It is what `<script src>` consumers load, what
+# `scripts/sync-character.sh` copies into `chitragupta/web/`, and what
+# `tests/test_character_asset.py` compares the served copy against — a test
+# that silently skips when the file is absent, which is exactly what `dist/`
+# was quietly causing.
+!character/dist/
+!character/dist/**
+
 # Claude Code scratch state; the repo's own rules live in CLAUDE.md files.
 .claude/
 .coverage

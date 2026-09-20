@@ -1,0 +1,42 @@
+{
+  "name": "character",
+  "version": "0.1.0",
+  "description": "Geometric 3D avatars in SVG \u2014 a document format, a renderer, a follow-the-cursor loop, and an editor. No dependencies, no build step required to use it.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./src/index.js",
+  "module": "./src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./editor": "./ui/editor.js",
+    "./editor.css": "./ui/editor.css",
+    "./global": "./dist/character.global.js"
+  },
+  "files": [
+    "src",
+    "ui",
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "sideEffects": [
+    "./ui/editor.css"
+  ],
+  "scripts": {
+    "build": "node scripts/build.js",
+    "test": "node --test",
+    "check": "node scripts/build.js && node --test"
+  },
+  "keywords": [
+    "avatar",
+    "svg",
+    "3d",
+    "identicon",
+    "character",
+    "editor",
+    "follow-cursor"
+  ],
+  "engines": {
+    "node": ">=18"
+  }
+}
