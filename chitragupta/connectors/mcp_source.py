@@ -41,6 +41,11 @@ log = get_logger(__name__)
 
 #: How long any single MCP conversation may take. A server that hangs must not
 #: hang the sync — the thread it runs on is one the UI also needs.
+#: How many of a server's listings one sync will read. A bound rather than a
+#: preference: each is a round trip, and a server with forty of them would
+#: turn one sync into a minutes-long conversation.
+MAX_HARVEST_TOOLS = 12
+
 CALL_TIMEOUT_SECONDS = 45.0
 LIST_TIMEOUT_SECONDS = 20.0
 
@@ -387,6 +392,31 @@ class ToolKinds:
             return (f"{label} can answer questions but cannot list its records, "
                     "so it is searched on demand instead of being synced.")
         return f"{label} exposes no readable tools."
+
+
+#: Bulk tools that list the SERVER, not the user.
+#:
+#: A server's own configuration is listable in exactly the way its content is,
+#: and both answer `list_*`. Ingested, it fills the brain with tool manifests
+#: and label palettes — which recall then has to rank against the user's real
+#: work, forever.
+#:
+#: Matched on whole words in the tool's own name, so `list_issue_labels` is
+#: skipped and `list_issues` is not. This is a shape, not a vendor list: no
+#: entry here names Notion or Linear, and a server nobody has seen gets the
+#: same treatment.
+_SERVER_METADATA = frozenset({
+    "skill", "skills", "template", "templates", "label", "labels",
+    "pipeline", "pipelines", "status", "statuses", "access", "tool", "tools",
+    "diff", "diffs", "session", "sessions", "agent", "agents",
+})
+
+
+def is_server_metadata(tool: str) -> bool:
+    """Does this tool list the server's own furniture rather than the user's?"""
+    head = (tool or "").lower().split("__")[-1]
+    words = {w for w in re.split(r"[^a-z0-9]+", head) if w}
+    return bool(words & _SERVER_METADATA)
 
 
 def _required(schema: dict | None) -> set[str]:
@@ -1136,32 +1166,65 @@ class MCPConnector(Connector):
 
         try:
             async def _classify_and_read(session):
-                """Work out what to call and call it, in one conversation."""
+                """Work out what to call and call it — all of it, in one
+                conversation.
+
+                **This used to call exactly one tool: `sync_tool` or, failing
+                that, `permitted[0]`.** Which is whichever sorted first. On a
+                real install that was `list_agent_skills` for Linear and
+                `notion-get-tool-access` for Notion — so the brain was filled
+                with each server's own configuration while the issues and
+                pages it exists to hold were never fetched at all. Nothing
+                reported a problem, because a tool had been called and records
+                had been ingested.
+
+                So: every permitted bulk tool that carries the user's content,
+                in the session already open. A named `sync_tool` still wins —
+                that is somebody having decided — and metadata listings are
+                skipped by shape rather than by name.
+                """
                 kinds = classify_tools(await list_tools_in(session))
                 permitted = [t for t in kinds.bulk if self.spec.permits(t)]
-                chosen = self.spec.sync_tool or (permitted[0] if permitted else "")
+                if self.spec.sync_tool:
+                    chosen = ([self.spec.sync_tool]
+                              if self.spec.permits(self.spec.sync_tool) else [])
+                    if not chosen:
+                        return (kinds, [self.spec.sync_tool], "forbidden")
+                else:
+                    chosen = [t for t in permitted if not is_server_metadata(t)]
+                    # Everything looked like furniture. Better the server's
+                    # own listing than nothing, and the detail line says which.
+                    if not chosen and permitted:
+                        chosen = permitted[:1]
                 if not chosen:
-                    return (kinds, "", None)
-                if not self.spec.permits(chosen):
-                    return (kinds, chosen, "forbidden")
-                return (kinds, chosen, await call_tool_in(
-                    session, chosen, {}, CALL_TIMEOUT_SECONDS))
+                    return (kinds, [], None)
+
+                answers = []
+                for tool in chosen[:MAX_HARVEST_TOOLS]:
+                    # A literal label, so it stays greppable — an f-string
+                    # here is a suppression nobody can find later, which is
+                    # what `test_failures_are_recorded.py` exists to stop.
+                    with suppressed("reading one listing from an MCP server"):
+                        answers.append((tool, await call_tool_in(
+                            session, tool, {}, CALL_TIMEOUT_SECONDS)))
+                return (kinds, chosen, answers)
 
             try:
-                kinds, tool, answer = converse(
+                kinds, tools, answers = converse(
                     self.spec, _classify_and_read, timeout=CALL_TIMEOUT_SECONDS)
             except Exception as exc:
                 result.errors.append(explain(exc, self.label))
                 result.detail = "could not start"
                 return self._finish(result)
 
-            if answer == "forbidden":
+            if answers == "forbidden":
                 result.errors.append(
-                    f"{self.label} is not allowed to use its `{tool}` tool. "
-                    "Change what it may read in Connectors.")
+                    f"{self.label} is not allowed to use its "
+                    f"`{tools[0]}` tool. Change what it may read in "
+                    f"Connectors.")
                 result.detail = "not permitted"
                 return self._finish(result)
-            if not tool:
+            if not tools:
                 # Not an error — a real and permanent property of this server,
                 # and saying so is the difference between "search-only" and
                 # "broken". Silently reporting success with zero records is how
@@ -1169,29 +1232,53 @@ class MCPConnector(Connector):
                 result.detail = kinds.why_not(self.label)
                 result.errors.append(result.detail)
                 return self._finish(result)
-            if getattr(answer, "is_error", False):
-                result.errors.append(
-                    f"{self.label} reported a problem reading its records.")
-                result.detail = "sync failed"
-                return self._finish(result)
-
-            records = _records(answer)
             from ..brain import get_brain
             brain = get_brain()
 
-            def ingest(record) -> int:
-                title, text = _as_text(record, title_field=self.spec.title_field,
-                                       label=self.label)
-                if not text.strip():
-                    return 0
-                out = brain.ingest(text, source=self.name, kind="record",
-                                   title=title, fast=True)
-                return out["memories"]
+            # Shared across tools, so one server's budget is a server's budget
+            # rather than a budget each. Sixteen listings at 200 apiece is a
+            # brain full of one connector.
+            budget = max_items
+            worked: list[str] = []
+            for tool, answer in answers:
+                if budget <= 0:
+                    break
+                if getattr(answer, "is_error", False):
+                    # One tool refusing is not the sync failing. Said, not
+                    # swallowed, and the others still run.
+                    result.errors.append(
+                        f"{self.label} could not read `{tool}`.")
+                    continue
+                records = _records(answer)
+                if not records:
+                    continue
 
-            self.each_guarded(records[:max_items], result, ingest,
-                              cancel=cancel, progress=progress)
+                def ingest(record, _tool=tool) -> int:
+                    title, text = _as_text(
+                        record, title_field=self.spec.title_field,
+                        label=self.label)
+                    if not text.strip():
+                        return 0
+                    out = brain.ingest(
+                        text, source=self.name, kind="record", title=title,
+                        fast=True,
+                        # Which listing it came from. Without it every record
+                        # from one server is indistinguishable from every
+                        # other, and there is no way to re-read or retire one
+                        # tool's worth of content.
+                        metadata={"mcp_tool": _tool, "server": self.spec.id})
+                    return out["memories"]
+
+                taken = records[:budget]
+                budget -= len(taken)
+                worked.append(tool)
+                self.each_guarded(taken, result, ingest,
+                                  cancel=cancel, progress=progress)
+
             result.detail = result.detail or (
-                f"{len(records)} records from {self.label}")
+                f"{result.added} record(s) from {self.label} "
+                f"({len(worked)} listing(s))"
+                if worked else f"{self.label} returned nothing to store")
         except Exception as exc:
             result.errors.append(explain(exc, self.label))
             result.detail = "sync failed"
