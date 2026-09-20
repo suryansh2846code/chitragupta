@@ -1,8 +1,13 @@
 # `chitragupta/web/` — the frontend
 
 Vanilla JS, **no build step**. The workspace is `index.html` + `styles.css` +
-fourteen plain scripts; `onboarding.html` and `signin_hud.html` are self-contained
+sixteen plain scripts; `onboarding.html` and `signin_hud.html` are self-contained
 pages.
+
+`character.js` is the one exception and is **not edited here**. It is a build
+artifact of the standalone package in [`/character`](../../character/README.md),
+copied in by `scripts/sync-character.sh` and pinned by
+`tests/test_character_asset.py`. Change the package, run the script.
 
 **`index.html` declares the script order, and that is the only place it is
 written down.** The browser and the test harnesses both read it from there.
@@ -12,7 +17,8 @@ read before its definition is a temporal dead-zone `ReferenceError` that
 
 | file | owns |
 |---|---|
-| `core.js` | `$` `api` `esc` `md` `toast`, the orb palette, the icon set |
+| `character.js` | the avatar renderer — **generated**, see above |
+| `core.js` | `$` `api` `esc` `md` `toast`, the agent avatars, the icon set |
 | `providers.js` | the catalog and its state, sign-in, the provider cards |
 | `models.js` | the model picker, agent bindings, `loadProviders()` |
 | `chat.js` | sending a turn, and everything that renders one |
@@ -25,6 +31,7 @@ read before its definition is a temporal dead-zone `ReferenceError` that
 | `tools.js` | the Agents & tools panel — what one agent may use, with switches |
 | `diagnostics.js` | *What just happened* — the log, read-only |
 | `browser.js` | websites agents may read, on the Connectors screen |
+| `appearance.js` | the Appearance screen — what each agent looks like |
 | `app.js` | the shell: state, chrome, agent rail, nav, keyboard, boot |
 
 **Before moving code between them**, read the five checks in
@@ -51,6 +58,12 @@ script out of eleven does not fail; it passes.
   (`tests/js/`). `node --check` passes on the temporal-dead-zone `ReferenceError`
   that blanked the whole drawer, and a source-order assertion passed while a card
   was being written into a detached container.
+- **An agent always has a face.** `paintAvatar` (core.js) draws the saved
+  character if there is one and a character generated from the agent's id if
+  there is not, so no render path has an empty state to handle. `live: true`
+  mounts a following instance and is for the few avatars a person is looking at
+  — the rail and the chat header. A list gets the static string; thirty live
+  instances is thirty springs integrating on every pointer move.
 - Derive UI from capabilities, never from a `providerId === "x"` chain.
 - Any new `innerHTML` path must escape *before* applying inline markdown, the way
   `md()` does.
