@@ -134,6 +134,11 @@ def _awaiting_reply(stale_days: int = 3) -> ToolResult:
     return awaiting_reply(stale_days=stale_days)
 
 
+def _needs_reply(min_days: int = 1, limit: int = 12) -> ToolResult:
+    from .reply_tools import needs_reply
+    return needs_reply(min_days=min_days, limit=limit)
+
+
 def _what_i_did(days: int = 7) -> ToolResult:
     """What the agents actually did, read back out of the action log.
 
@@ -330,6 +335,7 @@ TOOL_IMPLS = {
     "create_open_loop": _create_open_loop,
     "list_open_loops": _list_open_loops,
     "awaiting_reply": _awaiting_reply,
+    "needs_reply": _needs_reply,
     "find_time": _find_time,
     "what_i_did": _what_i_did,
     "complete_open_loop": _complete_open_loop,
@@ -941,6 +947,28 @@ TOOL_DEFS: dict[str, Tool] = {
             },
         },
     ),
+    "needs_reply": Tool(
+        name="needs_reply",
+        description=(
+            "Conversations where somebody is waiting on the USER to answer — "
+            "the opposite of `awaiting_reply`. Checks who wrote last in each "
+            "thread, so a conversation the user already replied to is left "
+            "out even though it is still in their inbox. Call this before "
+            "drafting replies: an inbox message is not an unanswered one."),
+        parameters={
+            "type": "object",
+            "properties": {
+                "min_days": {
+                    "type": "integer",
+                    "description": "Ignore anything newer than this many "
+                                   "days. Default 1."},
+                "limit": {
+                    "type": "integer",
+                    "description": "How many conversations to check. "
+                                   "Default 12."},
+            },
+        },
+    ),
     "awaiting_reply": Tool(
         name="awaiting_reply",
         description=(
@@ -1052,6 +1080,7 @@ _LABELS: dict[str, tuple[str, str]] = {
     "create_open_loop":         ("Track",     "Tasks"),
     "list_open_loops":          ("Pending",   "Tasks"),
     "awaiting_reply":           ("Waiting on", "Tasks"),
+    "needs_reply":              ("Owed",      "Email"),
     "what_i_did":               ("History",   "Automations"),
     "complete_open_loop":       ("Close",     "Tasks"),
     # The things it can reach

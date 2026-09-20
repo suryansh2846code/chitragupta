@@ -89,7 +89,13 @@ _LOOPS = ["create_open_loop", "list_open_loops", "complete_open_loop",
           # and cannot tell which were answered chases people who replied.
           "awaiting_reply"]
 _MAIL = ["search_source", "sync_source", "gmail_search",
-         "list_mail", "read_thread"]
+         "list_mail", "read_thread",
+         # Belongs with the mail tools rather than with `_LOOPS`, unlike its
+         # mirror `awaiting_reply`: this one is built from the inbox, not from
+         # anything the app recorded. An agent that can list mail and cannot
+         # tell which of it is unanswered drafts replies to finished
+         # conversations — see `prompt._REPLY_RECIPE`.
+         "needs_reply"]
 #: Telegram, Slack — one pair of tools across every app, not one pair each.
 #: Which apps are reachable at all: docs/MESSAGING.md.
 _MESSAGES = ["list_chats", "read_chat"]

@@ -162,6 +162,19 @@ def _settings(provider: str) -> _Settings:
 
 
 
+def _join_warmup(timeout: float = 5.0) -> None:
+    """Wait for the background warm-up `warm_embedder` starts.
+
+    It is a daemon thread with a known name, so nothing in the app waits for
+    it — correctly, since blocking on it is the bug the thread exists to
+    avoid. A *test* that patches module attributes has to, though, or its
+    patches are still in flight when the next test installs its own.
+    """
+    for thread in threading.enumerate():
+        if thread.name == "embedder-warmup" and thread.is_alive():
+            thread.join(timeout)
+
+
 def test_warming_does_not_block_the_caller(monkeypatch):
     """It runs during app startup, so it must return immediately — otherwise
     the fix has only moved the fifteen seconds somewhere else."""
@@ -181,6 +194,14 @@ def test_warming_does_not_block_the_caller(monkeypatch):
     slow.set()
 
     assert elapsed < 1.0, f"warm_embedder blocked for {elapsed:.2f}s"
+
+    # Join before leaving, or this test's thread outlives it. `warm_embedder`
+    # spawns a daemon that resolves `get_embedder` from the module at CALL
+    # time — so a thread slow to start calls whatever the *next* test patched
+    # in, and `test_warming_is_skipped_for_the_offline_embedder` fails with a
+    # recorded call it never made. That is a leak from here, not a bug there,
+    # and it only ever showed up when test ordering shifted.
+    _join_warmup()
 
 
 def test_warming_is_skipped_for_the_offline_embedder(monkeypatch):

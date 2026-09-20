@@ -210,8 +210,8 @@ run end to end through all seven steps, not when its endpoints exist.
 | # | The user says | Rungs needed | Phase |
 |---|---|---|---|
 | 1 | "Clear the emails that don't need me" | 1→6 | ✅ done |
-| 2 | "Draft replies to anything waiting on me" | 1→3 | 1 |
-| 3 | "Reply to this thread saying X" | 1→6 | 1 |
+| 2 | "Draft replies to anything waiting on me" | 1→3 | ✅ done |
+| 3 | "Reply to this thread saying X" | 1→6 | ✅ done |
 | 4 | "Send the latest proposal to Rahul" | 1→6 | ✅ done |
 | 5 | "Follow up with whoever hasn't replied" | 1→6 | ✅ done |
 | 6 | "Move tomorrow's client meeting to Friday afternoon" | 1→6 | ✅ done |
@@ -363,6 +363,48 @@ approves "weekdays at 8:00 AM" and gets "every 60 min".
 
 > This is also the prerequisite for job 5 (*"follow up with whoever hasn't
 > replied"*). A chase you have to trigger by hand is not a chase.
+
+#### Jobs 2 and 3 — the two ways a person asks for a reply · ✅
+
+```
+"Draft replies to anything waiting on me"   → needs_reply → one plan of drafts
+"Reply to this thread saying X"             → read_thread → one addressed draft
+```
+
+Both are assembly. `create_draft`, threading, `read_thread` and `<plan>` all
+existed — and **four capabilities is not the job**, which is the same argument
+job 1 made. What was missing was one tool and two recipes.
+
+**`needs_reply` is the mirror of `awaiting_reply`, and it had to be built.**
+The existing tool answers *who owes me an answer*, from commitments the app
+recorded. Job 2 asks the opposite — *who am I keeping waiting* — and that is
+built from an inbox nobody curated. It is not the same list read backwards.
+
+> **Mail stays in your inbox after you answer it.** So an agent working from
+> `list_mail` drafts a second reply to a conversation that finished on
+> Tuesday. This is the follow-up failure with the roles swapped, and it is
+> worse: a wrong chase is an email you cannot recall, a wrong draft is sitting
+> in your Drafts folder with your name on it, one keystroke from going out.
+>
+> So a thread is listed only when the **last message in it is from somebody
+> else** — `thread_reply_state`, the same primitive follow-ups use, read the
+> other way round. Three states again, for the same reason: *could not read
+> that thread* is never folded into *nothing is waiting*, because a user told
+> their inbox is clear stops looking.
+
+Job 2 stops at rung 3 **on purpose**. These are drafts; the user is the send
+button. Job 3 goes to 6 because the user named the thread and the content —
+there is no judgement left to hand back.
+
+Job 3's two failure modes are both about the envelope rather than the letter:
+a reply with no `thread_id` starts a new conversation, and a reply addressed
+from the subject line goes to whoever *started* the thread instead of whoever
+asked last. On a five-message thread those are different people.
+
+Six checks in `evaluation.py`, and the scored facts are the ones that bite:
+`needs_reply` is called before anything else, the COULD-NOT-CHECK thread is
+left alone, nothing is sent, and the single reply is addressed to whoever
+wrote last.
 
 #### Job 5 — "follow up with whoever hasn't replied" · ✅
 
