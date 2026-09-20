@@ -470,6 +470,110 @@ def run(*, include_slow: bool = True) -> Scorecard:
             if plans else False,
             "a plan is as risky as its worst step")
 
+        # ── job 2: "draft replies to anything waiting on me" ─────────────
+        #
+        # The mirror of chasing, and it fails the same way with the roles
+        # swapped. Mail stays in the inbox after you answer it, so an agent
+        # working from `list_mail` drafts a second reply to a conversation
+        # that finished on Tuesday — and unlike a stale follow-up, that draft
+        # is sitting in the user's Drafts with their name on it.
+        #
+        # So the scored fact is not "did it draft": it is that the thread
+        # `needs_reply` reported under COULD NOT CHECK was left alone, and
+        # that nothing was SENT. Job 2 stops at rung 3 deliberately.
+        tools_mod.TOOL_IMPLS["needs_reply"] = lambda **kw: (
+            "WAITING ON YOU — they wrote last and you have not answered:\n"
+            "- Rahul — \"Proposal?\", 4 day(s) waiting  (thread t_open)\n\n"
+            "COULD NOT CHECK — I do not know whether these are answered, so "
+            "do not assume either way:\n"
+            "- \"Invoice\" — could not read that thread (thread t_unknown)\n\n"
+            "Not listed: 1 already answered.")
+        tools_mod.TOOL_IMPLS["read_thread"] = lambda **kw: (
+            "Rahul wrote: can you send the proposal before Friday?")
+        provider = _scripted([
+            [("needs_reply", {})],
+            [("read_thread", {"thread_id": "t_open"})],
+            "One I could draft; one I could not check, so I left it.\n"
+            '<plan rationale="2 waiting on you — 1 drafted, 1 I could not check">\n'
+            '<action type="create_draft" to="rahul@work.test" '
+            'subject="Re: Proposal?" thread_id="t_open">'
+            'Sending it before Friday.</action>\n'
+            "</plan>",
+        ])
+        use(provider)
+        replied = runtime.run_turn(
+            "inbox", "draft replies to anything waiting on me",
+            effort="medium", connectors=["gmail"])
+        reply_text = replied.reply or ""
+        reply_plans = parse_plans(reply_text)
+        reply_steps = reply_plans[0].steps if reply_plans else []
+        # `auto_recall` is not a choice the model made — the loop runs it on
+        # every turn — so the question is which tool it reached for FIRST, and
+        # whether it was the inbox listing rather than the check.
+        chosen = [s.name for s in replied.trace
+                  if s.kind == "tool_result" and s.name != "auto_recall"]
+
+        check("needs_reply_checked_first",
+              "Drafting replies starts by asking who actually wrote last")(
+            bool(chosen) and chosen[0] == "needs_reply"
+            and "list_mail" not in chosen,
+            f"tools used: {chosen}")
+        check("reply_drafting",
+              "What is waiting on the user gets a draft in its own thread")(
+            len(reply_steps) == 1
+            and reply_steps[0]["type"] == "create_draft"
+            and reply_steps[0]["params"].get("thread_id") == "t_open",
+            f"{len(reply_steps)} step(s): "
+            f"{[s['type'] for s in reply_steps]}")
+        check("reply_drafting_never_sends",
+              "Job 2 prepares; the user is still the send button")(
+            not any(s["type"] == "send_email" for s in reply_steps),
+            "it sent instead of drafting")
+        check("reply_drafting_leaves_the_unverified_alone",
+              "A thread we could not read is not one we know is unanswered")(
+            "t_unknown" not in reply_text,
+            "it wrote to a thread nobody could check")
+
+        # ── job 3: "reply to this thread saying X" ────────────────────────
+        #
+        # One conversation, and the user has already decided the content — so
+        # the capability being scored is addressing, not composition. Both
+        # ways it goes wrong are envelope failures: a reply with no
+        # `thread_id` starts a new conversation, and a reply addressed from
+        # the subject line goes to whoever STARTED the thread rather than
+        # whoever asked last. On a long thread those are different people.
+        tools_mod.TOOL_IMPLS["read_thread"] = lambda **kw: (
+            "1. dana@work.test: kicking this off\n"
+            "2. lee@work.test: adding Rahul\n"
+            "3. rahul@work.test: when can you get this to us?")
+        provider = _scripted([
+            [("gmail_search", {"query": "budget"})],
+            [("read_thread", {"thread_id": "t_budget"})],
+            "Telling Rahul it lands tonight.\n"
+            '<action type="create_draft" to="rahul@work.test" '
+            'subject="Re: Budget" thread_id="t_budget">'
+            'Sending it tonight.</action>',
+        ])
+        use(provider)
+        one = runtime.run_turn(
+            "inbox", "reply to the budget thread saying I'll send it tonight",
+            effort="medium", connectors=["gmail"])
+        # Named `reply` because `test_only_the_reply_is_ever_handed_to_
+        # parse_actions` greps for exactly that: the guard keeps a list of
+        # *reply* spellings so no local variable can become a hole in it.
+        reply = one.reply or ""
+        one_props = parse_actions(reply)
+        one_params = one_props[0]["params"] if one_props else {}
+
+        check("thread_reply_lands_in_the_thread",
+              "A reply to a conversation stays in that conversation")(
+            one_params.get("thread_id") == "t_budget",
+            f"thread_id={one_params.get('thread_id')!r}")
+        check("thread_reply_answers_who_asked",
+              "It answers whoever asked last, not whoever started the thread")(
+            "rahul@work.test" in str(one_params.get("to", "")),
+            f"to={one_params.get('to')!r}")
+
         # ── chasing only the people who actually owe an answer ───────────
         #
         # The failure worth scoring is not "did it draft a chase". It is

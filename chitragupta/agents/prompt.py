@@ -436,6 +436,71 @@ _FOLLOWUP_RECIPE = (
 )
 
 
+#: "Draft replies to anything waiting on me."
+#:
+#: The mirror of `_FOLLOWUP_RECIPE`, and it fails the same way with the roles
+#: swapped. Chasing somebody who already answered is embarrassing; *drafting a
+#: reply* to a thread the user already answered is worse, because the draft
+#: sits in their Drafts folder with their name on it and one keystroke sends
+#: it. Mail stays in the inbox after you reply to it, so an agent working from
+#: `list_mail` will do this confidently and often.
+#:
+#: Hence rule 1. `needs_reply` is the only thing that has asked who wrote last.
+#:
+#: Rule 2 is the difference between rung 2 and rung 3. A reply written from a
+#: 160-character snippet answers the subject line; the question is usually in
+#: the last paragraph of a message nobody read.
+_REPLY_RECIPE = (
+    "DRAFTING REPLIES — when the user asks you to draft replies, answer what "
+    "is waiting on them, or deal with what they owe people:\n"
+    "1. Call `needs_reply` FIRST, every time. Never work from `list_mail` "
+    "alone: mail stays in the inbox after it is answered, so that list "
+    "includes conversations they already replied to — and a draft answering "
+    "one of those sits in their Drafts with their name on it.\n"
+    "2. Call `read_thread` on each one before you write anything. A reply "
+    "written from the snippet answers the subject line; what they were "
+    "actually asked is usually further down.\n"
+    "3. Propose ONE plan, one `create_draft` per conversation, each passing "
+    "its `thread_id` so the draft lands in that conversation rather than "
+    "starting a new one. Set rationale to the count, e.g. "
+    '"5 waiting on you — 3 I could draft, 2 need you".\n'
+    "4. NEVER send. These are drafts for the user to read, change and send "
+    "themselves — say so, and say which ones you did not draft and why. "
+    "Anything under COULD NOT CHECK is not a conversation you know is "
+    "unanswered, so leave it alone and name it."
+)
+
+
+#: "Reply to this thread saying X."
+#:
+#: One conversation, and the user has already decided what to say — so the
+#: model's job is not composition, it is *addressing*. The two ways this goes
+#: wrong are both about the envelope rather than the letter: a reply that
+#: starts a new conversation because nobody passed `thread_id`, and a reply
+#: that goes to the wrong half of the thread because the model used the
+#: subject line's original sender instead of whoever actually asked last.
+#:
+#: Rule 4 is deliberate and is the one a model gets wrong helpfully: told
+#: "say X", it writes three paragraphs of X. The user wrote the content.
+_THREAD_REPLY_RECIPE = (
+    "REPLYING TO ONE THREAD — when the user points at a conversation and "
+    "tells you what to say:\n"
+    "1. Find the thread with `gmail_search` or `list_mail`. NEVER invent or "
+    "guess a thread id — a reply filed into a stranger's conversation cannot "
+    "be taken back.\n"
+    "2. `read_thread` it before composing, even when they told you exactly "
+    "what to say. You still need who asked, what they asked, and which "
+    "address to answer.\n"
+    "3. Address it to whoever wrote the LAST message, not to whoever started "
+    "the thread, and cc nobody the user did not name. Pass `thread_id` so it "
+    "lands in the conversation.\n"
+    "4. Say what they told you to say. Expand it into a sentence that reads "
+    "like them, not into three paragraphs they will have to cut down.\n"
+    "5. Use `create_draft` unless they said send. If they said send, it is "
+    "`send_email` and it still shows them the card first."
+)
+
+
 #: "Move tomorrow's client meeting to Friday afternoon."
 #:
 #: The API is the easy half. The hard half is rung 3: *propose a specific
@@ -522,6 +587,35 @@ def _followup_recipe(tools: list[str] | None, actions: list[str]) -> str:
     if not {"create_draft", "create_followup"} & set(actions or []):
         return ""
     return _FOLLOWUP_RECIPE
+
+
+def _reply_recipe(tools: list[str] | None, actions: list[str]) -> str:
+    """Only for an agent that can check who is waiting AND draft.
+
+    Without `needs_reply` the recipe's first rule is unfollowable, and an
+    agent told to draft replies with no way to check is exactly the agent
+    that drafts an answer to a conversation the user already finished.
+    """
+    if "needs_reply" not in set(tools or []):
+        return ""
+    if "create_draft" not in set(actions or []):
+        return ""
+    return _REPLY_RECIPE
+
+
+def _thread_reply_recipe(tools: list[str] | None, actions: list[str]) -> str:
+    """Only for an agent that can find a conversation and answer inside it.
+
+    `read_thread` is required rather than nice to have: rule 2 is the whole
+    recipe, and an agent that cannot read a thread would be told to address a
+    reply from information it has no way to get.
+    """
+    has = set(tools or [])
+    if not {"read_thread"} <= has:
+        return ""
+    if not {"send_email", "create_draft"} & set(actions or []):
+        return ""
+    return _THREAD_REPLY_RECIPE
 
 
 def _inbox_recipe(tools: list[str] | None, actions: list[str]) -> str:
@@ -703,6 +797,8 @@ def build(*, name: str, role: str, system_prompt: str,
         # tells the agent what to put in a plan, and reads as nonsense to one
         # that has not just been told plans exist.
         for recipe in (_inbox_recipe(tools, allowed),
+                       _reply_recipe(tools, allowed),
+                       _thread_reply_recipe(tools, allowed),
                        _followup_recipe(tools, allowed),
                        _calendar_recipe(tools, allowed),
                        _attach_recipe(tools, allowed)):
