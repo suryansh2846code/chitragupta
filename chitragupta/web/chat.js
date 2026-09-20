@@ -26,8 +26,12 @@ async function selectAgent(id) {
   const oid = agentOrbId(a);
   $("#agentName").textContent = a.name;
   $("#agentRole").textContent = a.role;
-  const chOrb = $("#chOrb"); if (chOrb) chOrb.style.cssText = orbStyle(oid);
-  const ctxOrb = $("#ctxOrb"); if (ctxOrb) ctxOrb.style.cssText = orbStyle(oid);
+  // The chat header is the one avatar on screen the whole time someone is
+  // working, so it is live — it follows the pointer. The context card's is not:
+  // it sits behind a panel that is usually closed, and a character nobody can
+  // see should not be costing frames.
+  const chOrb = $("#chOrb"); if (chOrb) paintAvatar(chOrb, oid, { live: true, title: a.name });
+  const ctxOrb = $("#ctxOrb"); if (ctxOrb) paintAvatar(ctxOrb, oid, { size: 96, title: a.name });
   if ($("#ctxAgentName")) $("#ctxAgentName").textContent = a.name;
   if ($("#ctxAgentRole")) $("#ctxAgentRole").textContent = a.role;
   if ($("#ctxAgentDesc")) $("#ctxAgentDesc").textContent = agentDesc(a);
@@ -57,7 +61,7 @@ function heroEmpty() {
   div.className = "hero-empty";
   div.innerHTML = `
     <div class="he-top">
-      <span class="orb orb-xl" style="${orbStyle(agentOrbId(a))}"></span>
+      <span class="orb orb-xl"></span>
       <div>
         <h1 class="he-hi">${greet}.</h1>
         <p class="he-sub">Your second brain, always on your side. Ask ${esc(a.name)} anything — it already knows your world.</p>
@@ -69,6 +73,9 @@ function heroEmpty() {
       <button class="he-card" data-fill="Find "><span class="hc-ic">${IC.search}</span><b>Find something</b><span>Search across my apps &amp; notes.</span></button>
       <button class="he-card" data-q="Help me plan my day and week."><span class="hc-ic">${IC.spark}</span><b>Help me plan</b><span>Plan my day / week.</span></button>
     </div>`;
+  // The greeting is the first thing on an empty conversation and the largest
+  // the character is ever drawn, so this one is live too.
+  paintAvatar(div.querySelector(".orb-xl"), agentOrbId(a), { live: true, title: a.name });
   div.querySelectorAll(".he-card").forEach((c) => c.onclick = () => {
     if (c.dataset.fill) { $("#input").value = c.dataset.fill; $("#input").focus(); autoGrow(); }
     else send(c.dataset.q);
@@ -98,7 +105,8 @@ async function maybeEnrichTip(div) {
 
 function renderHistory(history) {
   const box = $("#messages");
-  box.innerHTML = "";
+  box.innerHTML = "";              // also takes the boot skeleton with it
+  box.removeAttribute("aria-busy");
   const msgs = history.filter((m) => m.role === "user" || m.role === "assistant");
   if (!msgs.length) { box.appendChild(heroEmpty()); return; }
   for (const m of msgs) addMsg(m.role, m.content);   // so history shows action cards too
@@ -905,8 +913,17 @@ function actionCard(a) {
   const note = spec.always_ask_because || RISK_NOTE[spec.risk] || "";
   const el = document.createElement("div");
   el.className = "action-card";
+  // The tier as an attribute, so the card can be styled and tested by what it
+  // actually is rather than by reading its prose.
   el.dataset.risk = spec.risk || "";
-  el.innerHTML = `<div class="ac-head">${title}<span class="ac-tag">needs your confirmation</span></div>
+  // A window, not a notice. The chrome is decorative and says so to screen
+  // readers — the three dots are the shape of "an application is asking you
+  // something", and nothing is announced by them that the title does not say.
+  el.innerHTML = `<div class="ac-chrome" aria-hidden="true">
+      <span class="ac-dot red"></span><span class="ac-dot yellow"></span><span class="ac-dot green"></span>
+    </div>
+    <div class="ac-head">${title}</div>
+    <span class="ac-tag">needs your confirmation</span>
     ${rows}
     ${note ? `<div class="ac-row muted ac-risk">${esc(note)}</div>` : ""}
     <div class="ac-actions"><button class="ac-confirm">Confirm & ${verb}</button>
@@ -992,8 +1009,13 @@ let attachments = [];                       // {name, dataUrl, size}
 let sentImages = [];                        // the set belonging to the turn in flight
 
 function modelSeesImages() {
-  const pid = ($("#provider") && $("#provider").value) || localStorage.getItem("chitragupta_provider") || "";
-  const mid = localStorage.getItem("chitragupta_model") || "";
+  // The agent's binding, for the same reason the turn uses it: this decides
+  // whether to refuse an image BEFORE spending, and refusing against a stale
+  // localStorage pair means refusing on behalf of a model that is not the one
+  // about to answer.
+  const b = (typeof AGENT_MODEL_BINDING !== "undefined" && AGENT_MODEL_BINDING) || null;
+  const pid = (b && (b.configured_provider || b.provider)) || "";
+  const mid = (b && b.configured_model) || "";
   const prov = (MODEL_CATALOG || []).find((p) => p.id === pid);
   if (!prov) return { ok: true };           // unknown is not "no"
   // No model chosen means Auto, which resolves to the best one available —
@@ -1441,30 +1463,45 @@ async function send(text) {
 // naming each tool as it runs. Falls back to the plain endpoint if streaming is
 // unavailable for any reason — a user whose stream broke wants an answer, not a
 // second kind of error.
-// Which provider this turn runs on.
+// `chosenProvider()` lived here and is gone. Its history is worth keeping,
+// because it is the same bug twice and the second fix has to not be the third.
 //
-// This read `$("#provider").value`, a hidden <select> that is EMPTY until
-// loadProviders() fills it — and loadProviders fetches the model catalog,
-// measured cold at ~10s. For those ten seconds the composer showed the
-// provider read from localStorage while the request carried nothing, the
-// server fell back to settings.model_provider (`mock` on a fresh install),
-// and the offline model answered in a real model's clothes. Two messages in a
-// row came back as a truncated echo of the recall block.
+// It first read `$("#provider").value`, a hidden <select> empty until
+// loadProviders() fills it — ~10s cold. For those ten seconds the request
+// carried nothing, the server fell back to settings.model_provider (`mock` on
+// a fresh install), and the offline model answered while the composer showed a
+// real one. The fix was to read localStorage instead, which the picker writes
+// synchronously.
 //
-// localStorage is the store the picker actually writes to (setActiveModel),
-// and it is readable synchronously on the first paint. The select is a slow
-// copy of it, kept only as a fallback for anything that still writes there.
-function chosenProvider() {
-  const saved = (localStorage.getItem("chitragupta_provider") || "").trim();
-  if (saved) return saved;
-  const sel = $("#provider");
-  return (sel && sel.value) || undefined;
-}
+// That made the CLIENT authoritative, and `run_turn` treats a provider on the
+// request as an override beating `agent.model_provider` — so when the stored
+// value went stale, it beat a perfectly good agent binding on every turn and
+// the same symptom came back with the causes reversed.
+//
+// Both versions failed the same way: the value on screen and the value in the
+// request came from different places. There is one place now — the agent
+// binding, which the picker writes, both labels render, and the server
+// resolves — and the request names no provider at all.
 
 async function streamTurn(text, think) {
   const body = JSON.stringify({
-    message: text, provider: chosenProvider(),
-    model: localStorage.getItem("chitragupta_model") || undefined,
+    // NO provider/model. The agent's own binding decides, server-side.
+    //
+    // These used to be sent from localStorage, and `run_turn` treats a provider
+    // on the request as an OVERRIDE that beats `agent.model_provider`. So a
+    // stale global — `chitragupta_provider` had been left on "mock" — silently
+    // won every turn, while the chip and the composer pill went on rendering
+    // the agent binding they read from /api/agents/{id}/model. The screen said
+    // "Claude Opus 5" and the reply came back from the offline mock, with
+    // nothing anywhere to show which one was real.
+    //
+    // The binding is already the source of truth: the composer pill POSTs to
+    // /api/agents/{id}/model when you pick, both labels render what that
+    // returns, and run_turn resolves it when the request stays quiet. Omitting
+    // these is what makes the thing shown and the thing used the same thing.
+    // An agent with no binding falls to settings.model_provider — which is
+    // exactly what the "Auto" label means.
+    message: text,
     effort: localStorage.getItem("chitragupta_effort") || undefined,
     turn_id: turnId || undefined,
     // Granted for this turn only. The server never stores these.

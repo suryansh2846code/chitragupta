@@ -785,7 +785,12 @@ $("#obApps").onclick = () => { closeOnboard(); flashConnectors();
   toast("Notion · Linear · GitHub — or + Connect a custom app"); };
 $("#obFact").onclick = () => { closeOnboard(); $("#ingestText").focus();
   $("#ingestText").scrollIntoView({ behavior: "smooth" }); };
-$("#helpBtn").onclick = openOnboard;
+// #helpBtn is gone: "Replay onboarding" moved into the Settings rail, which
+// navigates to /onboarding?replay=1. This binding had in fact been dead for a
+// while — app.js loads after this file and overwrote the handler with that same
+// redirect — but `$("#helpBtn")` is unguarded, so once the button left the
+// markup this line threw during script evaluation and took every binding below
+// it down with it. Hence: removed, not left to fail quietly.
 
 // ── brain export / import (you own your data) ──────────────────────────────
 $("#brainExport").onclick = async () => {

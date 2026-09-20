@@ -88,9 +88,13 @@ def _measure() -> dict:
         "is the only condition under which this bug appears at all.</p></div></div>"
         for _ in range(TURNS)
     )
-    marker = '<div id="messages" class="messages" role="log" aria-label="Conversation">'
-    assert marker in html, "the messages container moved — update this test"
-    html = html.replace(marker, marker + turns, 1)
+    # Matched by id rather than by the whole opening tag. The tag grows
+    # attributes for reasons that have nothing to do with scrolling — `aria-busy`
+    # arrived with the loading skeletons and broke this on an exact string,
+    # which said "the messages container moved" when it had not moved at all.
+    opening = re.search(r'<div id="messages"[^>]*>', html)
+    assert opening, "the messages container moved — update this test"
+    html = html.replace(opening.group(0), opening.group(0) + turns, 1)
     html = html.replace("</body>", PROBE + "</body>")
 
     with tempfile.TemporaryDirectory() as tmp:

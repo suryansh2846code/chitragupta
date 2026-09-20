@@ -36,21 +36,26 @@ let CONNECTORS = [];
 function applyIcons() {
   document.querySelectorAll(".snav").forEach((b) => {
     const el = b.querySelector(".snav-ic"); if (!el) return;
-    const key = b.id === "helpBtn" ? "help"
-      : b.dataset.nav === "sources" ? "connectors"
-      : b.dataset.nav;
+    const key = b.dataset.nav === "sources" ? "connectors" : b.dataset.nav;
     el.innerHTML = IC[key] || "";
   });
+  // The nav key and the icon key agree everywhere except onboarding, whose
+  // glyph has always been filed under "help". Without the alias that row draws
+  // an empty 18px slot and its label sits out of line with every other one —
+  // the `|| ""` fallback makes a missing icon silent, so it has to be mapped
+  // rather than noticed later.
+  const MS_IC = { onboarding: "help" };
   document.querySelectorAll(".ms-nav-item").forEach((b) => {
     const el = b.querySelector(".ms-nav-ic"); if (!el) return;
-    el.innerHTML = IC[b.dataset.msnav] || "";
+    const key = b.dataset.msnav;
+    el.innerHTML = IC[MS_IC[key] || key] || "";
   });
   const set = (id, name) => { const e = $(id); if (e) e.innerHTML = IC[name]; };
   set("#attachBtn", "attach"); set("#micBtn", "mic"); set("#send", "arrowUp");
 }
 
 // collapse / expand the sidebar (persisted)
-function setCollapsed(on) {
+function setCollapsed(on, persist = true) {
   const app = document.querySelector(".app"); if (!app) return;
   app.classList.toggle("collapsed", on);
   const b = $("#collapseBtn");
@@ -60,12 +65,25 @@ function setCollapsed(on) {
     b.setAttribute("aria-label", b.title);
     b.setAttribute("aria-expanded", on ? "false" : "true");
   }
-  try { localStorage.setItem("ls_collapsed", on ? "1" : ""); } catch (_) {}
+  // `persist` is false when the width forced this, not the user. Writing it
+  // anyway would mean resizing a window narrow once silently answered a
+  // question only the user gets to answer, and the rail would still be
+  // collapsed the next time they opened the app on a big screen.
+  if (persist) { try { localStorage.setItem("ls_collapsed", on ? "1" : ""); } catch (_) {} }
 }
 {
   const b = $("#collapseBtn");
   if (b) b.onclick = () => setCollapsed(!document.querySelector(".app").classList.contains("collapsed"));
-  setCollapsed(localStorage.getItem("ls_collapsed") === "1");
+
+  // Below 1080px the rail is icons-only, always: the CSS used to hide it
+  // outright, which left no way to reach Inbox, Brain, Account or Settings at
+  // all. Forced here rather than described again in CSS so the collapsed rail
+  // has exactly one definition.
+  const narrow = window.matchMedia("(max-width: 1080px)");
+  const stored = () => localStorage.getItem("ls_collapsed") === "1";
+  const applyWidth = () => setCollapsed(narrow.matches || stored(), false);
+  narrow.addEventListener("change", applyWidth);
+  applyWidth();
 }
 function agentOrbId(a) { return a ? a.id : ""; }
 function agentDesc(a) {
@@ -74,9 +92,33 @@ function agentDesc(a) {
 }
 
 
+// Skeletons (index.html) are normally cleared by whatever renders over them —
+// `loadAgents()` and `renderHistory()` both assign innerHTML. Two paths never
+// reach a render and would shimmer for ever: a first run with no agents, where
+// nothing is selected so no history is ever fetched, and a boot that throws.
+// Both call this, so "still loading" can never be what a stuck screen says.
+function clearSkeletons() {
+  const box = $("#messages");
+  if (box) {
+    box.querySelectorAll(".sk-thread").forEach((n) => n.remove());
+    box.removeAttribute("aria-busy");
+  }
+  const rail = $("#agentList");
+  if (rail) {
+    rail.querySelectorAll(".sk-agent").forEach((n) => n.remove());
+    rail.removeAttribute("aria-busy");
+  }
+  // Back to the placeholder the header shipped with, not to blank.
+  const nm = $("#agentName");
+  if (nm && nm.querySelector(".sk")) nm.textContent = "—";
+  const rl = $("#agentRole");
+  if (rl && rl.querySelector(".sk")) rl.textContent = "";
+}
+
 async function loadAgents() {
   const d = await api("/api/agents");
   agents = d.agents;
+  $("#agentList").removeAttribute("aria-busy");
   if (!agents.length) {
     // Nothing ships pre-added, so an empty rail is a real first run — not an
     // error. It has to lead somewhere rather than just being blank.
@@ -87,6 +129,7 @@ async function loadAgents() {
        </div>`;
     const go = $("#emptyToLibrary");
     if (go) go.onclick = () => { if (typeof openLibrary === "function") openLibrary(); };
+    clearSkeletons();   // no agent to select, so no history is coming
     return;
   }
   $("#agentList").innerHTML = agents.map((a) => {
@@ -94,7 +137,7 @@ async function loadAgents() {
     <div class="agent ${a.id === current ? "active" : ""}" data-id="${a.id}"
          role="button" tabindex="0" aria-pressed="${a.id === current}"
          aria-label="${esc(a.name)} — ${esc(a.role)}">
-      <span class="orb" style="${orbStyle(agentOrbId(a))}"></span>
+      <span class="orb"></span>
       <div class="a-meta">
         <div class="n">${esc(a.name)}</div>
         <div class="r">${esc(a.role)}</div>
@@ -103,6 +146,15 @@ async function loadAgents() {
         : (a.id === current ? `<span class="dot"></span>` : "")}
     </div>`; }).join("");
   document.querySelectorAll(".agent").forEach((el) => {
+    // Mounted after the markup, never inside it: a character is a live instance
+    // with a pointer subscription and an observer, and an `innerHTML` template
+    // can only produce a string. Painting here also means the rail's own
+    // template stays readable — the alternative was an SVG document inlined
+    // into the middle of it.
+    const orb = el.querySelector(".orb");
+    const agent = agents.find((a) => a.id === el.dataset.id);
+    if (orb) paintAvatar(orb, agentOrbId(agent), { live: true, title: agent ? agent.name : "" });
+
     el.onclick = (e) => {
       if (e.target.closest("[data-del-agent]")) return;   // handled below
       selectAgent(el.dataset.id);
@@ -140,10 +192,12 @@ function openDrawer(name) {
   if (name === "brain") return openBrainScreen();
   if (name === "library") return openLibrary();
 }
-document.querySelectorAll(".snav").forEach((b) => b.onclick = () => {
-  if (b.id === "helpBtn") { window.location.href = "/onboarding?replay=1"; return; }  // re-experience onboarding (won't wipe)
-  openDrawer(b.dataset.nav);
-});
+// Inbox, Brain and Settings. Replay onboarding moved into the Settings rail,
+// which is why the helpBtn special case that used to live here is gone.
+document.querySelectorAll(".snav").forEach((b) => b.onclick = () => openDrawer(b.dataset.nav));
+// The account chip was markup with no handler at all — a control that could not
+// do anything. It goes where its name now says it goes.
+{ const u = $("#userChip"); if (u) u.onclick = () => openAccountScreen(); }
 { const nr = $("#newAgentRow"); if (nr) nr.onclick = () => $("#newAgentBtn").click(); }
 window.addEventListener("keydown", (e) => { if (e.key === "Escape" && $("#modelScreen") && !$("#modelScreen").hidden) closeModelScreen(); });
 
@@ -159,21 +213,45 @@ window.addEventListener("keydown", (e) => {
 }, true);
 
 (async () => {
-  if (await maybeOnboard()) return;   // redirecting to onboarding — stop here
-  applyIcons();
-  await loadProviders();
-  loadAgents(); loadBrain(); loadTasks(); loadReminders(); loadRoutines();
-  // Awaited, unlike its neighbours: an action card rendered before the catalog
-  // arrives is a card with no editable fields and no Undo, and the first card
-  // of a session is the one most likely to need correcting.
-  await loadActionCatalog();
-  updateBrainStatus();
-  // No lead agent and nothing pre-added, so a new install has no agents at
-  // all — the library is how you get one, and it opens itself once.
-  libraryOnFirstRun();
-  // poll the brain status often while it's building, and keep time-based panels fresh
-  setInterval(updateBrainStatus, 5000);
-  setInterval(() => { loadReminders(); loadRoutines(); }, 45000);
+  try {
+    if (await maybeOnboard()) return;   // redirecting to onboarding — stop here
+    applyIcons();
+    await loadProviders();
+    // Awaited, and before `loadAgents()`: the rail paints an avatar per agent,
+    // and a custom one that arrives after that paint is a visible flicker of the
+    // wrong face on every launch. It is one small request and it cannot fail in
+    // a way that blocks — `loadAgentAvatars` swallows its own errors, because an
+    // agent with no override still has its generated character. That is also
+    // why it sits inside the try but needs no catch of its own.
+    await loadAgentAvatars();
+    // Awaited for the same class of reason as the avatars above, one screen
+    // over: an action card rendered before the catalog arrives is a card with
+    // no editable fields and no Undo, and the first card of a session is the
+    // one most likely to need correcting.
+    await loadActionCatalog();
+    // loadAgents() gets its own catch: it is not awaited, so a rejection here
+    // would never reach the handler below, and the rail it was going to fill is
+    // the one still showing skeletons.
+    loadAgents().catch((e) => {
+      clearSkeletons();
+      toast(typeof e === "string" ? e : "Could not load your agents");
+    });
+    loadBrain(); loadTasks(); loadReminders(); loadRoutines();
+    updateBrainStatus();
+    // No lead agent and nothing pre-added, so a new install has no agents at
+    // all — the library is how you get one, and it opens itself once.
+    libraryOnFirstRun();
+    // poll the brain status often while it's building, and keep time-based panels fresh
+    setInterval(updateBrainStatus, 5000);
+    setInterval(() => { loadReminders(); loadRoutines(); }, 45000);
+  } catch (e) {
+    // The backend is unreachable or answered badly. Whatever the screen shows
+    // now, it must not be a shimmer — a placeholder that never resolves reads
+    // as a hang, and hides the fact that there is something to report.
+    clearSkeletons();
+    toast(typeof e === "string" ? e : "Could not reach the backend");
+    throw e;
+  }
 })();
 
 

@@ -38,10 +38,27 @@ def test_the_harness_reached_the_handlers(clicked):
     assert clicked["error"] is None, clicked["error"]
 
 
-@pytest.mark.parametrize("nav,panel", [
-    ("model", "model"), ("settings", "model"), ("sources", "connectors"),
-    ("inbox", "inbox"), ("tools", "tools"),
-])
+#: The LEFT-NAV items, which is what this harness clicks. `model`, `sources`
+#: and `tools` used to be here and are not any more — they became `data-msnav`
+#: rows inside the Settings screen. The list was left behind when they moved,
+#: so every one of them failed on a `KeyError` from the harness rather than on
+#: anything being wrong. Derived below rather than re-listed, so the next move
+#: cannot strand it a second time.
+NAV_PANELS = [("settings", "model"), ("inbox", "inbox")]
+
+
+def test_the_list_below_is_the_nav_that_actually_exists():
+    """The reason the old list rotted: nothing tied it to `index.html`, which
+    is the single place the nav is declared."""
+    import re
+
+    declared = set(re.findall(r'data-nav="([a-z]+)"',
+                              (WEB / "index.html").read_text()))
+    named = {nav for nav, _ in NAV_PANELS}
+    assert named <= declared, f"gone from index.html: {sorted(named - declared)}"
+
+
+@pytest.mark.parametrize("nav,panel", NAV_PANELS)
 def test_a_settings_item_opens_the_screen_on_its_own_panel(clicked, nav, panel):
     """Model and Connectors share one shell, so opening the screen is only half
     of it — landing on the wrong panel shows the screen with the other page on

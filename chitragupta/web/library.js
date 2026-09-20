@@ -99,10 +99,12 @@ function libCard(t) {
   head.className = "lib-card-head";
   const orb = document.createElement("span");
   orb.className = "lib-orb";
-  // The same gradient the agent rail uses (orbStyle, core.js), so a card and a
-  // sidebar row read as the same agent rather than two things sharing a name.
-  orb.setAttribute("style", orbStyle(t.id));
+  // The same character the agent rail draws (paintAvatar, core.js), so a card
+  // and a sidebar row read as the same agent rather than two things sharing a
+  // name. Static: the Library is a grid of dozens, and dozens of live instances
+  // would all be following the pointer behind a screen you are scrolling.
   head.appendChild(orb);
+  paintAvatar(orb, t.id, { size: 48, title: t.name });
 
   const titles = document.createElement("div");
   titles.innerHTML =

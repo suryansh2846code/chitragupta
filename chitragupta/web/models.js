@@ -584,11 +584,20 @@ function initComposerModelPicker() {
   }
 }
 
+//: What `/api/agents/{id}/model` last said is in effect for the open agent.
+//: The chip and the composer pill are rendered FROM this, so anything else that
+//: needs to know which model a turn will run on reads it here rather than
+//: guessing from localStorage — which is how the label and the turn came to
+//: disagree. Declared in this file because `updateAgentModelChip` below is its
+//: only writer, and this file loads before every reader.
+let AGENT_MODEL_BINDING = null;
+
 async function updateAgentModelChip(agentId) {
   const chip = $("#agentModelChip");
   const cmpLabel = $("#cmpModelLabel");
   try {
     const data = await api(`/api/agents/${agentId}/model`);
+    AGENT_MODEL_BINDING = data;
     const labelEl = $("#agentModelLabel");
     const provName = data.configured_provider || data.provider || "cursor";
     const modelName = data.configured_model || "";
@@ -599,8 +608,17 @@ async function updateAgentModelChip(agentId) {
     const provLabel = pSpec ? pSpec.label : (pEntry ? pEntry.label : provName);
 
     const isProvConn = isProviderConnected(provName);
+    // The offline mock is what `settings.model_provider` still is on an install
+    // where nothing has been connected, and it reports itself ready — so an
+    // agent with no binding of its own resolves to it and the label said
+    // "Auto". "Auto" sounds like a choice being made well. Say what will
+    // actually answer, and let the resolved provider say it, because an agent
+    // with no binding never had a `configured_provider` to give this away.
+    const isOffline = (data.provider || "").toLowerCase() === "mock";
     let display = "Auto";
-    if (!isProvConn) {
+    if (isOffline) {
+      display = "Offline";
+    } else if (!isProvConn) {
       display = `${provLabel} — locked`;
     } else if (data.is_override) {
       if (modelName) {
@@ -617,7 +635,10 @@ async function updateAgentModelChip(agentId) {
     if (labelEl) labelEl.textContent = display;
     if (chip) {
       chip.classList.toggle("is-override", Boolean(data.is_override));
-      chip.title = !isProvConn
+      chip.title = isOffline
+        ? "No AI provider is connected, so replies come from the offline model. "
+          + "Open Model to connect one."
+        : !isProvConn
         ? `${provLabel} is not connected. Open Model to connect.`
         : (data.is_override
           ? `Dedicated model for this agent: ${provLabel} (${modelName || 'Auto'}). Click to change.`
@@ -681,7 +702,7 @@ function loadAgentModelMatrix() {
       return `
         <div class="matrix-row">
           <div class="matrix-agent">
-            <span class="orb orb-sm" style="${orbStyle(oid)}"></span>
+            <span class="orb orb-sm" data-avatar="${esc(oid)}"></span>
             <div>
               <div class="matrix-nm">${esc(a.name)}</div>
               <div class="matrix-role">${esc(a.role || "")}</div>
@@ -697,6 +718,10 @@ function loadAgentModelMatrix() {
       `;
     }).join("");
 
+    // Static characters: this is a settings list, read top to bottom once.
+    matrix.querySelectorAll("[data-avatar]").forEach((el) => {
+      paintAvatar(el, el.dataset.avatar, { size: 40 });
+    });
     matrix.querySelectorAll(".matrix-btn").forEach((btn) => {
       btn.onclick = () => openAgentModelModal(btn.dataset.agent);
     });
@@ -853,7 +878,14 @@ async function loadProviders() {
 function enrichModel() {
   const p = (localStorage.getItem("chitragupta_enrich_provider") || "").trim();
   if (p) return { provider: p, model: (localStorage.getItem("chitragupta_enrich_model") || "").trim() || null };
-  return { provider: chosenProvider(), model: $("#modelName").value.trim() || null };
+  // The agent binding, not the localStorage pair. This decides whether to warn
+  // that enrichment is about to spend real tokens, and the old source could
+  // name a provider that was not the one that would run — it read the same
+  // stale key that was sending turns to the offline mock. A null provider is
+  // the server's own default, and it warns rather than assuming it is free.
+  const b = AGENT_MODEL_BINDING;
+  return { provider: (b && (b.configured_provider || b.provider)) || null,
+           model: (b && b.configured_model) || null };
 }
 
 async function loadEnrichCap() {
@@ -925,6 +957,14 @@ async function openConnectorsScreen() {
   showSettingsPanel("connectors");
   try { await loadBrain(); } catch (_) {}   // fills #connectors, #googleCard, sync status
 }
+// Who you are signed in as, per provider. The cards are #providerCards, which
+// loadProviders() has always filled — the panel moved, the renderer did not.
+async function openAccountScreen() {
+  const m = $("#modelScreen"); if (!m) return;
+  m.hidden = false;
+  showSettingsPanel("account");
+  try { await loadProviders(); } catch (_) {}
+}
 async function openModelScreen() {
   const m = $("#modelScreen"); if (!m) return;
   m.hidden = false;
@@ -955,11 +995,19 @@ document.querySelectorAll(".ms-nav-item").forEach((b) => {
   b.onclick = () => {
     const to = b.dataset.msnav;
     if (to === "model") return openModelScreen();
+    if (to === "account") return openAccountScreen();
     if (to === "connectors") return openConnectorsScreen();
     if (to === "inbox") return openInboxScreen();
     if (to === "tools") return openToolsScreen();
+    if (to === "appearance") return openAppearanceScreen();
+    // Leaves the app entirely, so nothing after it runs and the screen does not
+    // need closing — the navigation replaces the document.
+    if (to === "onboarding") { window.location.href = "/onboarding?replay=1"; return; }
+    // The two that are their own full-window screens rather than panels in this
+    // shell: close this one first, or it stays open underneath them.
     closeModelScreen();
     if (to === "brain") openBrainScreen();
+    if (to === "library" && typeof openLibrary === "function") openLibrary();
   };
 });
 

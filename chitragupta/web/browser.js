@@ -112,7 +112,7 @@ function renderSiteShelf(grants) {
       : esc(spec.blurb || spec.host);
     return `
       <div class="site-card${on ? " is-on" : ""}" data-site-id="${esc(spec.id)}">
-        <span class="site-mark" style="color:${esc(spec.tint)}">${spec.icon}</span>
+        <span class="site-mark logo-tile" style="color:${esc(spec.tint)};--brand:${esc(spec.tint)}"><i class="lt-sheen"></i>${spec.icon}</span>
         <div class="site-text">
           <div class="site-nm">${esc(spec.label)}</div>
           <div class="site-sub">${line}</div>
