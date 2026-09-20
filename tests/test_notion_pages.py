@@ -161,3 +161,89 @@ def test_no_agent_can_hold_a_notion_action_without_a_way_to_find_a_page():
         tools = set(expand_tools(list(template.tools or [])))
         assert "notion_pages" in tools, (
             f"{template.id} can write to Notion and cannot find a page id")
+
+
+def test_reaching_notion_goes_through_the_connector_gate():
+    """`agents/CLAUDE.md`: an agent asks before it reaches a connector, and
+    the asking is enforced in `loop.py` rather than in a prompt.
+
+    This tool searches the user's real Notion, so it is a reach into a
+    connector and has to be declared as one. It was not, for the first commit
+    of its life — which is precisely the failure the map's own comment
+    records: the gate stopped an agent reading a Notion page through MCP
+    while `list_mail` read the whole inbox, because only one of the two was
+    listed there.
+    """
+    from chitragupta.agents.connector_grants import connector_of
+
+    assert connector_of("notion_pages") == "notion"
+
+
+def test_every_first_party_tool_that_reaches_a_connector_is_gated():
+    """The general form, so the next one cannot be forgotten either.
+
+    Kept as an explicit pairing rather than derived, because the thing being
+    checked is that somebody *thought about it* — a derivation would answer
+    the same way whether or not the tool had been considered.
+    """
+    from chitragupta.agents.connector_grants import connector_of
+
+    reaches = {
+        "list_mail": "gmail", "gmail_search": "gmail", "read_thread": "gmail",
+        "calendar_lookup": "gcal", "find_time": "gcal",
+        "notion_pages": "notion",
+    }
+    for tool, connector in reaches.items():
+        assert connector_of(tool) == connector, (
+            f"{tool} reaches {connector} and is not behind the connector gate")
+
+
+# ── there are two Notions, and only one of them is mine ──────────────────
+def test_a_notion_connected_as_a_custom_source_is_not_called_disconnected(
+        notion, monkeypatch):
+    """Nearly shipped, and it would have been worse than the bug it fixed.
+
+    A user can connect Notion two ways: the built-in connector, which wants
+    an integration secret, or as a **custom source** — an MCP server. This
+    tool drives the first. The second shows a green CONNECTED badge on the
+    Connectors screen and is invisible to it.
+
+    So the honest-sounding sentence "Notion is not connected" is, for that
+    user, a flat contradiction of what their own screen says — and a model
+    repeating it sends them to fix something that is not broken. Which is how
+    this whole thread started.
+    """
+    notion(ready=False, why="click setup to paste your integration secret")
+    monkeypatch.setattr(notion_tools, "_reachable_over_mcp", lambda: True)
+
+    out = notion_tools.notion_pages("mera store")
+
+    assert "not connected" not in out.lower()
+    assert "connected as a custom source" in out
+    # And it points at the thing that DOES work, by name.
+    assert "notion-search" in out
+    assert "Do not tell the user Notion is unavailable" in out
+
+
+def test_with_neither_route_it_still_says_connect_it_here(notion, monkeypatch):
+    """The other branch has to keep working: no built-in secret and no custom
+    source really is disconnected, and the fix really is in this app."""
+    notion(ready=False, why="click setup to paste your integration secret")
+    monkeypatch.setattr(notion_tools, "_reachable_over_mcp", lambda: False)
+
+    out = notion_tools.notion_pages("mera store")
+
+    assert not out.ok
+    assert "Connectors" in out and "Chitragupta" in out
+
+
+def test_looking_for_the_other_route_never_starts_a_server(notion, monkeypatch):
+    """Listing MCP tools starts every server the user has. A question asked on
+    the way to saying "I cannot help" must not cost that, so this reads the
+    server LIST and nothing more."""
+    import inspect
+
+    source = inspect.getsource(notion_tools._reachable_over_mcp)
+
+    assert "list_servers" in source
+    assert "list_tools" not in source, "it would start every server to answer"
