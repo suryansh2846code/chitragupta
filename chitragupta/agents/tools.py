@@ -13,6 +13,7 @@ from ..models.base import Tool
 from . import (
     automation_tools,
     brain_tools,
+    browse_record,
     browse_tools,
     code_tools,
     file_tools,
@@ -323,6 +324,7 @@ TOOL_IMPLS = {
     "browse_read": browse_tools.browse_read,
     "browse_find": browse_tools.browse_find,
     "browse_sites": browse_tools.browse_sites,
+    "what_i_looked_at": browse_record.what_i_looked_at,
     "list_routines": automation_tools.list_routines,
     "pause_routine": automation_tools.pause_routine,
     "list_pending_approvals": automation_tools.list_pending_approvals,
@@ -792,6 +794,21 @@ TOOL_DEFS: dict[str, Tool] = {
             "what": {"type": "string",
                      "description": "What you are looking for, in plain words"}},
             "required": ["what"]},
+    ),
+    "what_i_looked_at": Tool(
+        name="what_i_looked_at",
+        description=(
+            "Websites the agents have looked at, most recent first. Page "
+            "CONTENT is never kept — only that a page was looked at, when, "
+            "and what it was called. Use it for 'what have you been reading' "
+            "or 'did you ever check that site'."),
+        parameters={
+            "type": "object",
+            "properties": {
+                "days": {"type": "integer",
+                         "description": "How far back to look. Default 7."},
+            },
+        },
     ),
     "browse_sites": Tool(
         name="browse_sites",

@@ -56,7 +56,10 @@ CATEGORIES = (
 #: Reading websites the user has allowed. Read-only: `may_act` exists in
 #: `browser/origins.py` and nothing grants it, and a write tool has to join
 #: `permissions.NEVER_UNATTENDED` in the same commit that adds it.
-_BROWSE = ["browse_sites", "browse_open", "browse_read", "browse_find"]
+_BROWSE = ["browse_sites", "browse_open", "browse_read", "browse_find",
+           # A read is not an action, so nothing logged it and the work
+           # simply vanished. This is where it is read back.
+           "what_i_looked_at"]
 
 
 BASE_TOOLS = [

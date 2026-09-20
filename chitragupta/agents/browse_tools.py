@@ -54,6 +54,20 @@ def set_session(session: Session | None) -> None:
     _session = session
 
 
+def _remember(reading: Reading) -> None:
+    """Keep the fact of the visit. Never the page.
+
+    Only on success, and only for a page the allow-list actually let through —
+    a refusal is not work the agent did, it is work it was stopped from doing,
+    and the log already has the failure.
+    """
+    from . import browse_record, connector_grants
+
+    browse_record.record_visit(
+        reading.url, reading.title, origins.host_of(reading.url),
+        agent_id=connector_grants.acting())
+
+
 def _answer(reading: Reading) -> ToolResult:
     """One place that turns a `Reading` into what the model sees.
 
@@ -62,6 +76,7 @@ def _answer(reading: Reading) -> ToolResult:
     that from the text got all three real failures wrong.
     """
     if reading.ok:
+        _remember(reading)
         return ToolResult(reading.text, truncated=reading.truncated)
 
     if reading.grantable:
@@ -90,6 +105,12 @@ def browse_read(since: str | None = None) -> ToolResult:
     somebody's own model plan.
     """
     reading = get_session().read()
+    # Both success paths record, including the cheap one: re-reading a page to
+    # check it is unchanged is still the agent having looked, and a record that
+    # only appears when the page happened to change would be a record nobody
+    # could reason about.
+    if reading.ok:
+        _remember(reading)
     if reading.ok and since and reading.digest and since.strip() == reading.digest:
         return ToolResult(
             f"The page has not changed since you last read it ({reading.url}). "
