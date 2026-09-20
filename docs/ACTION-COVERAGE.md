@@ -218,7 +218,7 @@ run end to end through all seven steps, not when its endpoints exist.
 | 7 | "Cancel Thursday and tell everyone why" | 1→6 | ✅ done |
 | 8 | "Find a time with Rahul next week" | 1→6 | ✅ done |
 | 9 | "Prep me for my next meeting" | 1→3 | ✅ done |
-| 10 | "Tell Rahul I'll send it tonight" | 1→6 | 3 |
+| 10 | "Tell Rahul I'll send it tonight" | 1→6 | ✅ done |
 | 11 | "Chase this in two days if nothing happens" | 1→6 | ✅ done |
 | 12 | "What am I waiting on, and who's waiting on me?" | 1→2 | ✅ done |
 | 13 | "Turn this thread into a task" | 1→6 | ✅ done |
@@ -405,6 +405,43 @@ Six checks in `evaluation.py`, and the scored facts are the ones that bite:
 `needs_reply` is called before anything else, the COULD-NOT-CHECK thread is
 left alone, nothing is sent, and the single reply is addressed to whoever
 wrote last.
+
+#### Job 10 — "tell Rahul I'll send it tonight" · ✅
+
+The messaging mirror of job 3, and the stakes are higher for a reason that has
+nothing to do with the words: **there is no draft.** An email to the wrong
+person can be prepared and looked at first. A message is on somebody's phone
+the instant it is approved, and no app this talks to lets us take it back — so
+`message_send` declares **no undo**, deliberately, rather than offering a
+button that would stop the user worrying about something they cannot fix.
+
+Two gaps, and the first had been live since `message_send` was added:
+
+> **A named time was parsed and thrown away.** `execute()` honoured `at` for a
+> hardcoded `("send_email", "create_event")`, and `message_send` joined the
+> registry later without anybody revisiting the tuple. So *"tell Rahul at six
+> that I am running late"* read the six, dropped it, and sent immediately —
+> no error, and the user finds out from Rahul.
+>
+> Scheduling is `ActionSpec.schedulable` now, declared beside the action the
+> way `risk` is, and an action that cannot be scheduled **refuses** an `at`
+> rather than running now. The exception is an action whose `at` is its own
+> argument — `set_reminder`, `create_routine`, `log_workout` — where the
+> handler owns the time and scheduling it would be scheduling a scheduler.
+
+**And nothing read the message back.** A `send` that returns is the app saying
+it accepted the request, which is not the same as the message being in the
+conversation: a bot removed from a group fails in a way that looks like
+success from here. `verify` reads the history and looks for the text, on a
+trimmed prefix because apps re-wrap what they are handed. Unverified is not
+failed — the same line the follow-ups draw.
+
+The recipe's first rule is the whole recipe: **the chat id comes from
+`list_chats` or the message is not sent.** The user says "Rahul"; the action
+needs an id; a model that guesses one sends a private message to a stranger.
+And where two conversations could be the one they mean — two Rahuls, or the
+same Rahul on two apps — it asks. Asking costs one turn; picking wrong cannot
+be taken back.
 
 #### Job 13 — "turn this thread into a task" · ✅
 

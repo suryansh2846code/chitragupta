@@ -675,6 +675,57 @@ def run(*, include_slow: bool = True) -> Scorecard:
             parse_actions(reply) == [],
             "it proposed an action nobody asked for")
 
+        # ── job 10: "tell Rahul I'll send it tonight" ────────────────────
+        #
+        # The messaging mirror of job 3, and the stakes are higher for a
+        # reason that is not about words: there is no draft. A message is on
+        # somebody's phone the instant it is approved, and no app here lets
+        # us unsend — so the scored fact is that the chat id came from
+        # `list_chats` rather than from the model's imagination.
+        #
+        # And the second: a named time must WAIT. `execute()` honoured `at`
+        # for a hardcoded pair of actions and `message_send` was never added
+        # to it, so "tell him at six" sent immediately and said nothing.
+        tools_mod.TOOL_IMPLS["list_chats"] = lambda **kw: (
+            "Telegram — 2 conversation(s):\n"
+            "- Rahul Mehta  (telegram id 4411)\n"
+            "- Standup  (telegram id 9902)")
+        provider = _scripted([
+            [("list_chats", {})],
+            "Telling Rahul.\n"
+            '<action type="message_send" app="telegram" chat="4411">'
+            "I'll send it tonight.</action>",
+        ])
+        use(provider)
+        told = runtime.run_turn(
+            "chief-of-staff", "tell Rahul I'll send it tonight",
+            effort="medium", connectors=["telegram"])
+        reply = told.reply or ""
+        told_props = parse_actions(reply)
+        told_params = told_props[0]["params"] if told_props else {}
+        told_used = [s.name for s in told.trace
+                     if s.kind == "tool_result" and s.name != "auto_recall"]
+
+        check("message_chat_looked_up",
+              "A message goes to a conversation that was looked up, not guessed")(
+            told_used[:1] == ["list_chats"]
+            and told_params.get("chat") == "4411",
+            f"tools={told_used} chat={told_params.get('chat')!r}")
+
+        # The scheduling half, checked against the registry rather than a
+        # scripted turn: what matters is that `execute` cannot silently send
+        # now, and that is a property of the action, not of one model's reply.
+        check("message_can_wait_until_a_named_time",
+              "\"Tell him at six\" waits until six instead of going out now")(
+            _REGISTRY["message_send"].schedulable is True
+            and "at" in _REGISTRY["message_send"].fields,
+            "a named time would be dropped and the message sent immediately")
+
+        # Put the real one back. The `messaging` check further down drives the
+        # genuine `list_chats` against a fake connector, and a canned string
+        # left in its place made it report that the user had no conversations.
+        tools_mod.TOOL_IMPLS["list_chats"] = saved_impls["list_chats"]
+
         # ── chasing only the people who actually owe an answer ───────────
         #
         # The failure worth scoring is not "did it draft a chase". It is

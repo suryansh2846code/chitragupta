@@ -161,3 +161,58 @@ def test_it_tells_the_model_not_to_write_an_essay():
 
 def test_it_drafts_unless_the_user_said_send():
     assert "create_draft` unless they said send" in _THREAD_REPLY_RECIPE
+
+
+# ── job 10: the messaging mirror, where there is no draft ────────────────
+MESSAGE_TOOLS = ["list_chats", "read_chat"]
+
+
+def test_an_agent_that_can_find_a_chat_and_send_gets_the_message_recipe():
+    from chitragupta.agents.prompt import _MESSAGE_RECIPE, _message_recipe
+
+    assert _message_recipe(MESSAGE_TOOLS, ["message_send"]) == _MESSAGE_RECIPE
+
+
+@pytest.mark.parametrize("tools,actions", [
+    (["read_chat"], ["message_send"]),        # cannot look a conversation up
+    (MESSAGE_TOOLS, ["send_email"]),          # cannot send on a messaging app
+])
+def test_an_agent_missing_a_piece_is_not_taught_job_ten(tools, actions):
+    """An agent told to message people with no way to look a conversation up
+    is the agent that guesses a chat id — the one outcome the recipe exists
+    to prevent."""
+    from chitragupta.agents.prompt import _message_recipe
+
+    assert _message_recipe(tools, actions) == ""
+
+
+def test_it_forbids_guessing_a_chat_id_and_says_why():
+    """Higher stakes than email and for a reason that is not about words:
+    there is no draft, and no app here lets us unsend."""
+    from chitragupta.agents.prompt import _MESSAGE_RECIPE
+
+    assert "NEVER invent or guess a chat id" in _MESSAGE_RECIPE
+    assert "no undo" in _MESSAGE_RECIPE
+
+
+def test_it_asks_rather_than_picking_between_two_people():
+    """The helpful failure. Two Rahuls, or the same Rahul on two apps."""
+    from chitragupta.agents.prompt import _MESSAGE_RECIPE
+
+    assert "ASK which" in _MESSAGE_RECIPE
+
+
+def test_it_schedules_a_named_time_instead_of_mentioning_it():
+    """"Tell him at six" must wait until six, not go out now saying "at six"."""
+    from chitragupta.agents.prompt import _MESSAGE_RECIPE
+
+    assert "`at`" in _MESSAGE_RECIPE
+    assert "Do NOT send it now" in _MESSAGE_RECIPE
+
+
+def test_the_generalist_is_taught_it():
+    assert "SENDING A MESSAGE" in _prompt_for("chief-of-staff")
+
+
+def test_an_agent_with_no_messaging_is_not():
+    assert "SENDING A MESSAGE" not in _prompt_for("research")
