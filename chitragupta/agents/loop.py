@@ -93,6 +93,15 @@ class ToolRunner:
     #: a round of six tools that is stopped after the first does not run the
     #: other five — the expensive half of a stopped turn is usually here.
     cancel: threading.Event | None = None
+    #: The turn's *allow once* grants, captured at construction.
+    #:
+    #: They live in a ContextVar, which is exactly right for the thread pool
+    #: below — `copy_context()` carries them — and no help at all to `invoke()`,
+    #: which is called from a thread this process did not start. Holding the
+    #: value means a user who clicked *Allow once* is still allowed once when
+    #: the tool runs inside a vendor CLI's own loop.
+    once: frozenset[str] = field(
+        default_factory=connector_grants.granted_this_turn)
     _memo: dict[str, str] = field(default_factory=dict, repr=False)
     calls_made: int = 0
     repeats_seen: int = 0
@@ -200,6 +209,40 @@ class ToolRunner:
         output: ToolResult = run_tool(call.name, call.arguments)
         self._memo[key] = output
         return ToolOutcome(call, output)
+
+    def invoke(self, name: str, arguments: dict) -> str:
+        """One tool, called from outside the loop, through every gate the loop
+        applies.
+
+        A vendor CLI backend runs its own agentic loop over our tools
+        (`models/tool_bridge.py`), so `run()` never sees those calls. Everything
+        `run()` enforces has to hold anyway, and the way to make sure of that is
+        to go through the same three steps rather than to write them out a
+        second time — a permission check that exists in two places is a
+        permission check that will one day only be updated in one.
+
+        The difference is the thread. `run()` is entered from the turn's own
+        context and hands it to its workers with `copy_context()`; this is
+        entered from a socket the CLI opened, where neither ContextVar has ever
+        been set. So both are set here, per call, and put back afterwards.
+        """
+        acting = connector_grants.acting_as(self.agent_id)
+        granted = connector_grants.allow_for_this_turn(sorted(self.once))
+        try:
+            key = call_key(name, arguments)
+            prior = self._memo.get(key)
+            if prior is not None:
+                self.repeats_seen += 1
+                return (prior.but(prior + _REPEAT_NOTE)
+                        if isinstance(prior, ToolResult)
+                        else ToolResult(prior + _REPEAT_NOTE))
+            outcome = self._execute(ToolCall(id=f"bridge_{name}", name=name,
+                                             arguments=arguments or {}), key)
+            self.calls_made += 1
+            return outcome.output
+        finally:
+            connector_grants.reset(granted)
+            connector_grants.stop_acting(acting)
 
     def round_was_all_repeats(self, outcomes: list[ToolOutcome]) -> bool:
         """Did this round learn nothing? The signal that the loop is circling."""

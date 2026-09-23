@@ -338,6 +338,7 @@ The boundaries and what each must name:
 | measured complexity and known duplication | [`COMPLEXITY_AUDIT.md`](COMPLEXITY_AUDIT.md) |
 | the agent loop in depth | [`docs/AGENTS.md`](docs/AGENTS.md) |
 | providers, entitlements, auth, errors, streaming | [`docs/development/models.md`](docs/development/models.md) |
+| why a CLI backend can call our tools at all | [`docs/development/cli-tool-bridge.md`](docs/development/cli-tool-bridge.md) |
 | what was slow and what fixed it | [`docs/development/performance.md`](docs/development/performance.md) |
 | recall cost at scale | [`docs/SCALING.md`](docs/SCALING.md) |
 | the macOS window and sign-in card | [`docs/DESKTOP-SIGNIN.md`](docs/DESKTOP-SIGNIN.md) |

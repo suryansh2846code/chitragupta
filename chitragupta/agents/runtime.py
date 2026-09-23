@@ -11,7 +11,7 @@ from typing import Any
 from ..brain import get_brain
 from ..config import get_settings
 from ..log import get_logger, suppressed
-from ..models import Message, get_provider
+from ..models import Message, get_provider, tool_bridge
 from ..models.base import ChatResult
 from ..models.entitlements import resolve_usable_model
 from . import background, cancellation, connector_grants, context, delegation, grounding, planning
@@ -268,6 +268,38 @@ def _collect(events, emit, cancel=None) -> ChatResult:
     return result if result is not None else ChatResult(text="".join(partial))
 
 
+def _gated(runner: ToolRunner, name: str):
+    """A handler that runs one tool the way the loop would.
+
+    Bound to the name rather than closing over a loop variable: the list is
+    built in a comprehension, and a closure over `t` would give every tool the
+    last one's name — the classic version of this bug, and silent, because
+    every call still works and simply runs the wrong tool.
+    """
+    def call(**arguments: Any) -> str:
+        return str(runner.invoke(name, arguments))
+
+    return call
+
+
+def _watch(emit, trace: list[TraceStep]):
+    """Report a tool a backend ran inside its own loop, as if we had run it.
+
+    Same two events and the same trace steps the loop emits, because to the
+    person watching it *is* the same thing: their agent looked something up.
+    Which process the call happened in is our problem, not theirs.
+    """
+    def seen(name: str, arguments: dict, result: str) -> None:
+        emit({"type": "tool_call", "name": name, "arguments": arguments})
+        emit({"type": "tool_result", "name": name, "result": result[:2000],
+              "repeated": False})
+        trace.append(TraceStep(kind="tool_call", name=name,
+                               arguments=arguments))
+        trace.append(TraceStep(kind="tool_result", name=name, result=result))
+
+    return seen
+
+
 def _answer_without_tools(provider, messages, on_failure, emit):
     """One last call with tools withheld, to turn research into an answer.
 
@@ -426,6 +458,17 @@ def run_turn(agent_id: str, user_text: str, *,
     # into the next.
     grant_token = connector_grants.allow_for_this_turn(connectors)
     runner = ToolRunner(effort=profile, cancel=cancel, agent_id=agent.id)
+    # A backend that has no tool-call protocol of its own — the three vendor
+    # CLIs — is handed these same tools over MCP and runs them itself
+    # (`models/tool_bridge.py`). It gets handlers that go through the runner
+    # rather than the raw implementations, so a connector an agent may not
+    # reach is refused there exactly as it is here. Providers that *do* return
+    # tool calls never touch a handler: `run_tool` dispatches by name.
+    tools = [replace(t, handler=_gated(runner, t.name)) for t in tools]
+    # Left in the context rather than set on the provider: `get_provider` is
+    # `@lru_cache`d, so one instance answers every concurrent turn and an
+    # attribute there would draw one agent's tool calls into another's trace.
+    watch_token = tool_bridge.observe(_watch(emit, trace))
     budget = max(MIN_STEPS, profile.max_steps)
     chain_token = delegation.enter(agent.id, profile, cancel)
     # Shared with every sub-agent this turn reaches, so three agents at High
@@ -577,6 +620,7 @@ def run_turn(agent_id: str, user_text: str, *,
 
     finally:
         connector_grants.reset(grant_token)
+        tool_bridge.stop_observing(watch_token)
         delegation.leave(chain_token)
         # Read the plan before releasing it — it is what the UI shows to explain
         # what the agent thought it was doing.

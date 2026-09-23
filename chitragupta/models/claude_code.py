@@ -4,12 +4,23 @@ This uses the Claude Code CLI already installed on your machine as the model
 backend, so Chitragupta's agents reason with Claude using your existing Claude
 auth — no separate API key wired into Chitragupta.
 
-Trade-off: Claude Code headless returns text, not our structured tool-calls. So
-with this backend the agent answers from the context Chitragupta already injects
-(auto-recalled brain facts, the date, your current tasks) rather than calling
-search_brain/add_task itself. That's fine: recall still makes it "know you", and
-the deterministic Tasks panel handles task actions. Each call uses your Claude
-usage, so it is not free like the local Ollama backend.
+Claude Code headless returns text, not our structured tool-calls — so for as
+long as this file existed, the `tools=` argument it accepts was **dropped**, and
+this docstring said that was fine because recall still made the agent "know
+you". It was not fine. An agent holding fifty-four tools called none of them,
+and a user who asked their Chief of Staff to check their mail was told that no
+mail tools existed and that the search "only surfaces `SendMessage`" — a tool
+belonging to the CLI, not to this app.
+
+The tools now go over MCP (`tool_bridge.py`): a server carrying that turn's
+tools, on a loopback port that exists for the length of one call, which the CLI
+is pointed at with `--mcp-config`. It runs its own loop over them and returns
+the finished answer, and `_bridge_args` turns the CLI's **own** tools off on the
+way in — otherwise reading your mail would come with `Bash` over your whole
+filesystem, granted by nobody.
+
+Each call uses your Claude usage, so it is not free like the local Ollama
+backend. See `docs/development/cli-tool-bridge.md`.
 """
 from __future__ import annotations
 
@@ -46,6 +57,26 @@ _EXTRA_BIN_DIRS = [
 
 def _augmented_path() -> str:
     return augmented_path(_EXTRA_BIN_DIRS)
+
+
+def _answered(result: ChatResult, bridge) -> ChatResult:
+    """The CLI's answer, with the tool calls it already made taken back out.
+
+    A bridged run does its own agentic loop: it calls our tools over MCP,
+    reads the results, and returns the finished text. Those calls still appear
+    in the stream as `tool_use` blocks, and `streaming.anthropic_events` — which
+    is right to collect them, because on the Messages API path they are work
+    that has *not* happened yet — hands them back as `ChatResult.tool_calls`.
+
+    Left there, `runtime.py` would see `wants_tools`, take the names the CLI
+    gave them (`mcp__chitragupta__list_mail`) and run every one a second time.
+    Reading the user's mail twice is the harmless version; the turn also never
+    terminates on the answer the CLI had already written.
+    """
+    if bridge is None or not result.tool_calls:
+        return result
+    result.tool_calls = []
+    return result
 
 
 def find_claude() -> str | None:
@@ -103,13 +134,73 @@ class ClaudeCodeProvider(LLMProvider):
         return "\n\n".join(system_parts), prompt
 
 
-    def _stream_command(self, messages, tools):
+    # ── handing the CLI our tools ───────────────────────────────────────
+
+    def _bridge(self, tools):
+        """An MCP server carrying this turn's tools, or None if there are none.
+
+        This is the whole reason `tools=` stopped being a lie on this backend.
+        `claude -p` returns text, so for three years of this file the argument
+        was accepted and dropped: an agent holding fifty-four tools was given
+        none, and the model — having none of ours — went looking with the CLI's
+        own and answered about `ToolSearch` and `SendMessage`, which are not
+        tools this app has ever had.
+
+        Failing to start one is not fatal. The turn then behaves exactly as it
+        did before this existed, which is worse than it should be but is still
+        an answer; refusing to reply because a loopback port would not bind
+        would be trading a degraded turn for no turn.
+        """
+        if not tools:
+            return None
+        try:
+            from .tool_bridge import ToolBridge, current_observer
+
+            bridge = ToolBridge(list(tools), observer=current_observer())
+            bridge.start()
+            return bridge
+        except Exception as exc:
+            log.debug("could not start the tool bridge, answering without "
+                      "tools: %s", exc)
+            return None
+
+    @staticmethod
+    def _bridge_args(bridge) -> list[str]:
+        """The flags that point the CLI at our tools and at nothing else.
+
+        Every one of these is load-bearing, and each was checked against the
+        installed CLI rather than assumed:
+
+        * `--strict-mcp-config` — the user's *own* MCP servers are configured
+          for their terminal work. Without this they would silently join an
+          agent's toolset, so the tools an agent has would depend on a file
+          this app does not manage and the user was not thinking about.
+        * `--tools ""` — turn the CLI's built-ins off. Left on, a Chief of
+          Staff would hold `Bash`, `Write` and `Edit` over the user's whole
+          filesystem because they asked it to read their mail. What an agent
+          may reach is decided in the agent library, not by which backend
+          happened to answer.
+        * `--allowedTools` — headless has nobody to ask, so a tool that is not
+          pre-allowed is a tool that is refused. Enumerated, never a wildcard:
+          the list is the point.
+
+        Comma-joined rather than passed as separate words: both flags are
+        variadic, and a variadic flag followed by `--model` eats it.
+        """
+        return ["--mcp-config", bridge.config_path(),
+                "--strict-mcp-config",
+                "--tools", "",
+                "--allowedTools", ",".join(bridge.allowed_tools())]
+
+    def _stream_command(self, messages, tools, bridge=None):
         """`claude -p --output-format stream-json` — verified against the real
         CLI: it wraps Anthropic Messages events under `{"type":"stream_event"}`,
         and `--verbose` is required for the streaming format to be emitted."""
         system_prompt, prompt = self._split(messages)
         cmd = [self._bin, "-p", "--output-format", "stream-json", "--verbose",
                "--include-partial-messages"]
+        if bridge is not None:
+            cmd += self._bridge_args(bridge)
         if system_prompt:
             cmd += ["--append-system-prompt", system_prompt]
         if self.model and self.model != "claude-code":
@@ -130,33 +221,58 @@ class ClaudeCodeProvider(LLMProvider):
         """
         from .streaming import from_result, stream_cli
 
-        cmd, stdin, env = self._stream_command(messages, tools)
-        if cmd is None:
-            yield from from_result(self.chat(messages, tools=tools,
-                                             temperature=temperature,
-                                             max_tokens=max_tokens))
-            return
-
-        saw_text = False
-        done = None
+        bridge = self._bridge(tools)
         try:
-            for event in stream_cli(cmd, env=env, stdin=stdin,
-                                    provider=self.name):
-                if event.kind == "text" and event.text:
-                    saw_text = True
-                    yield event
-                elif event.kind == "done":
-                    done = event
-        except Exception as exc:
-            log.debug("%s streaming failed: %s", self.name, exc)
-            saw_text = False
+            cmd, stdin, env = self._stream_command(messages, tools, bridge)
+            if cmd is None:
+                yield from from_result(self.chat(messages, tools=tools,
+                                                 temperature=temperature,
+                                                 max_tokens=max_tokens))
+                return
 
-        if saw_text and done is not None and done.result is not None:
-            yield done
-            return
+            saw_text = False
+            done = None
+            try:
+                for event in stream_cli(cmd, env=env, stdin=stdin,
+                                        provider=self.name):
+                    if event.kind == "text" and event.text:
+                        saw_text = True
+                        yield event
+                    elif event.kind == "done":
+                        done = event
+            except Exception as exc:
+                log.debug("%s streaming failed: %s", self.name, exc)
+                saw_text = False
+
+            if saw_text and done is not None and done.result is not None:
+                _answered(done.result, bridge)
+                yield done
+                return
+        finally:
+            if bridge is not None:
+                bridge.close()
         yield from from_result(self.chat(messages, tools=tools,
                                          temperature=temperature,
                                          max_tokens=max_tokens))
+
+    @staticmethod
+    def _invoke(cmd, prompt, env, bridge):
+        """Run the CLI once, and stop serving tools the moment it exits.
+
+        The bridge is closed here rather than at the end of `chat()` because
+        this is when it stops being needed, and because `chat()` returns from
+        six places — a `finally` around all of them would have to wrap the
+        whole body, and a listening socket that outlives its turn because one
+        early return missed it is the kind of leak nobody finds.
+        """
+        try:
+            return subprocess.run(
+                cmd, input=prompt, capture_output=True, text=True, timeout=180,
+                env=env,
+            )
+        finally:
+            if bridge is not None:
+                bridge.close()
 
     def chat(self, messages, *, tools=None, temperature=0.7, max_tokens=1500):
         if not self._bin:
@@ -183,17 +299,17 @@ class ClaudeCodeProvider(LLMProvider):
                     finish_reason="stop",
                 )
         system_prompt, prompt = self._split(messages)
+        bridge = self._bridge(tools)
         cmd = [self._bin, "-p", "--output-format", "json"]
+        if bridge is not None:
+            cmd += self._bridge_args(bridge)
         if system_prompt:
             cmd += ["--append-system-prompt", system_prompt]
         if self.model and self.model != "claude-code":
             cmd += ["--model", self.model]
         env = {**os.environ, "PATH": _augmented_path()}
         try:
-            proc = subprocess.run(
-                cmd, input=prompt, capture_output=True, text=True, timeout=180,
-                env=env,
-            )
+            proc = self._invoke(cmd, prompt, env, bridge)
         except subprocess.TimeoutExpired:
             return ChatResult(text=ProviderError(
                 ErrorKind.TIMEOUT, "claude-code", model=self.model, retryable=True,
