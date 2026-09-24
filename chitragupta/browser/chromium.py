@@ -36,8 +36,12 @@ question from `is_installed()` and `install_status()` reports both. Offering a
 150 MB download that leads nowhere is the "control that cannot work" failure
 `/CLAUDE.md` names first, in its most expensive form.
 
-**Visible, not headless.** `docs/BROWSER.md`: a user who can watch is a user who
-can stop — and MFA, which is never automated, needs a window a person can reach.
+**Watchable, which is what "visible, not headless" was always for.** The
+browser's own window is minimised and the page is shown inside the app, so a
+person can still watch and still stop, and `/api/browser/view/window` brings the
+real window back for anything that needs one. `runs_hidden()` is the user
+choosing to give that up in exchange for the browser not existing as an
+application at all — off by default, and the reasoning is on the function.
 """
 from __future__ import annotations
 
@@ -168,6 +172,8 @@ def install_status() -> dict[str, Any]:
         # optional dependency. The UI must not offer a download that leads
         # nowhere.
         "drivable": can_drive(),
+        # Whether it runs as an application at all on this machine.
+        "hidden": runs_hidden(),
     }
 
 
@@ -368,6 +374,54 @@ def reset_shared(*, close: bool = False) -> None:
             doomed.close()
 
 
+#: Set when the user would rather the browser did not exist as an application at
+#: all — no window, no Dock icon, nothing but the page inside the app.
+#:
+#: A file rather than a setting, for `executable()`'s reason: the truth is on
+#: disk, and a stored "yes it is hidden" that disagreed with how the browser
+#: actually started would be worse than asking.
+def _hidden_marker() -> Path:
+    return root() / "run-hidden"
+
+
+def runs_hidden() -> bool:
+    """Should the browser run with no window and no Dock presence?
+
+    **Off by default, and the default is the careful one.** Hidden means
+    headless, and headless is measurably one thing different to a page: the
+    user-agent says `HeadlessChrome` instead of `Chrome`. Everything else is
+    identical — `navigator.webdriver` is already true either way, same brands,
+    same WebGL, same plugins — but that one token is a well-known bot signal and
+    a site may treat it differently.
+
+    It also costs the escape hatch. A headless browser has no window to bring
+    back, so anything that genuinely needs one — a file picker, a system prompt
+    — has nowhere to appear. `docs/BROWSER.md`'s "visible, not headless" is
+    about exactly that, which is why this is the user's choice per machine
+    rather than ours for everybody.
+    """
+    return _hidden_marker().exists()
+
+
+def set_hidden(hidden: bool) -> bool:
+    """Turn hiding on or off, and restart the browser so it takes effect.
+
+    The flag is read at launch, so changing it means starting a new browser —
+    there is no way to un-window a running one. Closing here rather than
+    leaving it is the whole point: a user who pressed this and saw nothing
+    change would press it again.
+    """
+    marker = _hidden_marker()
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    if hidden:
+        marker.write_text("The browser runs with no window on this machine.\n")
+    elif marker.exists():
+        marker.unlink()
+    reset_shared(close=True)
+    log.info("browser hidden mode set to %s", hidden)
+    return runs_hidden()
+
+
 def open_driver():
     """The browser itself, with no boundary around it.
 
@@ -386,11 +440,16 @@ def open_driver():
     os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", str(install_dir()))
     profile_dir().mkdir(parents=True, exist_ok=True)
     binary = executable()
-    # **Visible, not headless.** `docs/BROWSER.md`: a user who can watch is a
-    # user who can stop — and MFA, which is never automated, needs a window the
-    # person can actually reach.
+    # **Watchable, which is what "visible, not headless" was always for.** The
+    # window is minimised and the page is shown inside the app, so a person can
+    # still watch and still stop — and `/api/browser/view/window` brings the
+    # real window back for the rare thing that needs one.
+    #
+    # `runs_hidden()` is the user saying they would rather it were not an
+    # application at all. That gives up the window, and the reasoning for
+    # letting them is on `runs_hidden` itself.
     return PlaywrightDriver(str(binary) if binary else None,
-                            str(profile_dir()), headless=False)
+                            str(profile_dir()), headless=runs_hidden())
 
 
 def forget_site(host: str) -> bool:

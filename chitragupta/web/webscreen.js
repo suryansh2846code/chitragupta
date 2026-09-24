@@ -36,6 +36,20 @@ let WS_TIMER = null;
 let WS_BUSY = false;
 let WS_WINDOW_OPEN = false;
 
+/** Draw both window controls from one fact, so they cannot disagree. */
+function wsSetHidden(hidden) {
+  const hide = $("#wsHidden");
+  if (hide) {
+    hide.dataset.on = hidden ? "1" : "";
+    hide.textContent = hidden ? "Show in Dock" : "Hide from Dock";
+  }
+  // Never show a control that cannot work: with no window there is nothing to
+  // open, and a button that answered "there is no window" would be the app
+  // offering something it knows is impossible.
+  const win = $("#wsWindow");
+  if (win) win.hidden = Boolean(hidden);
+}
+
 function wsNote(message) {
   const el = $("#wsNote");
   if (!el) return;
@@ -97,6 +111,12 @@ function openWebScreen() {
   if (!screen) return;
   screen.hidden = false;
   wsNote("Starting the browser…");
+  // Which way it is running is the server's fact, read once on open rather than
+  // remembered here — this screen can be opened in a window that was reloaded
+  // since the switch was last pressed.
+  api("/api/browser/status")
+    .then((s) => wsSetHidden(Boolean(s && s.hidden)))
+    .catch(() => {});
   wsTick();
   if (!WS_TIMER) WS_TIMER = setInterval(wsTick, WS_FRAME_MS);
 }
@@ -168,6 +188,34 @@ function closeWebScreen() {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ visible: WS_WINDOW_OPEN }) });
     } catch (e) { wsNote(String(e).replace(/^Error:\s*/, "")); }
+  };
+
+  // Running with no window at all. Measured rather than promised: hidden means
+  // headless, and the only thing a page can tell is that the user-agent says
+  // HeadlessChrome instead of Chrome — everything else is identical. What it
+  // really costs is the window, so "Open window" cannot work while it is on and
+  // is hidden rather than left there to fail.
+  const hide = $("#wsHidden");
+  if (hide) hide.onclick = async () => {
+    const turningOn = hide.dataset.on !== "1";
+    if (turningOn && !confirm(
+        "Run the browser with no window and no Dock icon?\n\n"
+        + "It keeps working exactly as it does now and you still watch it here. "
+        + "Two things change: websites can tell it is running this way, and "
+        + "there is no window left to open for anything that needs a real one "
+        + "— a file upload, a system prompt.\n\n"
+        + "The browser restarts. You can turn this back off here.")) return;
+    hide.disabled = true;
+    try {
+      const r = await api("/api/browser/hidden", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ hidden: turningOn }) });
+      wsSetHidden(Boolean(r.hidden));
+      wsNote(r.hidden ? "Running with no window. Restarting the browser…"
+                      : "The browser has a window again. Restarting…");
+    } catch (e) { wsNote(String(e).replace(/^Error:\s*/, "")); }
+    hide.disabled = false;
+    wsTick();
   };
 
   const close = $("#wsClose");

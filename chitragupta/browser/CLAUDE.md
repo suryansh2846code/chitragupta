@@ -169,6 +169,16 @@ holds.
   that needs it.
   **No agent reaches any of it.** A tool that could click at a coordinate would
   walk straight past refs, the origin check, and everything else here.
+- **A minimised window is still an application, so it is still in the Dock.**
+  `chromium.runs_hidden()` is the user choosing to give that up: hidden means
+  *headless*, and the difference is one token — measured, not assumed. The
+  user-agent says `HeadlessChrome` instead of `Chrome`; `navigator.webdriver`
+  is already true either way, and brands, plugins and the WebGL renderer are
+  identical. What it really costs is the window, so there is nothing to bring
+  back for a file picker or a system prompt — which is why it is off by
+  default and per machine. Patching the bundle's `Info.plist` with
+  `LSUIElement` is **not** an option: Chromium validates its own bundle and
+  dies with SIGTRAP.
 - **Our cleanup must not surface as the user's problem.** Killing the browser is
   a crash as far as Chromium is concerned, so the next launch would otherwise
   open with *"Chromium didn't shut down correctly. Restore pages?"* — offering

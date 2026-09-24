@@ -200,3 +200,76 @@ def test_forgetting_everything_really_removes_the_profile():
 
 def test_forgetting_twice_is_not_an_error():
     assert chromium.forget_everything() is False
+
+
+# ── running with no window at all ────────────────────────────────────────
+#
+# The browser's own window is minimised and the page is shown inside the app,
+# which is what "visible, not headless" was always about — being able to watch
+# and to stop. A minimised window is still an application, though, so it still
+# sits in the Dock, and a user who wanted the browser gone wanted it gone.
+#
+# Hidden means headless. Measured rather than assumed: the only thing a page can
+# tell is that the user-agent says `HeadlessChrome` instead of `Chrome` —
+# `navigator.webdriver` is already true either way, and the brands, plugins and
+# WebGL renderer are identical. What it really costs is the window, which is why
+# it is the user's choice per machine and not ours for everybody.
+def test_the_browser_has_a_window_unless_the_user_says_otherwise():
+    from chitragupta.browser import chromium
+
+    assert chromium.runs_hidden() is False
+
+
+def test_hiding_it_is_remembered_on_disk():
+    """On disk for `executable()`'s reason: a stored "yes it is hidden" that
+    disagreed with how the browser actually started is worse than asking."""
+    from chitragupta.browser import chromium
+
+    assert chromium.set_hidden(True) is True
+    assert chromium.runs_hidden() is True
+
+    assert chromium.set_hidden(False) is False
+    assert chromium.runs_hidden() is False
+
+
+def test_the_choice_reaches_the_browser_that_gets_started(monkeypatch):
+    """The flag is read at launch, so this is the only place it can be wrong."""
+    from chitragupta.browser import chromium
+
+    made = {}
+    monkeypatch.setattr(
+        "chitragupta.browser.driver.PlaywrightDriver",
+        lambda binary, profile, headless=False: made.update(headless=headless))
+
+    chromium.set_hidden(True)
+    chromium.open_driver()
+    assert made["headless"] is True
+
+    chromium.set_hidden(False)
+    chromium.open_driver()
+    assert made["headless"] is False
+
+
+def test_changing_it_restarts_the_browser(monkeypatch):
+    """A switch that appeared to do nothing until the next launch is a switch
+    people press twice. The choice is made at launch, so it has to."""
+    from chitragupta.browser import chromium
+
+    monkeypatch.setattr(chromium, "open_driver", lambda: object())
+    first = chromium.shared_driver()
+
+    chromium.set_hidden(True)
+
+    assert chromium.shared_driver() is not first
+    chromium.set_hidden(False)
+
+
+def test_the_panel_is_told_which_way_it_is_running():
+    """The screen draws two controls from this, and "Open window" must not be
+    offered when there is no window to open."""
+    from chitragupta.browser import chromium
+
+    assert chromium.install_status()["hidden"] is False
+    chromium.set_hidden(True)
+    assert chromium.install_status()["hidden"] is True
+    chromium.set_hidden(False)

@@ -127,6 +127,7 @@
  "POST /api/browser/connect/cancel",
  "POST /api/browser/connect/finish",
  "POST /api/browser/forget-everything",
+ "POST /api/browser/hidden",
  "POST /api/browser/install",
  "POST /api/browser/sites",
  "POST /api/browser/sites/{host}/acting",

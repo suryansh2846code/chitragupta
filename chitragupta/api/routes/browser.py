@@ -222,6 +222,29 @@ class WindowIn(BaseModel):
     visible: bool
 
 
+class HiddenIn(BaseModel):
+    """Whether the browser exists as an application on this machine at all."""
+
+    hidden: bool
+
+
+@router.post("/api/browser/hidden")
+@probes_a_provider
+def set_hidden(body: HiddenIn):
+    """Run the browser with no window and no Dock icon, or stop doing that.
+
+    Restarts the browser, because the choice is made at launch and there is no
+    way to un-window a running one — a switch that appeared to do nothing until
+    the next restart is a switch people press twice.
+
+    Measured, so the UI can say it honestly: hidden means headless, and the only
+    thing a page can tell is that the user-agent says `HeadlessChrome` rather
+    than `Chrome`. Everything else is identical. What it really costs is the
+    window: there is none to bring back for a file picker or a system prompt.
+    """
+    return {"ok": True, "hidden": chromium.set_hidden(bool(body.hidden))}
+
+
 def _view_driver():
     """The shared browser, or a sentence saying why there is not one."""
     if not chromium.can_drive() or not chromium.is_installed():
