@@ -260,7 +260,7 @@ async function loadAllowList() {
     ? rows.map((p) => `
         <div class="set-row" data-allow="${esc(p.value)}">
           <div class="set-main">
-            <div class="set-label">${esc(p.value)}${
+            <div class="set-label">${esc(p.label || p.value)}${
               // Which list, when there is more than one it could be on. The
               // same handle can be a person on two apps, and "remove" has to
               // be unambiguous about which permission it takes away.

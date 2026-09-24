@@ -791,12 +791,32 @@ one that makes this safe rather than merely defensible:
    `demo:delete_project` is refused even to a user who granted precisely that
    tool — and told why. `mcp_source.is_irreversible` is the classifier;
    it reads the tool's own verb and errs toward asking.
-3. **The grant is one tool, not one server.** Allowing
+3. **The grant is one tool on one container, not one server.** Allowing
    `linear:create_comment` does nothing for `linear:create_issue`, and an
    action arriving without both halves of its key fails closed against a
    placeholder no grant can match.
+
+   The key is `server:tool@scope` where the call says what it reaches —
+   `github:add_issue_comment@acme/api` — and `server:tool` where it does not.
+   `actions.connector_scope` reads the container out of the arguments the tool
+   was actually given (`owner`, `repo`, `project`, `workspace`, …), never an
+   item id and never content: a key on `issue_number` could be spent once, and
+   a key on `body` is the blob this was right to refuse.
+
+   **Narrower than both things it replaces.** A bare `github:add_issue_comment`
+   covered every repository the token could reach; the `REPO_RECIPIENT` grant
+   it also supersedes covered every GitHub action on the repo,
+   `merge_pull_request` included. Undeclared scope falls back to the old key
+   exactly, so this can only narrow a grant, and a grant written before scopes
+   existed stops matching rather than quietly covering more than the person
+   meant — which is the direction a permission change has to fail in.
+   `tests/test_a_grant_names_what_it_reaches.py` holds all of it.
 4. **It is visible and revocable, and every use is logged.** The allow-list
-   screen shows it tagged *Connector tool*; `action_log` records each run.
+   screen shows it tagged *Connector tool*; `action_log` records each run. The
+   row prints `label` and not `value` — `github · add_issue_comment on
+   acme/api` rather than the key — because a screen that prints ids is a
+   screen nobody can audit, and the same rule sends the readable form into
+   every refusal.
 
 **What got worse.** Honestly: a user who grants a write tool has made a
 standing decision, and a prompt-injected agent that reaches that exact tool can

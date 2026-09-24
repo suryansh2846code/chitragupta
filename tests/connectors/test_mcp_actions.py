@@ -170,7 +170,16 @@ def test_a_queued_connector_action_is_described_in_the_users_terms():
     assert "connector tool" in row["reason"].lower(), (
         "the reason must say what kind of thing was refused — `http:send_message` "
         "on its own reads like a typo, not like something to approve")
-    assert "http:send_message" in row["reason"], "and which one"
+    # **Which one — in words, not as the key.** This asserted the literal
+    # `http:send_message` until grants learned to name what a tool reaches;
+    # the key can now carry a scope (`github:add_issue_comment@acme/api`) and
+    # printing it raw is the internal this project refuses to surface. Both
+    # halves still have to be there, and the id form now has to be absent —
+    # which is a stronger assertion than the one it replaces, not a weaker one.
+    assert "send_message" in row["reason"], "and which tool"
+    assert "http" in row["reason"], "and which connector"
+    assert "http:send_message" not in row["reason"], (
+        "the grant key is an id and must not reach the user verbatim")
 
 
 def test_approving_later_runs_what_was_proposed():

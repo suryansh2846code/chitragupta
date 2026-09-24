@@ -328,10 +328,16 @@ class Verdict:
 
 
 def list_permissions(kind: str = EMAIL_RECIPIENT) -> list[dict]:
+    """The standing grants of one kind, each carrying what to show for it.
+
+    `value` is the key the gate compares; `label` is what the allow-list screen
+    prints. They are separate fields because a connector grant's key is an id,
+    and a screen that prints ids is a screen nobody can audit.
+    """
     rows = _conn().execute(
         "SELECT id,kind,value,note,created_at FROM action_permissions "
         "WHERE kind=? ORDER BY value", (kind,)).fetchall()
-    return [dict(r) for r in rows]
+    return [{**dict(r), "label": _readable(kind, r["value"])} for r in rows]
 
 
 def all_permissions() -> list[dict]:
@@ -347,7 +353,8 @@ def all_permissions() -> list[dict]:
     rows = _conn().execute(
         "SELECT id,kind,value,note,created_at FROM action_permissions "
         "ORDER BY kind, value").fetchall()
-    return [{**dict(r), "kind_label": KIND_LABELS.get(r["kind"], r["kind"])}
+    return [{**dict(r), "kind_label": KIND_LABELS.get(r["kind"], r["kind"]),
+             "label": _readable(r["kind"], r["value"])}
             for r in rows]
 
 
@@ -402,10 +409,24 @@ _REFUSAL_NOUN = {
 }
 
 
+def _readable(kind: str, value: str) -> str:
+    """One blocked recipient as the words a person reads.
+
+    A connector key is an id — `github:add_issue_comment@acme/api` — and this
+    is the sentence for it. The id and the display string are separate fields
+    everywhere else in the codebase for exactly this reason.
+    """
+    if kind == TOOL_RECIPIENT:
+        from ..actions import connector_tool_label
+
+        return connector_tool_label(value) or value
+    return value
+
+
 def _refusal(kind: str, blocked: tuple[str, ...]) -> str:
     noun = _REFUSAL_NOUN.get(kind, "")
     return ("Waiting for your approval — "
-            + ", ".join(noun + b for b in blocked)
+            + ", ".join(noun + _readable(kind, b) for b in blocked)
             + (" is not" if len(blocked) == 1 else " are not")
             + " on your allowed list.")
 

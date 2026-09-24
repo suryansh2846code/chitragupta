@@ -333,8 +333,16 @@ def test_connector_writes_still_wait_for_a_tap():
         "mcp_action", {"server_id": "linear", "tool": "create_issue"})
     assert not verdict.allowed
     assert "approval" in verdict.reason.lower()
-    assert "linear:create_issue" in verdict.reason, (
+    # **In words, not as the key.** This pinned the literal `linear:create_issue`
+    # until a grant learned to name what the tool reaches — the key can now
+    # carry a scope, and printing it raw is the internal this project refuses
+    # to put in front of a user. Both halves still have to be named, and the
+    # id form now has to be absent, which is stricter than what it replaces.
+    assert "create_issue" in verdict.reason, (
         "the user is told which tool, not just that something was refused")
+    assert "linear" in verdict.reason, "and which connector"
+    assert "linear:create_issue" not in verdict.reason, (
+        "the grant key is an id and must not reach the user verbatim")
 
 
 # ── how many at once ─────────────────────────────────────────────────────────

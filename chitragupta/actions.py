@@ -186,12 +186,87 @@ TOOL_RECIPIENT = "connector_tool"
 
 
 
+#: Argument names that say *what a tool reaches* rather than what it does.
+#:
+#: A grant has to name something a person can recognise, compare and revoke —
+#: that is the whole argument in `ACTION-COVERAGE.md § Per-tool grants`, and
+#: `server:tool` was only ever the best key available while the arguments were
+#: an opaque blob. They are not opaque: a write names the container it acts
+#: inside, and that container is the same fact `REPO_RECIPIENT` already puts on
+#: a GitHub card.
+#:
+#: Containers only. An item id (`issue_number`, `comment_id`) would make a
+#: grant that can never be used twice, and content (`body`, `title`) is the
+#: blob this was right to refuse.
+#:
+#: Matched by name against the arguments actually supplied, so a server nobody
+#: here has seen gets the same treatment as GitHub — no allowlist, the rule
+#: `/CLAUDE.md` sets for graph enrichment and for the same reason.
+_SCOPE_ARGS: tuple[str, ...] = (
+    "org", "organization", "owner", "workspace", "workspace_id",
+    "team", "team_id", "project", "project_id", "repo", "repository",
+    "space", "space_key", "database_id", "board", "board_id",
+    "channel", "channel_id",
+)
+
+
+def connector_scope(arguments: Any) -> str:
+    """The container a connector write would act inside, from its own arguments.
+
+    `{"owner": "acme", "repo": "api", "body": "…"}` → `acme/api`. Empty when
+    nothing in the call names a container, which is not a failure — it is the
+    caller falling back to the tool key it already used.
+    """
+    if not isinstance(arguments, dict):
+        return ""
+    parts = [str(arguments[name]).strip() for name in _SCOPE_ARGS
+             if str(arguments.get(name) or "").strip()]
+    return "/".join(dict.fromkeys(parts))
+
+
 def connector_tool_key(params: dict) -> str:
-    """`server:tool` — what a standing grant for a connector write names."""
+    """What a standing grant for a connector write names.
+
+    `server:tool@scope` where the call says what it reaches, `server:tool`
+    where it does not.
+
+    **Narrower than either thing it replaces.** A bare `github:add_issue_comment`
+    covered every repository the token could reach; a `REPO_RECIPIENT` grant on
+    `acme/api` covered every GitHub action, `merge_pull_request` among them.
+    This covers one verb on one container, and nothing else.
+
+    Undeclared scope falls back to the tool key — today's behaviour exactly, so
+    this can only narrow a grant and never widen one. A grant written before
+    scopes existed simply stops matching and the user is asked again, which is
+    the direction a permission change has to fail in.
+    """
     params = params or {}
     server = str(params.get("server_id") or params.get("server") or "").strip()
     tool = str(params.get("tool") or "").strip()
-    return f"{server}:{tool}" if server and tool else ""
+    if not (server and tool):
+        return ""
+    scope = connector_scope(params.get("arguments"))
+    return f"{server}:{tool}@{scope}" if scope else f"{server}:{tool}"
+
+
+def connector_tool_label(key: str) -> str:
+    """A grant key as the sentence a person reads on a card.
+
+    The id and the display string are named separately on purpose: `/CLAUDE.md`
+    requires it wherever a field crosses a layer and somebody reads it, and
+    `github:add_issue_comment@acme/api` is an id — it reads like a typo, which
+    is the exact complaint `_REFUSAL_NOUN` already records about `server:tool`.
+    """
+    if not key:
+        return ""
+    server, sep, rest = key.partition(":")
+    if not sep or not rest:
+        return key
+    tool, at, scope = rest.partition("@")
+    # The server is always named. A scope tells you *where*, but two connectors
+    # can publish the same verb, and an allow-list row that does not say which
+    # one it belongs to is a row nobody can audit.
+    return f"{server} · {tool} on {scope}" if at and scope else f"{server} · {tool}"
 
 _GITHUB_URL = re.compile(
     r"github\.com/([\w.-]+)/([\w.-]+?)(?:\.git)?/(?:issues|pull)/(\d+)", re.I)
