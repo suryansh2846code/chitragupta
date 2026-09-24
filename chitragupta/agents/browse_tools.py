@@ -90,9 +90,76 @@ def _answer(reading: Reading) -> ToolResult:
     return ToolResult.failed(reading.reason)
 
 
+#: What an agent is told when the browser itself will not start.
+#:
+#: The one failure this module had no words for, and the module docstring says
+#: wording is the thing it owns. A `BrowserError` used to travel all the way to
+#: the model as whatever Playwright wrote — *"Failed to create a ProcessSingleton
+#: for your profile directory"* — which is an internal, so the model paraphrased
+#: it into "the browser session closed unexpectedly" and offered to try again.
+#: It then failed identically, because nothing about retrying closes the other
+#: window that is holding the profile.
+#:
+#: So: say which of the two it is, and say the thing that actually clears it.
+#: Every browser we open takes an *exclusive* lock on the profile, so a second
+#: one cannot start while the first is alive.
+BROWSER_BUSY = (
+    "Another browser window opened by this app is still using the browser "
+    "profile, so a new page cannot be opened. Tell the user to close the extra "
+    "browser window — the one left over from connecting a site — and that "
+    "reading will work again straight away. Do not retry this call: retrying "
+    "cannot close that window, and it will fail the same way."
+)
+BROWSER_UNAVAILABLE = (
+    "The browser could not be started, so no page can be read right now. Tell "
+    "the user, and say it is the browser rather than their sign-in or their "
+    "permission. Do not retry this call more than once."
+)
+
+#: Playwright's name for "another Chromium already holds this profile". Matched
+#: as a fragment because the rest of that message is a path and a paragraph of
+#: advice aimed at whoever wrote the code, not at this user.
+_PROFILE_LOCKED = "processsingleton"
+
+
+def _browser_failed(exc: Exception) -> ToolResult:
+    """Turn a browser that will not start into something an agent can act on.
+
+    Never the exception's own text. `/CLAUDE.md`: no stack traces and no
+    internals in anything user-facing, and a tool result is user-facing by the
+    time a model has repeated it back to somebody.
+
+    `BrowserNotReadyError` is the exception, and it is one on purpose: its
+    message is already written for a person — "choose Set up browsing" — so it
+    is passed through rather than replaced by something vaguer.
+    """
+    from ..browser.chromium import BrowserNotReadyError
+
+    log.warning("browser unavailable for an agent: %s", str(exc)[:200])
+    if isinstance(exc, BrowserNotReadyError):
+        return ToolResult.failed(f"{exc} Tell the user that, and do not retry.")
+    if _PROFILE_LOCKED in str(exc).lower() or "already in use" in str(exc).lower():
+        return ToolResult.failed(BROWSER_BUSY)
+    return ToolResult.failed(BROWSER_UNAVAILABLE)
+
+
+def _browser_errors() -> tuple:
+    """The two ways asking for a browser can raise, as one `except` clause."""
+    from ..browser.chromium import BrowserNotReadyError
+    from ..browser.driver import BrowserError
+
+    return (BrowserError, BrowserNotReadyError)
+
+
 def browse_open(url: str) -> ToolResult:
     """Open a page on an allowed site and read it."""
-    return _answer(get_session().open(url))
+    try:
+        return _answer(get_session().open(url))
+    except _browser_errors() as exc:
+        # The session is kept, not dropped: the driver restarts its own thread
+        # on the next call, and throwing it away would lose the page an agent
+        # may still be holding a ref into.
+        return _browser_failed(exc)
 
 
 def browse_read(since: str | None = None) -> ToolResult:
@@ -104,7 +171,10 @@ def browse_read(since: str | None = None) -> ToolResult:
     difference between this capability feeling cheap and feeling reckless on
     somebody's own model plan.
     """
-    reading = get_session().read()
+    try:
+        reading = get_session().read()
+    except _browser_errors() as exc:
+        return _browser_failed(exc)
     # Both success paths record, including the cheap one: re-reading a page to
     # check it is unchanged is still the agent having looked, and a record that
     # only appears when the page happened to change would be a record nobody
@@ -128,7 +198,10 @@ def browse_find(what: str) -> ToolResult:
     JavaScript, because a model that can do either has full control of whatever
     account the page belongs to.
     """
-    session = get_session()
+    try:
+        session = get_session()
+    except _browser_errors() as exc:
+        return _browser_failed(exc)
     if session.snapshot is None:
         return ToolResult.failed("No page is open. Use browse_open first.")
     found = session.find(what)

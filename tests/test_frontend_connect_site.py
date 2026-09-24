@@ -27,6 +27,11 @@ WAITING = {**LIVE, "still_signing_in": True,
            "note": "The browser still looks like it is on a sign-in page. Finish "
                    "signing in, then press Done again — or press Done again "
                    "anyway if you know you are in."}
+#: Google refusing us for being an automated browser — the one waiting state a
+#: second press cannot overrule, because it is not our guess that was wrong.
+REFUSED = {**LIVE, "still_signing_in": True, "sso_refused": True,
+           "note": "Google would not sign you in through this browser — it only "
+                   "allows its own sign-in from an ordinary browser window."}
 IDLE = {"connecting": False}
 
 
@@ -91,6 +96,29 @@ def test_the_button_says_what_the_second_press_does():
                          {"ok": False, "still_signing_in": True,
                           "error": "That still looks like a sign-in page."}})
     assert out["frames"][-1]["doneLabel"] == "Done anyway"
+
+
+def test_a_refusal_is_not_dressed_up_as_something_to_overrule():
+    """The other waiting state. Google said no, `force` is turned down too, and
+    a button reading "Done anyway" would promise an override that cannot happen
+    — failing twice and explaining itself neither time. It reads "Done", and
+    starts working the moment they sign in the way the note describes."""
+    f = drive([REFUSED], ["poll"])["frames"][0]
+
+    assert f["doneLabel"] == "Done"
+    assert f["message"] == REFUSED["note"], "the server's sentence, not ours"
+    assert f["error"] == "", "not rendered as a failure of theirs"
+
+
+def test_a_refusal_never_sends_force():
+    """It follows from the label — `force` is read off the button — and it is
+    the half that would otherwise reach the server."""
+    out = drive([REFUSED, REFUSED], ["poll", "done"],
+                replies={"/api/browser/connect/finish":
+                         {"ok": False, "still_signing_in": True,
+                          "sso_refused": True, "error": REFUSED["note"]}})
+
+    assert [b["force"] for b in posts(out, "/api/browser/connect/finish")] == [False]
 
 
 def test_anything_started_can_be_stopped():

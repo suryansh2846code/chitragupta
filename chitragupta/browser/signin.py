@@ -135,6 +135,12 @@ class Connecting:
     #: Set once `finish` has been tried and the browser was still on a sign-in
     #: page, so the card can say so without pretending it failed outright.
     still_signing_in: bool = False
+    #: …and set when the reason is an identity provider refusing us, which is
+    #: the one waiting state a second press cannot overrule. The card reads it
+    #: to go on offering "Done" rather than "Done anyway": a button promising an
+    #: override that cannot happen is a button that fails twice and explains
+    #: itself neither time.
+    sso_refused: bool = False
     note: str = ""
 
 
@@ -157,6 +163,7 @@ def status() -> dict[str, Any]:
             "host": live.host if live else "",
             "url": live.url if live else "",
             "still_signing_in": bool(live and live.still_signing_in),
+            "sso_refused": bool(live and live.sso_refused),
             "note": live.note if live else "",
         }
 
@@ -214,6 +221,7 @@ def finish(force: bool = False) -> dict[str, Any]:
         return {"ok": False, "error": "Nothing is being connected."}
 
     where, title, nodes = _where_is_the_browser(session)
+    stuck = bool(where and looks_like_sign_in(where, title))
 
     # Checked before the sign-in heuristic, and separately from it. Google's
     # refusal page *is* a sign-in page, so the generic branch would catch it and
@@ -221,18 +229,39 @@ def finish(force: bool = False) -> dict[str, Any]:
     # followed, about a page that will never let them finish. Naming the real
     # cause is the difference between a user retrying forever and a user signing
     # in the way that works.
-    if where and sso_was_refused(where):
+    #
+    # **And the refusal usually is not on the page we are driving.** "Continue
+    # with Google" opens a popup, Google refuses it *there*, and the window we
+    # navigated is still sitting on the site's own login page — so a check that
+    # reads one page finds nothing and falls through to exactly the advice this
+    # branch exists to replace. Every open window is asked.
+    #
+    # A popup counts only while the driven window is still on a sign-in page.
+    # Somebody who gave up on the button, typed their password and got in leaves
+    # that refused popup open behind them, and treating it as current would
+    # refuse a connection that demonstrably works — with no `force` to escape,
+    # because a refusal is not a heuristic somebody may overrule.
+    refused_here = bool(where and sso_was_refused(where))
+    refused_beside = stuck and any(
+        sso_was_refused(url) for url, _ in _open_windows(session))
+    if refused_here or refused_beside:
         with _state.lock:
             if _state.current is not None:
                 _state.current.still_signing_in = True
+                _state.current.sso_refused = True
                 _state.current.note = SSO_REFUSED_ADVICE
         return {"ok": False, "still_signing_in": True, "sso_refused": True,
                 "host": live.host, "error": SSO_REFUSED_ADVICE}
 
-    if not force and where and looks_like_sign_in(where, title):
+    if not force and stuck:
         with _state.lock:
             if _state.current is not None:
                 _state.current.still_signing_in = True
+                # Cleared, not left standing. Somebody who walked away from the
+                # refusal to the site's own form is back to a guess they may
+                # overrule, and a stale flag would go on withholding exactly the
+                # override they now need.
+                _state.current.sso_refused = False
                 _state.current.note = (
                     "The browser still looks like it is on a sign-in page. "
                     "Finish signing in, then press Done again — or press Done "
@@ -246,7 +275,17 @@ def finish(force: bool = False) -> dict[str, Any]:
     grant = origins.grant(
         live.url, may_read=True,
         note=f"signed in as {account}" if account else "signed in from Connectors")
-    _clear(close_browser=False)
+    # **Closed, now the sign-in is over.** Leaving it open used to look harmless
+    # — the user can see they are in — but a browser holds an *exclusive* lock on
+    # the profile directory, and the profile is the whole point of this flow. So
+    # the window that proves the sign-in worked is also the window that stops
+    # every agent from using it: the next `browse_open` cannot start a browser at
+    # all, and no amount of retrying clears it because nothing is going to close
+    # that window but the person who no longer has any reason to look at it.
+    #
+    # Closing is also what flushes the session to disk, so "it stays signed in"
+    # is true on disk rather than only in the memory of a process we abandoned.
+    _clear(close_browser=True)
     log.info("browser sign-in finished for %s", live.host)
     return {"ok": True, "host": live.host,
             "grant": grant.as_dict() if hasattr(grant, "as_dict") else None,
@@ -305,6 +344,29 @@ def _where_is_the_browser(driver: Any) -> tuple[str, str, list]:
         url, title, nodes = driver.current()
         return str(url), str(title), list(nodes or [])
     return "", "", []
+
+
+def _open_windows(driver: Any) -> list[tuple[str, str]]:
+    """Every window the browser has open, as `(url, title)`.
+
+    An extra a real browser can answer, asked for with `getattr` rather than
+    added to the `Driver` protocol in `session.py`: that seam is deliberately
+    four methods, and an agent's `Session` reading exactly the page it navigated
+    is a property worth keeping. Signing in already drives the driver directly,
+    which is the whole reason `chromium.open_driver()` exists.
+
+    Empty when the browser cannot say — a driver that does not know about
+    windows behaves the way it did before this existed, and the generic sign-in
+    heuristic still has the case.
+    """
+    if driver is None:
+        return []
+    listing = getattr(driver, "windows", None)
+    if not callable(listing):
+        return []
+    with suppressed("asking the browser what windows are open"):
+        return [(str(url), str(title)) for url, title in listing() or []]
+    return []
 
 
 def _clear(*, close_browser: bool) -> None:

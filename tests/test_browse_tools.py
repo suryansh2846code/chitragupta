@@ -323,3 +323,113 @@ def test_that_gate_would_actually_notice(monkeypatch):
     assert present, "the simulated write tool is not being seen at all"
     assert not present <= permissions.NEVER_UNATTENDED, (
         "an ungated browse_click did not trip the check that exists to catch it")
+
+
+# ── when the browser itself will not start ───────────────────────────────
+#
+# The reported failure, and the most expensive kind: the tool raised, the
+# generic catch in `tools.run_tool` wrapped Playwright's own words — *"Failed to
+# create a ProcessSingleton for your profile directory"* — and handed them to
+# the model, which reasonably turned that into "the browser session closed
+# unexpectedly" and offered to try again. It then failed identically, twice,
+# because retrying cannot close the other window holding the profile.
+#
+# Two things are wrong there and both are this module's to own: an internal
+# reached the model, and the advice it produced could not work.
+class _WontStart:
+    """A driver whose browser refuses to launch, the way a locked profile does."""
+
+    def __init__(self, message):
+        self.message = message
+
+    def _boom(self, *_args):
+        from chitragupta.browser.driver import BrowserError
+        raise BrowserError(self.message)
+
+    goto = current = back = _boom
+
+    def close(self):
+        pass
+
+
+LOCKED = ("BrowserType.launch_persistent_context: Failed to create a "
+          "ProcessSingleton for your profile directory. This usually means "
+          "that the profile is already in use by another instance of Chromium.")
+
+
+def _wont_start(message=LOCKED):
+    browse_tools.set_session(Session(_WontStart(message)))
+
+
+def test_a_browser_that_will_not_start_is_a_failure_not_an_exception():
+    """It has to reach the loop as a verdict. An exception becomes "Tool
+    browse_open failed: <whatever Playwright said>", which is the path that
+    produced the wrong advice."""
+    origins.grant("payroll.example.com")
+    _wont_start()
+
+    out = browse_tools.browse_open("https://payroll.example.com/payslips")
+
+    assert out.ok is False
+
+
+def test_playwrights_own_words_never_reach_the_model():
+    """`/CLAUDE.md`: never surface an internal. A tool result is user-facing by
+    the time a model has repeated it back to somebody."""
+    origins.grant("payroll.example.com")
+    _wont_start()
+
+    out = browse_tools.browse_open("https://payroll.example.com/payslips")
+
+    assert "ProcessSingleton" not in out
+    assert "launch_persistent_context" not in out
+    assert "Playwright" not in out
+
+
+def test_a_locked_profile_says_what_actually_clears_it():
+    """The whole point. "Try again" cannot work — nothing about retrying closes
+    the window that is holding the profile — so the answer has to name the
+    window and tell the agent not to retry."""
+    origins.grant("payroll.example.com")
+    _wont_start()
+
+    out = browse_tools.browse_open("https://payroll.example.com/payslips")
+
+    assert "close" in out.lower() and "window" in out.lower()
+    assert "not retry" in out.lower() or "do not retry" in out.lower()
+
+
+def test_a_browser_that_is_not_set_up_keeps_its_own_sentence():
+    """That message is already written for a person — "choose Set up browsing".
+    Replacing it with something vaguer would lose the one instruction that
+    works."""
+    from chitragupta.browser.chromium import BrowserNotReadyError
+
+    origins.grant("payroll.example.com")
+
+    def refuses():
+        raise BrowserNotReadyError(
+            "The browser has not been set up yet. Open Connectors and choose "
+            "“Set up browsing”.")
+
+    browse_tools.set_session(None)
+    import chitragupta.browser.chromium as chromium_mod
+    original = chromium_mod.open_session
+    chromium_mod.open_session = lambda: refuses()
+    try:
+        out = browse_tools.browse_open("https://payroll.example.com/payslips")
+    finally:
+        chromium_mod.open_session = original
+
+    assert out.ok is False
+    assert "Set up browsing" in out
+
+
+def test_re_reading_and_finding_are_covered_too():
+    """All three entry points ask for the browser, so all three can raise."""
+    origins.grant("payroll.example.com")
+    _wont_start()
+
+    browse_tools.browse_open("https://payroll.example.com/payslips")
+    assert browse_tools.browse_read().ok is False
+    assert "ProcessSingleton" not in browse_tools.browse_read()

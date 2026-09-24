@@ -46,6 +46,25 @@ holds.
   `signin.sso_was_refused` names that page and says to sign in to the site
   directly instead. **Do not fingerprint-spoof past it**: it is an arms race on
   Google's schedule, and losing it costs the user their real Google account.
+- **The refusal lands in a popup, so the check reads every window.** "Continue
+  with Google" opens a second window and Google answers in *that* one — the
+  window we navigated is still on the site's own login page. A check that read
+  one page therefore found nothing and fell through to "finish signing in, then
+  press Done", which is the exact loop the refusal text exists to end. A popup
+  counts only while the driven window is still on a sign-in page: somebody who
+  gave up on the button and typed their password leaves that refused popup open
+  behind them, and a refusal is not a heuristic `force` may overrule.
+- **A refusal is the one waiting state with nothing to overrule**, so `status()`
+  carries `sso_refused` and the card keeps its button reading "Done" instead of
+  "Done anyway". Offering an override that is turned down anyway is a button
+  that fails twice and explains itself neither time. The flag is *cleared* when
+  the generic heuristic fires next, or somebody who walked away to the site's
+  own form would be denied the second press they now need.
+- **`driver.windows()` is not a fifth method on the `Driver` protocol.** The
+  sign-in flow is its only caller, and it already drives the driver directly. An
+  agent's `Session` reads the one page it navigated, deliberately: a page that
+  can `window.open` anything must not get a lever on where the next read comes
+  from.
 - **Disconnect ends the session, not just the permission.** `forget_site()`
   clears that host's cookies; a grant dropped while the user stays signed in is
   a lie about what the button did.
@@ -55,6 +74,22 @@ holds.
 - **Anything we spawn, we clean up — across runs**, through
   `models/login_processes.py`. A browser holds a profile lock; 158 orphaned
   login processes is the precedent.
+- **The profile lock is exclusive, so every browser we open, we close — in a
+  `finally`.** A second Chromium on the same profile does not queue or share:
+  it refuses to launch. So a browser left running is not an idle process, it is
+  *browsing switched off* until the user quits the app, and no retry can clear
+  it because nothing is going to close that window. Both leaks were real —
+  `signin.finish()` kept its window open to show the user they were in, and
+  `chromium.forget_site()` opened one per Disconnect and never closed it. Closing
+  is also what flushes cookies to disk, so it is what makes "it stays signed in"
+  true of the profile rather than of a process we abandoned.
+- **A browser that will not start is explained, never dumped.** Playwright's
+  *"Failed to create a ProcessSingleton for your profile directory"* used to
+  travel through `tools.run_tool`'s catch-all straight to the model, which
+  turned it into "the browser session closed unexpectedly" and offered to try
+  again — twice, identically. `browse_tools.BROWSER_BUSY` names the extra window
+  and says not to retry. A tool result is user-facing by the time a model has
+  repeated it back.
 - The `Driver` protocol in `session.py` is the seam. The fake behind it is why
   the boundary, the budget and the quarantine are testable with no browser and
   no network — keep it that way.

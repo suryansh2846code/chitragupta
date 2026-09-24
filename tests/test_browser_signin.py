@@ -38,6 +38,12 @@ class FakeDriver:
         self.went_to = []
         self.closed = False
         self.cleared = []
+        #: Windows this browser has open besides the one it is driving —
+        #: `[(url, title)]`. A real "Continue with Google" opens one.
+        self.popups = []
+
+    def windows(self):
+        return [(self.url, self.title), *self.popups]
 
     def goto(self, url):
         self.went_to.append(url)
@@ -272,6 +278,38 @@ def test_disconnecting_clears_the_sign_in_too(monkeypatch, driver):
         "the subdomain form matters — a token left on www. is a live session")
 
 
+def test_disconnecting_closes_the_browser_it_opened(monkeypatch, driver):
+    """Signing a site out costs a browser start, and that browser takes an
+    **exclusive** lock on the profile. One left running is not a stray process:
+    it is every later `browse_open` failing to start, with a message about a
+    profile already in use that no retry can clear. Disconnect is a button a
+    person presses in passing — it must not disable browsing until they quit.
+    """
+    from chitragupta.browser import chromium
+
+    monkeypatch.setattr(chromium, "is_installed", lambda: True)
+
+    chromium.forget_site("linkedin.com")
+
+    assert driver.closed is True, "Disconnect left a browser holding the profile"
+
+
+def test_a_failed_sign_out_still_closes_its_browser(monkeypatch, driver):
+    """The path that matters more. A `clear_cookies` that raises used to leave
+    the browser behind precisely when something had already gone wrong."""
+    from chitragupta.browser import chromium
+
+    monkeypatch.setattr(chromium, "is_installed", lambda: True)
+
+    def boom(_domain):
+        raise RuntimeError("the cookie jar is locked")
+
+    driver.clear_cookies = boom
+
+    assert chromium.forget_site("linkedin.com") is False
+    assert driver.closed is True
+
+
 # ── which account, when the page says so unmistakably ────────────────────
 def test_it_records_the_account_when_the_page_says_one():
     """The browser is on the signed-in page, so the answer is already there."""
@@ -432,3 +470,154 @@ def test_forcing_past_a_refused_sso_is_still_refused(driver):
 
     assert out["ok"] is False
     assert origins.list_grants() == []
+
+
+# ── the refusal arrives in a window nothing was looking at ───────────────
+#
+# The bug as photographed: LinkedIn's "Continue with Google" opens a **popup**,
+# Google refuses it there, and the window we are driving is still sitting on
+# `linkedin.com/login`. Every check above reads that one page, so the refusal
+# landed somewhere nothing ever looked and the user was told to "finish signing
+# in, then press Done" — about a sign-in that had already been refused and never
+# could finish.
+#
+# Which is precisely the loop `SSO_REFUSED_ADVICE` was written to end. The
+# advice was right all along; it just could not see the page it was about.
+def test_a_refusal_in_a_popup_window_is_still_recognised(driver):
+    signin.begin("https://www.linkedin.com")
+    driver.url = "https://www.linkedin.com/login"
+    driver.title = "LinkedIn Login, Sign in | LinkedIn"
+    driver.popups = [
+        ("https://accounts.google.com/v3/signin/rejected"
+         "?continue=https%3A%2F%2Fwww.linkedin.com", "Couldn't sign you in"),
+    ]
+
+    out = signin.finish()
+
+    assert out["sso_refused"] is True
+    assert "Google's rule" in out["error"]
+    assert origins.list_grants() == []
+
+
+def test_a_refusal_is_not_offered_as_something_to_overrule(driver):
+    """`still_signing_in` normally means "press Done again and I will believe
+    you". A refusal is the one case where that is untrue — `force` is turned
+    down — so the card is told which of the two it is looking at."""
+    signin.begin("https://www.linkedin.com")
+    driver.url, driver.title = "https://www.linkedin.com/login", "Sign in"
+    driver.popups = [("https://accounts.google.com/v3/signin/rejected", "")]
+    signin.finish()
+
+    assert signin.status()["sso_refused"] is True
+
+
+def test_walking_away_from_the_refusal_gives_the_override_back(driver):
+    """They closed the Google window and went to the site's own form. That is a
+    guess about a login page again, and leaving the flag standing would go on
+    withholding the second press they now need."""
+    signin.begin("https://www.linkedin.com")
+    driver.url, driver.title = "https://www.linkedin.com/login", "Sign in"
+    driver.popups = [("https://accounts.google.com/v3/signin/rejected", "")]
+    signin.finish()
+
+    driver.popups = []
+    signin.finish()
+
+    assert signin.status()["sso_refused"] is False
+    assert signin.status()["still_signing_in"] is True
+
+
+def test_a_popup_refusal_reaches_the_panel_too(driver):
+    """`status()` is what the card polls, and the card is where the person is
+    looking — not the response to the press they already made."""
+    signin.begin("https://www.linkedin.com")
+    driver.url, driver.title = "https://www.linkedin.com/login", "Sign in"
+    driver.popups = [("https://accounts.google.com/v3/signin/rejected", "")]
+
+    signin.finish()
+
+    assert "Google" in (signin.status().get("note") or "")
+
+
+def test_a_popup_left_open_does_not_block_someone_who_then_signed_in(driver):
+    """They gave up on "Continue with Google", typed their password into the
+    site itself, and got in — with the refused popup still open behind the
+    window. Refusing on the strength of that window would lock somebody out of
+    an account they are demonstrably signed into."""
+    signin.begin("https://www.linkedin.com")
+    driver.url, driver.title = "https://www.linkedin.com/feed/", "Feed"
+    driver.popups = [("https://accounts.google.com/v3/signin/rejected",
+                      "Couldn't sign you in")]
+
+    out = signin.finish()
+
+    assert out["ok"] is True
+    assert [g.host for g in origins.list_grants()] == ["www.linkedin.com"]
+
+
+def test_an_ordinary_popup_is_not_a_refusal(driver):
+    """A help window, a consent frame, a blank tab a script opened. Only the
+    identity provider's own refusal address counts, and the generic heuristic
+    keeps the rest."""
+    signin.begin("https://www.linkedin.com")
+    driver.url, driver.title = "https://www.linkedin.com/login", "Sign in"
+    driver.popups = [("https://www.linkedin.com/help/", "Help Center"),
+                     ("about:blank", "")]
+
+    out = signin.finish()
+
+    assert out.get("sso_refused") is not True
+    assert out["still_signing_in"] is True
+
+
+def test_a_driver_that_cannot_list_windows_still_works(driver):
+    """The window list is an extra a real browser has, not a fifth method on the
+    `Driver` seam in `session.py`. Anything that cannot answer must behave the
+    way it did before this existed."""
+    driver.windows = None                     # not callable
+
+    signin.begin("https://www.linkedin.com")
+    driver.url, driver.title = "https://www.linkedin.com/feed/", "Feed"
+
+    assert signin.finish()["ok"] is True
+
+
+# ── what the sign-in window does once the sign-in is over ────────────────
+def test_finishing_closes_the_window_it_opened(driver):
+    """A browser holds an **exclusive** lock on the profile directory, and the
+    profile is the entire point of this flow. So the window left open to prove
+    the sign-in worked was also the window stopping every agent from using it:
+    the next `browse_open` could not start a browser at all, and retrying could
+    never clear it because nothing was going to close that window.
+
+    Closing is also what flushes the session to disk, so "it stays signed in" is
+    true of the profile rather than only of a process we walked away from.
+    """
+    signin.begin("https://www.linkedin.com")
+    driver.url, driver.title = "https://www.linkedin.com/feed/", "Feed"
+
+    assert signin.finish()["ok"] is True
+
+    assert driver.closed is True, "the sign-in browser kept holding the profile"
+
+
+def test_the_grant_is_recorded_before_the_window_goes(driver):
+    """Closing must not cost the connection it was proving."""
+    signin.begin("https://www.linkedin.com")
+    driver.url, driver.title = "https://www.linkedin.com/feed/", "Feed"
+
+    signin.finish()
+
+    assert [g.host for g in origins.list_grants()] == ["www.linkedin.com"]
+
+
+def test_a_sign_in_that_did_not_finish_keeps_its_window(driver):
+    """The other half. Somebody still on the login page needs the window they
+    are typing into — closing it on a failed check would throw away the sign-in
+    in progress."""
+    signin.begin("https://www.linkedin.com")
+    driver.url, driver.title = "https://www.linkedin.com/login", "Sign in"
+
+    assert signin.finish()["ok"] is False
+
+    assert driver.closed is False

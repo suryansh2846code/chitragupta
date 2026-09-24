@@ -347,17 +347,27 @@ def forget_site(host: str) -> bool:
     handler: the alternative is editing Chrome's cookie database on disk, which
     is encrypted, locked while the browser runs, and exactly the thing
     `/CLAUDE.md` refuses to do to another product's files — our own included.
+
+    **And it closes what it opened.** A browser holds an exclusive lock on the
+    profile directory, so one left running here is not a stray process, it is
+    every later browse failing to start — the next agent to open a page gets
+    "the profile is already in use" and no amount of retrying clears it.
     """
     clean = str(host or "").strip().lower().lstrip(".")
     if not clean or not is_installed():
         return False
     driver = None
-    with suppressed("signing a site out of the browser profile"):
-        driver = open_driver()
-        driver.clear_cookies("." + clean)
-        log.info("signed out of %s", clean)
-        return True
-    return False
+    try:
+        with suppressed("signing a site out of the browser profile"):
+            driver = open_driver()
+            driver.clear_cookies("." + clean)
+            log.info("signed out of %s", clean)
+            return True
+        return False
+    finally:
+        if driver is not None:
+            with suppressed("closing the browser after signing a site out"):
+                driver.close()
 
 
 def reap() -> int:

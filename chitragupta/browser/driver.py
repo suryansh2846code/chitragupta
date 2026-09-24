@@ -135,6 +135,20 @@ class PlaywrightDriver:
         """Forget the sign-in for one site, leaving every other one alone."""
         self._call("clear_cookies", domain)
 
+    def windows(self) -> list[tuple[str, str]]:
+        """`(url, title)` for every window this browser has open.
+
+        Deliberately **not** a fifth method on the `Driver` protocol in
+        `session.py`. An agent's `Session` reads the one page it navigated, and
+        that is a property worth keeping: a page that can `window.open` anything
+        would otherwise have a lever on which page the next read comes from.
+
+        The sign-in flow is the one caller, it drives the driver directly
+        already, and it has to see a popup — because "Continue with Google"
+        *is* one, and so is the refusal that comes back from it.
+        """
+        return self._call("windows")
+
     def close(self) -> None:
         """Safe to call twice, and safe to call before anything started."""
         if self._thread is None:
@@ -158,6 +172,13 @@ class PlaywrightDriver:
         if self._thread is not None and self._thread.is_alive():
             return
         self._ready.clear()
+        # Cleared before the attempt, not after it. A failure used to *latch*:
+        # `_run` sets this and nothing ever unsets it, so the first call after
+        # the cause was fixed — the other browser closed, the profile free —
+        # started a browser perfectly well and then raised last time's message
+        # at it. Recovery took two tries and reported a reason that was no
+        # longer true, which is worse than either failing or working.
+        self._start_error = ""
         self._thread = threading.Thread(target=self._run, daemon=True,
                                         name="chitragupta-browser")
         self._thread.start()
@@ -222,6 +243,11 @@ class PlaywrightDriver:
                 raise BrowserError("the browser is not holding a profile")
             context.clear_cookies(domain=command.args[0])
             return None
+        elif command.name == "windows":
+            context = getattr(self, "_context", None)
+            if context is None:
+                raise BrowserError("the browser is not holding a profile")
+            return read_windows(context)
         elif command.name != "current":
             raise BrowserError(f"unknown command {command.name!r}")
         return read_page(page)
@@ -253,6 +279,30 @@ def settle(page: Any) -> None:
     """
     with suppressed("letting a page finish redirecting"):
         page.wait_for_load_state("networkidle", timeout=SETTLE_MS)
+
+
+def read_windows(context: Any) -> list[tuple[str, str]]:
+    """`(url, title)` for every page open in a browser context, popups included.
+
+    A separate function from `read_page` for the same reason that one is
+    separate from the driver: it can be handed a real context by a test without
+    a thread in the way.
+
+    Each window is read on its own, and a window that cannot be read is skipped
+    rather than sinking the list — a popup can be mid-navigation or already
+    closed by the time we ask, and one unreadable window must not hide the
+    refusal sitting in the next one. The address is taken before the title
+    because the address is the part anything decides on.
+    """
+    found: list[tuple[str, str]] = []
+    for page in list(getattr(context, "pages", None) or []):
+        url, title = "", ""
+        with suppressed("reading an open browser window"):
+            url = page.url
+            title = page.title()
+        if url:
+            found.append((str(url), str(title)))
+    return found
 
 
 def read_page(page: Any) -> tuple[str, str, list[Node]]:

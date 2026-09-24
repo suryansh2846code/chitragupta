@@ -392,7 +392,16 @@ function renderConnect(st) {
   }
   // Second press means "I really am in", and says so rather than looking like
   // the same button failing twice.
-  if (done) done.textContent = st.still_signing_in ? "Done anyway" : "Done";
+  //
+  // Except when the identity provider is the one refusing. That is not our
+  // guess being wrong, so there is nothing to overrule and the second press
+  // would be turned down like the first — "Done anyway" there promises an
+  // override that cannot happen. The button stays "Done", and it starts
+  // working the moment they sign in the way the note above it describes.
+  if (done) {
+    done.textContent = st.still_signing_in && !st.sso_refused
+      ? "Done anyway" : "Done";
+  }
   startConnectPoll();
 }
 

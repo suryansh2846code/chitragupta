@@ -308,3 +308,87 @@ def test_a_page_read_twice_has_the_same_fingerprint(live):
 
     assert second.ok is True
     assert second.digest == first.digest
+
+
+# ── a real popup, which is how a real "Continue with Google" arrives ─────
+def test_a_real_popup_window_is_visible_where_a_single_page_is_not(browser_context):
+    """The shape of the reported bug, against a live browser.
+
+    A sign-in button opens a **new window** and the identity provider's answer
+    lands in that one. The window the driver navigated never moves, so anything
+    reading one page sees a login form and says "finish signing in" about a
+    sign-in that has already been refused.
+
+    `read_windows` is what the connect flow asks instead. The assertion that
+    matters is the pair: the refusal is in the list, and it is *not* on the page
+    a single-page read would have returned.
+    """
+    from chitragupta.browser.driver import read_windows
+    from chitragupta.browser.signin import sso_was_refused
+
+    page = browser_context.pages[0]
+    page.goto("https://payroll.example.com/payslips", wait_until="load")
+    page.evaluate("""() => {
+        const a = document.createElement("a");
+        a.id = "sso";
+        a.href = "https://accounts.google.com/v3/signin/rejected?continue=x";
+        a.target = "_blank";                    // what opens a second window
+        a.textContent = "Continue with Google";
+        document.body.appendChild(a);
+    }""")
+
+    with browser_context.expect_page() as opened:
+        page.click("#sso")                      # a real gesture, not `window.open`
+    popup = opened.value
+    popup.wait_for_load_state()
+
+    try:
+        windows = read_windows(browser_context)
+
+        assert len(windows) == 2, windows
+        assert any(sso_was_refused(url) for url, _ in windows), windows
+        assert not sso_was_refused(page.url), "the driven window never saw it"
+    finally:
+        popup.close()
+
+
+# ── a failure that used to outlive its cause ─────────────────────────────
+def test_a_start_failure_does_not_outlive_the_thing_that_caused_it():
+    """`_start_error` is set by the browser thread and was never unset.
+
+    So the first call after the cause was fixed — the other browser closed, the
+    profile free — started a browser perfectly well and then raised *last
+    time's* message at it. Recovery took two attempts and reported a reason that
+    had stopped being true, which is worse than either failing or working.
+
+    Driven through the real `_ensure_started`, with the thread body replaced:
+    the latch is in the wrapper, and a test that reimplemented the wrapper would
+    prove nothing about it.
+    """
+    import threading
+
+    from chitragupta.browser.driver import BrowserError, PlaywrightDriver
+
+    driver = PlaywrightDriver(None, "/nonexistent/profile")
+    attempts = []
+
+    def fake_run():
+        attempts.append(1)
+        if len(attempts) == 1:
+            driver._start_error = "the profile is already in use"
+        else:
+            # A start that worked. It sets no error — which is exactly why a
+            # stale one has to be cleared by whoever is about to try again.
+            driver._serving = threading.Event()
+        driver._ready.set()
+
+    driver._run = fake_run
+
+    with pytest.raises(BrowserError, match="already in use"):
+        driver._ensure_started()
+
+    driver._thread = None                  # the dead thread, as `close()` leaves it
+    driver._ensure_started()                # must not raise the first failure again
+
+    assert len(attempts) == 2
+    assert driver._start_error == ""
