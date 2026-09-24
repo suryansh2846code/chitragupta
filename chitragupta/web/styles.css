@@ -2788,3 +2788,32 @@ button.tiny.running:hover { background: linear-gradient(to right,
   --ce-accent-soft: color-mix(in srgb, var(--accent, #6c8cff) 18%, transparent);
   --ce-font: var(--sans, ui-sans-serif, system-ui, sans-serif);
 }
+
+/* ── the browser, inside the app ──────────────────────────────────────────
+   A full-screen surface like Brain, laid out as a real browser reads: the
+   address above the page, the page filling everything under it. The frame is
+   `object-fit: contain` so a click maps back to the page by one scale factor
+   and never by two — a letterboxed image that stretched would put every click
+   a few pixels off, which on a dense page is a different control. */
+.webscreen { position: fixed; inset: 0; z-index: 70; background: var(--ground);
+  display: flex; flex-direction: column; overflow: hidden; }
+.webscreen[hidden] { display: none; }
+.ws-top { display: flex; align-items: center; gap: 10px; padding: 12px 16px;
+  border-bottom: 1px solid var(--border); background: var(--panel); }
+.ws-url { flex: 1 1 auto; min-width: 0; font-family: var(--mono); font-size: 12px;
+  color: var(--text); background: var(--ground); border: 1px solid var(--border);
+  border-radius: 9px; padding: 8px 11px; }
+.ws-url:focus { outline: none; border-color: var(--accent); }
+.ws-title { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; color: var(--faint); font-size: 12px; max-width: 26ch; }
+.ws-stage { flex: 1 1 auto; position: relative; display: flex;
+  align-items: center; justify-content: center; padding: 14px; min-height: 0; }
+.ws-frame { max-width: 100%; max-height: 100%; object-fit: contain;
+  border-radius: 12px; border: 1px solid var(--border); background: #fff;
+  cursor: default; }
+.ws-frame:focus { outline: 2px solid var(--accent); outline-offset: 2px; }
+.ws-note { position: absolute; left: 50%; bottom: 22px; transform: translateX(-50%);
+  background: rgba(11,15,24,.85); border: 1px solid var(--border);
+  border-radius: 10px; padding: 8px 13px; color: var(--faint); font-size: 12px;
+  backdrop-filter: blur(8px); max-width: 70%; }
+.ws-note[hidden] { display: none; }

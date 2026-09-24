@@ -31,6 +31,7 @@ read before its definition is a temporal dead-zone `ReferenceError` that
 | `tools.js` | the Agents & tools panel — what one agent may use, with switches |
 | `diagnostics.js` | *What just happened* — the log, read-only |
 | `browser.js` | websites agents may read, on the Connectors screen |
+| `webscreen.js` | the browser itself, shown and driven inside the app |
 | `appearance.js` | the Appearance screen — what each agent looks like |
 | `app.js` | the shell: state, chrome, agent rail, nav, keyboard, boot |
 

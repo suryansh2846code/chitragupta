@@ -213,6 +213,9 @@ const IC = {
   appearance: _S('<rect x="2.4" y="2.4" width="11.2" height="11.2" rx="3.2"/><rect x="5.6" y="5.9" width="1.5" height="3.4" rx=".75" fill="currentColor" stroke="none"/><rect x="8.9" y="5.9" width="1.5" height="3.4" rx=".75" fill="currentColor" stroke="none"/>'),
   copy: _S('<rect x="5.5" y="5.5" width="8" height="8" rx="1.6"/><path d="M10.5 5.5v-1a1.5 1.5 0 0 0-1.5-1.5H4a1.5 1.5 0 0 0-1.5 1.5v5A1.5 1.5 0 0 0 4 11h1"/>', 14),
   tick: _S('<path d="M3.5 8.5l3 3 6-6.5"/>', 14),
+  // A window with a title bar — the browser screen. `applyIcons` keys off
+  // data-nav, so this name must stay "web".
+  web: _S('<rect x="2.2" y="3" width="11.6" height="10" rx="2"/><path d="M2.2 6.2h11.6"/><circle cx="4.4" cy="4.6" r=".5" fill="currentColor" stroke="none"/>'),
   inbox: _S('<path d="M2.2 9h3.4l1 2h6.8l1-2h3.4"/><path d="M2.2 9 4.6 3.3h6.8L13.8 9v3.6a1.2 1.2 0 0 1-1.2 1.2H3.4a1.2 1.2 0 0 1-1.2-1.2z"/>'),
   help: _S('<circle cx="8" cy="8" r="6"/><path d="M6.2 6.2a1.9 1.9 0 0 1 3.6.7c0 1.3-1.8 1.5-1.8 2.7"/><circle cx="8" cy="11.4" r=".55" fill="currentColor" stroke="none"/>'),
   message: _S('<path d="M2.5 4.5h11v6.5H7l-3 2v-2H2.5z"/>'),

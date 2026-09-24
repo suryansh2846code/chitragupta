@@ -47,7 +47,34 @@ TIMEOUT_MS = 20_000
 #: own cleanup presented to them as a fault of theirs, offering to reopen the
 #: tabs of somebody's last sign-in. Playwright does not pass this for a
 #: persistent context, so we do.
-LAUNCH_ARGS = ("--hide-crash-restore-bubble",)
+#: `--disable-*-backgrounding` / `--disable-background-timer-throttling`: the
+#: window lives minimised so it is not in the user's face, and a window Chromium
+#: believes nobody is looking at is a window it stops painting. Without these the
+#: in-app view would freeze the moment it was hidden — measured, not guessed.
+LAUNCH_ARGS = (
+    "--hide-crash-restore-bubble",
+    "--disable-backgrounding-occluded-windows",
+    "--disable-renderer-backgrounding",
+    "--disable-background-timer-throttling",
+)
+
+#: The size the page is rendered at, and therefore the coordinate space every
+#: screenshot and every click shares. Fixed on purpose: the in-app view maps a
+#: click on an image back to a point on the page, and a viewport that changed
+#: with somebody's window would make that mapping a moving target.
+VIEWPORT = {"width": 1280, "height": 800}
+
+#: How the browser's own window is kept out of the way.
+#:
+#: Minimised rather than off-screen, and rather than headless. macOS clamps a
+#: window back onto the display, so `--window-position=-32000,-32000` leaves a
+#: sliver showing; headless changes the fingerprint, and the fingerprint is the
+#: one thing about this browser that currently works for signing in. Minimised
+#: keeps a real headful Chromium, keeps painting (with the flags above), and
+#: leaves the window one click from being brought back — which is what
+#: `docs/BROWSER.md` means by MFA needing a window a person can reach.
+HIDDEN = "minimized"
+SHOWN = "normal"
 
 #: Lines in an ARIA snapshot that describe the *previous* node rather than a new
 #: one — `/url:` under a link, for instance. They are metadata, not content.
@@ -159,6 +186,35 @@ class PlaywrightDriver:
         """
         return self._call("act", kind, handle, text)
 
+    # ── the in-app view ─────────────────────────────────────────────────
+    #
+    # The browser's own window is minimised, so the page has to arrive
+    # somewhere a person can see it. These three are what the Browser screen is
+    # built from: a frame, a way to point at it, and a way to get the real
+    # window back if the page needs something only a real window can do.
+    #
+    # **Nothing here is an agent's.** They are reached from `api/routes/browser`
+    # by a user pressing something, the same way signing in is. An agent that
+    # could click by coordinate would have walked straight around refs, the
+    # origin check and everything else in this package.
+    def frame(self, quality: int = 55) -> tuple[bytes, str, str]:
+        """A JPEG of the page right now, with where it is and what it is called.
+
+        JPEG rather than PNG: this is a photograph of a rendered page, several
+        times a second, and a lossless one costs five times the bytes to show
+        the same thing.
+        """
+        return self._call("frame", quality)
+
+    def point(self, kind: str, x: float = 0, y: float = 0,
+              text: str = "") -> None:
+        """A click, a scroll, some typing, or a named key — from the user."""
+        self._call("point", kind, x, y, text)
+
+    def window(self, visible: bool) -> None:
+        """Bring the real browser window back, or put it away again."""
+        self._call("window", bool(visible))
+
     def windows(self) -> list[tuple[str, str]]:
         """`(url, title)` for every window this browser has open.
 
@@ -218,7 +274,8 @@ class PlaywrightDriver:
         try:
             with sync_playwright() as pw:
                 launch: dict[str, Any] = {"headless": self._headless,
-                                          "args": list(LAUNCH_ARGS)}
+                                          "args": list(LAUNCH_ARGS),
+                                          "viewport": dict(VIEWPORT)}
                 if self._executable:
                     launch["executable_path"] = self._executable
                 # A persistent context is what makes a site stay signed in. The
@@ -231,6 +288,12 @@ class PlaywrightDriver:
                 # Cookies belong to the context, not the page, and signing a
                 # site out is the one command that needs to reach them.
                 self._context = context
+                # One CDP session for the life of the browser. It is how the
+                # window is moved out of the way and brought back, which
+                # Playwright has no API for.
+                with suppressed("opening a CDP session for the window"):
+                    self._cdp = context.new_cdp_session(page)
+                self._set_window(HIDDEN)
                 self._ready.set()
                 self._serve(page)
         except Exception as exc:
@@ -241,6 +304,27 @@ class PlaywrightDriver:
             if context is not None:
                 with suppressed("closing the browser context"):
                     context.close()
+
+    def _set_window(self, state: str) -> None:    # pragma: no cover - needs a browser
+        """Put the OS window away, or bring it back.
+
+        Best-effort on purpose. A browser whose window will not move is still a
+        browser that reads pages perfectly well, and failing the whole start
+        over a cosmetic bounds call would trade the feature for the decoration.
+        """
+        cdp = getattr(self, "_cdp", None)
+        if cdp is None:
+            return
+        with suppressed("moving the browser's own window out of the way"):
+            window_id = cdp.send("Browser.getWindowForTarget")["windowId"]
+            bounds: dict[str, Any] = {"windowState": state}
+            if state == SHOWN:
+                # Restoring needs a size as well: a window that comes back at
+                # whatever it was minimised from can come back at nothing.
+                bounds.update(left=60, top=60, width=VIEWPORT["width"],
+                              height=VIEWPORT["height"] + 90)
+            cdp.send("Browser.setWindowBounds",
+                     {"windowId": window_id, "bounds": bounds})
 
     def _serve(self, page: Any) -> None:          # pragma: no cover - needs a browser
         while True:
@@ -272,6 +356,28 @@ class PlaywrightDriver:
             kind, handle, text = command.args
             locate(page, handle, kind, text)
             settle(page)
+        elif command.name == "frame":
+            quality = max(20, min(int(command.args[0] or 55), 90))
+            return (page.screenshot(type="jpeg", quality=quality),
+                    page.url, page.title())
+        elif command.name == "point":
+            kind, x, y, text = command.args
+            if kind == "click":
+                page.mouse.click(float(x), float(y))
+            elif kind == "move":
+                page.mouse.move(float(x), float(y))
+            elif kind == "wheel":
+                page.mouse.wheel(float(x), float(y))
+            elif kind == "text":
+                page.keyboard.type(str(text))
+            elif kind == "key":
+                page.keyboard.press(str(text))
+            else:
+                raise BrowserError(f"unknown input {kind!r}")
+            return None
+        elif command.name == "window":
+            self._set_window(SHOWN if command.args[0] else HIDDEN)
+            return None
         elif command.name == "windows":
             context = getattr(self, "_context", None)
             if context is None:

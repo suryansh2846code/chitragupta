@@ -24,7 +24,8 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from ...browser import chromium, origins, signin
-from ...log import get_logger
+from ...browser.driver import VIEWPORT
+from ...log import get_logger, suppressed
 from ..concurrency import probes_a_provider
 
 log = get_logger(__name__)
@@ -83,10 +84,11 @@ def set_acting(host: str, body: ActingIn):
     are not the same sentence, and a screen that collapsed them would be asking
     for the second while the user answered the first.
 
-    Turning it **on is not a promotion to unattended**. Every act still collects
-    a card — `browse_click` and friends are `Risk.RED`, so they are in
-    `NEVER_UNATTENDED` by derivation. What this switch decides is whether that
-    card may ever appear for this site, not whether it may be skipped.
+    Turning it **on is not a promotion to unattended**. `browse_click` and its
+    two neighbours are in `permissions.NEVER_UNATTENDED_TOOLS`, and nothing set
+    here lifts that: a routine may read the site and may never touch it. What
+    this switch decides is whether an agent working *with the user present* may
+    type and click there.
     """
     found = next((g for g in origins.list_grants()
                   if g.host == str(host or "").strip().lower()), None)
@@ -188,3 +190,115 @@ def forget_everything():
     about access.
     """
     return {"forgotten": chromium.forget_everything()}
+
+
+# ── the browser, inside the app ──────────────────────────────────────────
+#
+# Chromium's own window is minimised from the moment it starts, so what a person
+# watches is here rather than an application that is not ours appearing over
+# their work. `docs/BROWSER.md` chose a real browser over an embedded WKWebView
+# because a WKWebView cannot be automated, and that reasoning is untouched —
+# what changes is only where the picture of it is shown.
+#
+# **"Visible, not headless" is kept, not dropped.** That invariant is about a
+# user being able to watch and to stop, and about MFA needing a window a person
+# can reach. Both are more true here, not less: the page is on a screen inside
+# the app they already have open, they can click and type into it, and
+# `/view/window` brings the real window back for anything that needs one.
+#
+# **No agent reaches any of this.** These are user presses, exactly as signing
+# in is. A tool that could click at a coordinate would walk straight past refs,
+# the origin check, and everything else this package is built on.
+class PointIn(BaseModel):
+    """One thing the user did to the page inside the app."""
+
+    kind: str
+    x: float = 0
+    y: float = 0
+    text: str = ""
+
+
+class WindowIn(BaseModel):
+    visible: bool
+
+
+def _view_driver():
+    """The shared browser, or a sentence saying why there is not one."""
+    if not chromium.can_drive() or not chromium.is_installed():
+        raise HTTPException(
+            409, "The browser is not set up yet. Open Connectors and choose "
+                 "“Set up browsing”.")
+    try:
+        return chromium.shared_driver()
+    except chromium.BrowserNotReadyError as exc:
+        raise HTTPException(409, str(exc)) from None
+
+
+@router.get("/api/browser/view")
+@probes_a_provider
+def browser_view(quality: int = 55):
+    """A frame of the page, with where it is and what it is called.
+
+    Base64 inside JSON rather than an image response, because the address
+    travels with the picture — a page shown without its address is the one
+    thing a browser must never do.
+    """
+    import base64
+
+    driver = _view_driver()
+    try:
+        image, url, title = driver.frame(quality)
+    except Exception as exc:
+        log.warning("browser view unavailable: %s", str(exc)[:200])
+        raise HTTPException(503, "The browser is not answering right now.") from None
+    return {"image": base64.b64encode(image).decode("ascii"),
+            "url": url, "title": title,
+            "width": VIEWPORT["width"], "height": VIEWPORT["height"]}
+
+
+@router.post("/api/browser/view/input")
+@probes_a_provider
+def browser_input(body: PointIn):
+    """A click, a scroll, a keystroke — from the person, into the page."""
+    driver = _view_driver()
+    try:
+        driver.point(body.kind, body.x, body.y, body.text)
+    except Exception as exc:
+        raise HTTPException(400, str(exc)[:160]) from None
+    return {"ok": True}
+
+
+@router.post("/api/browser/view/goto")
+@probes_a_provider
+def browser_goto(body: SiteIn):
+    """Take the in-app browser to an address the user typed.
+
+    Deliberately **not** judged against the allow-list. This is a person
+    driving their own browser, the same as the sign-in window; `origins` is
+    about what an *agent* may reach, and an agent has no path to this route.
+    """
+    driver = _view_driver()
+    try:
+        url = origins.normalise(body.url)
+    except origins.BadOriginError as exc:
+        raise HTTPException(400, str(exc)) from None
+    try:
+        driver.goto(url)
+    except Exception as exc:
+        raise HTTPException(502, str(exc)[:160]) from None
+    return {"ok": True, "url": url}
+
+
+@router.post("/api/browser/view/window")
+@probes_a_provider
+def browser_window(body: WindowIn):
+    """Bring the real browser window back, or put it away again.
+
+    The escape hatch, and what makes minimising honest rather than a trick: a
+    page that needs something only a real window can give it — a file picker, a
+    system prompt — is one press from having one.
+    """
+    driver = _view_driver()
+    with suppressed("moving the browser window"):
+        driver.window(body.visible)
+    return {"ok": True, "visible": body.visible}

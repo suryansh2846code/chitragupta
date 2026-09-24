@@ -406,6 +406,49 @@ def test_an_exact_name_is_required_so_send_is_not_send_later(browser_context):
     assert page.title() == "now", "it pressed the wrong button"
 
 
+def test_a_minimised_window_still_paints_and_still_takes_clicks(browser_context):
+    """What the in-app browser rests on, and none of it is obvious.
+
+    The browser's own window is minimised so it is not in the user's face, and
+    three things had to be true or that is not buildable: the window can be put
+    away, it keeps *painting* once nobody is looking at it, and a synthesised
+    click still lands. Chromium stops drawing a window it believes is hidden —
+    `driver.LAUNCH_ARGS` carries the three flags that stop it, and this is what
+    says so.
+    """
+    from chitragupta.browser.driver import HIDDEN
+
+    page = browser_context.pages[0]
+    page.goto("https://payroll.example.com/payslips", wait_until="load")
+    page.evaluate("""() => {
+        document.body.innerHTML = `
+          <div id="out">nothing</div>
+          <button style="position:absolute;left:150px;top:90px;width:140px;
+                         height:40px" onclick="out.textContent='hit'">Go</button>
+          <div id="tick"></div>`;
+        let n = 0;
+        setInterval(() => { tick.textContent = 'tick ' + (++n); }, 150);
+    }""")
+
+    cdp = browser_context.new_cdp_session(page)
+    window_id = cdp.send("Browser.getWindowForTarget")["windowId"]
+    cdp.send("Browser.setWindowBounds",
+             {"windowId": window_id, "bounds": {"windowState": HIDDEN}})
+
+    before = page.inner_text("#tick")
+    page.wait_for_timeout(900)
+    assert page.inner_text("#tick") != before, "it stopped painting once hidden"
+
+    assert len(page.screenshot(type="jpeg", quality=55)) > 0
+
+    page.mouse.click(220, 110)
+    page.wait_for_timeout(200)
+    assert page.inner_text("#out") == "hit", "a click did not reach a hidden window"
+
+    cdp.send("Browser.setWindowBounds",
+             {"windowId": window_id, "bounds": {"windowState": "normal"}})
+
+
 def test_an_unknown_verb_is_refused_before_anything_is_resolved(browser_context):
     from chitragupta.browser.driver import BrowserError, locate
 

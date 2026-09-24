@@ -154,6 +154,21 @@ holds.
   again — twice, identically. `browse_tools.BROWSER_BUSY` names the extra window
   and says not to retry. A tool result is user-facing by the time a model has
   repeated it back.
+- **The browser's own window is minimised, and the app shows the page.** The
+  picture is polled as JPEG frames by `web/webscreen.js` through
+  `/api/browser/view`, and clicks and keys go back through `/view/input` —
+  which is why `driver.VIEWPORT` is fixed: image pixels and page pixels then
+  differ by one scale factor rather than two.
+  **"Visible, not headless" is kept rather than dropped.** That rule is about a
+  person being able to watch and to stop, and about MFA needing a window
+  somebody can reach; both are more true on a screen inside the app than in a
+  window behind it. Headless was the wrong way to get there — it changes the
+  fingerprint, and the fingerprint is the one thing about this browser that
+  currently works for signing in. Off-screen was too: macOS clamps a window
+  back onto the display. `/view/window` brings the real one back for anything
+  that needs it.
+  **No agent reaches any of it.** A tool that could click at a coordinate would
+  walk straight past refs, the origin check, and everything else here.
 - **Our cleanup must not surface as the user's problem.** Killing the browser is
   a crash as far as Chromium is concerned, so the next launch would otherwise
   open with *"Chromium didn't shut down correctly. Restore pages?"* — offering

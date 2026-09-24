@@ -40,6 +40,7 @@
       <div class="side-nav">
         <button class="snav" data-nav="inbox"><span class="snav-ic"></span><span class="snav-tx">Inbox</span></button>
         <button class="snav" data-nav="brain"><span class="snav-ic"></span><span class="snav-tx">Brain</span></button>
+        <button class="snav" data-nav="web"><span class="snav-ic"></span><span class="snav-tx">Browser</span></button>
       </div>
 
       <!-- Account above Settings, Settings on the floor. -->
@@ -731,6 +732,25 @@
     </div>
   </div>
 
+  <!-- The browser, inside the app. Chromium's own window is minimised from the
+       moment it starts, so this is where a person watches and drives it. The
+       address is always on screen beside the picture: a page shown without the
+       address it came from is the one thing a browser must never do. -->
+  <div id="webScreen" class="webscreen" hidden>
+    <div class="ws-top">
+      <button id="wsBack" class="ghost tiny" title="Back">Back</button>
+      <input id="wsUrl" class="ws-url" spellcheck="false"
+             placeholder="Type an address and press Enter" />
+      <span id="wsTitle" class="ws-title"></span>
+      <button id="wsWindow" class="ghost tiny" title="Open the real browser window">Open window</button>
+      <button id="wsClose" class="ghost tiny">Close</button>
+    </div>
+    <div id="wsStage" class="ws-stage">
+      <img id="wsFrame" class="ws-frame" alt="The page the browser is showing" />
+      <div id="wsNote" class="ws-note" hidden></div>
+    </div>
+  </div>
+
   <div id="brainScreen" class="brainscreen" hidden>
     <canvas id="bsCanvas" aria-hidden="true"></canvas>
     <div class="bs-top">
@@ -823,6 +843,7 @@
   <script src="/static/tools.js"></script>
   <script src="/static/diagnostics.js"></script>
   <script src="/static/browser.js"></script>
+  <script src="/static/webscreen.js"></script>
   <script src="/static/appearance.js"></script>
   <script src="/static/app.js"></script>
 </body>

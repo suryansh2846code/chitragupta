@@ -190,6 +190,7 @@ function openDrawer(name) {
   if (name === "tools") return openToolsScreen();
   if (name === "inbox" || name === "tasks") return openInboxScreen();
   if (name === "brain") return openBrainScreen();
+  if (name === "web") return openWebScreen();
   if (name === "library") return openLibrary();
 }
 // Inbox, Brain and Settings. Replay onboarding moved into the Settings rail,
