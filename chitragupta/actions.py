@@ -132,6 +132,21 @@ class ActionSpec:
     #: Human-readable, present tense, for the Undo button's own label.
     undo_label: str = ""
 
+    #: When only *some* runs of this action can be taken back, the label for
+    #: this one — empty meaning no Undo at all.
+    #:
+    #: `mcp_action` is why this exists. It runs somebody else's verb, and
+    #: whether an inverse exists is a fact about the tool and the server, not
+    #: about the action type: GitHub's server can update a comment it posted
+    #: and cannot delete one, and it cannot unmerge a pull request at all. A
+    #: static `undo` would put the same button on all three, and a button that
+    #: quietly does nothing is the thing `undo` is documented never to be.
+    #:
+    #: Consulted per run, where the parameters and the result are both in hand.
+    #: `public()` still reports the action type's *capacity* to be undone; what
+    #: the card reads is `result["reversible"]`, decided here.
+    undo_when: Callable[[dict, dict], str] | None = None
+
     def public(self) -> dict[str, Any]:
         """What the card needs to render itself, without the callables."""
         return {
@@ -1120,6 +1135,92 @@ def _mcp_action(params: dict) -> dict:
     return conn.perform(tool, params.get("arguments") or {}, confirmed=True)
 
 
+#: What a retracted comment says once the Undo is taken.
+#:
+#: Deliberately plain, and deliberately not a deletion. The comment stays in
+#: the thread with its edit history intact, because that is what actually
+#: happened and the button must not describe something else.
+RETRACTION_BODY = "_(withdrawn)_"
+
+#: Verbs that post something, and the verbs that edit what they posted.
+#: Used as a name transform on the server's OWN published tool list — never as
+#: a table of known servers. `add_issue_comment` → `update_issue_comment` is
+#: GitHub's pair, and a server nobody here has seen gets the same treatment.
+_POSTS = ("add_", "create_", "post_")
+_EDITS = ("update_", "edit_", "modify_")
+
+
+def _published_inverse(server_id: str, tool: str) -> str:
+    """The server's own tool for editing what `tool` posted, or "".
+
+    **Never a guess about somebody else's API.** The pair has to exist in the
+    tool list the server published, or there is no inverse and no button —
+    which is the same rule `mcp_action` has always stated, now able to answer
+    "sometimes" instead of only "no".
+    """
+    if "comment" not in tool.lower():
+        # A comment is the one thing an edit can honestly retract. Editing a
+        # merged pull request or a created issue is not undoing it.
+        return ""
+    stem = next((tool[len(p):] for p in _POSTS if tool.startswith(p)), "")
+    if not stem:
+        return ""
+    from .connectors import mcp_tools
+
+    published = {ref.tool for ref in mcp_tools.write_tools()
+                 if ref.server_id == server_id}
+    return next((e + stem for e in _EDITS if e + stem in published), "")
+
+
+def _posted_id(result: dict) -> str:
+    """The id the server gave what it just posted, if it gave one."""
+    detail = result.get("detail")
+    if not isinstance(detail, dict):
+        return ""
+    for key in ("id", "comment_id", "commentId"):
+        value = detail.get(key)
+        if value not in (None, ""):
+            return str(value)
+    return ""
+
+
+def _connector_undo_label(params: dict, result: dict) -> str:
+    """Can *this* connector write be taken back, and what does the button say?
+
+    Three things have to be true, and all three are facts rather than
+    assumptions: the verb posted a comment, the server publishes its own tool
+    for editing one, and the server told us the id of what it posted. Anything
+    else returns "" and no Undo is offered at all.
+    """
+    tool = str(params.get("tool") or "")
+    server_id = str(params.get("server_id") or params.get("server") or "")
+    if not (server_id and tool and _posted_id(result)):
+        return ""
+    if not _published_inverse(server_id, tool):
+        return ""
+    # Says what it does. "Delete the comment" would be the button lying: the
+    # comment stays, and everybody watching the thread already saw it.
+    return "Retract the comment"
+
+
+def _undo_connector_action(params: dict, result: dict) -> dict:
+    """Overwrite what was posted with a retraction, through the server's own tool."""
+    tool = str(params.get("tool") or "")
+    server_id = str(params.get("server_id") or params.get("server") or "")
+    inverse = _published_inverse(server_id, tool)
+    posted = _posted_id(result)
+    if not (inverse and posted):
+        return {"ok": False, "error": "That one cannot be taken back."}
+    # The scope the original call named, plus the id and the new body. Content
+    # from the original is dropped — this is a different sentence, not a replay.
+    arguments = {name: value
+                 for name, value in (params.get("arguments") or {}).items()
+                 if name in _SCOPE_ARGS}
+    arguments.update({"comment_id": posted, "body": RETRACTION_BODY})
+    return _mcp_action({"server_id": server_id, "tool": inverse,
+                        "arguments": arguments})
+
+
 # ── rung 5: verify ─────────────────────────────────────────────────────────
 #
 # A handler returning `ok` means the service accepted the request. That is a
@@ -1545,8 +1646,16 @@ REGISTRY: dict[str, ActionSpec] = {
         risk=Risk.AMBER, recipient_kind=TOOL_RECIPIENT,
         always_ask_when=_irreversible_tool_asks,
         remember=_remember_connector_action,
-        # No undo: the verb belongs to somebody else's server and nothing tells
-        # us what its inverse is — or whether it has one.
+        # **Undo where the server itself publishes the inverse, and nowhere
+        # else.** The old note here said the verb belongs to somebody else's
+        # server and nothing tells us what its inverse is. The second half was
+        # not quite true: the tool list does, for the one case where an edit
+        # honestly retracts something — a comment. `undo_when` answers per run,
+        # so merging a pull request still offers no button at all.
+        undo=_undo_connector_action, undo_when=_connector_undo_label,
+        # Left empty on purpose: it is the fallback if `undo_when` raises, and
+        # an empty label means no Undo. This one fails closed.
+        undo_label="",
     ),
     "mail_triage": ActionSpec(
         handler=_mail_triage, label="Inbox changes",
@@ -1672,9 +1781,17 @@ def _finish(action_type: str, spec: ActionSpec, params: dict, result: dict, *,
                 spec.remember(params, dict(result))
 
     result["risk"] = spec.risk.value
-    result["reversible"] = spec.undo is not None and bool(result.get("ok"))
-    if spec.undo is not None:
-        result["undo_label"] = spec.undo_label
+    # An action type that *can* be undone, and then this run in particular.
+    # `undo_when` is how a handler that runs somebody else's verb says "not
+    # this one" — see the field's note.
+    label = spec.undo_label
+    if spec.undo is not None and spec.undo_when is not None:
+        with suppressed("deciding whether one action can be taken back"):
+            label = spec.undo_when(params, dict(result))
+    result["reversible"] = (spec.undo is not None and bool(result.get("ok"))
+                            and bool(label))
+    if result["reversible"]:
+        result["undo_label"] = label
 
     with suppressed("logging an action"):
         from . import action_log
