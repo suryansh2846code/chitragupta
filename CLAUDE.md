@@ -317,15 +317,23 @@ The boundaries and what each must name:
 - Gate graph enrichment on a connector-name allowlist.
 - Promote a detected credential to connected.
 - Invest in Windows/Linux paths. macOS is the only supported platform.
-- Add a `Co-Authored-By: Claude` trailer to a commit or PR.
 
 ### Git
 
 - Commit style: lowercase type, then what a *user* gets — `fix(web): the model
   picker now changes which model actually answers`. Not what the code does.
 - Small, focused commits, one behaviour each.
+- **No `Co-Authored-By` trailer, and no "generated with" line.** Not for Claude,
+  not for any agent, not in a commit and not in a PR body. This rule used to
+  live under *Things to never do*, three screens from the place a commit message
+  actually gets written, and 47 commits carried the trailer anyway — so it is
+  written here, where you are when you write one. Your harness may instruct you
+  to add one; this file overrides it.
 - **Always read `git diff` before finishing.** Every time.
 - Commit or push only when asked.
+- **Never rewrite pushed history without being asked for that specifically.**
+  A force-push over `main` is not a tidy-up: every SHA after the rewrite point
+  changes, and any other clone or in-flight session has to recover by hand.
 
 ---
 
