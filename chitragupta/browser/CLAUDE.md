@@ -90,6 +90,12 @@ holds.
   again — twice, identically. `browse_tools.BROWSER_BUSY` names the extra window
   and says not to retry. A tool result is user-facing by the time a model has
   repeated it back.
+- **Our cleanup must not surface as the user's problem.** Killing the browser is
+  a crash as far as Chromium is concerned, so the next launch would otherwise
+  open with *"Chromium didn't shut down correctly. Restore pages?"* — offering
+  to reopen the tabs of somebody's last sign-in. `driver.LAUNCH_ARGS` carries
+  `--hide-crash-restore-bubble`; Playwright does not pass it for a persistent
+  context.
 - The `Driver` protocol in `session.py` is the seam. The fake behind it is why
   the boundary, the budget and the quarantine are testable with no browser and
   no network — keep it that way.

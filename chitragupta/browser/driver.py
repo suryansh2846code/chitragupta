@@ -38,6 +38,17 @@ log = get_logger(__name__)
 #: page that never settles must not hold an agent's turn open indefinitely.
 TIMEOUT_MS = 20_000
 
+#: Chromium switches we always launch with.
+#:
+#: The browser is shut down by killing it — that is what "anything we spawn, we
+#: clean up" amounts to for a process with no other way out — and Chromium
+#: records that as a crash. So the *next* launch greets the user with a bubble
+#: reading "Chromium didn't shut down correctly. Restore pages?", which is our
+#: own cleanup presented to them as a fault of theirs, offering to reopen the
+#: tabs of somebody's last sign-in. Playwright does not pass this for a
+#: persistent context, so we do.
+LAUNCH_ARGS = ("--hide-crash-restore-bubble",)
+
 #: Lines in an ARIA snapshot that describe the *previous* node rather than a new
 #: one — `/url:` under a link, for instance. They are metadata, not content.
 _META = re.compile(r"^/")
@@ -193,7 +204,8 @@ class PlaywrightDriver:
         context = None
         try:
             with sync_playwright() as pw:
-                launch: dict[str, Any] = {"headless": self._headless}
+                launch: dict[str, Any] = {"headless": self._headless,
+                                          "args": list(LAUNCH_ARGS)}
                 if self._executable:
                     launch["executable_path"] = self._executable
                 # A persistent context is what makes a site stay signed in. The
