@@ -57,6 +57,9 @@ CATEGORIES = (
 #: changes on. The write half is gated twice over — `origins.may_act` per site,
 #: and `permissions.NEVER_UNATTENDED_TOOLS` for any run nobody is watching.
 _BROWSE = ["browse_sites", "browse_open", "browse_read", "browse_find",
+           # Waiting, so a half-loaded page is something an agent can
+           # sit through rather than hand back to the user.
+           "browse_wait",
            # Changing a page, gated twice: the user turns acting on for that
            # site, and `permissions.NEVER_UNATTENDED_TOOLS` keeps them out of
            # any run nobody is watching. Offered to every agent for the same

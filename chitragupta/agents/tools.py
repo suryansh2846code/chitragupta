@@ -323,6 +323,7 @@ TOOL_IMPLS = {
     "browse_open": browse_tools.browse_open,
     "browse_read": browse_tools.browse_read,
     "browse_find": browse_tools.browse_find,
+    "browse_wait": browse_tools.browse_wait,
     "browse_click": browse_tools.browse_click,
     "browse_type": browse_tools.browse_type,
     "browse_submit": browse_tools.browse_submit,
@@ -849,6 +850,22 @@ TOOL_DEFS: dict[str, Tool] = {
                       "description": "Its name exactly as the page gave it"}},
             "required": ["ref"]},
     ),
+    "browse_wait": Tool(
+        name="browse_wait",
+        description=(
+            "Wait for the open page to finish loading, then read it. Use this "
+            "the moment a page looks half-loaded — a spinner, 'loading', "
+            "'downloading', an empty list — instead of reporting it as empty "
+            "or asking the user to wait and tell you to try again. Say what "
+            "you are waiting to SEE in `until`; with nothing named it waits "
+            "for the page to change, which is what you want after clicking."
+        ),
+        parameters={"type": "object", "properties": {
+            "until": {"type": "string",
+                      "description": "Text you expect to appear, e.g. a name"},
+            "seconds": {"type": "number",
+                        "description": "How long to wait. Default 15, max 30."}}},
+    ),
     "what_i_looked_at": Tool(
         name="what_i_looked_at",
         description=(
@@ -1226,6 +1243,7 @@ _LABELS: dict[str, tuple[str, str]] = {
     "browse_open":              ("Open page", "Websites you allow"),
     "browse_read":              ("Re-read",   "Websites you allow"),
     "browse_find":              ("Find on page", "Websites you allow"),
+    "browse_wait":              ("Wait for page", "Websites you allow"),
     "browse_click":             ("Click",      "Websites you allow"),
     "browse_type":              ("Type",       "Websites you allow"),
     "browse_submit":            ("Send",       "Websites you allow"),

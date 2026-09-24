@@ -168,12 +168,13 @@ def test_reading_a_page_records_it():
     one — a record that only appeared when the page happened to change would
     be a record nobody could reason about.
 
-    Three now, not two: changing a page is the third, and it is the one that
-    matters most. `docs/REACHING-AN-APP.md` — the browser is not a source and
+    Five now: reading, the cheap unchanged read, changing a page, and the two
+    ways a wait ends up with a page in its hands. Changing one is the path that
+    matters most — `docs/REACHING-AN-APP.md`: the browser is not a source and
     does not feed the brain, "but what an agent does there is recorded… The
     evidence of the work is ours even when the material is not."
 
-    The exact count is the point rather than a nuisance: a fourth success path
+    The exact count is the point rather than a nuisance: a new success path
     fails this, which is how somebody adding one is made to decide whether it
     records instead of discovering months later that it never did.
     """
@@ -182,5 +183,5 @@ def test_reading_a_page_records_it():
     from chitragupta.agents import browse_tools
 
     source = inspect.getsource(browse_tools)
-    assert source.count("_remember(reading)") == 3
+    assert source.count("_remember(reading)") == 5
     assert "def _remember" in source

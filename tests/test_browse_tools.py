@@ -713,3 +713,115 @@ def test_an_act_says_whether_the_page_actually_moved():
     out = browse_tools.browse_click(ref=_ref("Send"))
 
     assert "unchanged" in str(out).lower()
+
+
+# ── a page that has not finished is not a page that failed ───────────────
+#
+# The reported failure: *"WhatsApp Web is still stuck on 'messages are
+# downloading' … give it a bit more time on your end, then tell me to try again
+# and I'll check the page."*
+#
+# The agent said it would wait and then did not, because there was nothing to
+# wait with. `driver.settle` cannot cover this — it waits for the network to go
+# idle and an app holding a WebSocket open never does, which is why it gives up
+# after three seconds by design. So a five-second pause became a conversation,
+# with the user polling on the app's behalf.
+LOADING = ("Loading", [Node(role="heading", name="Messages are downloading")])
+LOADED = ("Chats", [Node(role="listitem", name="Dev", handle="listitem␟Dev")])
+
+
+class _Loads(FakeDriver):
+    """A page that is not ready until it has been looked at `after` times."""
+
+    def __init__(self, after=2):
+        super().__init__({})
+        self.after, self.looks = after, 0
+
+    def _page(self, url):
+        self.looks += 1
+        title, nodes = LOADED if self.looks > self.after else LOADING
+        return url, title, list(nodes)
+
+
+def _loading(after=2, monkeypatch=None):
+    driver = _Loads(after)
+    browse_tools.set_session(Session(driver))
+    origins.grant("payroll.example.com")
+    browse_tools.browse_open("https://payroll.example.com/payslips")
+    return driver
+
+
+def test_waiting_sits_through_a_page_that_is_still_loading(monkeypatch):
+    monkeypatch.setattr(browse_tools, "WAIT_POLL_SECONDS", 0.01)
+    _loading(after=2)
+
+    out = browse_tools.browse_wait(until="Dev", seconds=5)
+
+    assert out.ok is True
+    assert "Dev" in out
+
+
+def test_waiting_gives_up_and_says_so_rather_than_claiming_success(monkeypatch):
+    """A timeout has to be a FAILURE, or the loop reads it as "waited fine" and
+    carries on as though the thing had appeared."""
+    monkeypatch.setattr(browse_tools, "WAIT_POLL_SECONDS", 0.01)
+    _loading(after=9999)
+
+    out = browse_tools.browse_wait(until="Dev", seconds=0.05)
+
+    assert out.ok is False
+    assert "has still not appeared" in out
+
+
+def test_a_wait_is_bounded_however_long_it_is_asked_for(monkeypatch):
+    """A turn must not be able to disappear into one."""
+    slept: list[float] = []
+    monkeypatch.setattr(browse_tools, "WAIT_POLL_SECONDS", 0.01)
+    monkeypatch.setattr(browse_tools.time, "sleep", slept.append)
+    _loading(after=9999)
+
+    browse_tools.browse_wait(until="never", seconds=10_000)
+
+    assert sum(slept) <= browse_tools.MAX_WAIT_SECONDS
+
+
+def test_waiting_with_nothing_named_waits_for_the_page_to_change(monkeypatch):
+    """What you want after pressing something: not a particular word, just
+    evidence that the press did anything."""
+    monkeypatch.setattr(browse_tools, "WAIT_POLL_SECONDS", 0.01)
+    _loading(after=1)
+
+    out = browse_tools.browse_wait(seconds=5)
+
+    assert out.ok is True
+    assert "changed" in str(out).lower()
+
+
+def test_a_half_loaded_page_tells_the_agent_it_can_wait():
+    """Without this an agent reads a loading screen, concludes the site is empty
+    or broken, and says so — the fix is always the same few seconds and it had
+    no way to know that."""
+    _loading(after=9999)
+
+    out = browse_tools.browse_read()
+
+    assert "browse_wait" in out
+
+
+def test_a_finished_page_is_not_nagged_about_waiting():
+    _ready()
+
+    assert "browse_wait" not in browse_tools.browse_read()
+
+
+@pytest.mark.parametrize("text, unready", [
+    ("Messages are downloading", True),
+    ("progressbar: 40%", True),
+    ("Syncing your files", True),
+    ("Your payslips — three available", False),
+    ("An article about loading bays at the docks", True),
+])
+def test_the_loading_guess_is_only_ever_advice(text, unready):
+    """It is allowed to be wrong — the last case is — because being wrong costs
+    one appended sentence. It never refuses a read and never decides anything."""
+    assert browse_tools._looks_unready(text) is unready

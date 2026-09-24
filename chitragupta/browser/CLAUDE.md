@@ -94,6 +94,16 @@ holds.
   card**, which is what the user actually said yes to. Both come out of the
   current snapshot, so a name invented by injected page text still finds
   nothing. What crosses into the driver is `role␟name` and never a selector.
+- **A page that is still loading is not a failure and not a refusal**, and an
+  agent needs something to wait *with* or it hands the waiting back — *"give it
+  a bit more time on your end, then tell me to try again"*, which turns five
+  seconds into a conversation and asks the user to poll for us.
+  `browse_tools.browse_wait` is that something: bounded, a failure on timeout so
+  the loop cannot read it as success, and advertised by a line appended to any
+  read that looks half-finished. `driver.settle` does **not** cover this — it
+  waits for the network to go idle, which an app holding a WebSocket open never
+  does, and it gives up after three seconds by design because it is a guard
+  against a redirect rather than a wait for a slow site.
 - **A row is a control.** `INTERACTIVE_ROLES` covers `listitem`, `row`,
   `gridcell` and friends, because a modern app's most important control is
   rarely a `<button>` — a chat list, a mail list and a search result are rows.

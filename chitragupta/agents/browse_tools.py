@@ -1,16 +1,17 @@
-"""Looking at websites the user has allowed. Reading only.
+"""Looking at websites the user has allowed, and working in the ones they let an
+agent change.
 
-Three tools, and the shape of the set is the design: **every one of them looks,
-and none of them acts.** `docs/BROWSER.md` splits the capability that way because
-reading and downloading covers a large part of the value with none of the
-transactional risk — the most useful browser agent needs the least dangerous half
-— and because the approval card that acting requires deserves to be designed
-against real approval cards rather than guessed at.
+The set splits in two, and the split is the design. **Looking** — `browse_open`,
+`browse_read`, `browse_find`, `browse_wait`, `browse_sites` — is free on any
+allowed site. **Changing** — `browse_click`, `browse_type`, `browse_submit` — is
+off until the user turns it on for that host, and is refused outright when
+nobody is watching (`permissions.NEVER_UNATTENDED_TOOLS`): a routine reads text a
+stranger wrote, and that is the one caller that must never click inside somebody's
+logged-in accounts.
 
-So `browse_click`, `browse_type` and `browse_submit` do not exist here yet. When
-they land they belong in `permissions.NEVER_UNATTENDED` **in the same commit**,
-because a routine reading a stranger's email is the one caller that must never
-reach them.
+`browse_wait` is here because a page that is still loading is neither a failure
+nor a refusal, and an agent with no way to wait did the only thing left — it
+handed the waiting back to the user and asked to be told when to try again.
 
 **Offered to every agent and gated at execution**, through `_BROWSE` in
 `library.BASE_TOOLS` — the same shape as the connector tools beside them. An
@@ -25,6 +26,8 @@ need to sign in to payroll again" and one that retries the same URL until its
 budget runs out.
 """
 from __future__ import annotations
+
+import time
 
 from ..browser import origins
 from ..browser.session import Reading, Session
@@ -269,9 +272,131 @@ def browse_read(since: str | None = None) -> ToolResult:
             f"The page has not changed since you last read it ({reading.url}). "
             "Nothing new to report from it.")
     if reading.ok:
-        return ToolResult(f"{reading.text}\n[page-version: {reading.digest}]",
-                          truncated=reading.truncated)
+        return ToolResult(
+            f"{reading.text}\n[page-version: {reading.digest}]{_unready_hint(reading)}",
+            truncated=reading.truncated)
     return _answer(reading)
+
+
+# ── waiting, which an agent could not do ─────────────────────────────────
+#
+# A page that is still loading is not a failure and it is not a refusal. It is
+# the normal state of a web app for the first few seconds, and WhatsApp Web
+# spends thirty of them saying *"messages are downloading"*.
+#
+# With nothing to wait *with*, an agent did the only thing left: it reported the
+# page as unusable and handed the waiting back — *"give it a bit more time on
+# your end, then tell me to try again"*. Which turns a five-second pause into a
+# conversation, and asks the user to poll on the app's behalf.
+#
+# `driver.settle` cannot cover this. It waits for the network to go idle, and an
+# app holding a WebSocket open never does — it gives up after three seconds by
+# design, because it is a guard against a redirect, not a wait for a slow site.
+#: The longest a single wait may run. Long enough for a real sync, short enough
+#: that a turn cannot disappear into one — and a page that is not ready after
+#: this is a page worth telling the user about rather than waiting on again.
+MAX_WAIT_SECONDS = 30.0
+
+#: How often to look while waiting. Each look is a full snapshot of the page, so
+#: this is a cost as well as a delay; twice a second would buy nothing on a sync
+#: measured in seconds.
+WAIT_POLL_SECONDS = 2.0
+
+#: Words a page uses about itself while it is not ready yet. Only ever used to
+#: *advise* — never to refuse a read, and never to decide anything. A page that
+#: says "loading" in an article about loading bays is still a page to read.
+LOADING_WORDS = ("loading", "downloading", "syncing", "please wait",
+                 "just a moment", "getting your", "connecting")
+
+
+def _looks_unready(text: str) -> bool:
+    """Does this page look like it has not finished yet?
+
+    Two signals, and the first is the honest one: `progressbar` is what the
+    accessibility standard has for exactly this, so an app doing its job
+    announces its own loading state and `render` prints the role. The words are
+    the fallback for the many that do not.
+
+    Only ever used to **advise**. It never refuses a read and never decides
+    anything — a news article about loading bays is still a page to read.
+    """
+    low = (text or "").lower()
+    return "progressbar:" in low or any(w in low for w in LOADING_WORDS)
+
+
+def _unready_hint(reading: Reading) -> str:
+    """One line on a read, when the page looks like it has not finished.
+
+    Advice, appended outside the quarantine fence the way the page-version is —
+    it is ours, not the site's. Without it an agent reads a loading screen,
+    concludes the site is broken or empty, and says so to the user; the fix is
+    always the same five seconds and it had no way to know that.
+    """
+    if not _looks_unready(reading.text):
+        return ""
+    return ("\n[This page looks like it is still loading. Call browse_wait "
+            "with what you are waiting to see, rather than reporting it as "
+            "empty or asking the user to wait.]")
+
+
+def browse_wait(until: str = "", seconds: float = 15.0) -> ToolResult:
+    """Wait for the open page to be ready, then read it.
+
+    `until` is what you are waiting to see — a chat list, a heading, a button.
+    With nothing named, this waits for the page to change at all, which is the
+    right question after pressing something.
+    """
+    from ..browser import page as pagemod
+
+    try:
+        session = get_session()
+        # **What the agent last saw**, captured before this re-reads. Taking it
+        # from `read()` instead would compare the page against itself: a page
+        # that finished loading between the agent's last look and this call
+        # would then be "unchanged", and the wait would run its full budget
+        # over a page that was already ready.
+        was = pagemod.digest(session.snapshot) if session.snapshot else ""
+        reading = session.read()
+    except _browser_errors() as exc:
+        return _browser_failed(exc)
+    if not reading.ok:
+        return _answer(reading)
+
+    want = " ".join(str(until or "").split()).lower()
+    budget = max(WAIT_POLL_SECONDS, min(float(seconds or 0), MAX_WAIT_SECONDS))
+    deadline = time.monotonic() + budget
+
+    while True:
+        if want and want in reading.text.lower():
+            _remember(reading)
+            return ToolResult(f"“{until}” is on the page now.\n{reading.text}",
+                              truncated=reading.truncated)
+        if not want and reading.digest and was and reading.digest != was:
+            _remember(reading)
+            return ToolResult(f"The page changed.\n{reading.text}",
+                              truncated=reading.truncated)
+        if time.monotonic() >= deadline:
+            break
+        time.sleep(WAIT_POLL_SECONDS)
+        try:
+            reading = get_session().read()
+        except _browser_errors() as exc:
+            return _browser_failed(exc)
+        if not reading.ok:
+            return _answer(reading)
+
+    # A timeout is a **failure**, so the loop does not read it as "waited
+    # successfully" and carry on as though the thing had appeared.
+    waited = int(budget)
+    if want:
+        return ToolResult.failed(
+            f"Waited {waited}s and “{until}” has still not appeared. The page "
+            "may need longer, or it may not have that on it at all — read it "
+            "and say what IS there rather than waiting again. Tell the user "
+            "what the page is showing if it is still loading.")
+    return ToolResult.failed(
+        f"Waited {waited}s and the page did not change. Read it and say what "
+        "it shows rather than waiting again.")
 
 
 def browse_find(what: str) -> ToolResult:
