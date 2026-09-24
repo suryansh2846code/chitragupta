@@ -116,21 +116,14 @@ def test_the_tiers_hold_exactly_the_actions_they_are_meant_to():
       sources, so a write to either is an `mcp_action`, which is already
       amber against its own per-tool list. Two routes to one connector meant
       the agent could pick the one the user had not set up.
-    * `browse_click` / `browse_type` / `browse_submit` are RED and cannot be
-      anything else, for the reason `docs/BROWSER.md` §5 gives: **a browser has
-      no `to` field.** "Click this button" tells the gate nothing about whether
-      the button says *Save draft* or *Transfer £4,000*, so there is no key an
-      allow-list could hold — not a recipient, not a tool name, nothing. The
-      site is judged separately by `origins.may_act`, and that is a different
-      question: whether an agent may act *there* at all, never whether this
-      particular press may go unwatched. On top of which, unattended is the one
-      caller that must never reach them — a routine reads text a stranger wrote,
-      and an injected instruction plus a click is an agent acting inside the
-      user's logged-in accounts.
+    * The browser's write tools are in neither set, and are not actions at all.
+      A click cannot be promoted or allow-listed — *Save draft* and *Transfer
+      £4,000* are the same call — so the consent is the **site**, granted once
+      in Connectors, and the floor is `permissions.NEVER_UNATTENDED_TOOLS`,
+      which no grant can lift.
     """
     never = frozenset({"create_routine", "mail_triage",
-                       "update_event", "cancel_event",
-                       "browse_click", "browse_type", "browse_submit"})
+                       "update_event", "cancel_event"})
     outbound = frozenset({"send_email", "create_event", "message_send",
                           "github_comment", "github_create_issue",
                           "mcp_action", "drive_share"})

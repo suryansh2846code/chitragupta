@@ -323,6 +323,9 @@ TOOL_IMPLS = {
     "browse_open": browse_tools.browse_open,
     "browse_read": browse_tools.browse_read,
     "browse_find": browse_tools.browse_find,
+    "browse_click": browse_tools.browse_click,
+    "browse_type": browse_tools.browse_type,
+    "browse_submit": browse_tools.browse_submit,
     "browse_sites": browse_tools.browse_sites,
     "what_i_looked_at": browse_record.what_i_looked_at,
     "list_routines": automation_tools.list_routines,
@@ -754,9 +757,10 @@ TOOL_DEFS: dict[str, Tool] = {
             "path": {"type": "string"},
             "content": {"type": "string"}}, "required": ["path", "content"]},
     ),
-    # Reading only. `browse_click`, `browse_type` and `browse_submit` are a
-    # separate landing, and must join `permissions.NEVER_UNATTENDED` in the same
-    # commit that adds them — a routine reading a stranger's email is the one
+    # Reading is free on any allowed site. **Changing one is not**, and the
+    # three below are gated twice over: the user turns acting on for that site,
+    # and `permissions.NEVER_UNATTENDED_TOOLS` keeps them away from any run
+    # nobody is watching — a routine reading a stranger's email is the one
     # caller that must never reach them.
     "browse_open": Tool(
         name="browse_open",
@@ -794,6 +798,56 @@ TOOL_DEFS: dict[str, Tool] = {
             "what": {"type": "string",
                      "description": "What you are looking for, in plain words"}},
             "required": ["what"]},
+    ),
+    # `ref` and `label` together, on all three: the ref says which element the
+    # page showed you, the label says what it is called. A ref goes stale the
+    # moment the page re-renders and the label is what survives, so a call that
+    # carries both keeps working where either alone would not.
+    "browse_click": Tool(
+        name="browse_click",
+        description=(
+            "Click something on the open page — a button, a link, or a row such "
+            "as a chat or a search result. Only works on sites the user has "
+            "allowed changes on, and never when nobody is watching. Read the "
+            "page again afterwards: you will be told whether it changed."
+        ),
+        parameters={"type": "object", "properties": {
+            "ref": {"type": "string",
+                    "description": "The reference from your last read, e.g. e7"},
+            "label": {"type": "string",
+                      "description": "Its name exactly as the page gave it"}},
+            "required": ["ref"]},
+    ),
+    "browse_type": Tool(
+        name="browse_type",
+        description=(
+            "Type into a box on the open page. Replaces whatever is in it. Only "
+            "works on sites the user has allowed changes on, and never when "
+            "nobody is watching. Most message boxes send with browse_submit "
+            "afterwards rather than a separate click."
+        ),
+        parameters={"type": "object", "properties": {
+            "text": {"type": "string",
+                     "description": "The words to type"},
+            "ref": {"type": "string",
+                    "description": "The reference from your last read, e.g. e7"},
+            "label": {"type": "string",
+                      "description": "Its name exactly as the page gave it"}},
+            "required": ["text", "ref"]},
+    ),
+    "browse_submit": Tool(
+        name="browse_submit",
+        description=(
+            "Press Enter in a box on the open page — how most message boxes and "
+            "search fields send. Only works on sites the user has allowed "
+            "changes on, and never when nobody is watching."
+        ),
+        parameters={"type": "object", "properties": {
+            "ref": {"type": "string",
+                    "description": "The reference from your last read, e.g. e7"},
+            "label": {"type": "string",
+                      "description": "Its name exactly as the page gave it"}},
+            "required": ["ref"]},
     ),
     "what_i_looked_at": Tool(
         name="what_i_looked_at",
@@ -1172,6 +1226,9 @@ _LABELS: dict[str, tuple[str, str]] = {
     "browse_open":              ("Open page", "Websites you allow"),
     "browse_read":              ("Re-read",   "Websites you allow"),
     "browse_find":              ("Find on page", "Websites you allow"),
+    "browse_click":             ("Click",      "Websites you allow"),
+    "browse_type":              ("Type",       "Websites you allow"),
+    "browse_submit":            ("Send",       "Websites you allow"),
     "browse_sites":             ("Which sites", "Websites you allow"),
     # Your Mac — the powers worth naming as a group, because they are the ones
     # a person wants to see gathered before deciding

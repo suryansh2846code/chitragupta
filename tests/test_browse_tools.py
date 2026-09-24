@@ -294,18 +294,20 @@ def test_holding_the_tool_grants_no_access_at_all():
 def test_a_write_tool_cannot_be_added_without_the_unattended_gate():
     """The long-memory check.
 
-    `browse_click`, `browse_type`, `browse_submit` and `browse_download` do not
-    exist yet. The day one does, it must be in `NEVER_UNATTENDED` in the same
-    commit — a routine triggered by a stranger's email is precisely the caller
+    A write tool must be in `NEVER_UNATTENDED_TOOLS` in the same commit that
+    adds it — a routine triggered by a stranger's email is precisely the caller
     that must not be able to click inside the user's logged-in accounts. This
-    test fails the moment that is forgotten, which a comment asking nicely would
-    not.
+    fails the moment that is forgotten, which a comment asking nicely would not.
+
+    The tool-side list, not `NEVER_UNATTENDED`: that one is derived from the
+    action registry, and there is nowhere in an `ActionSpec` to declare a tool.
     """
     present = _WRITE_TOOLS & set(tools.TOOL_IMPLS)
 
-    assert present <= permissions.NEVER_UNATTENDED, (
-        f"{sorted(present - permissions.NEVER_UNATTENDED)} can act on a website "
-        "and is not in permissions.NEVER_UNATTENDED")
+    assert present, "the write tools have vanished from the registry"
+    assert present <= permissions.NEVER_UNATTENDED_TOOLS, (
+        f"{sorted(present - permissions.NEVER_UNATTENDED_TOOLS)} can act on a "
+        "website and is not in permissions.NEVER_UNATTENDED_TOOLS")
 
 
 def test_that_gate_would_actually_notice(monkeypatch):
@@ -322,68 +324,14 @@ def test_that_gate_would_actually_notice(monkeypatch):
     exist yet, and the day it does, this picks the one after.
     """
     ungated = next(n for n in sorted(_WRITE_TOOLS)
-                   if n not in permissions.NEVER_UNATTENDED)
+                   if n not in permissions.NEVER_UNATTENDED_TOOLS)
     monkeypatch.setitem(tools.TOOL_IMPLS, ungated, lambda ref: "did it")
 
     present = _WRITE_TOOLS & set(tools.TOOL_IMPLS)
 
     assert present, "the simulated write tool is not being seen at all"
-    assert not present <= permissions.NEVER_UNATTENDED, (
+    assert not present <= permissions.NEVER_UNATTENDED_TOOLS, (
         f"an ungated {ungated} did not trip the check that exists to catch it")
-
-
-# ── acting on a page, and what it had to bring with it ───────────────────
-def test_every_browser_write_waits_for_a_tap():
-    """`docs/BROWSER.md` §5: a routine reads text a stranger wrote, and combined
-    with a browser an injected instruction reaches an agent that can click
-    inside the user's logged-in accounts.
-
-    So these are RED, which puts them in `NEVER_UNATTENDED` by derivation — an
-    unattended agent may look and may report, and may not act, whatever the
-    site is set to.
-    """
-    from chitragupta.actions import REGISTRY, Risk
-
-    for name in ("browse_click", "browse_type", "browse_submit"):
-        assert name in REGISTRY, f"{name} is not a declared action"
-        assert REGISTRY[name].risk is Risk.RED, f"{name} is not RED"
-        assert name in permissions.NEVER_UNATTENDED
-
-
-def test_a_browser_write_says_why_it_waits_in_the_users_terms():
-    """A RED action carries its own sentence. "Creating automations always needs
-    your approval" about a click would teach the user nothing except that the
-    app is confused."""
-    from chitragupta.actions import REGISTRY
-
-    for name in ("browse_click", "browse_type", "browse_submit"):
-        because = REGISTRY[name].always_ask_because
-        assert because, f"{name} waits and does not say why"
-        assert "approval" in because.lower()
-
-
-def test_a_browser_write_is_never_offered_an_undo():
-    """There is no inverse of a click. The page decided what it meant, and a
-    button claiming to take it back would be a lie about somebody else's
-    application."""
-    from chitragupta.actions import REGISTRY
-
-    for name in ("browse_click", "browse_type", "browse_submit"):
-        assert REGISTRY[name].undo is None
-
-
-def test_the_card_shows_the_page_s_own_name_for_the_thing():
-    """`label` and `url` are on every card, and they are what the *page*
-    reported — not the agent's description of what it is about to press. That
-    is the difference between approving "Click “Send” on web.whatsapp.com" and
-    taking an agent's word for what a button does."""
-    from chitragupta.actions import REGISTRY
-
-    for name in ("browse_click", "browse_type", "browse_submit"):
-        assert "label" in REGISTRY[name].fields
-        assert "url" in REGISTRY[name].fields
-    assert REGISTRY["browse_type"].fields[0] == "text", (
-        "the text being typed is the first thing the user should see")
 
 
 # ── when the browser itself will not start ───────────────────────────────
@@ -624,39 +572,144 @@ def test_a_dead_browser_is_dropped_from_the_shared_slot_too():
     chromium.reset_shared()
 
 
-# ── a card that cannot succeed is worse than no card ─────────────────────
-def test_a_type_action_with_nothing_to_type_never_becomes_a_card():
-    """It rendered "Type into a website" with an empty box and then failed on
-    Confirm with "There is nothing to type" — which reads as the app breaking
-    rather than as the model having left the words out. Dropped at the parse,
-    for the reason a malformed `mcp_action` is dropped."""
-    from chitragupta.actions import parse_actions
-
-    empty = ('<action type="browse_type" ref="e11" label="Message" '
-             'url="https://web.whatsapp.com/"></action>')
-
-    assert [a["type"] for a in parse_actions("here: " + empty)] == []
-
-
-def test_a_type_action_with_words_in_it_is_kept():
-    from chitragupta.actions import parse_actions
-
-    full = ('<action type="browse_type" ref="e11" label="Message" '
-            'url="https://web.whatsapp.com/">I am home</action>')
-
-    (action,) = parse_actions("here: " + full)
-
-    assert action["type"] == "browse_type"
-    assert action["params"]["text"] == "I am home"
+# ── changing a page: the site is the consent, not the keystroke ──────────
+#
+# These shipped as approval-card actions — one tap per click, per keystroke, per
+# submit. Sending one WhatsApp message is find → click the chat → type → send,
+# so a person was asked four times for one sentence. `/CLAUDE.md` already says
+# what that costs: *"a tap nobody reads by the fourth time is not consent."*
+#
+# `docs/BROWSER.md` §5 had the answer written down: *"The user may promote an
+# origin to 'act freely', per site, having seen it work."* Allowing changes on a
+# site IS that promotion. What must survive the change is the other half — an
+# unattended run may never act, whatever the site says.
+ACTABLE = {
+    "https://payroll.example.com/payslips": ("Payslips", [
+        Node(role="heading", name="Your payslips"),
+        Node(role="textbox", name="Message", handle="textbox␟Message"),
+        Node(role="button", name="Send", handle="button␟Send"),
+    ]),
+}
 
 
-def test_no_internal_id_is_printed_on_a_card():
-    """`/CLAUDE.md`: never surface an internal. "Ref e11" was on every browser
-    card — an id the user cannot check, cannot act on and did not ask for. What
-    they approve against is the element's own name and the site's address."""
-    from chitragupta.actions import REGISTRY
+class _Acts(FakeDriver):
+    def __init__(self):
+        super().__init__(ACTABLE)
+        self.acted: list[tuple[str, str, str]] = []
 
-    for name in ("browse_click", "browse_type", "browse_submit"):
-        assert "ref" not in REGISTRY[name].fields, f"{name} shows a ref"
-        assert "label" in REGISTRY[name].fields
-        assert "url" in REGISTRY[name].fields
+    def act(self, kind, handle, text=""):
+        self.acted.append((kind, handle, text))
+        return self._page(self._at)
+
+
+def _ready(may_act=True):
+    driver = _Acts()
+    browse_tools.set_session(Session(driver))
+    origins.grant("payroll.example.com", may_act=may_act)
+    browse_tools.browse_open("https://payroll.example.com/payslips")
+    return driver
+
+
+def _ref(name):
+    snap = browse_tools.get_session().snapshot
+    return next(r for r, n in snap.refs.items() if n.name == name)
+
+
+def test_typing_on_an_allowed_site_needs_no_further_approval():
+    """The whole point of the change. The user said yes once, on the Connectors
+    screen, in front of a sentence saying what it meant."""
+    driver = _ready()
+
+    out = browse_tools.browse_type("I'm home", ref=_ref("Message"))
+
+    assert out.ok is True
+    assert driver.acted == [("type", "textbox␟Message", "I'm home")]
+
+
+def test_clicking_and_sending_need_no_further_approval_either():
+    driver = _ready()
+
+    assert browse_tools.browse_click(ref=_ref("Send")).ok is True
+    assert browse_tools.browse_submit(ref=_ref("Message")).ok is True
+    assert [k for k, _, _ in driver.acted] == ["click", "submit"]
+
+
+def test_a_site_not_allowed_to_be_changed_refuses_every_one_of_them():
+    """Reading a site is not permission to type into it, and that default holds
+    without anybody opting into it."""
+    driver = _ready(may_act=False)
+
+    assert browse_tools.browse_type("hi", ref=_ref("Message")).ok is False
+    assert browse_tools.browse_click(ref=_ref("Send")).ok is False
+    assert browse_tools.browse_submit(ref=_ref("Message")).ok is False
+    assert driver.acted == []
+
+
+def test_nothing_is_typed_or_clicked_while_nobody_is_watching():
+    """The half that must not be dropped along with the card. A routine reads
+    text a stranger wrote; an instruction in that text plus a click is an agent
+    acting inside accounts the user is signed in to, with nobody there."""
+    from chitragupta.agents.permissions import as_unattended
+
+    driver = _ready()
+    ref = _ref("Message")
+
+    with as_unattended():
+        typed = browse_tools.browse_type("I'm home", ref=ref)
+        clicked = browse_tools.browse_click(ref=_ref("Send"))
+
+    assert typed.ok is False and clicked.ok is False
+    assert driver.acted == [], "an unwatched run reached the page"
+
+
+def test_an_unwatched_run_is_not_sent_hunting_for_a_permission():
+    """There is no setting that would allow it, so "you lack permission" would
+    send an agent looking for one and telling the user to grant it."""
+    from chitragupta.agents.permissions import as_unattended
+
+    _ready()
+    with as_unattended():
+        out = browse_tools.browse_type("hi", ref=_ref("Message"))
+
+    assert "no permission that changes it" in str(out)
+
+
+def test_reading_is_still_fine_while_nobody_is_watching():
+    """The gate is on changing a page, not on looking at one. A routine that
+    could not read would be a routine that cannot do its job."""
+    from chitragupta.agents.permissions import as_unattended
+
+    _ready()
+    with as_unattended():
+        out = browse_tools.browse_read()
+
+    assert out.ok is True
+
+
+def test_the_watching_flag_does_not_leak_out_of_the_run():
+    from chitragupta.agents import permissions
+
+    with permissions.as_unattended():
+        assert permissions.unattended() is True
+
+    assert permissions.unattended() is False
+
+
+def test_typing_nothing_is_refused_before_the_page_is_touched():
+    driver = _ready()
+
+    out = browse_tools.browse_type("   ", ref=_ref("Message"))
+
+    assert out.ok is False
+    assert driver.acted == []
+
+
+def test_an_act_says_whether_the_page_actually_moved():
+    """"Done" on a page that had not moved is how an agent came to report that a
+    chat had opened when it had not, and then spent three more turns reasoning
+    from it."""
+    _ready()
+
+    out = browse_tools.browse_click(ref=_ref("Send"))
+
+    assert "unchanged" in str(out).lower()

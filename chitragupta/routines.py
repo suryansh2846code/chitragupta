@@ -288,13 +288,21 @@ def run_routine(r: dict, trigger_context: str = "") -> dict:
     from .actions import parse_actions
     from .agents import run_turn
     from .agents.approvals import run_or_queue
+    from .agents.permissions import as_unattended
     from .notify import desktop_notify
 
     prompt = r["instruction"]
     if trigger_context:
         prompt += "\n\n" + trigger_context
     try:
-        res = run_turn(r["agent_id"], prompt)
+        # The whole turn, not just the actions it proposes. Gating proposals was
+        # enough while a routine's tools could only read and take notes — the
+        # only thing that reached the world was the action. A browser that can
+        # click is not like that: the tool *is* the thing that reaches the
+        # world, and by the time an action would have been proposed the click
+        # has already happened.
+        with as_unattended():
+            res = run_turn(r["agent_id"], prompt)
     except Exception as exc:
         return {"ok": False, "error": str(exc)[:160]}
 

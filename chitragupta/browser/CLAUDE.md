@@ -68,19 +68,24 @@ holds.
 - **Disconnect ends the session, not just the permission.** `forget_site()`
   clears that host's cookies; a grant dropped while the user stays signed in is
   a lie about what the button did.
-- **Acting is a second grant, and every act still waits for a tap.**
-  `origins.may_act` is off until the user turns it on per site
-  (`POST /api/browser/sites/{host}/acting`), and turning it on decides only
-  whether an approval card may *appear* for that site — never whether one may
-  be skipped. `browse_click` / `browse_type` / `browse_submit` are declared in
-  `actions.py` as `Risk.RED`, which puts them in `permissions.NEVER_UNATTENDED`
-  by derivation: a routine reads text a stranger wrote, and an injected
-  instruction plus a click is an agent acting inside the user's accounts.
-- **They are actions, not tools, and that is the safety design.** A browser has
-  no `to` field — *Save draft* and *Transfer £4,000* are the same call — so
-  there is no key an allow-list could hold and nothing to promote. What a card
-  shows is the element's **own accessible name and the page's address**, not
-  the agent's description of what it is about to press.
+- **Acting is one decision per site, not one per keystroke.** `origins.may_act`
+  is off until the user turns it on for that host, and that press *is* the
+  consent — after it, `browse_click` / `browse_type` / `browse_submit` run
+  without asking again. They shipped as approval-card actions and it was
+  unusable: one WhatsApp reply is find → click the chat → type → send, so a
+  person said yes four times for one sentence, and `/CLAUDE.md` already knows
+  what that costs — *"a tap nobody reads by the fourth time is not consent."*
+  `docs/BROWSER.md` §5 had it right: an origin is promoted to "act freely",
+  per site, having seen it work.
+- **They are tools, and the floor under them is `NEVER_UNATTENDED_TOOLS`.**
+  That list is the tool-side twin of `permissions.NEVER_UNATTENDED`, which is
+  derived from the action registry and has nowhere to name a tool. A routine
+  reads text a stranger wrote, so the write tools check
+  `permissions.unattended()` themselves and refuse — no site setting lifts it,
+  and the refusal says so rather than sending an agent hunting for a permission
+  that does not exist. `routines.run_routine` wraps the **whole turn**, because
+  with a browser the tool *is* what reaches the world: gating only the actions
+  a turn proposes was enough when a routine's tools could only read.
 - **The ref proves the model saw it; the approved label is what executes.** A
   ref alone is too brittle — a live app re-renders while a person reads the
   card, which produced *"I didn't have a fresh, valid reference to the message

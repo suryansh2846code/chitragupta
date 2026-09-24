@@ -53,10 +53,16 @@ CATEGORIES = (
 #: user's own agent sit next to a connected Notion it could not read.
 #: `forget_fact` and `run_python` are absent on purpose — see `presets`-era
 #: notes in `brain_tools.py` and `code_tools.py`. Both are opt-in per agent.
-#: Reading websites the user has allowed. Read-only: `may_act` exists in
-#: `browser/origins.py` and nothing grants it, and a write tool has to join
-#: `permissions.NEVER_UNATTENDED` in the same commit that adds it.
+#: Reading websites the user has allowed, and changing one they have allowed
+#: changes on. The write half is gated twice over — `origins.may_act` per site,
+#: and `permissions.NEVER_UNATTENDED_TOOLS` for any run nobody is watching.
 _BROWSE = ["browse_sites", "browse_open", "browse_read", "browse_find",
+           # Changing a page, gated twice: the user turns acting on for that
+           # site, and `permissions.NEVER_UNATTENDED_TOOLS` keeps them out of
+           # any run nobody is watching. Offered to every agent for the same
+           # reason the read tools are — one that cannot see them tells the
+           # user it cannot do something it can.
+           "browse_click", "browse_type", "browse_submit",
            # A read is not an action, so nothing logged it and the work
            # simply vanished. This is where it is read back.
            "what_i_looked_at"]
@@ -171,23 +177,7 @@ _ALL_ACTIONS = ["create_draft", "send_email", "create_event", "update_event",
 #: archived something.
 _COMMS_ACTIONS = [*_ALL_ACTIONS, "mail_triage", "message_send"]
 
-#: Doing something in a web page. Given to the generalist and to nobody else
-#: for now, and both halves of that are deliberate.
-#:
-#: It goes to Chief of Staff because that is the agent a person asks to answer
-#: somebody, and most of the places people are reachable have no API — which is
-#: the whole argument for the browser in `docs/BROWSER.md` §1.
-#:
-#: It does **not** go to the Researcher, whose comment already says why: "a
-#: researcher with no way to send should not be taught how, and then cannot
-#: claim it did." Nor to Statements, which is pointed at a portal to read it.
-#: An agent that cannot see these actions cannot propose one, which is a
-#: cheaper guarantee than any sentence in a prompt.
-_BROWSE_ACTIONS = ["browse_click", "browse_type", "browse_submit"]
-#: The generalist reaches the work surfaces too — it is the one agent
-#: with every tool, and an issue it cannot file is a job it hands back.
-_CHIEF_ACTIONS = [*_COMMS_ACTIONS, *_CODE_ACTIONS, *_DOC_ACTIONS,
-                  *_BROWSE_ACTIONS]
+_CHIEF_ACTIONS = [*_COMMS_ACTIONS, *_CODE_ACTIONS, *_DOC_ACTIONS]
 
 #: Stands for "every tool there is" in a template's list.
 #:
@@ -340,7 +330,7 @@ TEMPLATES: tuple[Template, ...] = (
         # commit to things. run_python because triage is counting and dates.
         tools=[*BASE_TOOLS, *_FILES, *_MAIL, *_MESSAGES, *_DIARY, *_TASKS,
                *_LOOPS, "run_python"],
-        actions=[*_COMMS_ACTIONS, *_BROWSE_ACTIONS],
+        actions=_COMMS_ACTIONS,
         recall_sources=["gmail", "gcal", "telegram", "slack"],
         works_with=["gmail", "gcal", "telegram", "slack", "browser"],
         needs=["gmail"],

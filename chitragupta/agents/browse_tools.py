@@ -299,6 +299,101 @@ def browse_find(what: str) -> ToolResult:
     return ToolResult("\n".join(lines) + more)
 
 
+# ── changing a page ──────────────────────────────────────────────────────
+#
+# **Consent is the site, granted once, not the keystroke.**
+#
+# These shipped as approval-card actions — one tap per click, per keystroke, per
+# submit. That is unusable and, worse, it teaches the tap away: sending one
+# WhatsApp message is find → click the chat → type → submit, so a person answering
+# "yes" four times in a row for one sentence stops reading the fourth card, and a
+# tap nobody reads is not consent. `/CLAUDE.md` already says this about batches:
+# *"a tap nobody reads by the fourth time is not consent."*
+#
+# `docs/BROWSER.md` §5 anticipated the answer: *"The user may promote an origin
+# to 'act freely', per site, having seen it work. That is a real choice a person
+# can reason about, which 'let the agent use the web' is not."* Allowing changes
+# on a site IS that promotion, and it is asked for once, on the Connectors
+# screen, in front of a sentence saying what it means.
+#
+# Three things carry the safety that the per-press card used to:
+#
+#   * **The origin.** `origins.may_act` is off by default and is a deliberate,
+#     revocable, per-site decision — the same unit the whole package uses.
+#   * **Unattended never acts.** A routine reads text a stranger wrote, so these
+#     check `permissions.unattended()` themselves. That check is the reason the
+#     card could be dropped at all, and it must never be dropped with it.
+#   * **The page decides nothing.** The origin check runs at the tool, refs come
+#     from a snapshot the model was shown, and what crosses into the driver is a
+#     role and a name.
+#: Said to an agent running with nobody present. Not "you lack a permission":
+#: there is no permission that would make this allowed, and an agent told
+#: otherwise spends its turn hunting for one.
+NOT_WHILE_UNWATCHED = (
+    "Nobody is watching this run, so nothing on a website may be clicked or "
+    "typed into — that is true however the site is set up, and there is no "
+    "permission that changes it. Read and report instead, and leave anything "
+    "that changes a page for a moment when the user is here."
+)
+
+
+def _may_change() -> ToolResult | None:
+    """The one gate every write tool passes through. None means go ahead."""
+    from . import permissions
+
+    if permissions.unattended():
+        return ToolResult.failed(NOT_WHILE_UNWATCHED)
+    return None
+
+
+def browse_click(ref: str = "", label: str = "") -> ToolResult:
+    """Click one element of the page that is open."""
+    return _change("click", ref=ref, label=label)
+
+
+def browse_type(text: str, ref: str = "", label: str = "") -> ToolResult:
+    """Type into one element of the page that is open."""
+    return _change("type", ref=ref, label=label, text=text)
+
+
+def browse_submit(ref: str = "", label: str = "") -> ToolResult:
+    """Press Enter in one element — how most message boxes send."""
+    return _change("submit", ref=ref, label=label)
+
+
+def _change(kind: str, *, ref: str = "", label: str = "",
+            text: str = "") -> ToolResult:
+    refused = _may_change()
+    if refused is not None:
+        return refused
+    if kind == "type" and not str(text or "").strip():
+        return ToolResult.failed("There is nothing to type.")
+    from ..browser import page as pagemod
+
+    try:
+        session = get_session()
+        was = pagemod.digest(session.snapshot) if session.snapshot else ""
+        reading = session.act(kind, ref, text, label=label)
+    except _browser_errors() as exc:
+        return _browser_failed(exc)
+
+    if not reading.ok:
+        return _answer(reading)
+    _remember(reading)
+    # **Say whether anything happened.** "Done" on a page that had not moved is
+    # how an agent came to report that a chat had opened when it had not, and
+    # then spent three more turns reasoning from it. The digest is already
+    # computed for the cheap-re-read path, so comparing costs nothing.
+    moved = bool(was) and bool(reading.digest) and reading.digest != was
+    return ToolResult(
+        f"Did it — {kind} on “{label or ref}” at {reading.url}.\n" + (
+            "The page changed. Read it again to see what it says now."
+            if moved else
+            "The page looks unchanged. If you expected it to change, what you "
+            "acted on may not have been the control you wanted — read the page "
+            "and look again rather than repeating this."))
+
+
 def browse_sites() -> ToolResult:
     """Which sites the user has allowed. Orientation, so an agent can say what it
     is able to do instead of discovering it by being refused."""

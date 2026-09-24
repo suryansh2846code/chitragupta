@@ -163,14 +163,24 @@ def test_a_brain_that_will_not_write_does_not_break_the_read(monkeypatch):
 
 
 def test_reading_a_page_records_it():
-    """The wiring, not just the recorder. Both success paths in
-    `browse_tools` go through `_remember`, including the cheap unchanged-page
+    """The wiring, not just the recorder. **Every** success path in
+    `browse_tools` goes through `_remember`, including the cheap unchanged-page
     one — a record that only appeared when the page happened to change would
-    be a record nobody could reason about."""
+    be a record nobody could reason about.
+
+    Three now, not two: changing a page is the third, and it is the one that
+    matters most. `docs/REACHING-AN-APP.md` — the browser is not a source and
+    does not feed the brain, "but what an agent does there is recorded… The
+    evidence of the work is ours even when the material is not."
+
+    The exact count is the point rather than a nuisance: a fourth success path
+    fails this, which is how somebody adding one is made to decide whether it
+    records instead of discovering months later that it never did.
+    """
     import inspect
 
     from chitragupta.agents import browse_tools
 
     source = inspect.getsource(browse_tools)
-    assert source.count("_remember(reading)") == 2
+    assert source.count("_remember(reading)") == 3
     assert "def _remember" in source

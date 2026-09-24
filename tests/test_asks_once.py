@@ -199,17 +199,10 @@ def test_an_action_that_cannot_name_who_it_reaches_still_asks_every_time():
     for a user to read, and "always allow" would be a button that agreed to
     something nobody could show them.
 
-    The three browser actions are here for the same reason carried further: a
-    browser has no recipient *and* no stable verb. "Click e9 on this page" is
-    not a promise about anything — the page decides what that button does, and
-    it may decide differently tomorrow. `origins.may_act` answers the question
-    that *can* be answered ("may an agent act on this site at all"), and it is
-    not this one. So they stay per-press however much the user trusts the site.
     """
     unpromotable = {n for n, s in REGISTRY.items() if s.risk is Risk.RED}
     assert unpromotable == {"update_event", "cancel_event",
-                            "mail_triage", "create_routine",
-                            "browse_click", "browse_type", "browse_submit"}
+                            "mail_triage", "create_routine"}
 
     for action_type in unpromotable:
         verdict = permissions.check(action_type, {})

@@ -21,6 +21,8 @@ person an injected instruction would name.
 """
 from __future__ import annotations
 
+import contextlib
+import contextvars
 import re
 import sqlite3
 import uuid
@@ -119,6 +121,60 @@ RECIPIENT_KINDS = {
 #: in advance.
 NEVER_UNATTENDED = frozenset(
     name for name, spec in REGISTRY.items() if spec.risk is Risk.RED)
+
+#: Tools an unattended agent may never call, whatever it has been granted.
+#:
+#: The twin of `NEVER_UNATTENDED` on the other side of the seam, and it has to
+#: exist separately because that one is *derived from the action registry* —
+#: there is nowhere in an `ActionSpec` to declare a tool.
+#:
+#: Everything above this line gates **actions**, which is where the danger used
+#: to be: a routine's tools were reading and note-taking, and only what it
+#: proposed could leave the machine. A browser that can click breaks that
+#: assumption — the tool itself is the thing that reaches the world, and by the
+#: time an action would have been proposed the click has already happened.
+#:
+#: So the browser's write tools are named here and they check `unattended()`
+#: themselves. A routine triggered by `new_email` is reading text a stranger
+#: wrote; an instruction in that text plus a click is an agent acting inside
+#: accounts the user is signed in to, with nobody watching.
+NEVER_UNATTENDED_TOOLS = frozenset({
+    "browse_click", "browse_type", "browse_submit",
+})
+
+#: Is the turn running right now one nobody is watching?
+#:
+#: A `ContextVar` for the same reason the delegation chain is one: tool calls
+#: run in a thread pool and `copy_context()` carries this to each of them, where
+#: a module-level flag would be shared by every turn at once.
+#:
+#: Defaults to **False**, and that is deliberate rather than lazy: the value is
+#: set by the few places that run an agent with nobody present, and a new
+#: caller that forgets is a caller whose turn behaves like a person is there.
+#: That is the wrong default in theory — but the alternative, defaulting to
+#: "unattended", silently disables the browser for ordinary chat, which is the
+#: failure nobody notices until a user reports the feature does nothing.
+_UNATTENDED: contextvars.ContextVar[bool] = contextvars.ContextVar(
+    "chitragupta_unattended", default=False)
+
+
+def unattended() -> bool:
+    """Is this turn running with nobody watching — a routine, a schedule?"""
+    return bool(_UNATTENDED.get())
+
+
+@contextlib.contextmanager
+def as_unattended():
+    """Mark everything inside as running with nobody present.
+
+    Wrapped around the *whole turn*, not around the actions it proposes: the
+    point is that the tools are inside it too.
+    """
+    token = _UNATTENDED.set(True)
+    try:
+        yield
+    finally:
+        _UNATTENDED.reset(token)
 
 #: Why each of them waits, in the user's terms — declared beside the action it
 #: describes, because a user told "creating automations always needs your
