@@ -116,10 +116,36 @@ BROWSER_UNAVAILABLE = (
     "permission. Do not retry this call more than once."
 )
 
+#: The **recoverable** one, and the reason it needs its own words.
+#:
+#: "Target page, context or browser has been closed" is not a browser that will
+#: not start. It is a browser that was alive and is not any more — and the usual
+#: cause is us: connecting a site opens a browser and closes it again when the
+#: user presses Done, and while the profile is shared that ends whatever page an
+#: agent had open. Chromium hands a second launch on the same profile to the
+#: first process ("Opening in existing browser session"), so the two are one
+#: browser and closing either closes both.
+#:
+#: Reported as "the browser could not be started, do not retry", it was the
+#: exact inversion of the truth: this is the one failure retrying *does* fix,
+#: and the agent was told the one thing that stopped it fixing itself.
+BROWSER_CLOSED = (
+    "The browser window that had this page open was closed — connecting a site "
+    "opens and closes one, which ends any page already open. Nothing is wrong "
+    "with the sign-in, the site or the permission. Call this again once and a "
+    "fresh browser will start; only tell the user if the second attempt fails "
+    "too."
+)
+
 #: Playwright's name for "another Chromium already holds this profile". Matched
 #: as a fragment because the rest of that message is a path and a paragraph of
 #: advice aimed at whoever wrote the code, not at this user.
 _PROFILE_LOCKED = "processsingleton"
+
+#: How Playwright says "the thing you were driving is gone". Matched on the
+#: phrase rather than an exception type because it arrives as a plain message
+#: from the browser thread, already turned into a `BrowserError` by `_call`.
+_CLOSED = ("has been closed", "target closed", "target page, context or browser")
 
 
 def _browser_failed(exc: Exception) -> ToolResult:
@@ -136,9 +162,18 @@ def _browser_failed(exc: Exception) -> ToolResult:
     from ..browser.chromium import BrowserNotReadyError
 
     log.warning("browser unavailable for an agent: %s", str(exc)[:200])
+    detail = str(exc).lower()
     if isinstance(exc, BrowserNotReadyError):
         return ToolResult.failed(f"{exc} Tell the user that, and do not retry.")
-    if _PROFILE_LOCKED in str(exc).lower() or "already in use" in str(exc).lower():
+    if any(phrase in detail for phrase in _CLOSED):
+        # **Dropped, not kept.** The driver's thread outlives its browser, so
+        # `_ensure_started` sees it alive and returns without relaunching — the
+        # session stays broken for the life of the app, and the user is told to
+        # restart something that could have healed itself. Clearing it is what
+        # makes "call this again once" true.
+        set_session(None)
+        return ToolResult.failed(BROWSER_CLOSED)
+    if _PROFILE_LOCKED in detail or "already in use" in detail:
         return ToolResult.failed(BROWSER_BUSY)
     return ToolResult.failed(BROWSER_UNAVAILABLE)
 
@@ -156,9 +191,10 @@ def browse_open(url: str) -> ToolResult:
     try:
         return _answer(get_session().open(url))
     except _browser_errors() as exc:
-        # The session is kept, not dropped: the driver restarts its own thread
-        # on the next call, and throwing it away would lose the page an agent
-        # may still be holding a ref into.
+        # Whether the session survives is decided in `_browser_failed`, by which
+        # failure it was: a browser that would not *start* leaves the page an
+        # agent holds refs into alone, a browser that has been *closed* has no
+        # page left to protect and has to be replaced.
         return _browser_failed(exc)
 
 

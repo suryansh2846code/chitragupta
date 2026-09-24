@@ -433,3 +433,70 @@ def test_re_reading_and_finding_are_covered_too():
     browse_tools.browse_open("https://payroll.example.com/payslips")
     assert browse_tools.browse_read().ok is False
     assert "ProcessSingleton" not in browse_tools.browse_read()
+
+
+# ── the browser that was alive and is not any more ───────────────────────
+#
+# Reported from a real log:
+#
+#   12:24:29  browser sign-in finished for web.whatsapp.com   ← we close it
+#   12:25:28  browse_open -> Page.goto: Target page, context or browser has been closed
+#
+# Connecting a site opens a browser and closes it on Done, and Chromium hands a
+# second launch on the same profile to the first process — so the two are one
+# browser and closing either closes both. The agent's page died with it.
+#
+# Both halves of the answer were wrong. It was reported as "the browser could
+# not be started", which it was not, **and** the advice was "do not retry" —
+# the exact inversion, because this is the one failure a retry fixes. The agent
+# said so in as many words: "I've been told not to keep retrying this same call".
+CLOSED = "Page.goto: Target page, context or browser has been closed"
+
+
+def test_a_closed_browser_is_not_reported_as_one_that_would_not_start():
+    origins.grant("payroll.example.com")
+    _wont_start(CLOSED)
+
+    out = browse_tools.browse_open("https://payroll.example.com/payslips")
+
+    assert out.ok is False
+    assert "could not be started" not in out
+
+
+def test_a_closed_browser_invites_exactly_one_retry():
+    """The advice has to be the opposite of the locked-profile case. Retrying a
+    lock cannot help; retrying a closed browser is the whole fix."""
+    origins.grant("payroll.example.com")
+    _wont_start(CLOSED)
+
+    out = browse_tools.browse_open("https://payroll.example.com/payslips")
+
+    assert "again" in out.lower()
+    assert "do not retry" not in out.lower()
+
+
+def test_a_closed_browser_is_thrown_away_so_the_next_call_gets_a_new_one():
+    """The half that makes the advice true.
+
+    A driver's thread outlives its browser, so `_ensure_started` finds it alive
+    and returns without relaunching — the cached session stays broken for the
+    life of the app and "call this again" would be a lie. Retrying only works if
+    the dead session is gone.
+    """
+    origins.grant("payroll.example.com")
+    _wont_start(CLOSED)
+
+    browse_tools.browse_open("https://payroll.example.com/payslips")
+
+    assert browse_tools._session is None, "the dead session was kept"
+
+
+def test_a_browser_that_would_not_start_keeps_its_session():
+    """The other side of that decision. Nothing died, and an agent may still
+    hold refs into the page that is open."""
+    origins.grant("payroll.example.com")
+    _wont_start(LOCKED)
+
+    browse_tools.browse_open("https://payroll.example.com/payslips")
+
+    assert browse_tools._session is not None

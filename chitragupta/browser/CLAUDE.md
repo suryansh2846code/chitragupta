@@ -83,6 +83,17 @@ holds.
   `chromium.forget_site()` opened one per Disconnect and never closed it. Closing
   is also what flushes cookies to disk, so it is what makes "it stays signed in"
   true of the profile rather than of a process we abandoned.
+- **"Closed" and "would not start" are different failures with opposite
+  advice.** A locked profile cannot be fixed by retrying; a browser that *was*
+  alive and has been closed is fixed by nothing else. And we are the usual cause
+  of the second — connecting a site opens a browser and closes it on Done, and
+  Chromium hands a second launch on the same profile to the first process
+  ("Opening in existing browser session"), so the two are one browser and
+  closing either closes both. Reporting that as "could not be started, do not
+  retry" told the agent the one thing that stopped it healing. `browse_tools`
+  also **drops the cached session** there: a driver's thread outlives its
+  browser, `_ensure_started` finds it alive and never relaunches, so without
+  that the session stays broken for the life of the app.
 - **A browser that will not start is explained, never dumped.** Playwright's
   *"Failed to create a ProcessSingleton for your profile directory"* used to
   travel through `tools.run_tool`'s catch-all straight to the model, which
