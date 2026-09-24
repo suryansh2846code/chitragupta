@@ -656,3 +656,84 @@ and two scheduler instances never running at once after a reload.
 > working on the scheduler. Recorded rather than fixed because it is a testing
 > gap, not a complexity one — it was outside that task's scope, and deserves to
 > be someone's actual task rather than a footnote in another.
+
+---
+
+## A13 — MCP connectors reach the brain, but almost nothing survives the trip
+
+> Found 2026-09-25 while removing the duplicate connector/catalog options
+> (MODE: AUDIT, alongside that IMPLEMENT). Recorded rather than fixed because
+> each part changes what the brain stores, which is a decision about the
+> product rather than a tidy-up in another task's diff.
+
+The wiring is complete and correct. `scheduler.py::_mcp_servers` auto-syncs
+every configured server, `MCPConnector.sync()` harvests every permitted listing
+that carries the user's content (`test_mcp_harvest.py`), and each record goes
+through `brain.ingest(..., fast=True)` — the same call `gmail`, `gdrive` and
+`github` make, so heuristic entities and facts land immediately and the memory
+is queued for LLM enrichment. **Nothing is missing between MCP and the brain.**
+
+What arrives is the problem. On a real install with Notion connected over MCP:
+
+```
+$ sqlite3 ~/Library/Chitragupta/chitragupta.db "
+  SELECT m.source, COUNT(DISTINCT m.id) mems, COUNT(r.id) facts
+  FROM memories m LEFT JOIN relations r ON r.source_mem = m.id
+  GROUP BY m.source ORDER BY mems DESC"
+
+gdrive       2585 mems   2979 facts   (1.15 per memory, 2580 LLM-enriched)
+gmail         842 mems    876 facts   (1.04 per memory,  572 LLM-enriched)
+mcp:notion    128 mems     22 facts   (0.17 per memory,    0 LLM-enriched)
+```
+
+Every one of those 22 facts has predicate `mentioned_in`. Three causes, each
+independent of the others and each independent of which server it is:
+
+**1 · Records are stored as raw JSON.** `mcp_source.py::_as_text` takes
+`record["text"] / ["body"] / ["content"]` when one exists and otherwise falls
+back to `json.dumps(record, indent=2)[:4000]`. Most servers have none of those
+three keys, so what the extractor reads is braces, quoted keys and uuids:
+
+```
+Notion — Composio\n\n{\n "type": "bot",\n "id": "3dddf1be-…",\n "name": "Compos…
+```
+
+That is also what recall returns as the excerpt an agent reads. **To close:**
+flatten a record to `key: value` prose before ingest, dropping id-shaped and
+url-shaped values, so the extractor and the agent both see sentences.
+
+**2 · Only the first page of every listing is ever fetched.** `sync()` calls
+each tool exactly once, with `{}`, and no server returns a whole workspace in
+one response — `notion-list-private-pages` returned **9** records. The servers
+say so themselves (`"hasNextPage": false` appears verbatim in stored records)
+and nothing reads it. The 200-record budget can never be spent, and a connector
+that looks connected and synced holds a rounding error of the user's content.
+**To close:** follow `nextCursor` / `has_more` / `next_page_token` until the
+budget is spent or the server stops, with the same per-server budget.
+
+**3 · `Brain._FULL_SOURCES` still names the retired built-in.** It reads
+`("notes", "agent", "manual", "notion", "gcal")` — the source names exempt from
+the recent-100-per-bulk-source LLM enrichment cap. The MCP route's source name
+is `mcp:notion`, and `store._cap_cte` matches with `source IN (…)`, exactly. So
+the decision that Notion is worth enriching in full was silently dropped the day
+Notion became `prefer_mcp = "notion"`, and nothing failed. **To close:** decide
+the exemption on something the rename cannot break — the connector, not the
+string — and add the case to `tests/test_one_way_to_connect.py`, which is where
+the retirement is already held.
+
+Two smaller things found in the same pass, neither worth its own entry:
+
+* `is_server_metadata()` catches `list_*` furniture but not the imperative
+  kind. `notion-check-mcp-next-steps` and
+  `notion-show-advanced-analysis-next-steps` both reached the brain.
+* **107 of those 128 memories are pre-fix furniture** — tool manifests and
+  `current_tool_access` dumps from the single-tool era, carrying no
+  `metadata.mcp_tool` at all. `mcp_tool` was added so one tool's worth of
+  content could be re-read or retired; no code retires anything, so the rows
+  the harvest fix stopped producing are still in recall competing with real
+  answers.
+
+**Severity: high** (the connector reports success, the UI says *Connected ·
+synced*, and recall simply never has the answer — the exact no-symptom failure
+`test_mcp_harvest.py` was written about, one layer down)
+· **Owner: Connectors + Brain** · **Cost: medium**
