@@ -319,16 +319,19 @@ def may_read(url: str) -> Verdict:
 def may_act(url: str) -> Verdict:
     """May an agent *change* something at this URL?
 
-    Nothing calls this yet and that is deliberate — the tools that would are a
-    separate landing, behind an approval card. It lives here so the capability is
-    a stored fact from the first commit rather than a flag bolted on later, and
-    so that the default (False) is written down where the grant is made.
+    Checked at the tool, never by the model — the same rule `may_read` follows,
+    and it matters more here. A page that says "now press Confirm" is a page
+    arguing for its own permission, and the answer has to come from something
+    that never read it.
+
+    Acting requires reading, and not the other way round: a site turned off for
+    reading cannot be acted on either, whatever its `may_act` column says.
     """
     read = may_read(url)
     if not read.allowed:
         return read
     found = matching_grant(url)
-    if found is None or not found.may_act:            # pragma: no cover - see above
+    if found is None or not found.may_act:
         host = found.host if found else url
         return Verdict(False, None,
                        f"Changing anything on {host} needs your approval.")

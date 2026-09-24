@@ -352,6 +352,68 @@ def test_a_real_popup_window_is_visible_where_a_single_page_is_not(browser_conte
         popup.close()
 
 
+# ── acting on a real page, by name and never by selector ────────────────
+def test_typing_and_clicking_reach_a_real_page_through_their_accessible_names(
+        browser_context):
+    """`locate` is the part that decides what gets touched, so it is worth
+    exercising against a browser rather than a mock of one.
+
+    The handle is `role␟name` — the same pair `parse_aria` put in the snapshot
+    and the same pair a screen reader would use. Nothing composable crosses
+    over: no CSS, no script, no coordinates.
+    """
+    from chitragupta.browser.driver import locate, read_page
+
+    page = browser_context.pages[0]
+    page.goto("https://payroll.example.com/payslips", wait_until="load")
+    page.evaluate("""() => {
+        document.body.innerHTML = `
+          <label for="m">Message</label>
+          <input id="m" type="text">
+          <button id="s" onclick="document.title='sent'">Send</button>
+          <p id="typed"></p>`;
+        document.getElementById("m").addEventListener("input", (e) => {
+            document.getElementById("typed").textContent = e.target.value;
+        });
+    }""")
+
+    locate(page, "textbox␟Message", "type", "I'm home")
+    assert page.input_value("#m") == "I'm home"
+    assert page.inner_text("#typed") == "I'm home", (
+        "the value was set without the page's own input handler seeing it")
+    assert any(n.value == "I'm home" for n in read_page(page)[2]), (
+        "what was typed is not visible in the snapshot the model reads back")
+
+    locate(page, "button␟Send", "click")
+    assert page.title() == "sent", "the click never reached the button"
+
+
+def test_an_exact_name_is_required_so_send_is_not_send_later(browser_context):
+    """"Send" and "Send later" are different buttons. A prefix match would take
+    whichever came first in the DOM, which is not a decision anybody made."""
+    from chitragupta.browser.driver import locate
+
+    page = browser_context.pages[0]
+    page.goto("https://payroll.example.com/payslips", wait_until="load")
+    page.evaluate("""() => {
+        document.body.innerHTML = `
+          <button onclick="document.title='later'">Send later</button>
+          <button onclick="document.title='now'">Send</button>`;
+    }""")
+
+    locate(page, "button␟Send", "click")
+
+    assert page.title() == "now", "it pressed the wrong button"
+
+
+def test_an_unknown_verb_is_refused_before_anything_is_resolved(browser_context):
+    from chitragupta.browser.driver import BrowserError, locate
+
+    page = browser_context.pages[0]
+    with pytest.raises(BrowserError):
+        locate(page, "button␟Send", "transfer")
+
+
 # ── a failure that used to outlive its cause ─────────────────────────────
 def test_a_start_failure_does_not_outlive_the_thing_that_caused_it():
     """`_start_error` is set by the browser thread and was never unset.

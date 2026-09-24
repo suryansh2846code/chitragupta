@@ -34,6 +34,9 @@ async function loadBrowserSites() {
         <div class="cn-web-row" data-site="${esc(site.host)}">
           <span class="cn-web-host">${esc(site.host)}</span>
           <span class="cn-web-cap">${site.may_act ? "read &amp; change" : "read only"}</span>
+          <button class="tiny ghost" data-webact="${esc(site.host)}"
+                  data-on="${site.may_act ? "1" : ""}">${
+            site.may_act ? "Read only" : "Allow changes"}</button>
           ${site.note && !site.note.startsWith("signed in from")
             ? `<span class="cn-web-note">${esc(site.note)}</span>` : ""}
           <button class="tiny ghost" data-webdel="${esc(site.host)}">Remove</button>
@@ -42,6 +45,34 @@ async function loadBrowserSites() {
     // empty box that reads as something having failed to load.
     : `<div class="cn-web-empty">No sites yet. Agents cannot open any page
          until you add one.</div>`;
+
+  // Letting an agent *change* things on a site is a second decision, made after
+  // the user has seen reading work — never folded into the press that allowed
+  // the site at all. Turning it on does not skip any approval: every click and
+  // every keystroke still collects a card. What it decides is whether that card
+  // may ever appear for this site.
+  box.querySelectorAll("[data-webact]").forEach((b) =>
+    b.onclick = async () => {
+      const host = b.dataset.webact, turningOn = !b.dataset.on;
+      if (turningOn && !confirm(
+          `Let agents change things on ${host}?\n\n`
+          + "They can already read it. This lets them type into it and press "
+          + "its buttons — each one still waits for you to approve it, one at "
+          + "a time. Nothing happens unattended.")) return;
+      b.disabled = true;
+      try {
+        await api(`/api/browser/sites/${encodeURIComponent(host)}/acting`, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ allowed: turningOn }) });
+        toast(turningOn ? `Agents can ask to change things on ${host}`
+                        : `${host} is read-only again`);
+      } catch (e) {
+        toast(`Could not change that — ${String(e)}`);
+        b.disabled = false;
+        return;
+      }
+      loadBrowserSites();
+    });
 
   box.querySelectorAll("[data-webdel]").forEach((b) =>
     b.onclick = async () => {

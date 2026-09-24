@@ -309,20 +309,81 @@ def test_a_write_tool_cannot_be_added_without_the_unattended_gate():
 
 
 def test_that_gate_would_actually_notice(monkeypatch):
-    """The guard above passes today because no write tool exists — which is also
-    how a guard quietly stops working.
+    """The guard above passes today because no write *tool* exists — which is
+    also how a guard quietly stops working.
 
     `conftest.py` covers its own vendor-login guard for this reason: a check
     nobody exercises is a check that has never been shown to fire. So one is
     added here, ungated, and the same condition is asserted to fail.
+
+    It has to be a name that is not gated already: `browse_click` used to serve
+    and cannot any more, because it is now a real RED action and therefore
+    genuinely in the set. `browse_download` is the next one along that does not
+    exist yet, and the day it does, this picks the one after.
     """
-    monkeypatch.setitem(tools.TOOL_IMPLS, "browse_click", lambda ref: "clicked")
+    ungated = next(n for n in sorted(_WRITE_TOOLS)
+                   if n not in permissions.NEVER_UNATTENDED)
+    monkeypatch.setitem(tools.TOOL_IMPLS, ungated, lambda ref: "did it")
 
     present = _WRITE_TOOLS & set(tools.TOOL_IMPLS)
 
     assert present, "the simulated write tool is not being seen at all"
     assert not present <= permissions.NEVER_UNATTENDED, (
-        "an ungated browse_click did not trip the check that exists to catch it")
+        f"an ungated {ungated} did not trip the check that exists to catch it")
+
+
+# ── acting on a page, and what it had to bring with it ───────────────────
+def test_every_browser_write_waits_for_a_tap():
+    """`docs/BROWSER.md` §5: a routine reads text a stranger wrote, and combined
+    with a browser an injected instruction reaches an agent that can click
+    inside the user's logged-in accounts.
+
+    So these are RED, which puts them in `NEVER_UNATTENDED` by derivation — an
+    unattended agent may look and may report, and may not act, whatever the
+    site is set to.
+    """
+    from chitragupta.actions import REGISTRY, Risk
+
+    for name in ("browse_click", "browse_type", "browse_submit"):
+        assert name in REGISTRY, f"{name} is not a declared action"
+        assert REGISTRY[name].risk is Risk.RED, f"{name} is not RED"
+        assert name in permissions.NEVER_UNATTENDED
+
+
+def test_a_browser_write_says_why_it_waits_in_the_users_terms():
+    """A RED action carries its own sentence. "Creating automations always needs
+    your approval" about a click would teach the user nothing except that the
+    app is confused."""
+    from chitragupta.actions import REGISTRY
+
+    for name in ("browse_click", "browse_type", "browse_submit"):
+        because = REGISTRY[name].always_ask_because
+        assert because, f"{name} waits and does not say why"
+        assert "approval" in because.lower()
+
+
+def test_a_browser_write_is_never_offered_an_undo():
+    """There is no inverse of a click. The page decided what it meant, and a
+    button claiming to take it back would be a lie about somebody else's
+    application."""
+    from chitragupta.actions import REGISTRY
+
+    for name in ("browse_click", "browse_type", "browse_submit"):
+        assert REGISTRY[name].undo is None
+
+
+def test_the_card_shows_the_page_s_own_name_for_the_thing():
+    """`label` and `url` are on every card, and they are what the *page*
+    reported — not the agent's description of what it is about to press. That
+    is the difference between approving "Click “Send” on web.whatsapp.com" and
+    taking an agent's word for what a button does."""
+    from chitragupta.actions import REGISTRY
+
+    for name in ("browse_click", "browse_type", "browse_submit"):
+        assert "label" in REGISTRY[name].fields
+        assert "url" in REGISTRY[name].fields
+    assert REGISTRY["browse_type"].fields[0] == "text", (
+        "the text being typed is the first thing the user should see")
 
 
 # ── when the browser itself will not start ───────────────────────────────

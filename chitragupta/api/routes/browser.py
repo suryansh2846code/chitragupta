@@ -55,9 +55,9 @@ def list_sites():
 def allow_site(body: SiteIn):
     """Allow agents to read a site.
 
-    Reading only: `may_act` is not settable from here, because acting is a
-    separate landing with an approval card and a grant that quietly included it
-    would make the read-only ship a write-capable one.
+    Reading only. Acting is never turned on by the same press that turns on
+    reading — `/api/browser/sites/{host}/acting` is its own decision, made
+    after the user has seen reading work.
     """
     try:
         granted = origins.grant(body.url, note=body.note)
@@ -65,6 +65,37 @@ def allow_site(body: SiteIn):
         # The message is written for a person — "only https addresses can be
         # used" rather than a validation code.
         raise HTTPException(400, str(exc)) from None
+    return granted.as_dict()
+
+
+class ActingIn(BaseModel):
+    """Whether agents may change things on a site, not just read it."""
+
+    allowed: bool
+
+
+@router.post("/api/browser/sites/{host}/acting")
+def set_acting(host: str, body: ActingIn):
+    """Turn changing on or off for one site the user already allows.
+
+    Separate from granting the site at all, and deliberately a second decision:
+    "let an agent read my LinkedIn" and "let an agent type into my LinkedIn"
+    are not the same sentence, and a screen that collapsed them would be asking
+    for the second while the user answered the first.
+
+    Turning it **on is not a promotion to unattended**. Every act still collects
+    a card — `browse_click` and friends are `Risk.RED`, so they are in
+    `NEVER_UNATTENDED` by derivation. What this switch decides is whether that
+    card may ever appear for this site, not whether it may be skipped.
+    """
+    found = next((g for g in origins.list_grants()
+                  if g.host == str(host or "").strip().lower()), None)
+    if found is None:
+        raise HTTPException(
+            404, f"{host} is not a site you have allowed, so there is nothing "
+                 "to change there.")
+    granted = origins.grant(found.origin, may_read=found.may_read,
+                            may_act=bool(body.allowed), note=found.note)
     return granted.as_dict()
 
 

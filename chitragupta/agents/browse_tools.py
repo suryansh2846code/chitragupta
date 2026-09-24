@@ -212,6 +212,17 @@ def _refuse_while_signing_in() -> None:
         raise _SigningInError(SIGN_IN_IN_PROGRESS)
 
 
+def browser_trouble(exc: Exception) -> str:
+    """The same wording, for a caller that needs the sentence not a `ToolResult`.
+
+    `actions._browse_act` runs behind an approval card rather than as a tool, so
+    it has nowhere to put a `ToolResult` — but the rule does not change with the
+    caller: Playwright's text never reaches a person, and this module is where
+    that text is decided.
+    """
+    return str(_browser_failed(exc))
+
+
 def _browser_errors() -> tuple:
     """The two ways asking for a browser can raise, as one `except` clause."""
     from ..browser.chromium import BrowserNotReadyError

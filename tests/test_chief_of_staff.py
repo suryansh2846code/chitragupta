@@ -199,4 +199,14 @@ def test_acting_on_the_world_still_goes_through_the_user():
         # because a document in the user's own Drive reaches nobody. Notion
         # and Linear are absent because they are written to through
         # `mcp_action`, which is already in this list.
-        "drive_share"}
+        "drive_share",
+        # Doing something in a web page. A real widening of the one agent with
+        # every tool, and a deliberate one: this is the agent a person asks to
+        # answer somebody, and most places people are reachable have no API —
+        # which is the whole argument for the browser in `docs/BROWSER.md` §1.
+        #
+        # Widened in capability, not in autonomy. All three are RED, so nothing
+        # here can ever run unattended, and they are refused outright until the
+        # user turns acting on for that specific site. The Researcher does not
+        # get them: an agent with no way to send should not be taught how.
+        "browse_click", "browse_type", "browse_submit"}

@@ -46,6 +46,15 @@ class Driver(Protocol):
     def back(self) -> tuple[str, str, list[Node]]:
         """Go back one entry and return the page, like `goto`."""
 
+    def act(self, kind: str, handle: str, text: str = "") -> tuple[str, str, list[Node]]:
+        """Click / type / submit one element, named `role␟name`, and re-read.
+
+        The fifth method, and the seam grew by exactly one because `Session` is
+        what performs it and `Session` is where the origin check lives.
+        `windows()` did *not* join it: only the sign-in flow needs that, and it
+        drives the driver directly.
+        """
+
     def close(self) -> None:
         """Shut the browser down. Must be safe to call twice."""
 
@@ -119,6 +128,49 @@ class Session:
             return []
         return [(ref, node) for ref, node in self._snapshot.refs.items()
                 if want in node.name.lower() or want in node.role.lower()]
+
+    # ── changing something ──────────────────────────────────────────────
+    def act(self, kind: str, ref: str, text: str = "") -> Reading:
+        """Click, type into, or submit one element of the page that is open.
+
+        Four things have to be true, and each rules out a way this goes wrong:
+
+        * **A page is open and the ref is on it.** Refs live and die with the
+          snapshot, so an instruction injected into a page cannot name an
+          element the model was not already shown. A stale ref is refused
+          rather than re-resolved against whatever is on screen now.
+        * **The site is granted for acting**, judged on the address the browser
+          is actually on — not the one it was sent to, and never on anything the
+          page says about itself.
+        * **The element is named, not selected.** What crosses into the driver
+          is `role␟name`; nothing composable, no script, no CSS.
+        * **Where it lands is checked afterwards.** A click is the most likely
+          thing on a page to navigate, which makes it the most likely way to end
+          up somewhere nobody allowed. `_land` decides, exactly as it does for
+          `open`, and drops the page if the answer is no.
+        """
+        if self._snapshot is None:
+            return Reading(False, reason="No page is open yet.")
+        node = self._snapshot.refs.get(ref)
+        if node is None:
+            return Reading(
+                False, url=self._snapshot.url,
+                reason=(f"There is no {ref} on this page. Refs belong to the "
+                        "page you last read — read it again and use a ref from "
+                        "that."))
+
+        from .driver import ACTS
+
+        if kind not in ACTS:
+            return Reading(False, reason=f"{kind!r} is not something to do to a page.")
+
+        allowed = origins.may_act(self._snapshot.url)
+        if not allowed.allowed:
+            return Reading(False, url=self._snapshot.url,
+                           grantable=allowed.grantable, reason=allowed.reason)
+
+        final_url, title, nodes = self._driver.act(kind, node.handle, text)
+        return self._land(final_url, title, nodes, came_from=self._snapshot.url)
 
     # ── state ───────────────────────────────────────────────────────────
     @property

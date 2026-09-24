@@ -186,8 +186,12 @@ even when every test is green. Reasoning and measurements:
   redirect anywhere; a refused landing drops the page rather than returning it.
 - **Page content must never be able to close its own quarantine fence**, or it
   can make its next paragraph look like ours.
-- Reading only. A write tool joins `permissions.NEVER_UNATTENDED` in the same
-  commit that adds it.
+- **Acting is a second grant per site, and every act still waits for a tap.**
+  `browse_click` / `browse_type` / `browse_submit` are `Risk.RED`, so they are
+  in `NEVER_UNATTENDED` by derivation — a browser has no `to` field, so there is
+  no key an allow-list could hold and nothing to promote. A ref is checked
+  against the open snapshot first: injected text cannot name an element the
+  model was never shown.
 
 **Frontend — `web/`**
 - **Every agent has a face, and it is never blank.** `character.js` composes one

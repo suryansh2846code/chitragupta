@@ -170,9 +170,24 @@ _ALL_ACTIONS = ["create_draft", "send_email", "create_event", "update_event",
 #: to propose a change it has no tool to address is an agent that will claim it
 #: archived something.
 _COMMS_ACTIONS = [*_ALL_ACTIONS, "mail_triage", "message_send"]
+
+#: Doing something in a web page. Given to the generalist and to nobody else
+#: for now, and both halves of that are deliberate.
+#:
+#: It goes to Chief of Staff because that is the agent a person asks to answer
+#: somebody, and most of the places people are reachable have no API — which is
+#: the whole argument for the browser in `docs/BROWSER.md` §1.
+#:
+#: It does **not** go to the Researcher, whose comment already says why: "a
+#: researcher with no way to send should not be taught how, and then cannot
+#: claim it did." Nor to Statements, which is pointed at a portal to read it.
+#: An agent that cannot see these actions cannot propose one, which is a
+#: cheaper guarantee than any sentence in a prompt.
+_BROWSE_ACTIONS = ["browse_click", "browse_type", "browse_submit"]
 #: The generalist reaches the work surfaces too — it is the one agent
 #: with every tool, and an issue it cannot file is a job it hands back.
-_CHIEF_ACTIONS = [*_COMMS_ACTIONS, *_CODE_ACTIONS, *_DOC_ACTIONS]
+_CHIEF_ACTIONS = [*_COMMS_ACTIONS, *_CODE_ACTIONS, *_DOC_ACTIONS,
+                  *_BROWSE_ACTIONS]
 
 #: Stands for "every tool there is" in a template's list.
 #:
@@ -325,9 +340,9 @@ TEMPLATES: tuple[Template, ...] = (
         # commit to things. run_python because triage is counting and dates.
         tools=[*BASE_TOOLS, *_FILES, *_MAIL, *_MESSAGES, *_DIARY, *_TASKS,
                *_LOOPS, "run_python"],
-        actions=_COMMS_ACTIONS,
+        actions=[*_COMMS_ACTIONS, *_BROWSE_ACTIONS],
         recall_sources=["gmail", "gcal", "telegram", "slack"],
-        works_with=["gmail", "gcal", "telegram", "slack"],
+        works_with=["gmail", "gcal", "telegram", "slack", "browser"],
         needs=["gmail"],
     ),
     Template(

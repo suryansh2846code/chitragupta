@@ -146,6 +146,19 @@ class PlaywrightDriver:
         """Forget the sign-in for one site, leaving every other one alone."""
         self._call("clear_cookies", domain)
 
+    def act(self, kind: str, handle: str, text: str = "") -> tuple[str, str, list[Node]]:
+        """Do one thing to one element, named the way a person would name it.
+
+        `handle` is `role␟name` — the pair `parse_aria` built and the same pair
+        `get_by_role` resolves. **Never a selector and never script.** A model
+        that can emit either into a logged-in page owns that account, which is
+        the whole reason the page arrives as refs in the first place.
+
+        Returns the page afterwards, exactly as `goto` does, so the caller can
+        check where the click actually took the browser.
+        """
+        return self._call("act", kind, handle, text)
+
     def windows(self) -> list[tuple[str, str]]:
         """`(url, title)` for every window this browser has open.
 
@@ -255,6 +268,10 @@ class PlaywrightDriver:
                 raise BrowserError("the browser is not holding a profile")
             context.clear_cookies(domain=command.args[0])
             return None
+        elif command.name == "act":
+            kind, handle, text = command.args
+            locate(page, handle, kind, text)
+            settle(page)
         elif command.name == "windows":
             context = getattr(self, "_context", None)
             if context is None:
@@ -291,6 +308,44 @@ def settle(page: Any) -> None:
     """
     with suppressed("letting a page finish redirecting"):
         page.wait_for_load_state("networkidle", timeout=SETTLE_MS)
+
+
+#: What `act` may be asked to do. A closed set, checked before anything is
+#: resolved: an unknown verb is a bug or an injection, and neither should reach
+#: a page the user is signed in to.
+ACTS = ("click", "type", "submit")
+
+
+def locate(page: Any, handle: str, kind: str, text: str = "") -> None:
+    """Resolve a handle to one element and do one thing to it.
+
+    Split out for the same reason `parse_aria` is: it is the part that decides
+    *what gets touched*, and it is worth being able to read on its own.
+
+    `role␟name` goes to `get_by_role`, which is Playwright's own accessible-name
+    lookup — the same pair a screen reader would use, and the pair the snapshot
+    already showed the model. `exact=True` because "Send" and "Send later" are
+    different buttons and a prefix match would pick whichever came first.
+    """
+    if kind not in ACTS:                          # pragma: no cover - guarded above
+        raise BrowserError(f"unknown act {kind!r}")
+    role, _, name = str(handle or "").partition("␟")
+    if not role:
+        raise BrowserError("that element has no role to find it by")
+    target = (page.get_by_role(role, name=name, exact=True) if name
+              else page.get_by_role(role))
+    # `.first` rather than a strict match: a real page has two "Send" buttons
+    # more often than not — one visible, one in a hidden menu — and a strict
+    # locator raises where a person would simply use the one on screen.
+    one = target.first
+    if kind == "click":
+        one.click()
+    elif kind == "type":
+        # `fill` rather than `press_sequentially`: it clears first, so re-running
+        # a correction does not append to what is already in the box.
+        one.fill(text)
+    else:
+        one.press("Enter")
 
 
 def read_windows(context: Any) -> list[tuple[str, str]]:

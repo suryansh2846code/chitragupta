@@ -325,6 +325,11 @@ def parse_actions(text: str) -> list[dict]:
             a["params"]["text"] = inner.strip()
         elif t == "set_reminder":
             a["params"]["message"] = inner.strip()
+        elif t == "browse_type":
+            # The text to type is the body, like a message's — attributes are
+            # flat strings and what somebody types into a page has newlines in
+            # it as often as not.
+            a["params"]["text"] = inner.strip()
         elif t == "create_routine":
             a["params"]["instruction"] = inner.strip()
         elif t == "mcp_action":
@@ -1017,6 +1022,77 @@ def _irreversible_tool_asks(params: dict) -> str:
     return ""
 
 
+#: Doing something to a page, rather than reading one.
+#:
+#: These are **actions and not tools**, and that is the whole safety design
+#: rather than a filing decision. `docs/BROWSER.md` §5: a browser has no `to`
+#: field, so "click this button" tells the permission layer nothing — *Save
+#: draft* and *Transfer £4,000* are the same call. What can be judged is the
+#: **site**, and what cannot be judged in advance is the click. So:
+#:
+#:   * the origin must be granted for acting (`origins.may_act`, checked in
+#:     `browser/session.py`, never by the model),
+#:   * and every one is `Risk.RED`, which puts it in `NEVER_UNATTENDED` by
+#:     derivation — a routine reading a stranger's email may look and report,
+#:     and may not click inside the user's accounts, whatever the site is set to.
+#:
+#: The element is named by a **ref** the model was already shown. An instruction
+#: injected into the page cannot name one that was never on screen, and refs die
+#: with the snapshot.
+def _browse_act(kind: str, params: dict) -> dict:
+    """Shared body: one act, on the page that is already open."""
+    from .agents import browse_tools
+
+    ref = str(params.get("ref") or "").strip()
+    text = str(params.get("text") or "")
+    if not ref:
+        return {"ok": False, "error": "Nothing was named to act on."}
+    if kind == "type" and not text:
+        return {"ok": False, "error": "There is nothing to type."}
+
+    try:
+        reading = browse_tools.get_session().act(kind, ref, text)
+    except Exception as exc:                      # the browser, not the page
+        return {"ok": False, "error": str(browse_tools.browser_trouble(exc))}
+
+    if not reading.ok:
+        return {"ok": False, "error": reading.reason}
+    # The page afterwards is deliberately **not** returned into the result. A
+    # result is shown to the user and kept in the log; a page is somebody else's
+    # text and belongs behind the quarantine fence, which only `browse_read`
+    # puts it behind.
+    return {"ok": True, "url": reading.url, "title": reading.title}
+
+
+def _browse_click(params: dict) -> dict:
+    return _browse_act("click", params)
+
+
+def _browse_type(params: dict) -> dict:
+    return _browse_act("type", params)
+
+
+def _browse_submit(params: dict) -> dict:
+    return _browse_act("submit", params)
+
+
+def _remember_browse(verb: str):
+    """What was done, where and when — kept even though the page is not.
+
+    `docs/REACHING-AN-APP.md`: the browser is not a source and does not feed the
+    brain, "but what an agent does there is recorded… The evidence of the work
+    is ours even when the material is not."
+    """
+    def remember(params: dict, result: dict) -> None:
+        where = str(result.get("url") or "a page")
+        what = str(params.get("label") or params.get("ref") or "something")
+        said = " ".join(str(params.get("text") or "").split())[:160]
+        line = f"{verb} “{what}” on {where}"
+        _record(f"{line}: {said}." if said else f"{line}.",
+                title="Did something on a website")
+    return remember
+
+
 def _mcp_action(params: dict) -> dict:
     """Run one tool on a connector the user added.
 
@@ -1474,6 +1550,46 @@ REGISTRY: dict[str, ActionSpec] = {
         remember=_remember_connector_action,
         # No undo: the verb belongs to somebody else's server and nothing tells
         # us what its inverse is — or whether it has one.
+    ),
+    # ── doing something in a web page ───────────────────────────────────
+    #
+    # `label` is on the card for every one of them, and it is the element's own
+    # accessible name as the *page* reported it — not the agent's description of
+    # what it is about to press. That is the difference between reading "Click
+    # “Send”" and taking an agent's word for what a button does.
+    #
+    # No `undo`. There is no inverse of a click: the page decided what it meant,
+    # and a button that claims to take it back would be a lie about somebody
+    # else's application.
+    "browse_click": ActionSpec(
+        handler=_browse_click, label="Click something on a website",
+        fields=["label", "url", "ref"],
+        risk=Risk.RED,
+        always_ask_because=(
+            "Clicking inside a site you are signed in to always needs your "
+            "approval — the page decides what the button does."),
+        remember=_remember_browse("Clicked"),
+    ),
+    "browse_type": ActionSpec(
+        handler=_browse_type, label="Type into a website",
+        # `text` is on the card *and* editable for the same reason a message is:
+        # what runs is what is on the card when Confirm is pressed, so a misread
+        # is corrected by the person rather than discovered afterwards.
+        fields=["text", "label", "url", "ref"],
+        risk=Risk.RED,
+        always_ask_because=(
+            "Typing into a site you are signed in to always needs your "
+            "approval."),
+        remember=_remember_browse("Typed into"),
+    ),
+    "browse_submit": ActionSpec(
+        handler=_browse_submit, label="Submit something on a website",
+        fields=["label", "url", "ref"],
+        risk=Risk.RED,
+        always_ask_because=(
+            "Submitting a form on a site you are signed in to always needs "
+            "your approval — this is the press that sends it."),
+        remember=_remember_browse("Submitted"),
     ),
     "mail_triage": ActionSpec(
         handler=_mail_triage, label="Inbox changes",

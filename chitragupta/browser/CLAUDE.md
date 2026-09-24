@@ -68,9 +68,27 @@ holds.
 - **Disconnect ends the session, not just the permission.** `forget_site()`
   clears that host's cookies; a grant dropped while the user stays signed in is
   a lie about what the button did.
-- **Reading only, today.** `may_act` exists and nothing grants it. A write tool
-  must join `permissions.NEVER_UNATTENDED` in the same commit that adds it, and
-  `tests/test_browse_tools.py` fails if it does not.
+- **Acting is a second grant, and every act still waits for a tap.**
+  `origins.may_act` is off until the user turns it on per site
+  (`POST /api/browser/sites/{host}/acting`), and turning it on decides only
+  whether an approval card may *appear* for that site — never whether one may
+  be skipped. `browse_click` / `browse_type` / `browse_submit` are declared in
+  `actions.py` as `Risk.RED`, which puts them in `permissions.NEVER_UNATTENDED`
+  by derivation: a routine reads text a stranger wrote, and an injected
+  instruction plus a click is an agent acting inside the user's accounts.
+- **They are actions, not tools, and that is the safety design.** A browser has
+  no `to` field — *Save draft* and *Transfer £4,000* are the same call — so
+  there is no key an allow-list could hold and nothing to promote. What a card
+  shows is the element's **own accessible name and the page's address**, not
+  the agent's description of what it is about to press.
+- **A ref is checked against the open snapshot before anything is touched.**
+  Refs die with the page, so text injected into one cannot name an element the
+  model was never shown; a stale ref is refused rather than re-resolved against
+  whatever is on screen now. What crosses into the driver is `role␟name` and
+  never a selector — `driver.locate` is the only thing that resolves it.
+- **Where a click lands is checked like any other navigation.** A click is the
+  likeliest thing on a page to navigate, so `_land` decides afterwards and a
+  refused landing drops the page.
 - **Anything we spawn, we clean up — across runs**, through
   `models/login_processes.py`. A browser holds a profile lock; 158 orphaned
   login processes is the precedent.

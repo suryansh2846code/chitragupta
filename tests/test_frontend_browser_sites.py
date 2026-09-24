@@ -167,3 +167,31 @@ def test_a_finished_setup_stops_talking_about_itself():
 
     assert out["rendered"]["setupHidden"] is True
     assert out["rendered"]["stateHidden"] is True
+
+
+# ── letting an agent change things, which is a second decision ───────────
+def test_allowing_changes_is_offered_per_site(panel):
+    """Not folded into the press that allowed the site at all. "Let an agent
+    read my LinkedIn" and "let an agent type into my LinkedIn" are different
+    sentences, and a screen that collapsed them would be asking the second
+    while the user answered the first."""
+    assert "Allow changes" in panel["rendered"]["list"]
+
+
+def test_allowing_changes_posts_to_that_sites_own_switch(panel):
+    assert panel["acted"] == "ok", panel["acted"]
+    posted = [c for c in panel["actCalls"] if c["method"] == "POST"]
+    assert posted, panel["actCalls"]
+    assert posted[0]["url"].endswith("/payroll.example.com/acting")
+    body = posted[0]["body"]
+    if isinstance(body, str):
+        body = json.loads(body)
+    assert body["allowed"] is True
+
+
+def test_turning_it_on_says_what_it_does_and_does_not_do(panel):
+    """The dangerous misreading is "I have let the agent loose on this site".
+    Every act still collects a card; what this decides is whether that card may
+    ever appear."""
+    assert any("can now" in t or "change things" in t for t in panel["toasts"]), (
+        panel["toasts"])

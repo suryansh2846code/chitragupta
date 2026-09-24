@@ -116,6 +116,17 @@ if (del) {
   catch (e) { removed = `THREW: ${e.message}`; }
 }
 
+// Turn "agents may change things here" on, through the row's own button.
+let acted = null;
+let actCalls = [];
+const act = kept.find((k) => k.sel === "[data-webact]");
+if (act) {
+  const mark = calls.length;
+  try { await act.b.onclick(); acted = "ok"; }
+  catch (e) { acted = `THREW: ${e.message}`; }
+  actCalls = calls.slice(mark);
+}
+
 // Add a site through the input and button the page wired at load.
 const before = calls.length;
 el("#webInput").value = "payroll.example.com";
@@ -126,7 +137,7 @@ if (typeof el("#webAdd").onclick === "function") {
 }
 
 console.log(JSON.stringify({
-  error, rendered, removed, added,
+  error, rendered, removed, added, acted, actCalls,
   addCalls: calls.slice(before),
   removeCalls: del ? calls.slice(0, before) : [],
   errText: el("#webErr").textContent,

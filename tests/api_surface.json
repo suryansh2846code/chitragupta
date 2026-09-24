@@ -128,6 +128,7 @@
  "POST /api/browser/forget-everything",
  "POST /api/browser/install",
  "POST /api/browser/sites",
+ "POST /api/browser/sites/{host}/acting",
  "POST /api/connectors/catalog/{entry_id}",
  "POST /api/connectors/mcp",
  "POST /api/connectors/mcp/{server_id}/action",
