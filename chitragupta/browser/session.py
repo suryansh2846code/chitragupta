@@ -130,15 +130,46 @@ class Session:
                 if want in node.name.lower() or want in node.role.lower()]
 
     # ── changing something ──────────────────────────────────────────────
-    def act(self, kind: str, ref: str, text: str = "") -> Reading:
+    def _resolve(self, ref: str, label: str):
+        """Which element this is about — the ref first, the approved name after.
+
+        **A ref alone is too brittle to execute on, and a name alone is too
+        loose to accept.** A ref proves the model was shown the element; it goes
+        stale the moment the page re-renders, which on a live app is constantly
+        — that is what produced *"I didn't have a fresh, valid reference to the
+        message box"* over and over, on a page where the box was plainly there.
+
+        So the ref is tried first, and the **name the user approved** is the
+        fallback. That name is not the model's description of the element: it is
+        the accessible name the *page* gave it, printed on the card, which is
+        what the person said yes to. Re-finding by it is therefore closer to
+        honouring the approval than insisting on an id nobody saw.
+
+        Nothing is resolved that is not on the snapshot in front of us, so a
+        name invented by injected page text still finds nothing.
+        """
+        assert self._snapshot is not None
+        found = self._snapshot.refs.get(ref)
+        if found is not None:
+            return found
+        want = " ".join((label or "").split()).lower()
+        if not want:
+            return None
+        for node in self._snapshot.refs.values():
+            if node.name.lower() == want:
+                return node
+        return None
+
+    def act(self, kind: str, ref: str, text: str = "", label: str = "") -> Reading:
         """Click, type into, or submit one element of the page that is open.
 
         Four things have to be true, and each rules out a way this goes wrong:
 
-        * **A page is open and the ref is on it.** Refs live and die with the
-          snapshot, so an instruction injected into a page cannot name an
-          element the model was not already shown. A stale ref is refused
-          rather than re-resolved against whatever is on screen now.
+        * **The element is one this page is showing.** A ref proves the model
+          was shown it; the approved label re-finds it when the page has
+          re-rendered since. Either way the element comes out of the current
+          snapshot, so text injected into a page cannot conjure a target that
+          was never on it.
         * **The site is granted for acting**, judged on the address the browser
           is actually on — not the one it was sent to, and never on anything the
           page says about itself.
@@ -151,18 +182,22 @@ class Session:
         """
         if self._snapshot is None:
             return Reading(False, reason="No page is open yet.")
-        node = self._snapshot.refs.get(ref)
-        if node is None:
-            return Reading(
-                False, url=self._snapshot.url,
-                reason=(f"There is no {ref} on this page. Refs belong to the "
-                        "page you last read — read it again and use a ref from "
-                        "that."))
 
         from .driver import ACTS
 
         if kind not in ACTS:
             return Reading(False, reason=f"{kind!r} is not something to do to a page.")
+
+        node = self._resolve(ref, label)
+        if node is None:
+            return Reading(
+                False, url=self._snapshot.url,
+                reason=(f"“{label}” is not on this page any more. Read the page "
+                        "again and propose it from what is there now."
+                        if label else
+                        f"There is no {ref} on this page. Refs belong to the "
+                        "page you last read — read it again and use a ref from "
+                        "that."))
 
         allowed = origins.may_act(self._snapshot.url)
         if not allowed.allowed:

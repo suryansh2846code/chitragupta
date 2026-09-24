@@ -81,11 +81,22 @@ holds.
   there is no key an allow-list could hold and nothing to promote. What a card
   shows is the element's **own accessible name and the page's address**, not
   the agent's description of what it is about to press.
-- **A ref is checked against the open snapshot before anything is touched.**
-  Refs die with the page, so text injected into one cannot name an element the
-  model was never shown; a stale ref is refused rather than re-resolved against
-  whatever is on screen now. What crosses into the driver is `role␟name` and
-  never a selector — `driver.locate` is the only thing that resolves it.
+- **The ref proves the model saw it; the approved label is what executes.** A
+  ref alone is too brittle — a live app re-renders while a person reads the
+  card, which produced *"I didn't have a fresh, valid reference to the message
+  box"* on pages where the box was plainly there. So `Session._resolve` tries
+  the ref, then falls back to the element's **accessible name as printed on the
+  card**, which is what the user actually said yes to. Both come out of the
+  current snapshot, so a name invented by injected page text still finds
+  nothing. What crosses into the driver is `role␟name` and never a selector.
+- **A row is a control.** `INTERACTIVE_ROLES` covers `listitem`, `row`,
+  `gridcell` and friends, because a modern app's most important control is
+  rarely a `<button>` — a chat list, a mail list and a search result are rows.
+  Leaving them out is why an agent could see the conversation it wanted, name
+  the person, and report that there was no ref to click.
+- **No internal reaches the card.** It shows the element's own name and the
+  site's address. `ref` used to be printed on it — an id the user cannot check,
+  cannot act on and did not ask for.
 - **Where a click lands is checked like any other navigation.** A click is the
   likeliest thing on a page to navigate, so `_land` decides afterwards and a
   refused landing drops the page.

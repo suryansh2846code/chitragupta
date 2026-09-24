@@ -403,3 +403,59 @@ def test_where_a_click_lands_is_checked_like_any_other_navigation():
 
 def test_acting_before_anything_is_open_says_so():
     assert Session(_Acting()).act("click", "e1").ok is False
+
+
+# ── a ref goes stale; the name the user approved does not ────────────────
+#
+# The reported failure, over and over, on a page where the control was plainly
+# there: *"the typing failed because I didn't have a fresh, valid reference to
+# the message box."* A live app re-renders while a person reads the card, and
+# refs are re-minted on every read — so insisting on the id was insisting on the
+# one part of the proposal that could not survive the approval it was waiting
+# for.
+def test_a_stale_ref_still_finds_the_control_the_user_approved():
+    """The card shows the element's own accessible name, and that name is what
+    the person said yes to. Re-finding by it honours the approval; refusing
+    because an internal id moved does not."""
+    session, driver = _open()
+    origins.grant("payroll.example.com", may_act=True)
+
+    out = session.act("type", "e404", "I'm home", label="Message")
+
+    assert out.ok is True
+    assert driver.acted == [("type", "textbox␟Message", "I'm home")]
+
+
+def test_the_ref_is_preferred_when_it_is_still_good():
+    """The name is the fallback, not the primary. Two controls can share a
+    name; the ref is the one that says exactly which."""
+    session, driver = _open()
+    origins.grant("payroll.example.com", may_act=True)
+
+    session.act("click", _ref_for(session, "Send"), label="Message")
+
+    assert driver.acted == [("click", "button␟Send", "")]
+
+
+def test_a_name_that_is_not_on_the_page_finds_nothing():
+    """The fallback must not become a way to name anything at all. Only what is
+    on the snapshot in front of us resolves, so text injected into a page still
+    cannot conjure a target that was never there."""
+    session, driver = _open()
+    origins.grant("payroll.example.com", may_act=True)
+
+    out = session.act("click", "e404", label="Transfer all funds")
+
+    assert out.ok is False
+    assert driver.acted == []
+    assert "not on this page any more" in out.reason
+
+
+def test_a_missing_control_says_what_to_do_about_it():
+    """"Read the page again" is followable. An id the user never saw is not."""
+    session, _ = _open()
+    origins.grant("payroll.example.com", may_act=True)
+
+    reason = session.act("click", "e404", label="Gone").reason
+
+    assert "Read the page again" in reason

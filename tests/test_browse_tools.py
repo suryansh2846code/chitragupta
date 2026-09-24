@@ -622,3 +622,41 @@ def test_a_dead_browser_is_dropped_from_the_shared_slot_too():
 
     assert chromium.shared_driver() is not kept, "the corpse was handed on"
     chromium.reset_shared()
+
+
+# ── a card that cannot succeed is worse than no card ─────────────────────
+def test_a_type_action_with_nothing_to_type_never_becomes_a_card():
+    """It rendered "Type into a website" with an empty box and then failed on
+    Confirm with "There is nothing to type" — which reads as the app breaking
+    rather than as the model having left the words out. Dropped at the parse,
+    for the reason a malformed `mcp_action` is dropped."""
+    from chitragupta.actions import parse_actions
+
+    empty = ('<action type="browse_type" ref="e11" label="Message" '
+             'url="https://web.whatsapp.com/"></action>')
+
+    assert [a["type"] for a in parse_actions("here: " + empty)] == []
+
+
+def test_a_type_action_with_words_in_it_is_kept():
+    from chitragupta.actions import parse_actions
+
+    full = ('<action type="browse_type" ref="e11" label="Message" '
+            'url="https://web.whatsapp.com/">I am home</action>')
+
+    (action,) = parse_actions("here: " + full)
+
+    assert action["type"] == "browse_type"
+    assert action["params"]["text"] == "I am home"
+
+
+def test_no_internal_id_is_printed_on_a_card():
+    """`/CLAUDE.md`: never surface an internal. "Ref e11" was on every browser
+    card — an id the user cannot check, cannot act on and did not ask for. What
+    they approve against is the element's own name and the site's address."""
+    from chitragupta.actions import REGISTRY
+
+    for name in ("browse_click", "browse_type", "browse_submit"):
+        assert "ref" not in REGISTRY[name].fields, f"{name} shows a ref"
+        assert "label" in REGISTRY[name].fields
+        assert "url" in REGISTRY[name].fields

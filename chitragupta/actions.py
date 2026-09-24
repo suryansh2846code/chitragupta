@@ -330,6 +330,14 @@ def parse_actions(text: str) -> list[dict]:
             # flat strings and what somebody types into a page has newlines in
             # it as often as not.
             a["params"]["text"] = inner.strip()
+            if not a["params"]["text"]:
+                # Dropped rather than shown, for the reason a malformed
+                # `mcp_action` is dropped: a card that cannot succeed is worse
+                # than no card. This one rendered "Type into a website" with an
+                # empty box and failed on Confirm with "There is nothing to
+                # type", which reads as the app breaking rather than as the
+                # model having left the words out.
+                continue
         elif t == "create_routine":
             a["params"]["instruction"] = inner.strip()
         elif t == "mcp_action":
@@ -1044,14 +1052,22 @@ def _browse_act(kind: str, params: dict) -> dict:
     from .agents import browse_tools
 
     ref = str(params.get("ref") or "").strip()
+    label = str(params.get("label") or "").strip()
     text = str(params.get("text") or "")
-    if not ref:
+    if not ref and not label:
         return {"ok": False, "error": "Nothing was named to act on."}
     if kind == "type" and not text:
-        return {"ok": False, "error": "There is nothing to type."}
+        return {"ok": False,
+                "error": "There is nothing to type. Put the words in the box "
+                         "above and confirm again."}
 
     try:
-        reading = browse_tools.get_session().act(kind, ref, text)
+        # The page is re-read first, so what is acted on is what is on screen
+        # *now* rather than what was there when the card was written. A person
+        # takes seconds to read a card; a live page re-renders in that time.
+        with suppressed("re-reading the page before acting on it"):
+            browse_tools.get_session().read()
+        reading = browse_tools.get_session().act(kind, ref, text, label=label)
     except Exception as exc:                      # the browser, not the page
         return {"ok": False, "error": str(browse_tools.browser_trouble(exc))}
 
@@ -1563,7 +1579,7 @@ REGISTRY: dict[str, ActionSpec] = {
     # else's application.
     "browse_click": ActionSpec(
         handler=_browse_click, label="Click something on a website",
-        fields=["label", "url", "ref"],
+        fields=["label", "url"],
         risk=Risk.RED,
         always_ask_because=(
             "Clicking inside a site you are signed in to always needs your "
@@ -1575,7 +1591,7 @@ REGISTRY: dict[str, ActionSpec] = {
         # `text` is on the card *and* editable for the same reason a message is:
         # what runs is what is on the card when Confirm is pressed, so a misread
         # is corrected by the person rather than discovered afterwards.
-        fields=["text", "label", "url", "ref"],
+        fields=["text", "label", "url"],
         risk=Risk.RED,
         always_ask_because=(
             "Typing into a site you are signed in to always needs your "
@@ -1584,7 +1600,7 @@ REGISTRY: dict[str, ActionSpec] = {
     ),
     "browse_submit": ActionSpec(
         handler=_browse_submit, label="Submit something on a website",
-        fields=["label", "url", "ref"],
+        fields=["label", "url"],
         risk=Risk.RED,
         always_ask_because=(
             "Submitting a form on a site you are signed in to always needs "

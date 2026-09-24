@@ -66,6 +66,20 @@ _FENCE_WORDS = re.compile(
 INTERACTIVE_ROLES = frozenset({
     "link", "button", "textbox", "searchbox", "combobox", "checkbox", "radio",
     "menuitem", "tab", "option", "switch", "slider", "spinbutton",
+    # ── rows, and why they belong here ──────────────────────────────────
+    #
+    # A modern web app's most important control is usually not a `<button>`.
+    # WhatsApp Web's chat list is rows; so is a mail list, a search result, a
+    # file browser. They are clickable, a person clicks them, and a screen
+    # reader announces them — they are simply not *form controls*.
+    #
+    # Leaving them out produced the failure this list was changed for: on a
+    # loaded WhatsApp the agent could see the conversation it wanted, could
+    # name the person, and reported that *"the chat rows aren't exposed as
+    # clickable elements — there's no ref for Dev's conversation"*. It was
+    # right about what we had shown it and wrong about the page.
+    "listitem", "row", "gridcell", "cell", "treeitem", "article",
+    "menuitemcheckbox", "menuitemradio",
 })
 
 

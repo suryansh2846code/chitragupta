@@ -269,3 +269,33 @@ def test_the_digest_ignores_the_url_so_a_query_string_is_not_a_change():
     b = pagemod.digest(_built(nodes, url="https://x.example.com/p?t=2"))
 
     assert a == b
+
+
+# ── a row is a control ───────────────────────────────────────────────────
+def test_a_row_in_a_list_gets_a_ref():
+    """The failure this was changed for. On a fully loaded WhatsApp the agent
+    could see the conversation it wanted, could name the person, and reported
+    that *"the chat rows aren't exposed as clickable elements — there's no ref
+    for Dev's conversation"*. It was right about what we had shown it and wrong
+    about the page: a modern app's most important control is rarely a
+    `<button>`, and a chat list, a mail list and a search result are all rows.
+    """
+    snap = pagemod.build("https://web.example.com/", "Chats", "https://web.example.com",
+                 [Node(role="listitem", name="Dev", handle="listitem␟Dev"),
+                  Node(role="row", name="Payslip March", handle="row␟Payslip March"),
+                  Node(role="gridcell", name="Inbox", handle="gridcell␟Inbox")])
+
+    named = {n.name for n in snap.refs.values()}
+
+    assert named == {"Dev", "Payslip March", "Inbox"}
+
+
+def test_plain_prose_still_gets_no_ref():
+    """Widening what is clickable must not turn the page's text into controls —
+    a ref on every paragraph is a page the model cannot read."""
+    snap = pagemod.build("https://x.example/", "T", "https://x.example",
+                 [Node(role="paragraph", name="Three available."),
+                  Node(role="heading", name="Your payslips"),
+                  Node(role="text", name="Hello")])
+
+    assert snap.refs == {}
