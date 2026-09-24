@@ -8,6 +8,13 @@ One class per source, registered in `__init__.py::REGISTRY`.
   sources. Offering both is how an agent writes down the route the user did not
   set up, which is exactly what it did.
   [`docs/REACHING-AN-APP.md`](../../docs/REACHING-AN-APP.md)
+- **The pairing is declared at both ends, and one function decides it.**
+  `Connector.prefer_mcp` names the server that supersedes a built-in;
+  `CatalogEntry.same_as` names the built-in an entry duplicates. Declaring only
+  one end is how GitHub sat CONNECTED on the Connectors screen while **Add a
+  connector** offered to connect GitHub — so a catalog id that is already a
+  connector name must declare `same_as`, and `tests/test_one_way_to_connect.py`
+  fails if it does not.
 - Sync idempotently, redact secrets on ingest, survive a crash without taking the
   whole sync down, and stay cancellable.
 - **A connector's writes are named methods, never part of `sync()`.** Sync only

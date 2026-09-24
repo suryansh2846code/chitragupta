@@ -21,6 +21,82 @@ class SyncIn(BaseModel):
     params: dict[str, Any] = {}
 
 
+# ── one source, one route ─────────────────────────────────────────────────
+#
+# Two screens ask the same question — the Connectors list ("show this built-in?")
+# and **Add a connector** ("offer this server?") — and for a while only one of
+# them answered it. `Connector.prefer_mcp` kept the built-in off the screen
+# where a vendor server wins; nothing kept the catalog from offering a server
+# where the built-in wins, so GitHub sat there CONNECTED while the catalog
+# offered to connect GitHub. Same bug as the Notion screenshot, other
+# direction. So the decision lives in one function and both screens read it.
+
+
+def _builtins_covered_by_servers() -> set[str]:
+    """Built-in connector names a server the user has added already reaches.
+
+    Ids match by convention for most sources, so an id nobody has mapped
+    stands for itself — a server the user names `gmail` still supersedes an
+    unconfigured Gmail. `CatalogEntry.same_as` carries the pairs where the two
+    names differ, `filesystem`/`files` being the one that exists today.
+    """
+    from ...connectors.mcp_catalog import BY_ID
+    from ...connectors.mcp_source import list_servers
+
+    out = set()
+    for spec in list_servers():
+        server_id = str(getattr(spec, "id", "")).lower()
+        entry = BY_ID.get(server_id)
+        out.add(entry.same_as if entry and entry.same_as else server_id)
+    return out
+
+
+def _builtin_is_offered(name: str, cls, ready: bool, covered: set[str]) -> bool:
+    """Is this built-in the route to its source on this machine, right now?
+
+    Two ways to stop being one, and the difference between them is whether
+    somebody has already chosen.
+
+    RETIRED: the vendor ships a server that does this better, so the built-in
+    is not offered at all. See `Connector.prefer_mcp`.
+
+    DEDUPED: whatever we think is better, the user has added a server for this
+    source. Showing an unconfigured built-in beside it is offering a second way
+    to connect a thing already connected.
+
+    Neither applies to a built-in that is **set up**: one that is working is
+    one they can see, and hiding it would take away state they still own —
+    including, for Gmail and Calendar, the connector every mail and diary
+    action in this app is built on.
+    """
+    if not cls.supported_here():
+        return False                  # hide macOS-only connectors off macOS
+    retired = bool(cls.prefer_mcp) and not ready
+    deduped = not ready and name.lower() in covered
+    return not (retired or deduped)
+
+
+def _offered_builtins() -> set[str]:
+    """The built-ins a catalog entry would be a second route to.
+
+    Only the sources some entry actually claims are asked. The catalog is not
+    in the probe lane, and there is no reason to ask fifteen connectors whether
+    they are configured to answer a question about four.
+    """
+    from ...connectors.mcp_catalog import CATALOG
+
+    covered = _builtins_covered_by_servers()
+    out = set()
+    for twin in {e.same_as for e in CATALOG if e.same_as}:
+        cls = REGISTRY.get(twin)
+        if cls is None:
+            continue
+        ready, _ = cls().is_configured()
+        if _builtin_is_offered(twin, cls, ready, covered):
+            out.add(twin)
+    return out
+
+
 @router.get("/api/connectors")
 @probes_a_provider
 def connectors():
@@ -29,36 +105,14 @@ def connectors():
     out = []
     # Servers the user has added, so a built-in can stand down for the one
     # that supersedes it.
-    from ...connectors.mcp_source import list_servers as _mcp_servers
-
-    added = {str(getattr(s, "id", "")).lower() for s in _mcp_servers()}
+    covered = _builtins_covered_by_servers()
 
     for name, cls in REGISTRY.items():
         if not cls.supported_here():
             continue                      # hide macOS-only connectors off macOS
         inst = cls()
         ready, reason = inst.is_configured()
-        # **A source is offered one way, never two.**
-        #
-        # Two rules, and the difference between them is whether somebody has
-        # already chosen. Both exist because the screen listed Notion twice —
-        # built-in with a *Connect* button, custom source with a green
-        # CONNECTED badge — and an agent proposed a write down the route the
-        # user had not set up.
-        #
-        # RETIRED: the vendor ships a server that does this better, so the
-        # built-in is not offered at all. See `Connector.prefer_mcp`.
-        if cls.prefer_mcp and not ready:
-            continue
-        # DEDUPED: whatever we think is better, the user has added a server
-        # for this source. Showing an unconfigured built-in beside it is
-        # offering a second way to connect a thing already connected.
-        #
-        # Only when the built-in is NOT set up: one that is working is one
-        # they can see, and hiding it would take away state they still own —
-        # including, for Gmail and Calendar, the connector every mail and
-        # diary action in this app is built on.
-        if not ready and name.lower() in added:
+        if not _builtin_is_offered(name, cls, ready, covered):
             continue
         # `fix` is additive and usually None. It names a refusal the user can
         # clear themselves — read straight after `is_configured()`, which is
@@ -107,11 +161,22 @@ def connector_catalog() -> dict[str, Any]:
     lacks LinkedIn teaches the user the app is missing a feature, when the
     truth is that no app can offer it. "Never show a control that cannot work"
     means saying so where the control would have been.
+
+    **An entry whose source a built-in connector already reaches is not
+    offered.** That is `Connector.prefer_mcp` read from the other end: the
+    Connectors screen showed GitHub CONNECTED while this list offered to
+    connect GitHub, which is the two-routes-one-app bug that
+    `docs/REACHING-AN-APP.md` exists to prevent. An entry the user has
+    *already added* still appears — it is their state, and the row reports it
+    rather than offering it again.
     """
     from ...connectors.mcp_catalog import BLOCKED, CATALOG, CATEGORIES, _needed
     from ...connectors.mcp_source import list_servers
 
     added = {spec.id for spec in list_servers()}
+    offered = _offered_builtins()
+    shown = [e for e in CATALOG
+             if e.id in added or not (e.same_as and e.same_as in offered)]
     return {
         "available": [{"id": e.id, "name": e.name, "notes": e.notes,
                        "first_party": e.first_party, "added": e.id in added,
@@ -119,7 +184,7 @@ def connector_catalog() -> dict[str, Any]:
                        "category": e.category,
                        "needs_env": _needed(e.needs_env),
                        "needs_args": _needed(e.needs_args)}
-                      for e in CATALOG],
+                      for e in shown],
         "blocked": [{"id": b.id, "name": b.name, "reason": b.reason}
                     for b in BLOCKED],
         # The shelf order, sent rather than hardcoded in the page: the

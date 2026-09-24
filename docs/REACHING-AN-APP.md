@@ -79,20 +79,37 @@ same commit that adds it.
 
 ## How the rule is enforced
 
-Two mechanisms, and the difference between them is whether somebody has
-already chosen.
+Three mechanisms, and the difference between the first two is whether somebody
+has already chosen.
 
 | | |
 |---|---|
 | **Retired** | `Connector.prefer_mcp` names the server that supersedes it. The built-in is not offered at all. `notion` and `linear` declare it |
-| **Deduped** | A built-in whose name matches an MCP server the user has added is hidden — whatever we think is better, they have chosen |
+| **Deduped** | A built-in whose source an MCP server the user has added already reaches is hidden — whatever we think is better, they have chosen |
+| **Shadowed** | `CatalogEntry.same_as` names the built-in an entry duplicates. Where that built-in is the route, **Add a connector** does not offer the server. `github`, `notion`, `linear` and `filesystem` declare it |
 
 **A configured connector is never hidden.** Taking away something somebody set
 up, because we changed our mind about which route is better, is losing their
 state to our decision. That is the one thing `/CLAUDE.md` forbids first.
 
-`tests/test_one_way_to_connect.py` holds both, and holds the on-device eight
-to never standing down.
+The three are one decision, not three: `_builtin_is_offered()` in
+`api/routes/connectors.py` answers *is this built-in the route to its source
+right now*, and both screens read that same answer. Two functions each deciding
+half of it is how GitHub came to sit **CONNECTED** on the Connectors screen
+while the catalog, two clicks away, offered to connect GitHub.
+
+Which side of a pair wins falls out of the declarations rather than being
+chosen per source:
+
+* `prefer_mcp` set, built-in not configured → the **server** is the route.
+* Otherwise → the **built-in** is the route, and its catalog entry is not
+  offered. Flipping a source to MCP later is one line — set `prefer_mcp` on
+  the connector — and both screens change together.
+
+`tests/test_one_way_to_connect.py` holds all three, holds the on-device eight
+to never standing down, and asserts the pairing *mechanically*: any catalog
+entry whose id is already a connector name must declare `same_as`, so the next
+one cannot arrive undeclared.
 
 ## Adding a source
 
@@ -105,3 +122,8 @@ to never standing down.
 
 If you find yourself writing a connector for something with a server, stop:
 you are building the second route that this document exists to prevent.
+
+**If a connector for it already exists**, you are not adding a source — you are
+replacing one. Give the entry `same_as` naming the built-in, and say which wins
+by whether that connector declares `prefer_mcp`. An entry without `same_as` is
+a second route, and the suite fails on it.

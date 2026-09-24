@@ -153,3 +153,128 @@ def test_a_configured_built_in_is_never_hidden_by_a_server(catalog, monkeypatch)
     route = catalog(["gmail"])
 
     assert "gmail" in _names(route)
+
+
+# ── the other direction: the catalog must not offer what a built-in reaches ──
+#
+# `prefer_mcp` only ever answered half the question. It keeps a built-in off
+# the Connectors screen where a vendor server wins — and nothing kept **Add a
+# connector** from offering a server where the built-in wins. So GitHub sat on
+# the Connectors screen with a green CONNECTED badge while the catalog, two
+# clicks away, offered to connect GitHub. Same bug as the Notion screenshot,
+# arriving from the opposite end.
+#
+# The fix is structural rather than a list of names to remember: an entry
+# declares the built-in it duplicates (`CatalogEntry.same_as`), one function
+# decides which of the two is the route, and both screens read that function.
+
+
+def test_every_catalog_entry_that_shadows_a_built_in_says_so():
+    """The guard that makes this hold for connectors nobody has written yet.
+
+    An entry whose id is already a connector name is, by construction, a
+    second route to that source. Adding one without declaring the pair is how
+    the GitHub duplicate got here, and it is a diff nobody notices — so the
+    matching is mechanical and the declaration is enforced, not remembered.
+    """
+    from chitragupta.connectors.mcp_catalog import CATALOG
+
+    for entry in CATALOG:
+        if entry.id in REGISTRY:
+            assert entry.same_as == entry.id, (
+                f"catalog entry '{entry.id}' is also a built-in connector and "
+                f"must declare same_as='{entry.id}'")
+
+
+def test_a_declared_twin_is_a_connector_that_exists():
+    """A pairing that names nothing silently stops deduplicating, and the
+    symptom is the duplicate coming back — months later, on a user's machine
+    and not on ours."""
+    from chitragupta.connectors.mcp_catalog import CATALOG
+
+    for entry in CATALOG:
+        if entry.same_as:
+            assert entry.same_as in REGISTRY, (
+                f"catalog entry '{entry.id}' stands in for "
+                f"'{entry.same_as}', which is not a connector")
+
+
+def test_no_source_is_reachable_from_both_screens_at_once(catalog, monkeypatch):
+    """The invariant itself, checked over every pairing rather than the one
+    that was reported. Whatever each connector's state, a source appears on
+    the Connectors screen or in the catalog — never both."""
+    from chitragupta.api.routes import connectors as route
+    from chitragupta.connectors.mcp_catalog import CATALOG
+
+    twins = [e for e in CATALOG if e.same_as]
+    assert twins, "nothing to check — the pairing declaration has gone missing"
+
+    for entry in twins:
+        for configured in (True, False):
+            monkeypatch.setattr(REGISTRY[entry.same_as], "is_configured",
+                                lambda self, c=configured: (c, ""),
+                                raising=False)
+            r = catalog([])
+            on_screen = entry.same_as in _names(r)
+            in_catalog = entry.id in {c["id"]
+                                      for c in r.connector_catalog()["available"]}
+            assert not (on_screen and in_catalog), (
+                f"{entry.name} is offered twice when its built-in is "
+                f"{'configured' if configured else 'not configured'}")
+            assert on_screen or in_catalog, (
+                f"{entry.name} is offered nowhere when its built-in is "
+                f"{'configured' if configured else 'not configured'}")
+    assert route  # the module under test, imported for the reader
+
+
+def test_the_reported_case_github_is_offered_once(catalog, monkeypatch):
+    """The screenshot. GitHub connected under *Code & projects*, and **Add a
+    connector** still listing GitHub with an Add button beside it."""
+    monkeypatch.setattr(REGISTRY["github"], "is_configured",
+                        lambda self: (True, ""), raising=False)
+    r = catalog([])
+
+    assert "github" in _names(r)
+    assert "github" not in {c["id"] for c in r.connector_catalog()["available"]}
+
+
+def test_a_retired_built_in_leaves_its_catalog_entry_standing(catalog, monkeypatch):
+    """The rule cuts both ways or it takes a source away. Notion's built-in
+    stands down for the vendor's server, so the catalog is the *only* place
+    Notion can be connected and must keep offering it."""
+    monkeypatch.setattr(REGISTRY["notion"], "is_configured",
+                        lambda self: (False, ""), raising=False)
+    r = catalog([])
+
+    assert "notion" not in _names(r)
+    assert "notion" in {c["id"] for c in r.connector_catalog()["available"]}
+
+
+def test_an_added_server_still_shows_in_the_catalog(catalog, monkeypatch):
+    """Hiding what the user has already added is losing their state to our
+    tidying. The row stays and reports 'already added' — which is a status,
+    not a second way to connect."""
+    monkeypatch.setattr(REGISTRY["notion"], "is_configured",
+                        lambda self: (True, ""), raising=False)
+    r = catalog(["notion"])
+
+    entries = {c["id"]: c for c in r.connector_catalog()["available"]}
+    assert entries["notion"]["added"] is True
+
+
+def test_a_pairing_holds_when_the_two_names_differ(catalog):
+    """`filesystem` is our `files`, and an id comparison would never have
+    found it — the declaration is what pairs them.
+
+    Which way the pair resolves is the rule doing its job rather than a
+    preference: Local Files is on-device and `always_available`, so it is
+    always the route, so the catalog never offers a second one. An id match
+    would have left *A folder on this Mac* sitting in the catalog forever,
+    offering to connect a folder the user can already point at — and needing
+    Node installed to do it.
+    """
+    r = catalog([])
+
+    assert "files" in _names(r)
+    assert "filesystem" not in {c["id"]
+                                for c in r.connector_catalog()["available"]}

@@ -90,6 +90,19 @@ class CatalogEntry:
     #: First-party means the vendor publishes it. Community servers are offered
     #: with that stated, never silently mixed in.
     first_party: bool = True
+    #: The built-in connector that reaches this same source, if one does.
+    #:
+    #: The other half of `Connector.prefer_mcp`, and the half that was missing.
+    #: `prefer_mcp` stops the *built-in* being offered where a server wins;
+    #: nothing stopped the *catalog* offering a server where the built-in wins,
+    #: so GitHub sat connected on the Connectors screen while **Add a
+    #: connector** offered to connect GitHub again — the same two-routes-one-app
+    #: screenshot that `docs/REACHING-AN-APP.md` was written for, arriving from
+    #: the other direction.
+    #:
+    #: Declared here rather than matched on id, because `filesystem` is our
+    #: `files` and a string comparison would quietly stop finding the pair.
+    same_as: str = ""
     notes: str = ""
 
     @property
@@ -174,6 +187,7 @@ CATALOG: tuple[CatalogEntry, ...] = (
     CatalogEntry(
         id="linear", name="Linear", category="Work & tasks",
         transport="http", url="https://mcp.linear.app/mcp",
+        same_as="linear",
         notes="Issues, projects and cycles. Reading and, with your approval, creating or updating issues.",
     ),
     CatalogEntry(
@@ -206,6 +220,7 @@ CATALOG: tuple[CatalogEntry, ...] = (
     CatalogEntry(
         id="notion", name="Notion", category="Notes, files & meetings",
         transport="http", url="https://mcp.notion.com/mcp",
+        same_as="notion",
         notes="Pages and databases you have access to.",
     ),
     CatalogEntry(
@@ -240,7 +255,7 @@ CATALOG: tuple[CatalogEntry, ...] = (
     CatalogEntry(
         id="github", name="GitHub", category="Code & infrastructure",
         transport="http", url="https://api.githubcopilot.com/mcp/",
-        auth="token",
+        auth="token", same_as="github",
         needs_env=(NeededValue(
             "GITHUB_TOKEN", "Personal access token",
             "Create one at github.com → Settings → Developer settings. It only needs access to the repositories you want Chitragupta to see."),),
@@ -316,6 +331,7 @@ CATALOG: tuple[CatalogEntry, ...] = (
         id="filesystem", name="A folder on this Mac",
         category="Notes, files & meetings", transport="stdio", auth="none",
         command="npx", args=("-y", "@modelcontextprotocol/server-filesystem@0.6.2"),
+        same_as="files",
         needs_args=(NeededValue(
             "root", "Folder", "The folder this connector may read. Nothing "
             "outside it is reachable.", kind="path"),),
