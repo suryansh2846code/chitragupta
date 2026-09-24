@@ -308,7 +308,64 @@ def open_session():
 
     from .session import Session
 
-    return Session(open_driver())
+    return Session(shared_driver())
+
+
+# ── one browser, and only one ───────────────────────────────────────────
+#
+# The profile allows exactly one Chromium. That is not a quirk to work around,
+# it is the shape of the thing: a cookie jar with two writers is a cookie jar
+# that loses sign-ins. But three callers each used to launch their own —
+# `signin.begin()`, `forget_site()` and every agent through `open_session()` —
+# and three more each closed one. Every browser failure this package has
+# produced came out of that one fact:
+#
+#   * two launching at once  -> "Failed to create a ProcessSingleton"
+#   * Chromium merging them  -> "Opening in existing browser session"
+#   * one closing another's  -> "Target page, context or browser has been closed"
+#   * one left open          -> every later launch refused, until the app quits
+#
+# So there is one browser, it is owned here, and the only thing that closes it
+# is the app shutting down or the user deleting the profile. Callers borrow it.
+# Nobody else launches, and nobody else closes.
+_SHARED: Any = None
+_SHARED_LOCK = threading.Lock()
+
+
+def shared_driver():
+    """The one browser, started if it is not running yet.
+
+    Everything that drives Chromium goes through here — the sign-in flow, the
+    sign-out, and every agent. They are not competing for a resource any more;
+    they are taking turns on one, and the driver's own command queue is what
+    makes "taking turns" true.
+
+    This does **not** weaken the boundary. `Session` still wraps this and still
+    checks every landing; signing in still bypasses `Session` rather than
+    gaining an exception inside it. What changed is how many browsers exist,
+    not who is allowed to ask one for a page.
+    """
+    global _SHARED
+    with _SHARED_LOCK:
+        if _SHARED is None:
+            _SHARED = open_driver()
+        return _SHARED
+
+
+def reset_shared(*, close: bool = False) -> None:
+    """Forget the shared browser, so the next caller gets a fresh one.
+
+    `close=False` is for a browser that is already gone — the user closed the
+    window, or it died — where calling `close()` on it would only raise. The
+    point is to drop the handle: a driver's thread outlives its browser, so a
+    stale handle is one that looks healthy and answers nothing.
+    """
+    global _SHARED
+    with _SHARED_LOCK:
+        doomed, _SHARED = _SHARED, None
+    if close and doomed is not None:
+        with suppressed("closing the shared browser"):
+            doomed.close()
 
 
 def open_driver():
@@ -343,31 +400,23 @@ def forget_site(host: str) -> bool:
     that outlives the permission — a lie about what Disconnect did. This is the
     other half.
 
-    Costs a browser start, which is why it is here rather than in the delete
-    handler: the alternative is editing Chrome's cookie database on disk, which
-    is encrypted, locked while the browser runs, and exactly the thing
+    Needs a browser, which is why it is here rather than in the delete handler:
+    the alternative is editing Chrome's cookie database on disk, which is
+    encrypted, locked while the browser runs, and exactly the thing
     `/CLAUDE.md` refuses to do to another product's files — our own included.
 
-    **And it closes what it opened.** A browser holds an exclusive lock on the
-    profile directory, so one left running here is not a stray process, it is
-    every later browse failing to start — the next agent to open a page gets
-    "the profile is already in use" and no amount of retrying clears it.
+    It borrows the shared browser rather than starting one. Opening a second
+    Chromium on this profile is refused by Chromium itself, and closing the one
+    it opened used to end whatever page an agent had open.
     """
     clean = str(host or "").strip().lower().lstrip(".")
     if not clean or not is_installed():
         return False
-    driver = None
-    try:
-        with suppressed("signing a site out of the browser profile"):
-            driver = open_driver()
-            driver.clear_cookies("." + clean)
-            log.info("signed out of %s", clean)
-            return True
-        return False
-    finally:
-        if driver is not None:
-            with suppressed("closing the browser after signing a site out"):
-                driver.close()
+    with suppressed("signing a site out of the browser profile"):
+        shared_driver().clear_cookies("." + clean)
+        log.info("signed out of %s", clean)
+        return True
+    return False
 
 
 def reap() -> int:

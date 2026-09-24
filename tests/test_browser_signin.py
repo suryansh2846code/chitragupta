@@ -61,11 +61,21 @@ class FakeDriver:
 
 @pytest.fixture
 def driver(monkeypatch):
+    """The one shared browser, faked.
+
+    `open_driver` is the factory and `shared_driver` caches what it returns, so
+    the cache has to be cleared around every test — otherwise the first fake
+    outlives its test and the rest assert against somebody else's browser. That
+    caching is the point of the design, not an inconvenience: one profile
+    permits one Chromium.
+    """
     fake = FakeDriver()
     from chitragupta.browser import chromium
 
     monkeypatch.setattr(chromium, "open_driver", lambda: fake)
-    return fake
+    chromium.reset_shared()
+    yield fake
+    chromium.reset_shared()
 
 
 # ── the heuristic, and that it stays one ─────────────────────────────────
@@ -166,13 +176,21 @@ def test_finishing_nothing_says_so(driver):
 
 # ── giving up ────────────────────────────────────────────────────────────
 def test_cancelling_leaves_no_trace(driver):
+    """Nothing granted, nothing remembered — and the browser is not left sitting
+    on the half-filled login page they walked away from.
+
+    It is *parked*, not closed. There is one browser for the whole app now, so
+    closing it on a cancelled sign-in would end whatever page an agent had open
+    — which is the failure this whole area kept producing.
+    """
     signin.begin("https://www.linkedin.com")
 
     out = signin.cancel()
 
     assert out["ok"]
     assert origins.list_grants() == []
-    assert driver.closed is True
+    assert driver.went_to[-1] == signin.PARKED, "left on the sign-in page"
+    assert driver.closed is False, "cancelling took the shared browser down"
     assert signin.status()["connecting"] is False
 
 
@@ -278,25 +296,33 @@ def test_disconnecting_clears_the_sign_in_too(monkeypatch, driver):
         "the subdomain form matters — a token left on www. is a live session")
 
 
-def test_disconnecting_closes_the_browser_it_opened(monkeypatch, driver):
-    """Signing a site out costs a browser start, and that browser takes an
-    **exclusive** lock on the profile. One left running is not a stray process:
-    it is every later `browse_open` failing to start, with a message about a
-    profile already in use that no retry can clear. Disconnect is a button a
-    person presses in passing — it must not disable browsing until they quit.
+def test_disconnecting_borrows_the_browser_instead_of_starting_one(monkeypatch, driver):
+    """Disconnect used to start its own Chromium, which the profile refuses
+    while another is running, and then never close it.
+
+    It now uses the one shared browser — and must not close it either. This is a
+    button somebody presses in passing; taking browsing down until they quit the
+    app, or ending an agent's open page, are both the same old failure.
     """
     from chitragupta.browser import chromium
 
     monkeypatch.setattr(chromium, "is_installed", lambda: True)
+    started = []
+    monkeypatch.setattr(chromium, "open_driver",
+                        lambda: started.append(1) or driver)
+    chromium.reset_shared()
+    chromium.shared_driver()                  # the app's browser, already up
+    started.clear()
 
     chromium.forget_site("linkedin.com")
 
-    assert driver.closed is True, "Disconnect left a browser holding the profile"
+    assert started == [], "Disconnect started a second browser"
+    assert driver.closed is False, "Disconnect closed the shared browser"
 
 
-def test_a_failed_sign_out_still_closes_its_browser(monkeypatch, driver):
-    """The path that matters more. A `clear_cookies` that raises used to leave
-    the browser behind precisely when something had already gone wrong."""
+def test_a_failed_sign_out_leaves_the_browser_alone_too(monkeypatch, driver):
+    """The path that matters more: something has already gone wrong, and that is
+    the worst moment to also take the browser down."""
     from chitragupta.browser import chromium
 
     monkeypatch.setattr(chromium, "is_installed", lambda: True)
@@ -307,7 +333,7 @@ def test_a_failed_sign_out_still_closes_its_browser(monkeypatch, driver):
     driver.clear_cookies = boom
 
     assert chromium.forget_site("linkedin.com") is False
-    assert driver.closed is True
+    assert driver.closed is False
 
 
 # ── which account, when the page says so unmistakably ────────────────────
@@ -583,22 +609,25 @@ def test_a_driver_that_cannot_list_windows_still_works(driver):
 
 
 # ── what the sign-in window does once the sign-in is over ────────────────
-def test_finishing_closes_the_window_it_opened(driver):
-    """A browser holds an **exclusive** lock on the profile directory, and the
-    profile is the entire point of this flow. So the window left open to prove
-    the sign-in worked was also the window stopping every agent from using it:
-    the next `browse_open` could not start a browser at all, and retrying could
-    never clear it because nothing was going to close that window.
+def test_finishing_parks_the_window_rather_than_closing_it(driver):
+    """Both wrong answers here were shipped, a day apart.
 
-    Closing is also what flushes the session to disk, so "it stays signed in" is
-    true of the profile rather than only of a process we walked away from.
+    Leaving the window on the signed-in site meant it went on holding the
+    profile, and every later `browse_open` was refused. Closing it meant the
+    finished sign-in tore down the one browser the agents were using, and an
+    agent mid-read got "Target page, context or browser has been closed".
+
+    Neither is a browser lifecycle a caller gets to decide. There is one browser,
+    `chromium` owns it, and a sign-in that is over simply stops looking at the
+    site — so it is not left on somebody's feed, and nothing else loses its page.
     """
     signin.begin("https://www.linkedin.com")
     driver.url, driver.title = "https://www.linkedin.com/feed/", "Feed"
 
     assert signin.finish()["ok"] is True
 
-    assert driver.closed is True, "the sign-in browser kept holding the profile"
+    assert driver.closed is False, "finishing took the shared browser down"
+    assert driver.went_to[-1] == signin.PARKED, "left sitting on the user's feed"
 
 
 def test_the_grant_is_recorded_before_the_window_goes(driver):
@@ -621,3 +650,74 @@ def test_a_sign_in_that_did_not_finish_keeps_its_window(driver):
     assert signin.finish()["ok"] is False
 
     assert driver.closed is False
+
+
+# ── one browser, and only one ────────────────────────────────────────────
+#
+# The root cause behind every browser failure this package produced. The profile
+# permits exactly one Chromium, and three callers each used to start their own
+# and close their own. What came out of it, in order of discovery:
+#
+#   two launching at once  -> "Failed to create a ProcessSingleton"
+#   Chromium merging them  -> "Opening in existing browser session"
+#   one closing another's  -> "Target page, context or browser has been closed"
+#   one left open          -> every later launch refused until the app quits
+#
+# Each was fixed on its own and the next one arrived. These pin the property
+# that makes the whole family impossible rather than the messages they produced.
+def test_everything_shares_one_browser(monkeypatch, driver):
+    """Sign-in, sign-out and agents all borrow the same one."""
+    from chitragupta.browser import chromium
+
+    monkeypatch.setattr(chromium, "is_installed", lambda: True)
+    started = []
+    monkeypatch.setattr(chromium, "open_driver",
+                        lambda: started.append(1) or driver)
+    chromium.reset_shared()
+
+    signin.begin("https://www.linkedin.com")
+    driver.url = "https://www.linkedin.com/feed/"
+    signin.finish(force=True)
+    chromium.forget_site("linkedin.com")
+    chromium.shared_driver()
+
+    assert started == [1], f"{len(started)} browsers were started, not one"
+
+
+def test_nothing_that_borrows_the_browser_closes_it(monkeypatch, driver):
+    """A caller ending its own work must never end everybody else's.
+
+    Closing is the app's decision, not a borrower's — which is why the two
+    borrowers that used to close are pinned here together.
+    """
+    from chitragupta.browser import chromium
+
+    monkeypatch.setattr(chromium, "is_installed", lambda: True)
+    chromium.reset_shared()
+
+    signin.begin("https://www.linkedin.com")
+    signin.cancel()
+    driver.url = "https://www.linkedin.com/feed/"
+    signin.begin("https://www.linkedin.com")
+    signin.finish(force=True)
+    chromium.forget_site("linkedin.com")
+
+    assert driver.closed is False
+
+
+def test_the_shared_browser_can_be_replaced_when_it_dies(monkeypatch):
+    """A driver's thread outlives its browser, so a dead handle looks healthy
+    and answers nothing. Dropping it is what lets the next caller get a live
+    browser instead of the corpse of the last one."""
+    from chitragupta.browser import chromium
+
+    made = [FakeDriver(), FakeDriver()]
+    monkeypatch.setattr(chromium, "open_driver", lambda: made.pop(0))
+    chromium.reset_shared()
+
+    first = chromium.shared_driver()
+    assert chromium.shared_driver() is first, "it started a second browser"
+
+    chromium.reset_shared()
+
+    assert chromium.shared_driver() is not first

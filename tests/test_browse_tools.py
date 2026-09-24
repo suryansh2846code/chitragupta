@@ -500,3 +500,64 @@ def test_a_browser_that_would_not_start_keeps_its_session():
     browse_tools.browse_open("https://payroll.example.com/payslips")
 
     assert browse_tools._session is not None
+
+
+# ── one browser means one window, and a person may be using it ───────────
+def test_an_agent_does_not_take_the_window_out_from_under_a_password():
+    """Sharing one browser is what removed the whole family of launch failures,
+    but it means the window an agent drives is the window somebody types their
+    password into. Navigating it mid-sign-in would lose the sign-in and read as
+    the app fighting them."""
+    from chitragupta.browser import chromium, signin
+
+    origins.grant("payroll.example.com")
+
+    class _Fake:
+        url, title = "https://payroll.example.com/login", "Sign in"
+        def goto(self, url): return self.url, self.title, []
+        def current(self): return self.url, self.title, []
+        def close(self): pass
+
+    original = chromium.open_driver
+    chromium.open_driver = _Fake
+    chromium.reset_shared()
+    try:
+        signin.begin("https://payroll.example.com")
+
+        out = browse_tools.browse_open("https://payroll.example.com/payslips")
+
+        assert out.ok is False
+        assert "signing in" in out.lower()
+        assert "do not retry in this turn" in out.lower()
+    finally:
+        signin._clear(close_browser=False)
+        chromium.open_driver = original
+        chromium.reset_shared()
+
+
+def test_once_the_sign_in_is_over_the_browser_is_available_again():
+    """The guard is a wait, not a refusal — it has to end."""
+    from chitragupta.browser import signin
+
+    origins.grant("payroll.example.com")
+    signin._clear(close_browser=False)
+
+    out = browse_tools.browse_open("https://payroll.example.com/payslips")
+
+    assert out.ok is True
+
+
+def test_a_dead_browser_is_dropped_from_the_shared_slot_too():
+    """Clearing the agent's session alone would not help: the next one is handed
+    the same dead driver by `shared_driver()`."""
+    from chitragupta.browser import chromium
+
+    origins.grant("payroll.example.com")
+    chromium.reset_shared()
+    kept = chromium.shared_driver()
+    _wont_start(CLOSED)
+
+    browse_tools.browse_open("https://payroll.example.com/payslips")
+
+    assert chromium.shared_driver() is not kept, "the corpse was handed on"
+    chromium.reset_shared()

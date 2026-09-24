@@ -74,15 +74,24 @@ holds.
 - **Anything we spawn, we clean up — across runs**, through
   `models/login_processes.py`. A browser holds a profile lock; 158 orphaned
   login processes is the precedent.
-- **The profile lock is exclusive, so every browser we open, we close — in a
-  `finally`.** A second Chromium on the same profile does not queue or share:
-  it refuses to launch. So a browser left running is not an idle process, it is
-  *browsing switched off* until the user quits the app, and no retry can clear
-  it because nothing is going to close that window. Both leaks were real —
-  `signin.finish()` kept its window open to show the user they were in, and
-  `chromium.forget_site()` opened one per Disconnect and never closed it. Closing
-  is also what flushes cookies to disk, so it is what makes "it stays signed in"
-  true of the profile rather than of a process we abandoned.
+- **There is one browser. `chromium.shared_driver()` owns it, callers borrow it,
+  and nobody else starts or closes one.** The profile permits exactly one
+  Chromium — which is not a quirk to route around, it is the shape of a cookie
+  jar that must not have two writers. Three callers used to launch their own
+  (`signin.begin`, `forget_site`, every agent via `open_session`) and three used
+  to close one, and *every* browser failure this package produced came out of
+  that: `ProcessSingleton` when two launched, "Opening in existing browser
+  session" when Chromium merged them, "Target page, context or browser has been
+  closed" when one closed another's, and browsing dead until the app quit when
+  one was left open. Each was fixed on its own and the next one arrived.
+- **A borrower parks the browser, it does not close it.** `signin._clear` sends
+  it to `signin.PARKED` so it is not left on somebody's feed. Closing is the
+  app's decision — teardown, or the user deleting the profile — never a caller's,
+  because one caller finishing must not end everybody else's page.
+- **One browser is one window, and a person may be in it.** While a sign-in is
+  live, `browse_tools` refuses agent reads with `SIGN_IN_IN_PROGRESS` rather
+  than navigating the window somebody is typing a password into. It is a wait,
+  not a refusal, and it ends at Done or Cancel.
 - **"Closed" and "would not start" are different failures with opposite
   advice.** A locked profile cannot be fixed by retrying; a browser that *was*
   alive and has been closed is fixed by nothing else. And we are the usual cause

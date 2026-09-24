@@ -12,10 +12,11 @@ they land they belong in `permissions.NEVER_UNATTENDED` **in the same commit**,
 because a routine reading a stranger's email is the one caller that must never
 reach them.
 
-**Not in any shipped agent's tool set.** Like `run_python`, the user puts these
-on an agent themselves, and that choice is the consent — the roster card says
-"reads websites you allow" so the decision is made where it is visible rather
-than discovered afterwards.
+**Offered to every agent and gated at execution**, through `_BROWSE` in
+`library.BASE_TOOLS` — the same shape as the connector tools beside them. An
+agent that cannot *see* the tool tells the user it cannot read a website, which
+is false: it can, as soon as they allow the site. The consent is the allow-list
+in `browser/origins.py`, not the tool list.
 
 The boundary, the bounding and the quarantine all live in `browser/`; this module
 is the thin part on purpose. What it owns is the wording: what an agent is told
@@ -161,21 +162,54 @@ def _browser_failed(exc: Exception) -> ToolResult:
     """
     from ..browser.chromium import BrowserNotReadyError
 
+    if isinstance(exc, _SigningInError):
+        # Not logged as a browser problem, because it is not one — somebody is
+        # using the window for exactly what it is for.
+        return ToolResult.failed(SIGN_IN_IN_PROGRESS)
     log.warning("browser unavailable for an agent: %s", str(exc)[:200])
     detail = str(exc).lower()
     if isinstance(exc, BrowserNotReadyError):
         return ToolResult.failed(f"{exc} Tell the user that, and do not retry.")
     if any(phrase in detail for phrase in _CLOSED):
-        # **Dropped, not kept.** The driver's thread outlives its browser, so
-        # `_ensure_started` sees it alive and returns without relaunching — the
-        # session stays broken for the life of the app, and the user is told to
-        # restart something that could have healed itself. Clearing it is what
-        # makes "call this again once" true.
+        # **Dropped, not kept — and dropped in both places.** A driver's thread
+        # outlives its browser, so `_ensure_started` sees it alive and returns
+        # without relaunching: a stale handle is one that looks healthy and
+        # answers nothing. Clearing the session alone is not enough, because the
+        # next one would be handed the same dead driver from `shared_driver()`.
+        # Clearing both is what makes "call this again once" true.
+        from ..browser import chromium
+
         set_session(None)
+        chromium.reset_shared()
         return ToolResult.failed(BROWSER_CLOSED)
     if _PROFILE_LOCKED in detail or "already in use" in detail:
         return ToolResult.failed(BROWSER_BUSY)
     return ToolResult.failed(BROWSER_UNAVAILABLE)
+
+
+#: Said when the user is part-way through connecting a site.
+#:
+#: One browser for the whole app means one window, and while a sign-in is live
+#: that window has a person typing a password into it. Navigating it out from
+#: under them would lose the sign-in and look like the app fighting them. This
+#: is a wait, not a refusal, and it ends when they press Done or Cancel.
+SIGN_IN_IN_PROGRESS = (
+    "The user is signing in to a site in the browser window right now, so it "
+    "cannot be used for anything else until they finish. Do not retry in this "
+    "turn — tell them you will read it once they are done."
+)
+
+
+class _SigningInError(RuntimeError):
+    """Not a browser failure: the browser is busy being used by a person."""
+
+
+def _refuse_while_signing_in() -> None:
+    """Stop an agent taking the window out from under somebody's password."""
+    from ..browser import signin
+
+    if signin.status().get("connecting"):
+        raise _SigningInError(SIGN_IN_IN_PROGRESS)
 
 
 def _browser_errors() -> tuple:
@@ -183,12 +217,13 @@ def _browser_errors() -> tuple:
     from ..browser.chromium import BrowserNotReadyError
     from ..browser.driver import BrowserError
 
-    return (BrowserError, BrowserNotReadyError)
+    return (BrowserError, BrowserNotReadyError, _SigningInError)
 
 
 def browse_open(url: str) -> ToolResult:
     """Open a page on an allowed site and read it."""
     try:
+        _refuse_while_signing_in()
         return _answer(get_session().open(url))
     except _browser_errors() as exc:
         # Whether the session survives is decided in `_browser_failed`, by which
@@ -208,6 +243,7 @@ def browse_read(since: str | None = None) -> ToolResult:
     somebody's own model plan.
     """
     try:
+        _refuse_while_signing_in()
         reading = get_session().read()
     except _browser_errors() as exc:
         return _browser_failed(exc)

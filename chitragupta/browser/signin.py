@@ -189,7 +189,9 @@ def begin(url: str) -> dict[str, Any]:
                     "error": f"Already signing in to {_state.current.host}. "
                              "Finish or cancel that first."}
         try:
-            driver = chromium.open_driver()
+            # Borrowed, not started. One browser holds the profile, and a
+            # second one is refused by Chromium — see `chromium.shared_driver`.
+            driver = chromium.shared_driver()
         except chromium.BrowserNotReadyError as exc:
             return {"ok": False, "error": str(exc)}
 
@@ -369,11 +371,26 @@ def _open_windows(driver: Any) -> list[tuple[str, str]]:
     return []
 
 
+#: Where the browser is left once a sign-in ends. Not closed — the browser is
+#: shared, and closing it is how a finished sign-in used to kill the page an
+#: agent had open. Navigated away instead, so it is not sitting on somebody's
+#: feed, and so the next thing to borrow it starts from nowhere in particular.
+PARKED = "about:blank"
+
+
 def _clear(*, close_browser: bool) -> None:
+    """End the sign-in. `close_browser` now means *park* it, not close it.
+
+    The name is kept because it is what the two callers mean — "I am done with
+    the browser" — and the answer to that changed, not the question. There is
+    one browser for the whole app now (`chromium.shared_driver`), so closing it
+    on behalf of one caller ends everyone else's page too: that is exactly how
+    finishing a sign-in came to break an agent mid-read.
+    """
     with _state.lock:
         session = _state.session
         _state.current = None
         _state.session = None
     if close_browser and session is not None:
-        with suppressed("closing the sign-in browser"):
-            session.close()
+        with suppressed("parking the browser after a sign-in"):
+            session.goto(PARKED)
