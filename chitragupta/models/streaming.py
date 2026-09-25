@@ -69,6 +69,11 @@ class _Accumulator:
     tools: dict = field(default_factory=dict)
     input_tokens: int = 0
     output_tokens: int = 0
+    cached_tokens: int = 0
+    #: Thinking blocks under assembly, keyed by their stream index. Kept as the
+    #: vendor's own shape because they are handed straight back on the next
+    #: round and anything we normalise here we would have to un-normalise there.
+    reasoning: dict = field(default_factory=dict)
     finish_reason: str = "stop"
 
     def result(self) -> ChatResult:
@@ -79,6 +84,8 @@ class _Accumulator:
             finish_reason=self.finish_reason,
             input_tokens=self.input_tokens,
             output_tokens=self.output_tokens,
+            cached_tokens=self.cached_tokens,
+            reasoning=[b for _, b in sorted(self.reasoning.items())],
         )
 
 
@@ -112,12 +119,24 @@ def anthropic_events(payloads: Iterable[str]) -> Iterator[StreamEvent]:
         etype = event.get("type")
         if etype == "message_start":
             usage = (event.get("message") or {}).get("usage") or {}
-            acc.input_tokens = int(usage.get("input_tokens") or 0)
+            # `input_tokens` here means "uncached". A turn that caches well
+            # reports a handful there and thousands in the two cache fields, so
+            # reading only the first makes a long turn look free. See
+            # `caching.cache_stats`.
+            from .caching import cache_stats
+            read, written = cache_stats(usage)
+            acc.input_tokens = int(usage.get("input_tokens") or 0) + read + written
+            acc.cached_tokens = read
         elif etype == "content_block_start":
             block = event.get("content_block") or {}
             if block.get("type") == "tool_use":
                 acc.tools[event.get("index", len(acc.tools))] = _ToolAssembly(
                     id=block.get("id", ""), name=block.get("name", ""))
+            elif block.get("type") in ("thinking", "redacted_thinking"):
+                # Collected but never yielded as text. Thinking is not the
+                # answer, and streaming it into the reply would put the model's
+                # working out in front of the user as if it were the result.
+                acc.reasoning[event.get("index", len(acc.reasoning))] = dict(block)
         elif etype == "content_block_delta":
             delta = event.get("delta") or {}
             if delta.get("type") == "text_delta":
@@ -150,6 +169,11 @@ def openai_events(payloads: Iterable[str]) -> Iterator[StreamEvent]:
         if usage:
             acc.input_tokens = int(usage.get("prompt_tokens") or acc.input_tokens)
             acc.output_tokens = int(usage.get("completion_tokens") or acc.output_tokens)
+            # OpenAI caches automatically and reports the hit nested inside
+            # `prompt_tokens` — already counted, so this is read for reporting
+            # only and must NOT be added on the way Anthropic's is.
+            details = usage.get("prompt_tokens_details") or {}
+            acc.cached_tokens = int(details.get("cached_tokens") or acc.cached_tokens)
 
         for choice in chunk.get("choices") or []:
             if choice.get("finish_reason"):

@@ -131,7 +131,7 @@ def test_a_model_without_vision_is_refused_and_offered_alternatives(monkeypatch)
 def test_anthropic_sends_a_base64_image_block():
     from chitragupta.models.anthropic import AnthropicProvider
     img = ImageInput("image/png", PNG)
-    _system, msgs = AnthropicProvider(api_key="sk-test")._to_blocks(
+    _system, msgs, _stable = AnthropicProvider(api_key="sk-test")._to_blocks(
         [Message(role="user", content="what is this?", images=[img])])
     blocks = msgs[0]["content"]
     assert blocks[0] == {"type": "image", "source": {
@@ -161,7 +161,7 @@ def test_a_text_only_turn_is_byte_for_byte_what_it_always_was(provider_factory):
     if hasattr(p, "_to_openai"):
         assert p._to_openai(msgs) == [{"role": "user", "content": "hello"}]
     else:
-        _s, out = p._to_blocks(msgs)
+        _s, out, _stable = p._to_blocks(msgs)
         assert out == [{"role": "user", "content": "hello"}]
 
 

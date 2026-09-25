@@ -44,6 +44,20 @@ class Message:
     #: ones that have opt in by reading this. Turning `content` into a union
     #: would have been a rename landed on one side of eight call sites.
     images: list[Any] = field(default_factory=list)
+    #: "The prefix ending at this message is the same on the next turn." Only
+    #: meaningful on a system message, and only a hint: a provider with no
+    #: prompt cache ignores it and nothing changes. The runtime sets it on the
+    #: agent's own prompt and leaves recall and the task list unmarked, because
+    #: those are rebuilt every turn and marking them would cache a prefix that
+    #: can never be hit again. See `models/caching.py`.
+    stable: bool = False
+    #: Opaque reasoning blocks the model produced on THIS assistant turn, kept
+    #: exactly as the vendor sent them, signature included. Anthropic requires
+    #: them handed back with the assistant turn on every subsequent round of a
+    #: tool loop — drop one and round two is a 400, not a degraded answer. We
+    #: never read inside them, and nothing else in the app should either: a
+    #: model's private reasoning is not the answer and must not be shown as one.
+    reasoning: list[Any] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -78,6 +92,14 @@ class ChatResult:
     finish_reason: str = "stop"
     input_tokens: int = 0        # prompt tokens (0 if the provider doesn't report)
     output_tokens: int = 0       # completion tokens
+    #: Of `input_tokens`, how many were served from the provider's prompt cache.
+    #: Counted inside the input total on purpose — the model processed them and
+    #: the turn's budget must see them — and reported separately because they
+    #: cost a fraction, and a single number cannot answer "is caching working".
+    cached_tokens: int = 0
+    #: See `Message.reasoning` — carried out of the provider so the loop can
+    #: put it back on the next request.
+    reasoning: list[Any] = field(default_factory=list)
 
     @property
     def wants_tools(self) -> bool:

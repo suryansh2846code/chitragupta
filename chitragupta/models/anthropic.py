@@ -19,6 +19,7 @@ import uuid
 import httpx
 
 from ..log import get_logger, suppressed
+from . import caching
 from .base import ChatResult, LLMProvider, Message, ToolCall, _saved_key
 from .errors import ErrorKind, ProviderError, classify_exception, classify_http
 
@@ -80,12 +81,28 @@ class AnthropicProvider(LLMProvider):
             self._cli = ClaudeCodeProvider(model=self.model)
         return self._cli
 
-    def _to_blocks(self, messages: list[Message]) -> tuple[str, list[dict]]:
-        system = ""
+    def _to_blocks(self, messages: list[Message]) -> tuple[list[dict], list[dict], int]:
+        """`(system blocks, messages, stable_upto)` in wire form.
+
+        System arrives as a *list* rather than one joined string so a cache
+        marker can sit between the agent's own prompt and the per-turn blocks
+        that follow it. Joined, the whole system prompt changed every turn and
+        no marker on it could ever be hit twice.
+
+        `stable_upto` is the index of the last system block the caller promised
+        is identical next turn, or -1. It is returned beside the blocks rather
+        than carried inside one, because anything inside a block is sent to the
+        vendor and `_stable` is not a field they have. See `caching.py`.
+        """
+        system: list[dict] = []
         out: list[dict] = []
+        stable_upto = -1
         for m in messages:
             if m.role == "system":
-                system = (system + "\n" + m.content).strip()
+                if m.content:
+                    system.append({"type": "text", "text": m.content})
+                    if m.stable:
+                        stable_upto = len(system) - 1
             elif m.role == "user":
                 if m.images:
                     # Images come FIRST: Anthropic's own guidance is that a
@@ -118,7 +135,27 @@ class AnthropicProvider(LLMProvider):
                     "tool_use_id": m.tool_call_id,
                     "content": m.content,
                 }]})
-        return system, out
+        return system, out, stable_upto
+
+    def _payload(self, messages, tools, temperature, max_tokens) -> dict:
+        """The request body, cache markers included.
+
+        One builder for both `stream` and `chat`: they differ by a single
+        `"stream"` key, and when they each built their own the caching change
+        had to be made twice — which is the shape of a bug that ships half.
+        """
+        system, msgs, stable_upto = self._to_blocks(messages)
+        schemas = [{"name": t.name, "description": t.description,
+                    "input_schema": t.parameters} for t in tools] if tools else None
+        system, msgs, schemas = caching.apply(
+            system, msgs, schemas, stable_system_upto=stable_upto)
+        payload: dict = {"model": self.model, "max_tokens": max_tokens,
+                         "temperature": temperature, "messages": msgs}
+        if system:
+            payload["system"] = system
+        if schemas:
+            payload["tools"] = schemas
+        return payload
 
     def stream(self, messages, *, tools=None, temperature=0.7, max_tokens=1500):
         """Real streaming over the Messages API.
@@ -141,14 +178,8 @@ class AnthropicProvider(LLMProvider):
                                       max_tokens=max_tokens)
             return
 
-        system, msgs = self._to_blocks(messages)
-        payload = {"model": self.model, "max_tokens": max_tokens,
-                   "temperature": temperature, "messages": msgs, "stream": True}
-        if system:
-            payload["system"] = system
-        if tools:
-            payload["tools"] = [{"name": t.name, "description": t.description,
-                                 "input_schema": t.parameters} for t in tools]
+        payload = {**self._payload(messages, tools, temperature, max_tokens),
+                   "stream": True}
         try:
             with httpx.stream(
                 "POST", f"{self.base_url}/v1/messages",
@@ -181,31 +212,15 @@ class AnthropicProvider(LLMProvider):
             return backend.chat(messages, tools=tools, temperature=temperature,
                                 max_tokens=max_tokens)
 
-        system, msgs = self._to_blocks(messages)
-        payload = {
-            "model": self.model,
-            "max_tokens": max_tokens,
-            "temperature": temperature,
-            "messages": msgs,
-        }
-        if system:
-            payload["system"] = system
-        if tools:
-            payload["tools"] = [{
-                "name": t.name, "description": t.description,
-                "input_schema": t.parameters,
-            } for t in tools]
+        payload = self._payload(messages, tools, temperature, max_tokens)
 
         try:
             resp = httpx.post(
                 f"{self.base_url}/v1/messages",
-                headers={
-                    "x-api-key": self.api_key,
-                    "anthropic-version": "2023-06-01",
-                    "content-type": "application/json",
-                },
-                json=payload,
-                timeout=120,
+                headers={"x-api-key": self.api_key,
+                         "anthropic-version": "2023-06-01",
+                         "content-type": "application/json"},
+                json=payload, timeout=120,
             )
             resp.raise_for_status()
         except httpx.HTTPStatusError as exc:
@@ -237,11 +252,18 @@ class AnthropicProvider(LLMProvider):
                     arguments=block.get("input", {}),
                 ))
         usage = data.get("usage") or {}
+        # Anthropic reports cached prompt tokens SEPARATELY from `input_tokens`,
+        # so once caching works a naive read of that field makes a turn look
+        # ten times cheaper than it is — and the turn budget in `runtime.py`
+        # would stop bounding anything. Everything the model processed is
+        # counted; what it cost is the separate number beside it.
+        read, written = caching.cache_stats(usage)
         return ChatResult(
             text="".join(text_parts),
             tool_calls=calls,
             raw=data,
             finish_reason=data.get("stop_reason", "stop"),
-            input_tokens=int(usage.get("input_tokens") or 0),
+            input_tokens=int(usage.get("input_tokens") or 0) + read + written,
             output_tokens=int(usage.get("output_tokens") or 0),
+            cached_tokens=read,
         )

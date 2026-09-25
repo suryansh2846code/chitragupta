@@ -406,6 +406,15 @@ def run_turn(agent_id: str, user_text: str, *,
                   "authoritative current date — never state any other date as today. "
                   "Resolve 'today', 'tomorrow', 'this week' from this date."
             ),
+            # Everything to here is the same on the user's next message too —
+            # the agent's own prompt is the largest block in the payload and
+            # the one worth caching across turns. `stable` marks the boundary;
+            # the blocks appended below (recall, the task list) are rebuilt
+            # every turn and are deliberately left outside it, because a marker
+            # placed after them caches a prefix that can never be hit again.
+            # Only providers with a prompt cache read this. See
+            # `models/caching.py`.
+            stable=True,
         ),
     ]
 
