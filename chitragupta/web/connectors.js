@@ -135,6 +135,45 @@ const CONNECTOR_TINT = {
 function connectorIcon(name) {
   return CONNECTOR_ICONS[name] || CONNECTOR_ICON_FALLBACK;
 }
+
+//: A stable colour for a source we have no mark for.
+//:
+//: Derived from the id, the way `character.js` composes an agent's face from
+//: its id — so a catalog of two dozen reads as two dozen objects rather than
+//: one grey shape repeated, and a service added next year gets its own colour
+//: without anybody picking one. Never fetched: an image pulled from a vendor's
+//: CDN is a request that tells them which app the user is running, which is
+//: the whole reason the marks above are drawn by hand.
+function connectorHue(id) {
+  let h = 0;
+  for (let i = 0; i < String(id).length; i++) h = (h * 31 + String(id).charCodeAt(i)) % 360;
+  return h;
+}
+
+//: The name a mark is looked up by.
+//:
+//: An MCP connector is `mcp:notion` and a custom app is `custom:<id>`, so a
+//: straight lookup missed every one of them — Notion sat in the list wearing
+//: the blank fallback while its mark was right there under `notion`. The
+//: route is not part of the brand.
+function markKey(name) {
+  const at = String(name).indexOf(":");
+  return at === -1 ? String(name) : String(name).slice(at + 1);
+}
+
+//: The mark for a source: ours if we drew one, a monogram if not.
+//:
+//: A monogram rather than the neutral plus-in-a-box, because twenty identical
+//: fallbacks in a row is a list you cannot scan. It also does not pretend to
+//: be somebody's logo, which a rough hand-drawn approximation would.
+function connectorMark(id, name) {
+  if (CONNECTOR_ICONS[id]) return CONNECTOR_ICONS[id];
+  const letter = String(name || id).trim().charAt(0).toUpperCase() || "?";
+  return `<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+    <text x="12" y="16.5" font-size="12" font-weight="700" text-anchor="middle"
+      fill="currentColor" font-family="var(--sans), Helvetica, Arial"
+      >${esc(letter)}</text></svg>`;
+}
 function connectorTint(name) {
   return CONNECTOR_TINT[name] || "";
 }
@@ -232,9 +271,9 @@ function _cnRowHtml(c, staleAfterMin) {
                <button class="tiny ghost cn-x" data-delmcp="${esc(c.name)}" title="Remove" aria-label="Remove ${esc(c.label)}">${IC.close}</button>` : "";
 
   return `<div class="cn-row" data-conn="${esc(c.name)}">
-    <span class="cn-logo logo-tile" data-state="${state}"${
-      connectorTint(c.name) ? ` style="--brand:${connectorTint(c.name)}"` : ""
-    }><i class="lt-sheen"></i>${connectorIcon(c.name)}</span>
+    <span class="cn-logo logo-tile" data-state="${state}" style="--brand:${
+      connectorTint(markKey(c.name)) || `hsl(${connectorHue(c.name)} 62% 68%)`
+    }"><i class="lt-sheen"></i>${connectorMark(markKey(c.name), c.label)}</span>
     <span class="cn-text">
       <span class="cn-name">${esc(c.label)}${kind}${badge}</span>
       <span class="cn-sub">${esc(status)}</span>
@@ -264,8 +303,20 @@ function bindConnectorRowActions() {
     // MCP connector makes two handlers below.
     if (!confirm(`Disconnect ${b.dataset.cnlabel}? The saved key is forgotten. `
                  + "What it already synced stays in your brain.")) return;
-    await api(`/api/connectors/${encodeURIComponent(b.dataset.cnoff)}/secret`,
-              { method: "POST", body: JSON.stringify({ value: "" }) });
+    // The body goes as an OBJECT. `_encodeBody` only adds the JSON header for
+    // an object — a `JSON.stringify` string passes through untouched, the
+    // browser labels it text/plain, and FastAPI answers 422. That is exactly
+    // the bug core.js records against /api/open-browser, and this button shipped
+    // with it: the dialog appeared, OK did nothing, and nothing said why.
+    try {
+      await api(`/api/connectors/${encodeURIComponent(b.dataset.cnoff)}/secret`,
+                { method: "POST", body: { value: "" } });
+    } catch (e) {
+      // And it is caught, which is the other half of that bug — the 422 was
+      // invisible because the only caller swallowed it.
+      toast(`Could not disconnect ${b.dataset.cnlabel}. ${String(e)}`);
+      return;
+    }
     toast(`${b.dataset.cnlabel} disconnected`); loadBrain();
   });
   document.querySelectorAll("[data-cntools]").forEach((b) => b.onclick = () =>
@@ -701,27 +752,21 @@ async function loadConnectorCatalog() {
   if (!Array.isArray(data.available)) data.available = [];
   if (!Array.isArray(data.blocked)) data.blocked = [];
 
+  // Same mark, same tile, same size as the sources above it — one screen, one
+  // kind of row. A catalog entry carries no state dot: there is nothing
+  // connected to report yet, and a dot that always means "off" is noise.
   const card = (c) => `
     <div class="cx-row" data-cx="${esc(c.id)}">
-      <span>
+      <span class="cn-logo logo-tile" style="--brand:${
+        connectorTint(c.id) || `hsl(${connectorHue(c.id)} 62% 68%)`
+      }"><i class="lt-sheen"></i>${connectorMark(c.id, c.name)}</span>
+      <span class="cx-text">
         <span class="conn-name">${esc(c.name)}</span>
         <span class="conn-sub">${c.added ? "already added"
           : esc(c.notes || (c.first_party ? "Official connector" : "Community connector"))}</span>
       </span>
       <button class="tiny${c.added ? " ghost" : ""}" data-cxadd="${esc(c.id)}"
         ${c.added ? "disabled" : ""}>${c.added ? "added" : "Add"}</button>
-    </div>`;
-
-  // Blocked sources are shown, not hidden. Leaving LinkedIn out of the grid
-  // teaches the user this app is missing a feature; the truth is that no app
-  // can offer it, and saying so is the only honest version of that control.
-  const blocked = (b) => `
-    <div class="cx-row cx-off">
-      <span>
-        <span class="conn-name">${esc(b.name)}</span>
-        <span class="conn-sub">${esc(b.reason)}</span>
-      </span>
-      <span class="tiny ghost" style="opacity:.5;cursor:default">unavailable</span>
     </div>`;
 
   // The catalog is what we have vetted, and will never be all of it. Offering
@@ -756,11 +801,16 @@ async function loadConnectorCatalog() {
   const shelf = ([cat, items]) =>
     `<div class="cx-head">${esc(cat)}</div>${items.map(card).join("")}`;
 
-  box.innerHTML =
-    `${shelved.map(shelf).join("")}${own}` +
-    (data.blocked.length
-      ? `<div class="cx-head" style="margin-top:14px">Not possible</div>
-         ${data.blocked.map(blocked).join("")}` : "");
+  // **Sources nobody can offer are no longer listed here.** They used to be —
+  // the argument was that a grid silently lacking LinkedIn teaches the user
+  // this app is missing a feature, when the truth is that no app can offer it.
+  // That argument held while this was a modal you opened to go shopping. On
+  // the page it is three permanently dead rows at the bottom of a live list,
+  // and the longest explanation on the screen belongs to the thing you cannot
+  // have. The refusal is not lost: `add_from_catalog` still answers with
+  // `BLOCKED`'s own sentence if one is ever asked for by id, which is where it
+  // is actually useful — at the moment somebody tries.
+  box.innerHTML = `${shelved.map(shelf).join("")}${own}`;
 
   box.querySelectorAll("[data-cxadd]").forEach((b) => {
     if (!b.disabled) b.onclick = () => connectorPermissions(b.dataset.cxadd);

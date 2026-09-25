@@ -99,20 +99,45 @@ def test_an_already_added_connector_cannot_be_added_twice():
     assert by_id["slack"]["disabled"] is False
 
 
-def test_a_blocked_source_is_shown_with_its_reason():
-    """Omitting LinkedIn teaches the user the app is missing a feature. The
-    honest version says no app can do it, where the control would have been."""
+def test_a_blocked_source_is_not_listed_any_more():
+    """It used to be, and the argument was good while this was a modal.
+
+    A grid that silently lacks LinkedIn teaches the user the app is missing a
+    feature, when the truth is that no app can offer it — so the reason was
+    shown where the control would have been. That held while the catalog was
+    something you opened to go shopping. It is a section of the Connectors
+    page now, and there the same rows are three permanently dead entries at
+    the bottom of a live list, carrying the longest explanations on the screen
+    for the three things you cannot have.
+
+    The refusal is not lost, and `test_the_refusal_still_exists_where_it_is_
+    useful` below is what stops it being quietly dropped: it lives in
+    `add_from_catalog`, which answers at the moment somebody actually asks.
+    """
     out = run({"mode": "catalog", "api": {"/api/connectors/catalog": CATALOG}})
 
-    assert "LinkedIn" in out["catalogHtml"]
-    assert "banned" in out["catalogHtml"]
-    assert "unavailable" in out["catalogHtml"]
+    assert out["ok"], out["error"]
+    assert "LinkedIn" not in out["catalogHtml"]
+    assert "unavailable" not in out["catalogHtml"]
+    assert "Slack" in out["catalogHtml"], "the live entries still render"
 
 
 def test_a_blocked_source_has_no_add_button():
     out = run({"mode": "catalog", "api": {"/api/connectors/catalog": CATALOG}})
 
     assert "linkedin" not in [b["id"] for b in out["addButtons"]]
+
+
+def test_the_refusal_still_exists_where_it_is_useful():
+    """Not rendering the list is not the same as forgetting why. Asking for a
+    blocked source by id must still answer with the sentence, not a shrug —
+    that is the honest version of "never show a control that cannot work"."""
+    from chitragupta.connectors.mcp_catalog import add_from_catalog
+
+    spec, reason = add_from_catalog("linkedin")
+
+    assert spec is None
+    assert "ban" in reason.lower()
 
 
 def test_the_acronym_never_reaches_the_user():
