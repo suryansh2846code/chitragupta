@@ -940,9 +940,14 @@ def _teammates(agent_id: str, tools: list[str] | None) -> str:
     if not any(t in (tools or []) for t in ("ask_agent", "ask_agents")):
         return ""
     with suppressed("listing the user's other agents for the prompt"):
-        from .presets import list_agents
+        # Through the supplier, not `from .presets import list_agents`. This
+        # module RENDERS an agent; how the roster is assembled is a question
+        # for the layer that owns templates, and asking it directly is what put
+        # `prompt`, `presets`, `agent`, `custom` and `library` in one cycle.
+        from . import roster
 
-        others = [a for a in list_agents() if a.id != agent_id]
+        others = [a for a in roster.all_agents()
+                  if a.id != agent_id]
         if not others:
             # Say so rather than staying silent: an agent told nothing about the
             # team assumes there is one, and claims to have asked it.

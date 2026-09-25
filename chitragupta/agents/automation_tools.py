@@ -26,7 +26,9 @@ MAX_ROWS = 20
 
 def list_routines() -> ToolResult:
     """Every standing automation, and whether it is currently running."""
-    from ..routines import get_routines
+    # The store, not the feature: `routines` drives an agent turn, so it
+    # sits above this package. See `core/routine_store.py`.
+    from ..core.routine_store import get_routines
 
     rows = get_routines().list()
     if not rows:
@@ -49,7 +51,9 @@ def pause_routine(routine: str, resume: bool = False) -> ToolResult:
     Not gated: pausing takes authority away rather than granting it, and the
     user could not stop a routine through an agent at all before this.
     """
-    from ..routines import get_routines
+    # The store, not the feature: `routines` drives an agent turn, so it
+    # sits above this package. See `core/routine_store.py`.
+    from ..core.routine_store import get_routines
 
     needle = (routine or "").strip().lower()
     if not needle:

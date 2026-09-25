@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import dataclasses
 
+from . import roster
 from .agent import Agent
 from .agent_models import get_agent_model
 from .library import BY_ID, rostered_agents
@@ -72,3 +73,10 @@ def get_agent(agent_id: str) -> Agent:
     if custom:
         return _with_user_edits(custom)
     raise KeyError(f"unknown agent '{agent_id}'")
+
+
+# `prompt` (to tell an agent who it can hand work to) and `delegation` (to check
+# a named agent exists) both need the roster, and neither may import this module
+# to get it — those edges were load-bearing in a thirteen-module cycle. This is
+# where the roster is assembled, so this is where it is published.
+roster.set_supplier(list_agents, get_agent)

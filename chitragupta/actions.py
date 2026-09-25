@@ -879,7 +879,11 @@ def _set_reminder(params: dict) -> dict:
 
 
 def _create_routine(params: dict) -> dict:
-    from .routines import describe_schedule, get_routines, parse_time
+    # The leaves, not the feature module: `routines` drives an agent turn
+    # and passes its proposals through the approval gate, which reads the
+    # risk tiers in THIS module. Importing it here closed that loop.
+    from .core.routine_store import get_routines
+    from .core.schedule import describe_schedule, parse_time
     instruction = (params.get("instruction") or params.get("body") or "").strip()
     if not instruction:
         return {"ok": False, "error": "an instruction is required"}
@@ -1246,9 +1250,7 @@ def _remember_event(params: dict, result: dict) -> None:
 
 
 def _remember_connector_action(params: dict, result: dict) -> None:
-    from .agents.approvals import describe
-
-    _record(describe("mcp_action", params) + ".", title="Connector action")
+    _record(_summary("mcp_action", params) + ".", title="Connector action")
     _close_named_loop(params)
 
 
@@ -1325,7 +1327,7 @@ def _undo_row(store_name: str, label: str):
             from .reminders import get_reminders
             gone = get_reminders().delete(row_id)
         else:
-            from .routines import get_routines
+            from .core.routine_store import get_routines
             gone = get_routines().delete(row_id)
         return ({"ok": True, "detail": f"{label.capitalize()} cancelled"} if gone
                 else {"ok": True, "detail": f"That {label} was already gone"})
@@ -1658,7 +1660,10 @@ def _summary(action_type: str, params: dict) -> str:
     from .log import suppressed
 
     with suppressed("describing an action for the log"):
-        from .agents.approvals import describe
+        # `action_phrasing`, not `agents.approvals` — the wording moved below
+        # both callers so this module does not import `agents/`, which reads
+        # this module's risk tiers at import time. See `action_phrasing.py`.
+        from .action_phrasing import describe
         return describe(action_type, params)
     return action_type.replace("_", " ")
 

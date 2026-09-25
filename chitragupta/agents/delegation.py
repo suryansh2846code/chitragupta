@@ -26,6 +26,7 @@ from __future__ import annotations
 import contextvars
 import threading
 from dataclasses import dataclass
+from typing import Any
 
 from ..log import get_logger
 from .effort import Effort, get_effort
@@ -116,13 +117,13 @@ def refusal(agent_id: str) -> str | None:
     can act on ("you are already inside that agent") produces a better next move
     than an exception the loop has to translate.
     """
-    from .presets import get_agent
+    from . import roster
 
     chain = current_chain()
     effort = chain.effort or get_effort()
 
     try:
-        get_agent(agent_id)
+        roster.get_agent(agent_id)
     except KeyError:
         return (f"There is no agent called '{agent_id}'. "
                 f"Available: {', '.join(available_agents())}.")
@@ -144,14 +145,27 @@ def refusal(agent_id: str) -> str | None:
 
 
 def available_agents(exclude: str | None = None) -> list[str]:
-    from .presets import list_agents
+    from . import roster
 
-    return [a.id for a in list_agents() if a.id != exclude]
+    return [a.id for a in roster.all_agents() if a.id != exclude]
 
 
 def roster(exclude: str | None = None) -> str:
     """A one-line description of each agent, for the tool's description."""
-    from .presets import list_agents
+    from . import roster as _roster
 
     return "; ".join(
-        f"{a.id} ({a.role})" for a in list_agents() if a.id != exclude)
+        f"{a.id} ({a.role})" for a in _roster.all_agents() if a.id != exclude)
+
+
+def run_sub_turn(agent_id: str, question: str, **kwargs: Any) -> Any:
+    """Run one delegated turn, or return None if the loop is not loaded.
+
+    Through `entry`, not `from .runtime import run_turn`: the recursion is the
+    design, the import was the cycle. The guards above — who may be asked, how
+    deep, on whose budget — stay here, which is why this wrapper exists rather
+    than callers reaching `entry` directly.
+    """
+    from . import entry
+
+    return entry.run(agent_id, question, **kwargs)

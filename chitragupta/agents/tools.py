@@ -233,7 +233,6 @@ def _consult(target: str, question: str) -> ToolResult:
     on to decline.
     """
     from . import delegation
-    from .runtime import run_turn
 
     why_not = delegation.refusal(target)
     if why_not:
@@ -241,9 +240,16 @@ def _consult(target: str, question: str) -> ToolResult:
 
     chain = delegation.current_chain()
     budget = (chain.effort or get_effort()).child()
+    # Through `delegation`, not `from .runtime import run_turn`. The recursion
+    # is the design — a tool that starts another agent's turn — but the import
+    # was what put sixteen modules of this package in one cycle, and the guards
+    # that decide whether this may happen at all are already in that module.
     # The sub-agent stops when the parent does — same event, not a copy.
-    result = run_turn(target, question, effort=budget, cancel=chain.cancel,
-                      persist=False)
+    result = delegation.run_sub_turn(target, question, effort=budget,
+                                     cancel=chain.cancel, persist=False)
+    if result is None:
+        return ToolResult.failed(
+            "The agent loop is not available, so no one can be asked.")
     used = ", ".join(sorted({s.name for s in result.trace if s.kind == "tool_call"}))
     header = f"[{target} answered"
     header += f", using: {used}]" if used else "]"

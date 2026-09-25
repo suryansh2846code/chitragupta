@@ -20,6 +20,7 @@ from . import (
     connector_grants,
     context,
     delegation,
+    entry,
     grounding,
     planning,
 )
@@ -766,3 +767,23 @@ def run_turn(agent_id: str, user_text: str, *,
         runtime_identity=identity, effort=profile.name, steps_used=steps_used,
         plan=plan_snapshot, tokens_in=spent[0], tokens_out=spent[1],
     )
+
+
+def _entry_run_turn(agent_id: str, text: str, **kwargs: Any):
+    """`run_turn`, resolved from this module's namespace at CALL time.
+
+    Late binding on purpose. Registering `run_turn` itself would capture the
+    function object at import, and anything that later replaces
+    `runtime.run_turn` — a test stubbing the loop, a decorator wrapping it —
+    would be silently bypassed for exactly the two callers that go through the
+    seam. The indirection that breaks an import cycle must not also break the
+    ability to substitute what it points at.
+    """
+    return run_turn(agent_id, text, **kwargs)
+
+
+# Two things under an agent's tools start a turn of their own — `ask_agent`,
+# and the follow-up after an action the user approved came back a failure —
+# and neither may import this module to do it. Registered at import, which is
+# the moment a loop exists at all. See `agents/entry.py`.
+entry.set_runner(_entry_run_turn)

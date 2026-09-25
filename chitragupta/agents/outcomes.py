@@ -63,7 +63,10 @@ def _what_was_attempted(action_type: str, params: dict) -> str:
     describing the thing differently from the button the user pressed.
     """
     with suppressed("describing an approved action for the agent"):
-        from .approvals import describe as summarise
+        # `action_phrasing`, not the re-export in `approvals` — which calls
+        # back into this module to settle an action, and importing it here
+        # closed that loop. The wording lives below both.
+        from ..action_phrasing import describe as summarise
         return summarise(action_type, params or {})
     return action_type.replace("_", " ")
 
@@ -128,12 +131,14 @@ def react(agent_id: str, action_type: str, params: dict, result: dict,
     line = describe(action_type, params, result)
     reply = ""
     with suppressed("asking the agent to react to a failed action"):
+        from . import entry
         from .agent import AgentMemory
-        from .runtime import run_turn
 
-        turn = run_turn(agent_id, RETRY_BRIEF.format(detail=line),
-                        persist=False, **turn_kwargs)
-        reply = (turn.reply or "").strip()
+        # Through `entry`, so this module does not import the loop it runs
+        # inside. See `agents/entry.py`.
+        turn = entry.run(agent_id, RETRY_BRIEF.format(detail=line),
+                         persist=False, **turn_kwargs)
+        reply = (turn.reply or "").strip() if turn is not None else ""
         if reply:
             AgentMemory().append(agent_id, "assistant", reply)
     return reply
@@ -194,10 +199,10 @@ def settle_plan(agent_id: str, plan_result: dict, **turn_kwargs: Any) -> dict:
 
     note = ""
     with suppressed("asking the agent to react to a failed plan"):
-        from .runtime import run_turn
+        from . import entry
 
         detail = "\n".join([*lines, summary])
-        turn = run_turn(agent_id, RETRY_BRIEF.format(detail=detail),
+        turn = entry.run(agent_id, RETRY_BRIEF.format(detail=detail),
                         persist=False, **turn_kwargs)
         note = (turn.reply or "").strip()
         if note:
