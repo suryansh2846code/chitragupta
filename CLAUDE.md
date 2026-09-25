@@ -139,6 +139,22 @@ even when every test is green. Reasoning and measurements:
 - A `chat()` returns a `ChatResult`, never raises. Errors are classified and
   translated, never dumped.
 - Credentials are independent: removing a key must not sign the user out.
+- **A turn's stable prefix is cached, not re-billed twelve times.** A round
+  re-sends the agent's prompt and every tool schema unchanged; uncached, a
+  twelve-round turn pays for all of it twelve times, on the user's own key.
+  `caching.py` places the four markers the vendor allows. **Never mark a block
+  that is rebuilt per turn** — recall and the task list sit deliberately outside
+  the boundary `Message.stable` draws, because caching something that can never
+  be hit again costs more than not caching it.
+- **A cached read is still a token the budget must see.** Anthropic reports them
+  *outside* `input_tokens`, so reading that field alone makes a long turn look
+  ten times cheaper than it is and the turn ledger stops bounding the loop.
+- **A model that can think is asked to.** The catalog has flagged `reasoning`
+  since it was written and nothing ever sent the parameter, so an Opus at High
+  answered like a model with no such capability. `reasoning.py` owns both vendor
+  spellings — and the thinking blocks come back on the next round with their
+  signatures, or round two of a tool loop is a 400. A model we guessed wrong
+  about costs one silent retry, never an error about a feature nobody asked for.
 
 **Measurements — `metrics.py`, `training.py`**
 - **A number over time is not a memory.** Recall is linear in memory count, so
@@ -162,6 +178,14 @@ even when every test is green. Reasoning and measurements:
   never supersedes confirmed.
 - Recall order is canonical facts → graph → source excerpts, and a curation
   failure can never break plain retrieval.
+- **Recall runs on every turn, so nothing in it may be linear in brain size.**
+  It was twice over: the eight-factor scoring loop over every row, and an N+1
+  that loaded a Memory per row to build objects the sort threw away. 25k
+  memories cost 1,145 ms; they now cost 15 ms. **Semantic top-K is never the
+  only way into the candidate set** — an exact word match is what a vector index
+  is worst at and what a user is most confident about, so the lexical net and
+  the date filter are unioned on top, and below `FULL_SCAN_LIMIT` nothing
+  narrows at all.
 - Graph enrichment is content-based. **Never gate it on a connector allowlist.**
 
 **Agents — `agents/`** · [`docs/AGENTS.md`](docs/AGENTS.md)
@@ -183,6 +207,11 @@ even when every test is green. Reasoning and measurements:
   chat id means nothing outside the app it came from, so it is never judged
   against the email list. A batch is **one** card covering every item, never one card each: a
   tap nobody reads by the fourth time is not consent.
+- **An agent may not answer as though it did what it skipped.** The plan was
+  advisory, which meant it could write four steps, do two, and reply in a way
+  that reads identically either way. A turn ending on undone steps is told so
+  **once** — with both ways out, finish them or name them — because a step that
+  is genuinely impossible would drive a second nudge forever.
 - Streaming is a callback on the same loop, never a second loop.
 - Delegation guards live in a `ContextVar`: one `copy_context()` **per call**,
   and the chain is left on every exit path.
@@ -221,6 +250,21 @@ even when every test is green. Reasoning and measurements:
 **Everywhere**
 - `except Exception: pass` is invisible afterwards. Use
   `with suppressed("what you were attempting"):` from `chitragupta/log.py`.
+- **A lazy import is a real dependency, and moving one inside a function does
+  not break a cycle — it hides it.** `models/` reached a fourteen-module
+  strongly-connected component with `ruff` clean throughout, because every edge
+  had been pushed into a function body. 27 modules were in cycles on
+  2026-09-25; 11 are, and `tests/test_import_layering.py` pins the remaining
+  three as a **closed list that may not grow**. When you need a fact that lives
+  above you, the answer is one of three shapes, never an upward import:
+  move the fact **down** to a leaf both sides read (`entitlement_rules`,
+  `core/schedule`, `core/routine_store`, `action_phrasing`, `home`); **invert**
+  it so the owner registers with you (`errors.set_alternatives_supplier`,
+  `cache.on_credentials_change`, `roster.set_supplier`, `entry.set_runner`); or
+  put a **seam** between two layers that must not know each other
+  (`api/desktop_bridge`). A registered callable must be **late-binding** — see
+  `runtime._entry_run_turn` — or the indirection that breaks the cycle also
+  breaks the ability to substitute what it points at.
 
 ---
 
@@ -288,10 +332,16 @@ In order: **the focused test → the subsystem's suite → `pytest` →
 `ruff check chitragupta tests` → `mypy chitragupta` → the `tests/js/` harnesses if
 the frontend changed → `chitragupta app` opens and renders.**
 
-Baseline in CI: **1440 passed, 20 skipped**, ruff clean, mypy clean over 114
-files, coverage 76%. Locally the split differs — some tests skip when a provider
-is genuinely connected on the machine. Run tests when stuck or finishing, not
-after every edit. Details: [`tests/CLAUDE.md`](tests/CLAUDE.md).
+Baseline, measured 2026-09-25: **3725 passed, 30 skipped in ~2min**, ruff
+clean, mypy clean over 178 files, coverage 80%. Locally the split differs — some
+tests skip when a provider is genuinely connected on the machine. Run tests when
+stuck or finishing, not after every edit. Details:
+[`tests/CLAUDE.md`](tests/CLAUDE.md).
+
+**Re-measure this number in the commit that changes it.** It said 1440 for long
+enough that the suite had grown past 3,600 underneath it — so the figure every
+session compared its run against was wrong by 2,233, and "the same as the
+baseline" stopped meaning anything.
 
 Four rules, each bought the hard way:
 

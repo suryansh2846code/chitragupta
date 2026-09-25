@@ -67,6 +67,26 @@ permissions — and `library.py`, which is what Chitragupta *offers*.
   the connector sentinel is: offered to everyone, refused until granted.
   What an agent may *send* is still per-template, and `OUTBOUND_ACTIONS` is the
   list that says which actions reach a person.
+- **The plan is checked, not just echoed.** A turn that ends with steps its own
+  plan never ticked off is told so **once** and must either finish them or name
+  them. Once is the design: a genuinely impossible step — a connector that
+  refused, a page that never loaded — would drive a second nudge forever. The
+  closing round is offered tools, because the useful outcome is that it finishes
+  the work rather than apologises more precisely for skipping it.
+- **A reply is sized by the effort profile, not by a constant.** It was 1,500
+  tokens for every level, which is under a page: a drafted email fitted, an
+  eight-step plan with its reasoning was cut mid-sentence, and the loop carried
+  the severed half into the next round as though it were a finished thought.
+- **`edit_file` is preferred over `write_file` on a file that already exists.**
+  Rewriting a whole file from the model's memory of it is billed twice and is
+  lossy in a way nothing reports: a row goes missing from a 900-line CSV and the
+  reply still says "updated". An ambiguous or absent anchor is refused rather
+  than applied somewhere.
+- **`run_python` can import exactly `ALLOWED_PACKAGES`, and nothing else.**
+  `-S` is the isolation and it also removed the arithmetic the tool exists for,
+  so numpy is linked in by name into a scratch directory — never by putting
+  site-packages back on the path, which would hand a snippet every dependency
+  the app has, including the ones that know where the credentials live.
 - Every new capability gets a case in `evaluation.py`.
 
 Providers and entitlements belong to `../models/`; recall order belongs to
