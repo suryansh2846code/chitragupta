@@ -17,7 +17,7 @@ from __future__ import annotations
 import os
 
 from ..log import suppressed
-from .base import ChatResult, _saved_key
+from .base import DEFAULT_MAX_OUTPUT, ChatResult, _saved_key
 from .openai_compat import OpenAICompatProvider
 
 
@@ -76,7 +76,7 @@ class XAIProvider(OpenAICompatProvider):
             self._cli = GrokCliProvider(model=self.model)
         return self._cli
 
-    def chat(self, messages, *, tools=None, temperature=0.7, max_tokens=1500):
+    def chat(self, messages, *, tools=None, temperature=0.7, max_tokens=DEFAULT_MAX_OUTPUT):
         if not self.api_key:
             # Subscription, not an API key — api.x.ai would 402.
             backend = self._subscription_backend()

@@ -11,10 +11,18 @@ from typing import Any
 from ..brain import get_brain
 from ..config import get_settings
 from ..log import get_logger, suppressed
-from ..models import Message, get_provider, tool_bridge
+from ..models import Message, get_provider, reasoning, tool_bridge
 from ..models.base import ChatResult
 from ..models.entitlements import resolve_usable_model
-from . import background, cancellation, connector_grants, context, delegation, grounding, planning
+from . import (
+    background,
+    cancellation,
+    connector_grants,
+    context,
+    delegation,
+    grounding,
+    planning,
+)
 from .agent import Agent, AgentMemory
 from .context import build_history
 from .effort import Effort, get_effort
@@ -466,6 +474,15 @@ def run_turn(agent_id: str, user_text: str, *,
     # and released on every exit path below, so one message's grant cannot leak
     # into the next.
     grant_token = connector_grants.allow_for_this_turn(connectors)
+    # Ask a reasoning model to reason. The catalog has known which models can
+    # since it was written and nothing was ever asking them to, so an Opus at
+    # High answered exactly like a model with no such capability.
+    #
+    # In the CONTEXT, not on the provider — same reason as the observer below:
+    # `get_provider` is `@lru_cache`d, so one instance answers every concurrent
+    # turn, and a turn at Low would silently cancel the thinking of a turn at
+    # High already mid-loop. Released on every exit path, with the rest.
+    think_token = reasoning.for_this_turn(profile.thinking_tokens)
     runner = ToolRunner(effort=profile, cancel=cancel, agent_id=agent.id)
     # A backend that has no tool-call protocol of its own — the three vendor
     # CLIs — is handed these same tools over MCP and runs them itself
@@ -526,8 +543,9 @@ def run_turn(agent_id: str, user_text: str, *,
                 break
             # low temperature → more reliable instruction-following & tool use
             try:
-                result = _collect(provider.stream(messages, tools=tools,
-                                                  temperature=0.15), emit, cancel)
+                result = _collect(provider.stream(
+                    messages, tools=tools, temperature=0.15,
+                    max_tokens=profile.max_output_tokens), emit, cancel)
             except Exception as exc:
                 return _failed(exc)
             round_in = getattr(result, "input_tokens", 0) or 0
@@ -558,6 +576,11 @@ def run_turn(agent_id: str, user_text: str, *,
 
             messages.append(Message(
                 role="assistant", content=result.text, tool_calls=result.tool_calls,
+                # Handed straight back on the next round. A reasoning model in
+                # a tool loop requires its own thinking blocks returned with
+                # the turn they came from — dropping them is a 400 on round
+                # two, not a slightly worse answer. See `models/reasoning.py`.
+                reasoning=result.reasoning,
             ))
             for call in result.tool_calls:
                 emit({"type": "tool_call", "name": call.name,
@@ -629,6 +652,7 @@ def run_turn(agent_id: str, user_text: str, *,
 
     finally:
         connector_grants.reset(grant_token)
+        reasoning.release(think_token)
         tool_bridge.stop_observing(watch_token)
         delegation.leave(chain_token)
         # Read the plan before releasing it — it is what the UI shows to explain

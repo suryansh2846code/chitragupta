@@ -12,7 +12,12 @@ import threading
 import time
 from dataclasses import dataclass, field
 
-from chitragupta.models.base import ChatResult, LLMProvider, ToolCall
+from chitragupta.models.base import (
+    DEFAULT_MAX_OUTPUT,
+    ChatResult,
+    LLMProvider,
+    ToolCall,
+)
 
 
 @dataclass
@@ -36,7 +41,8 @@ class ScriptedProvider(LLMProvider):
     def is_ready(self) -> tuple[bool, str]:
         return True, ""
 
-    def chat(self, messages, *, tools=None, temperature=0.7, max_tokens=1500):
+    def chat(self, messages, *, tools=None, temperature=0.7,
+             max_tokens=DEFAULT_MAX_OUTPUT):
         self.calls.append(messages)
         self.tools_offered.append([t.name for t in (tools or [])])
         if not tools:

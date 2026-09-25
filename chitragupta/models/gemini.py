@@ -18,7 +18,7 @@ from enum import StrEnum
 import httpx
 
 from ..log import suppressed
-from .base import ChatResult, ToolCall, _saved_key
+from .base import DEFAULT_MAX_OUTPUT, ChatResult, ToolCall, _saved_key
 from .connections import ConnectionStatus, get_connection
 from .errors import ErrorKind, ProviderError, classify_exception, classify_http
 from .openai_compat import OpenAICompatProvider
@@ -257,7 +257,7 @@ class GeminiProvider(OpenAICompatProvider):
                 err.message = msg
         return err
 
-    def chat(self, messages, *, tools=None, temperature=0.7, max_tokens=1500):
+    def chat(self, messages, *, tools=None, temperature=0.7, max_tokens=DEFAULT_MAX_OUTPUT):
         effective_key = self._explicit_api_key if self._explicit_api_key_passed else (self.api_key or None)
         cred = resolve_gemini_credentials(api_key=effective_key)
         self.credential = cred

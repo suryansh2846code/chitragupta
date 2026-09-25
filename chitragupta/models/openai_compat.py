@@ -13,7 +13,8 @@ import uuid
 import httpx
 
 from ..log import get_logger, suppressed
-from .base import ChatResult, LLMProvider, Message, ToolCall, _saved_key
+from . import reasoning
+from .base import DEFAULT_MAX_OUTPUT, ChatResult, LLMProvider, Message, ToolCall, _saved_key
 from .errors import ErrorKind, ProviderError, classify_exception, classify_http
 
 log = get_logger(__name__)
@@ -103,7 +104,18 @@ class OpenAICompatProvider(LLMProvider):
         """Hook for a provider to sharpen a classified error. Default: as-is."""
         return err
 
-    def stream(self, messages, *, tools=None, temperature=0.7, max_tokens=1500):
+    def _reasoning_effort(self) -> dict:
+        """`{"reasoning_effort": ...}` when the model takes it, else `{}`.
+
+        Spread into the payload rather than set conditionally at two call
+        sites: `stream` and `chat` build their own bodies, and a parameter
+        added to one of them is a feature that works until the stream falls
+        back. See `models/reasoning.py`.
+        """
+        effort = reasoning.openai_effort(self.model, reasoning.wanted())
+        return {"reasoning_effort": effort} if effort else {}
+
+    def stream(self, messages, *, tools=None, temperature=0.7, max_tokens=DEFAULT_MAX_OUTPUT):
         """Real streaming for anything speaking the chat-completions dialect.
 
         The ChatGPT-subscription path (no API key) has its own transport, so it
@@ -119,7 +131,7 @@ class OpenAICompatProvider(LLMProvider):
 
         payload = {"model": self.model, "messages": self._to_openai(messages),
                    "temperature": temperature, "max_tokens": max_tokens,
-                   "stream": True}
+                   "stream": True, **self._reasoning_effort()}
         if tools:
             payload["tools"] = [{"type": "function",
                                  "function": {"name": t.name,
@@ -141,7 +153,7 @@ class OpenAICompatProvider(LLMProvider):
                                          temperature=temperature,
                                          max_tokens=max_tokens))
 
-    def chat(self, messages, *, tools=None, temperature=0.7, max_tokens=1500):
+    def chat(self, messages, *, tools=None, temperature=0.7, max_tokens=DEFAULT_MAX_OUTPUT):
         if self.name == "openai" and not self.api_key:
             from .chatgpt_auth import chat_with_chatgpt_subscription, get_chatgpt_access_token
             tok = get_chatgpt_access_token()
@@ -156,6 +168,7 @@ class OpenAICompatProvider(LLMProvider):
             "messages": self._to_openai(messages),
             "temperature": temperature,
             "max_tokens": max_tokens,
+            **self._reasoning_effort(),
         }
         if tools:
             payload["tools"] = [{

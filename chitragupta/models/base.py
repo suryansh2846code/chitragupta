@@ -11,6 +11,16 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
+#: The ceiling on one reply when a caller does not choose. Every provider
+#: signature reads it from here: it used to be the literal 1500 written out
+#: fourteen times, and a number duplicated fourteen times is a number that gets
+#: raised in thirteen places. Under a page of text — a drafted email fitted, an
+#: eight-step plan with its reasoning did not, and the loop carried the severed
+#: half into the next round as if it were a finished thought. The agent loop
+#: does not use this: it passes `Effort.max_output_tokens`, which is the number
+#: the user's chosen gear actually implies.
+DEFAULT_MAX_OUTPUT = 4000
+
 
 def _saved_key(env_key: str) -> str:
     """Fall back to a key saved from the UI (~/Library/Chitragupta/secrets.json)
@@ -126,7 +136,7 @@ class LLMProvider:
         *,
         tools: list[Tool] | None = None,
         temperature: float = 0.7,
-        max_tokens: int = 1500,
+        max_tokens: int = DEFAULT_MAX_OUTPUT,
     ) -> ChatResult:  # pragma: no cover - interface
         raise NotImplementedError
 
@@ -136,7 +146,7 @@ class LLMProvider:
         *,
         tools: list[Tool] | None = None,
         temperature: float = 0.7,
-        max_tokens: int = 1500,
+        max_tokens: int = DEFAULT_MAX_OUTPUT,
     ):
         """The same answer, delivered as it is written.
 

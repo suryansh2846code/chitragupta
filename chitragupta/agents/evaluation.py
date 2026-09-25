@@ -19,6 +19,7 @@ import time
 from dataclasses import dataclass, field
 
 from ..log import get_logger, suppressed
+from ..models.base import DEFAULT_MAX_OUTPUT
 
 log = get_logger(__name__)
 
@@ -93,7 +94,7 @@ def _scripted(script, **kw):
         def is_ready(self):
             return True, ""
 
-        def chat(self, messages, *, tools=None, temperature=0.7, max_tokens=1500):
+        def chat(self, messages, *, tools=None, temperature=0.7, max_tokens=DEFAULT_MAX_OUTPUT):
             self.tools_offered.append([t.name for t in (tools or [])])
             if not tools or self.rounds >= len(script):
                 return ChatResult(text=kw.get("final", "done"))

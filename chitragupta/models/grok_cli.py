@@ -27,7 +27,7 @@ import time
 from pathlib import Path
 
 from ..log import get_logger
-from .base import ChatResult, LLMProvider, Message, parse_cli_json
+from .base import DEFAULT_MAX_OUTPUT, ChatResult, LLMProvider, Message, parse_cli_json
 from .cache import ttl_cached
 from .cli_login import CliLoginSession, augmented_path
 from .errors import ErrorKind, ProviderError, classify_cli
@@ -253,7 +253,7 @@ class GrokCliProvider(LLMProvider):
             cmd += ["-m", self.model]
         return cmd, None, {**os.environ, "PATH": _augmented_path()}
 
-    def stream(self, messages, *, tools=None, temperature=0.7, max_tokens=1500):
+    def stream(self, messages, *, tools=None, temperature=0.7, max_tokens=DEFAULT_MAX_OUTPUT):
         """Stream by asking the CLI for incremental events.
 
         All three vendor CLIs emit Anthropic Messages events, one JSON object
@@ -295,7 +295,7 @@ class GrokCliProvider(LLMProvider):
                                          temperature=temperature,
                                          max_tokens=max_tokens))
 
-    def chat(self, messages, *, tools=None, temperature=0.7, max_tokens=1500):
+    def chat(self, messages, *, tools=None, temperature=0.7, max_tokens=DEFAULT_MAX_OUTPUT):
         if not self._bin:
             return ChatResult(text=f"⚠️ {INSTALL_HINT}")
 

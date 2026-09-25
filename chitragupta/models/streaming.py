@@ -148,6 +148,19 @@ def anthropic_events(payloads: Iterable[str]) -> Iterator[StreamEvent]:
                 slot = acc.tools.get(event.get("index"))
                 if slot is not None:
                     slot.arguments += delta.get("partial_json") or ""
+            elif delta.get("type") == "thinking_delta":
+                block = acc.reasoning.get(event.get("index"))
+                if block is not None:
+                    block["thinking"] = (block.get("thinking") or "") + (
+                        delta.get("thinking") or "")
+            elif delta.get("type") == "signature_delta":
+                # The signature is what makes a thinking block replayable. A
+                # block handed back without it is rejected, so losing this is
+                # losing the whole round.
+                block = acc.reasoning.get(event.get("index"))
+                if block is not None:
+                    block["signature"] = (block.get("signature") or "") + (
+                        delta.get("signature") or "")
         elif etype == "message_delta":
             usage = event.get("usage") or {}
             acc.output_tokens = int(usage.get("output_tokens") or acc.output_tokens)

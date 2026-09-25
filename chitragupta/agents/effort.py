@@ -56,6 +56,24 @@ class Effort:
     #: Whether the agent is asked to keep an explicit plan on multi-step work.
     allow_planning: bool
 
+    #: The ceiling on ONE reply. Not a cost knob like the rest of this class —
+    #: a reply that hits it is *truncated mid-sentence*, which is a defect the
+    #: user sees rather than a budget they chose. It sat at a hardcoded 1500 for
+    #: every level, which is under a page: a drafted email survived, an
+    #: eight-step plan with its reasoning did not, and the loop then carried the
+    #: severed half into the next round as if it were finished.
+    max_output_tokens: int = 4000
+
+    #: How much of the reply a reasoning model may spend thinking before it
+    #: writes. 0 asks for none, which is also what every model without the
+    #: capability gets. The catalog already knows which models can do this
+    #: (`models/discovery.py`) and nothing was ever asking them to — an Opus
+    #: selected at High answered like a model with no reasoning at all.
+    #: Must stay comfortably below `max_output_tokens`: the vendor takes it out
+    #: of the same allowance, so a budget that eats the whole ceiling leaves no
+    #: room for the answer itself.
+    thinking_tokens: int = 0
+
     #: Tokens one turn may spend, counted across every model call it makes —
     #: including the ones a sub-agent makes on its behalf. Rounds were the only
     #: ceiling before, and rounds are a poor proxy: a round carrying a long
@@ -87,6 +105,11 @@ class Effort:
             # own. Halving here would bound each hop twice and the whole chain
             # not at all.
             max_tokens_per_turn=self.max_tokens_per_turn,
+            # A sub-agent writes a finding, not a chapter — but it still must
+            # not be cut in half, which is the one failure that propagates
+            # upward as a confident wrong answer.
+            max_output_tokens=self.max_output_tokens,
+            thinking_tokens=self.thinking_tokens,
         )
 
 
@@ -96,6 +119,7 @@ LOW = Effort(
     max_steps=5, max_parallel_tools=2, history_verbatim=6,
     summarise_with_model=False, max_delegation_depth=0, recall_limit=6,
     allow_planning=False, max_tokens_per_turn=40_000,
+    max_output_tokens=2_000, thinking_tokens=0,
 )
 
 MEDIUM = Effort(
@@ -104,6 +128,7 @@ MEDIUM = Effort(
     max_steps=12, max_parallel_tools=4, history_verbatim=10,
     summarise_with_model=True, max_delegation_depth=1, recall_limit=10,
     allow_planning=True, max_tokens_per_turn=150_000,
+    max_output_tokens=8_000, thinking_tokens=2_000,
 )
 
 HIGH = Effort(
@@ -112,6 +137,7 @@ HIGH = Effort(
     max_steps=24, max_parallel_tools=6, history_verbatim=16,
     summarise_with_model=True, max_delegation_depth=2, recall_limit=16,
     allow_planning=True, max_tokens_per_turn=500_000,
+    max_output_tokens=16_000, thinking_tokens=8_000,
 )
 
 LEVELS: dict[str, Effort] = {e.name: e for e in (LOW, MEDIUM, HIGH)}
@@ -160,6 +186,8 @@ def describe_levels() -> list[dict[str, object]]:
             "name": e.name, "label": e.label, "description": e.description,
             "max_steps": e.max_steps,
             "max_tokens_per_turn": e.max_tokens_per_turn,
+            "max_output_tokens": e.max_output_tokens,
+            "thinking": e.thinking_tokens > 0,
             "delegation": e.max_delegation_depth > 0,
             "planning": e.allow_planning,
         }
