@@ -14,8 +14,7 @@ from __future__ import annotations
 from datetime import timedelta
 
 import pytest
-from automation_harness import (Clock, FakeAgent, FakeGate, FakeWorld,
-                                build_deps, fresh_store)
+from automation_harness import Clock, FakeAgent, FakeGate, FakeWorld, build_deps, fresh_store
 
 from chitragupta.automation import engine
 from chitragupta.automation.model import Automation, Limits, Policy, RetryPolicy

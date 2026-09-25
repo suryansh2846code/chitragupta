@@ -165,7 +165,26 @@ These are load-bearing. Each is enforced by a test named after it.
    carries A's run id. A depth limit and a self-trigger check make the
    A → event → A loop terminate.
 7. **Success means verified.** An action whose spec has a `verify` and whose
-   verification did not pass is not `COMPLETED`.
+   verification did not pass is not `COMPLETED`. An action with no verifier
+   must say **why** in `ActionSpec.unverifiable_because`, and the run records
+   `VERIFIED_SUCCESS` / `VERIFIED_FAILURE` / `UNVERIFIABLE` by name — *nobody
+   wrote a checker* and *there is no way to check this* are different answers,
+   and reporting them identically lets the first become permanent.
+   `VERIFIED_FAILURE` is not settled: a service can be eventually consistent,
+   so the next attempt looks again rather than trusting the first no.
+8. **A webhook is not special after the door.** `automation/webhooks.py`
+   authenticates the caller and produces an `Event`; everything after is the
+   path a connector sync takes. Provider knowledge lives in a `Verifier`, never
+   in `receive` and never in the router.
+9. **Nothing accepts an unsigned delivery from a provider that signs.** A
+   provider whose secret is not configured is refused with 503 rather than
+   degrading to unauthenticated, and a signed timestamp older than the skew
+   window is a replay.
+10. **A run carries what it needs to finish itself.** A reminder and a
+    scheduled action are one occurrence, not a standing rule, so they are never
+    in the `routines` table — their automation spec travels on the run, and
+    recovery rebuilds it. Without this the next tick found no automation,
+    concluded it had been deleted, and stopped the run.
 
 ---
 
@@ -179,7 +198,26 @@ upgrading in place keeps their routines, which keep running.
 `schedule.tick` and `connector.synced` events, and the router decides. The
 function remains as a thin shim so anything calling it still works.
 
-`scheduled.py` (one-shot actions) and `reminders.py` are **not** migrated. They
-are one-shot notifications with no goal, no conditions and no verification, and
-folding them in would have meant building a run around a `desktop_notify`. They
-are listed under *Remaining limitations*.
+`scheduled.py` (one-shot actions) and `reminders.py` **are** migrated now, and
+the reasoning above was wrong about what it was measuring. The cost was not
+"building a run around a `desktop_notify`" — it was that a due reminder and a
+due scheduled action were bare calls inside the scheduler, so neither appeared
+in any history, neither was ever retried, and a failure was a log line. A
+reminder that came due while the machine was asleep fired twice or not at all.
+
+Both stores keep their rows, which are what the user asked for. What changed is
+who carries them out: `engine.run_once` opens a run whose plan is already
+filled in, so the executor skips the agent turn — there is nothing for a model
+to work out — and everything after is the path every automation takes.
+`engine.fire_due()` is the only caller, and `scheduler._fire_reminders` now does
+nothing but ask for it.
+
+`notify` is an action for this reason, and it is `internal=True`: the engine
+emits it, no model may propose it, and `parse_actions` drops it. A notification
+titled "◆ Chitragupta" is our voice, and a page an agent read must not be able
+to borrow it.
+
+**One user-visible change.** A scheduled action that fails is now retried before
+the user is told. The old path reported the first blip as final and lost the
+email; the notification now arrives later and says what happened after several
+attempts, or after escalation.

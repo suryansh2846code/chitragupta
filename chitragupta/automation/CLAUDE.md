@@ -40,6 +40,25 @@ and neither may import the other.
   callable on `Deps`, wired in `engine.py`. That is what keeps the dependency
   direction honest and what makes a crash, an approval answered four minutes
   later and a verification that fails twice all testable without a model.
+- **A webhook is authenticated and normalised, then stops being special.**
+  `webhooks.py` owns the door: a signature compared in constant time, a bounded
+  replay window, a size limit, and a 503 rather than an open door when a
+  provider's secret is missing. What comes through it is an `Event` and goes to
+  the same `engine.ingest` a sync uses. Provider knowledge lives in a
+  `Verifier`; `receive` may not name one, and `test_automation_architecture.py`
+  reads the AST to check.
+- **A reminder and a scheduled action are runs.** `engine.run_once` fills the
+  plan in from what the user already decided, so no model is asked. The spec of
+  that ephemeral automation is stored **on the run** — it is never a routines
+  row, so recovery has nowhere else to read its policy and limits from.
+- **`pre_approved` is the one flag that lets a refused action run**, it is set
+  in exactly one place, and it means "the user confirmed this exact content when
+  they scheduled it" — not "skip the gate". The refusal is still recorded on the
+  run, so history says which approval it is standing on.
+- **A retry that has no work to retry goes back to the plan.** A provider blip
+  during the agent turn leaves a run with no action steps; sending that to
+  `EXECUTING` found nothing pending and **completed**, reporting success for an
+  automation that did nothing.
 - Every new capability gets a case in `evaluation.py`, graded on **what reached
   the world**, not on what the agent said.
 

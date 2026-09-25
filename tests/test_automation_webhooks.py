@@ -22,7 +22,6 @@ from automation_harness import FakeAgent, build_deps, fresh_store
 from chitragupta.automation import engine, webhooks
 from chitragupta.automation.model import Automation, Policy
 from chitragupta.automation.webhooks import Delivery, WebhookError
-from chitragupta.core import automation_store as store
 from chitragupta.core.provenance import Trust
 
 SECRET = "shhh"
