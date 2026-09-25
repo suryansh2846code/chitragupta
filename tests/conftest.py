@@ -109,14 +109,25 @@ def _never_start_a_real_vendor_login():
 @pytest.fixture(autouse=True)
 def _no_stale_cli_auth_cache():
     """CLI sign-in state is cached for a few seconds so polling doesn't spawn a
-    subprocess per tick. That cache must not leak between tests."""
-    from chitragupta.models import cursor, grok_cli
+    subprocess per tick. That cache must not leak between tests.
 
-    for mod in (cursor, grok_cli):
-        mod.reset_auth_cache()
-        mod.reset_login_state()
+    `cache.clear_all()` covers the `@ttl_cached` account detectors in
+    `accounts.py` as well. Without it, a test that ran `detect_claude_account`
+    for real left the answer sitting in a four-second cache, and the next test
+    — which had carefully stubbed the CLI away — got the *developer's own*
+    account back instead. It passed or failed depending on which tests ran
+    before it and on whose machine, which is the worst kind of red: two tests
+    here only failed under `-k` selection, and had done for some time.
+    """
+    from chitragupta.models import cache, cursor, grok_cli
+
+    def _flush():
+        for mod in (cursor, grok_cli):
+            mod.reset_auth_cache()
+            mod.reset_login_state()
+        cache.clear_all()
+
+    _flush()
     yield
-    for mod in (cursor, grok_cli):
-        mod.reset_auth_cache()
-        mod.reset_login_state()
+    _flush()
 
