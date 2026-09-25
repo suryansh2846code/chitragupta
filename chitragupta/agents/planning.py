@@ -92,6 +92,37 @@ def update(steps: list[str], done_through: int = 0) -> str:
             + (f" ({len(remaining) - 1} more after that)" if len(remaining) > 1 else ""))
 
 
+def unfinished(plan: Plan | None) -> list[str]:
+    """Steps the agent wrote for itself and never ticked off."""
+    if plan is None:
+        return []
+    return [s.text for s in plan.steps if not s.done]
+
+
+#: Handed to the agent when the loop is about to end with its own plan
+#: incomplete. Until this existed the plan was purely advisory — the agent
+#: could write down four steps, do two, and answer as though it had done four.
+#: Nothing checked, and the user had no way to know: the reply reads the same
+#: either way, and the plan was only ever shown in the trace nobody opens.
+#:
+#: Deliberately offers BOTH ways out. "Finish them" alone turns a step that is
+#: genuinely impossible — a connector that refused, a page that would not load
+#: — into a loop. "Say what you skipped" alone gives up on work the agent could
+#: still do in one more round. The unacceptable answer is the third one, which
+#: is what it did before: neither, silently.
+UNFINISHED_PROMPT = (
+    "Before you answer: your own plan for this turn still has these steps "
+    "unfinished:\n{steps}\n\n"
+    "Either do them now, or write the answer and say plainly which parts you "
+    "did not do and why. Do NOT present a partial answer as a complete one."
+)
+
+
+def unfinished_prompt(steps: list[str]) -> str:
+    return UNFINISHED_PROMPT.format(
+        steps="\n".join(f"  - {s}" for s in steps))
+
+
 #: Whether a tool worked is now a field on its result (`results.ToolResult`),
 #: not a guess from the start of its text. The prefix list that used to live
 #: here read "web_search failed: …" as a success and "Tool budget …" as a

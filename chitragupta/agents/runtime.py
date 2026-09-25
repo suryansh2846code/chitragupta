@@ -650,6 +650,57 @@ def run_turn(agent_id: str, user_text: str, *,
                 if isinstance(reply, TurnResult):
                     return reply
 
+        # The plan was advisory, and "advisory" turned out to mean an agent
+        # could write down four steps, do two, and answer as though it had done
+        # four. Nothing checked, and nothing could: the reply reads identically
+        # either way, and the plan only ever appeared in a trace the user does
+        # not open. `ROADMAP.md` has listed this since planning landed.
+        #
+        # So the turn does not end on an incomplete plan without the agent
+        # being told so once. Once is the whole design — a second nudge is a
+        # loop, and a step that is genuinely impossible would drive it forever.
+        left = planning.unfinished(planning.current())
+        if (left and reply and not was_stopped
+                and not cancellation.stopped(cancel)
+                and (ledger is None or not ledger.exhausted)):
+            log.debug("agent %s finished with %d plan step(s) undone",
+                      agent_id, len(left))
+            messages.append(Message(role="system",
+                                    content=planning.unfinished_prompt(left)))
+            # WITH tools, because the useful outcome is that it finishes the
+            # work — not that it apologises more precisely for skipping it.
+            try:
+                closing = _collect(provider.stream(
+                    messages, tools=tools, temperature=0.15,
+                    max_tokens=profile.max_output_tokens), emit, cancel)
+            except Exception:
+                closing = None                 # keep the answer it already had
+            if closing is not None:
+                spent[0] += getattr(closing, "input_tokens", 0) or 0
+                spent[1] += getattr(closing, "output_tokens", 0) or 0
+                if closing.wants_tools:
+                    # It went back to work. Run the calls it asked for, then
+                    # take one more answer — and that one has no tools, so this
+                    # cannot become a second loop.
+                    for outcome in runner.run(closing.tool_calls):
+                        call = outcome.call
+                        trace.append(TraceStep(kind="tool_call", name=call.name,
+                                               arguments=call.arguments))
+                        trace.append(TraceStep(kind="tool_result", name=call.name,
+                                               result=outcome.output,
+                                               repeated=outcome.repeated))
+                        emit({"type": "tool_result", "name": call.name,
+                              "result": outcome.output[:2000],
+                              "repeated": outcome.repeated})
+                        messages.append(Message(
+                            role="tool", content=outcome.output,
+                            tool_call_id=call.id, name=call.name))
+                    final = _answer_without_tools(provider, messages, _failed, emit)
+                    if not isinstance(final, TurnResult) and final:
+                        reply = final
+                elif closing.text:
+                    reply = closing.text
+
     finally:
         connector_grants.reset(grant_token)
         reasoning.release(think_token)
