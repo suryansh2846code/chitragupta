@@ -118,9 +118,44 @@ def test_an_unknown_automation_is_a_404(client):
 
 def test_the_vocabulary_is_published_so_the_ui_does_not_keep_its_own_list(client):
     body = client.get("/api/automations/vocabulary").json()
-    assert "event" in body["triggers"] and "schedule" in body["triggers"]
-    assert "domain_is" in body["conditions"] and "semantic" in body["conditions"]
+    assert "event" in body["names"]["triggers"]
+    assert "schedule" in body["names"]["triggers"]
+    assert "domain_is" in body["names"]["conditions"]
+    assert "semantic" in body["names"]["conditions"]
     assert "one_active_run" in body["concurrency"]
+
+
+def test_the_vocabulary_says_what_each_entry_asks_for(client):
+    """A builder needs more than a list of names: which keys a trigger reads,
+    and whether a condition takes a number, a list or nothing at all. Every one
+    of those is declared beside the code that evaluates it, so a form cannot
+    offer a setting that does nothing."""
+    body = client.get("/api/automations/vocabulary").json()
+
+    triggers = {t["type"]: t for t in body["triggers"]}
+    assert triggers["schedule"]["fields"] == ["at_time", "days", "timezone"]
+    assert triggers["manual"]["fields"] == []
+    assert triggers["event"]["label"]
+
+    conditions = {c["type"]: c for c in body["conditions"]}
+    assert conditions["older_than_days"]["value"] == "number"
+    assert conditions["in"]["value"] == "list"
+    assert conditions["exists"]["value"] == "", "it asks about the field alone"
+    assert conditions["all"]["group"] is True
+    assert all(c["label"] for c in body["conditions"])
+
+    # And the field names come from the events themselves.
+    assert "event.from" in body["fields"]
+
+
+def test_every_condition_the_engine_knows_is_described(client):
+    """The drift this is here to prevent: a condition added to the registry and
+    not to the form is one no user can ever reach."""
+    from chitragupta.automation import conditions as engine_conditions
+
+    body = client.get("/api/automations/vocabulary").json()
+    described = {c["type"] for c in body["conditions"]}
+    assert described == set(engine_conditions.known())
 
 
 def test_the_trigger_and_conditions_can_be_changed(client, routine):

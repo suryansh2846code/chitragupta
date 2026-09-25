@@ -99,6 +99,29 @@ def events_from_sync(connector: str, added: int, *,
     return out
 
 
+#: Metadata keys lifted onto `event.data`, and therefore the field names a
+#: condition can address. Published through `/api/automations/vocabulary` so the
+#: builder offers `event.from` because the event carries it, not because
+#: somebody typed it into a form.
+EXTRA_FIELDS = ("from", "sender", "to", "repository", "repo", "author", "path",
+                "channel", "chat_id", "app", "labels", "state", "url")
+
+#: Always on an event, whatever the source produced it.
+BASE_FIELDS = ("title", "body", "uri", "source")
+
+
+def condition_fields() -> list[str]:
+    """The dotted paths a condition may be written against.
+
+    The facts a condition sees are assembled in `executor._check_conditions`;
+    these are the leaves of it that mean something to a person. Not exhaustive
+    by design — a condition may address any path — but a user should never have
+    to guess the common ones.
+    """
+    return [f"event.{name}" for name in (*BASE_FIELDS, *EXTRA_FIELDS)] + [
+        "event_kind", "event_source"]
+
+
 def _extras(row: dict[str, Any]) -> dict[str, Any]:
     """Fields a condition is likely to want, pulled out of the row's metadata.
 
@@ -109,9 +132,8 @@ def _extras(row: dict[str, Any]) -> dict[str, Any]:
     meta = row.get("metadata")
     if not isinstance(meta, dict):
         return {}
-    wanted = ("from", "sender", "to", "repository", "repo", "author", "path",
-              "channel", "chat_id", "app", "labels", "state", "url")
-    return {k: meta[k] for k in wanted if k in meta and meta[k] not in (None, "")}
+    return {k: meta[k] for k in EXTRA_FIELDS
+            if k in meta and meta[k] not in (None, "")}
 
 
 def recent_rows(connector: str, since: str, limit: int = MAX_EVENTS_PER_SYNC

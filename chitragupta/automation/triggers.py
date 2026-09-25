@@ -84,6 +84,34 @@ def known() -> list[str]:
     return sorted(_REGISTRY)
 
 
+#: `type -> (the sentence a person reads, the spec keys it asks for)`.
+#:
+#: Here rather than in the frontend for the same reason as the condition
+#: labels: the builder has to ask for exactly the keys `matches` reads, and a
+#: form that asks for a key no trigger reads is a setting the user chose that
+#: does nothing.
+_TRIGGER_FORM: dict[str, tuple[str, tuple[str, ...]]] = {
+    "event": ("When something happens", ("kind", "source")),
+    "schedule": ("At a time of day", ("at_time", "days", "timezone")),
+    "interval": ("Every so often", ("interval_min",)),
+    "manual": ("Only when I ask", ()),
+}
+
+
+def describe() -> list[dict[str, Any]]:
+    """Every trigger, with the questions it needs answered.
+
+    An unlisted trigger still appears — with no fields — rather than being
+    hidden: a build that has a trigger the form does not describe should say so,
+    not quietly offer a shorter list than the engine supports.
+    """
+    out = []
+    for name in known():
+        label, fields = _TRIGGER_FORM.get(name, (name, ()))
+        out.append({"type": name, "label": label, "fields": list(fields)})
+    return out
+
+
 def matches(automation: Any, event: Event, *, now: datetime | None = None) -> Match:
     """Does `event` start `automation`?
 

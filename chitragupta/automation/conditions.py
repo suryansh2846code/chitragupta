@@ -66,16 +66,57 @@ Evaluator = Callable[[dict, dict], tuple[bool, str]]
 
 _REGISTRY: dict[str, Evaluator] = {}
 
+#: `name -> (sentence a person reads, what its `value` is)`.
+#:
+#: Declared at the condition rather than in the frontend, for the reason the
+#: whole registry exists: a second list in `web/` of which conditions take a
+#: number and what each one is called is a list that drifts, and the copy that
+#: drifts is the one the user reads. `""` means the condition takes no value —
+#: `exists` and `is_true` ask about the field alone.
+_LABELS: dict[str, tuple[str, str]] = {}
 
-def register(name: str) -> Callable[[Evaluator], Evaluator]:
+
+def register(name: str, *, label: str = "",
+             value: str = "text") -> Callable[[Evaluator], Evaluator]:
     def decorate(fn: Evaluator) -> Evaluator:
         _REGISTRY[name] = fn
+        _LABELS[name] = (label or name.replace("_", " "), value)
         return fn
     return decorate
 
 
 def known() -> list[str]:
     return sorted([*_REGISTRY, "all", "any", "not", "semantic"])
+
+
+#: The three composites and the one judgement, which are not in `_REGISTRY`
+#: because `evaluate` handles them itself — a group holds other conditions and
+#: `semantic` costs a model call.
+_SPECIAL: dict[str, dict[str, Any]] = {
+    "all": {"label": "all of these", "group": True},
+    "any": {"label": "any of these", "group": True},
+    "not": {"label": "none of these", "group": True},
+    "semantic": {"label": "a model judges (costs a model call)",
+                 "field": False, "value": "prompt"},
+}
+
+
+def describe() -> list[dict[str, Any]]:
+    """Every condition, with enough for a UI to draw a row for it.
+
+    Published by `/api/automations/vocabulary`. A condition added here appears
+    in the builder with no frontend change, and one removed disappears — which
+    is the only way the form and the engine can be guaranteed to agree about
+    what a condition means.
+    """
+    out = [{"type": name, "label": label, "field": True, "value": value}
+           for name, (label, value) in sorted(_LABELS.items())]
+    out += [{"type": name, "label": spec["label"],
+             "field": bool(spec.get("field", False)),
+             "value": str(spec.get("value", "")),
+             "group": bool(spec.get("group", False))}
+            for name, spec in sorted(_SPECIAL.items())]
+    return out
 
 
 def _dig(data: Any, path: str) -> Any:
@@ -93,7 +134,7 @@ def _text(value: Any) -> str:
 
 # ── deterministic ──────────────────────────────────────────────────────────
 
-@register("equals")
+@register("equals", label="is exactly", value="text")
 def _equals(spec: dict, facts: dict) -> tuple[bool, str]:
     path = spec.get("field", "")
     actual = _dig(facts, path)
@@ -105,13 +146,13 @@ def _equals(spec: dict, facts: dict) -> tuple[bool, str]:
     return ok, f"{path} == {expected!r}" if ok else f"{path} is {actual!r}, not {expected!r}"
 
 
-@register("not_equals")
+@register("not_equals", label="is not", value="text")
 def _not_equals(spec: dict, facts: dict) -> tuple[bool, str]:
     ok, detail = _equals(spec, facts)
     return (not ok), detail
 
 
-@register("contains")
+@register("contains", label="contains", value="text")
 def _contains(spec: dict, facts: dict) -> tuple[bool, str]:
     path = spec.get("field", "")
     haystack = _text(_dig(facts, path)).casefold()
@@ -120,7 +161,7 @@ def _contains(spec: dict, facts: dict) -> tuple[bool, str]:
     return ok, f"{path} contains {needle!r}" if ok else f"{path} does not contain {needle!r}"
 
 
-@register("matches")
+@register("matches", label="matches the pattern", value="text")
 def _matches(spec: dict, facts: dict) -> tuple[bool, str]:
     """Regex, compiled per call and failing closed on a bad pattern.
 
@@ -137,7 +178,7 @@ def _matches(spec: dict, facts: dict) -> tuple[bool, str]:
     return ok, f"{path} matches" if ok else f"{path} does not match"
 
 
-@register("in")
+@register("in", label="is one of", value="list")
 def _in(spec: dict, facts: dict) -> tuple[bool, str]:
     path = spec.get("field", "")
     actual = _text(_dig(facts, path)).casefold()
@@ -146,7 +187,7 @@ def _in(spec: dict, facts: dict) -> tuple[bool, str]:
     return ok, f"{path} is one of {len(options)}" if ok else f"{path} is not in the list"
 
 
-@register("domain_is")
+@register("domain_is", label="is an address at the domain", value="text")
 def _domain_is(spec: dict, facts: dict) -> tuple[bool, str]:
     """The domain of an address-shaped field.
 
@@ -163,7 +204,7 @@ def _domain_is(spec: dict, facts: dict) -> tuple[bool, str]:
     return ok, f"domain is {domain}" if ok else f"domain is {domain or 'unknown'}, not {expected}"
 
 
-@register("exists")
+@register("exists", label="is there at all", value="")
 def _exists(spec: dict, facts: dict) -> tuple[bool, str]:
     path = spec.get("field", "")
     value = _dig(facts, path)
@@ -171,7 +212,7 @@ def _exists(spec: dict, facts: dict) -> tuple[bool, str]:
     return ok, f"{path} is present" if ok else f"{path} is missing"
 
 
-@register("older_than_days")
+@register("older_than_days", label="is older than (days)", value="number")
 def _older_than_days(spec: dict, facts: dict) -> tuple[bool, str]:
     """Nothing has happened here for N days — the "no activity" condition."""
     path = spec.get("field", "")
@@ -188,7 +229,7 @@ def _older_than_days(spec: dict, facts: dict) -> tuple[bool, str]:
     return ok, f"{path} is {age:.1f} days old"
 
 
-@register("count_at_least")
+@register("count_at_least", label="has at least this many", value="number")
 def _count_at_least(spec: dict, facts: dict) -> tuple[bool, str]:
     path = spec.get("field", "")
     value = _dig(facts, path)
@@ -201,7 +242,7 @@ def _count_at_least(spec: dict, facts: dict) -> tuple[bool, str]:
     return ok, f"{path} has {count} (wanted {want})"
 
 
-@register("is_true")
+@register("is_true", label="is true", value="")
 def _is_true(spec: dict, facts: dict) -> tuple[bool, str]:
     path = spec.get("field", "")
     ok = bool(_dig(facts, path))

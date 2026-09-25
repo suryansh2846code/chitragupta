@@ -91,15 +91,29 @@ def list_automations():
 @router.get("/api/automations/vocabulary")
 def vocabulary():
     """What a trigger or condition may say, so the UI builds a form from the
-    registry rather than keeping its own list that drifts."""
+    registry rather than keeping its own list that drifts.
+
+    `triggers` and `conditions` carry the **sentence a person reads** and the
+    keys each one needs answered, both declared next to the code that evaluates
+    them. That is what lets the builder be a form over the existing schema
+    rather than a second description of it: a condition added to the registry
+    appears in the form, and one whose meaning changes cannot keep its old
+    label.
+
+    `names` is the flat list the older callers use, kept because a list of
+    strings is what a test that pins the vocabulary wants to read.
+    """
     from ...automation import conditions, sources, triggers
+    from ...automation.model import Concurrency
 
     return {
-        "triggers": triggers.known(),
-        "conditions": conditions.known(),
+        "triggers": triggers.describe(),
+        "conditions": conditions.describe(),
+        "fields": sources.condition_fields(),
         "event_kinds": sorted({kind for kind, _ in sources.EVENT_KINDS.values()}),
-        "concurrency": list(__import__(
-            "chitragupta.automation.model", fromlist=["x"]).Concurrency.ALL),
+        "concurrency": list(Concurrency.ALL),
+        "names": {"triggers": triggers.known(),
+                  "conditions": conditions.known()},
     }
 
 

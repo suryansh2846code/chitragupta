@@ -571,6 +571,10 @@ function routineClock(at) {
 
 function routineWhen(r) {
   if (r.trigger === "new_email") return "When new email arrives";
+  // A rich trigger with no legacy equivalent is stored as `manual`, which does
+  // not fire on a clock. Reading "Every hour" over one is the row lying about
+  // the user's own automation, which is what this function exists to stop.
+  if (r.trigger === "manual") return "Only when you ask";
   if (r.trigger === "daily" && r.at_time) {
     const days = ROUTINE_DAY_WORDS[r.days || ""]
       || String(r.days).split(",").filter(Boolean)
@@ -596,7 +600,7 @@ async function loadRoutines() {
         <span class="ib-state" data-on="${r.enabled ? 1 : 0}" aria-hidden="true"></span>
         <span class="ib-text">
           <span class="ib-name">${esc(r.name)}${r.enabled ? "" : `<span class="ib-badge">Paused</span>`}</span>
-          <span class="ib-meta">${esc(trig)} · ${esc(r.agent_id)} · ${esc(ran)}</span>
+          <span class="ib-meta"><span class="ib-when">${esc(trig)}</span> · ${esc(r.agent_id)} · ${esc(ran)}</span>
         </span>
         <span class="ib-actions">
           <button class="tiny ghost" data-toggle-r="${r.id}" data-on="${r.enabled}">${r.enabled ? "Pause" : "Resume"}</button>
@@ -639,6 +643,11 @@ async function routineForm(existing) {
   $("#rmTrigger").value = existing ? existing.trigger : "new_email";
   $("#rmAtTime").value = (existing && existing.at_time) || "08:00";
   $("#rmDays").value = (existing && existing.days) || "";
+  // WHEN and ONLY IF come from `automations.js`, which reads them from the
+  // engine's own registries. Guarded the same way the row decoration is: if
+  // that file failed to load, this form still creates an automation from the
+  // legacy fields, which is what it did before the builder existed.
+  if (typeof openBuilder === "function") await openBuilder(existing);
   routineTriggerFields();
   const save = $("#rmCreate"); if (save) save.textContent = existing ? "Save" : "Create";
   const title = $("#rmTitle"); if (title) title.textContent = existing ? "Edit automation" : "New automation";
@@ -649,28 +658,56 @@ async function routineForm(existing) {
 //: different thing depending on a dropdown above it is how a routine gets set
 //: to something nobody chose.
 function routineTriggerFields() {
+  //: Keyed off the engine's trigger names now — `interval` and `schedule` —
+  //: not the legacy words. The legacy `trigger` column still says "daily" and
+  //: "schedule", and it is written from this by `builderLegacy`; two different
+  //: vocabularies in one function is how a form ends up showing the wrong box.
   const kind = $("#rmTrigger").value;
-  $("#rmIntervalWrap").hidden = kind !== "schedule";
-  $("#rmDailyWrap").hidden = kind !== "daily";
+  $("#rmIntervalWrap").hidden = kind !== "interval";
+  $("#rmDailyWrap").hidden = kind !== "schedule";
+  const events = $("#rmEventWrap");
+  if (events) events.hidden = kind !== "event";
 }
 
 $("#newRoutineBtn").onclick = () => routineForm(null);
 $("#rmTrigger").onchange = routineTriggerFields;
+if ($("#rmAddCond")) {
+  $("#rmAddCond").onclick = () => {
+    if (typeof addCondition === "function") addCondition();
+  };
+}
 $("#rmClose").onclick = () => $("#routineModal").hidden = true;
 $("#rmCreate").onclick = async () => {
   const name = $("#rmName").value.trim(), instruction = $("#rmInstruction").value.trim();
   if (!name || !instruction) { toast("Name & instruction required"); return; }
-  const body = JSON.stringify({ name, agent_id: $("#rmAgent").value, trigger: $("#rmTrigger").value,
-    instruction, interval_min: parseInt($("#rmInterval").value) || 60,
-    at_time: $("#rmAtTime").value || "", days: $("#rmDays").value || "" });
+  // The rich spec decides the legacy columns rather than the other way round:
+  // the engine reads `trigger_json`, and the old columns are the fallback for a
+  // row that has none. Both written from one answer, so they cannot disagree.
+  const spec = typeof builderTrigger === "function" ? builderTrigger() : null;
+  const legacy = (spec && typeof builderLegacy === "function")
+    ? builderLegacy(spec)
+    : { trigger: $("#rmTrigger").value,
+        interval_min: parseInt($("#rmInterval").value) || 60,
+        at_time: $("#rmAtTime").value || "", days: $("#rmDays").value || "" };
+  const body = JSON.stringify({ name, agent_id: $("#rmAgent").value,
+    instruction, ...legacy });
   const editing = _editingRoutine;
+  let saved = editing;
   try {
     if (editing) await api(`/api/routines/${editing.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body });
-    else await api("/api/routines", { method: "POST", headers: { "Content-Type": "application/json" }, body });
+    else saved = await api("/api/routines", { method: "POST", headers: { "Content-Type": "application/json" }, body });
   } catch (e) { toast("Could not save that automation"); return; }
+  // Second write, because the trigger spec and the conditions belong to the
+  // automation view of this row and have their own writer. A failure is
+  // reported rather than swallowed: the automation exists, and what it checks
+  // may not have been stored.
+  let trouble = "";
+  if (saved && saved.id && typeof saveBuilder === "function") {
+    trouble = await saveBuilder(saved.id);
+  }
   $("#routineModal").hidden = true;
   _editingRoutine = null;
-  toast(editing ? "Automation updated" : "Automation created");
+  toast(trouble || (editing ? "Automation updated" : "Automation created"));
   loadRoutines();
 };
 

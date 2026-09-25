@@ -2919,3 +2919,18 @@ button.tiny.running:hover { background: linear-gradient(to right,
    something that was already prevented teaches people to ignore the banner. */
 .auto-warn { border-left: 2px solid var(--warn); padding-left: 10px;
   margin: 10px 0; font-size: 13px; color: var(--faint); }
+
+/* A condition in the automation builder: field, test, value, remove.
+   One line on a wide modal and a stack on a narrow one — a row that overflows
+   puts the remove button off-screen, which makes a condition unremovable. */
+.cond-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.cond-row .cond-field { flex: 1 1 34%; min-width: 110px; }
+.cond-row .cond-type { flex: 1 1 28%; min-width: 120px; }
+.cond-row .cond-value { flex: 1 1 28%; min-width: 110px; }
+.cond-row input, .cond-row select { margin: 0; }
