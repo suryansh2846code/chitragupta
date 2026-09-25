@@ -64,6 +64,7 @@ def parse_ics(text: str) -> dict | None:
 
 class AppleCalendarConnector(Connector):
     name = "apple_calendar"
+    runs_on_device = True
     label = "Apple Calendar"
     auto_sync = True
     incremental = True

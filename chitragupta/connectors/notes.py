@@ -8,6 +8,7 @@ from .base import Connector, SyncResult
 
 class NotesConnector(Connector):
     name = "notes"
+    runs_on_device = True
     label = "Manual Notes"
     auto_sync = False         # written by hand; there is nothing to poll
     always_available = True

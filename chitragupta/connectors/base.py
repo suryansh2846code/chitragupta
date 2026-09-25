@@ -74,6 +74,20 @@ class Connector:
     label: str = "Base"
     #: True when the connector can run with no extra credentials/config.
     always_available: bool = False
+
+    #: Does this read something already on the machine, rather than an account?
+    #:
+    #: The difference a *person* can act on, and the one the Connectors screen
+    #: groups by. On-device means no account is involved and nothing leaves the
+    #: Mac — which is the whole product promise, and was previously visible
+    #: nowhere. Everything else is a service the user signs in to, whether we
+    #: wrote the client or the vendor ships the server.
+    #:
+    #: Declared on the class rather than mapped in the frontend, because the
+    #: frontend had exactly such a map and four connectors were missing from it
+    #: — so Slack, Telegram, Apple Health and Google Fit were filed under
+    #: "Custom sources", which is a heading that was simply not true.
+    runs_on_device: bool = False
     #: The MCP server id that does this better, if one exists.
     #:
     #: **A source the user can connect two ways is a source they will connect

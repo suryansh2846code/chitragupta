@@ -133,6 +133,36 @@ to never standing down, and asserts the pairing *mechanically*: any catalog
 entry whose id is already a connector name must declare `same_as`, so the next
 one cannot arrive undeclared.
 
+## What the user sees
+
+The Connectors screen groups by **where the data is**, not by topic:
+
+| | |
+|---|---|
+| **On this Mac** | `files` · `notes` · `imessage` · `apple_mail` · `apple_calendar` · `apple_health`. `Connector.runs_on_device` declares it |
+| **Your accounts** | everything else, whoever wrote the client |
+
+Topic was the old split and it answered a question nobody was asking — every
+row already says what it gives you. What no row said is whether anything
+leaves the machine, which is the sentence at the top of that screen and the
+whole product promise.
+
+Each row then carries a tag naming the route — **Built-in**, **MCP**,
+**Custom** — with a legend defining all three. This names a mechanism, which
+is normally an internal; it is here deliberately, because *who to chase when
+it misbehaves* is a different question from *what it gives you*, and a
+built-in is ours to fix while a vendor's server is theirs and can change under
+us. The sections stay jargon-free; only the tag names the route.
+
+**Every source carries exactly one tag.** That is this document's rule made
+visible: if a source could ever show two, the bug is back.
+
+The grouping used to be a map in `web/connectors.js` keyed by connector name,
+and four connectors were missing from it — Slack, Telegram, Apple Health and
+Google Fit landed under a heading reading *Custom sources*. A fact the backend
+knows does not get a second copy in the frontend.
+`tests/test_a_source_says_how_it_is_reached.py` holds it.
+
 ## Adding a source
 
 1. **Does the vendor ship an MCP server?** Add it as a custom source. Nothing

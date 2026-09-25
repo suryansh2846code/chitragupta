@@ -87,6 +87,7 @@ def parse_emlx(path: Path) -> dict | None:
 
 class AppleMailConnector(Connector):
     name = "apple_mail"
+    runs_on_device = True
     label = "Apple Mail"
     auto_sync = True
     incremental = True

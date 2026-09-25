@@ -67,31 +67,58 @@ const CONNECTOR_ICON_FALLBACK = `<svg viewBox="0 0 24 24" width="20" height="20"
   <rect x="3" y="3" width="18" height="18" rx="4.5" fill="none" stroke="currentColor" stroke-width="1.5"/>
   <path stroke="currentColor" stroke-width="1.5" stroke-linecap="round" d="M8 12h8M12 8v8"/></svg>`;
 
-//: One line saying what the source actually gives the brain, and which group
-//: it sits in. Same fallback rule: no entry is not an error.
+//: One line saying what the source actually gives the brain.
+//:
+//: No `group` any more — which group a source belongs to is now `on_device`,
+//: answered by the connector itself. It was a map here, four connectors were
+//: missing from it, and Slack, Telegram, Apple Health and Google Fit fell
+//: through to a heading that said "Custom sources" about four things nobody
+//: had customised. A fact the backend knows does not get a second copy here.
 const CONNECTOR_META = {
-  gmail:          { group: "mail", desc: "Your mail, read-only — threads, senders and what you agreed to." },
-  gcal:           { group: "mail", desc: "Meetings, who is in them, and what your week looks like." },
-  apple_mail:     { group: "mail", desc: "Mail from the Mail app on this Mac." },
-  apple_calendar: { group: "mail", desc: "Events from the Calendar app on this Mac." },
-  imessage:       { group: "chat", desc: "Messages on this Mac — who you talk to and about what." },
-  notion:         { group: "docs", desc: "Pages and databases from your Notion workspace." },
-  gdrive:         { group: "docs", desc: "Documents in your Drive, read-only." },
-  files:          { group: "docs", desc: "A folder on this machine, indexed where it sits." },
-  notes:          { group: "docs", desc: "Anything you type in yourself — the highest-trust source." },
-  github:         { group: "code", desc: "Issues, pull requests and what you are shipping." },
-  linear:         { group: "code", desc: "Issues, projects and cycles from your Linear workspace." },
+  gmail:          { desc: "Your mail, read-only — threads, senders and what you agreed to." },
+  gcal:           { desc: "Meetings, who is in them, and what your week looks like." },
+  apple_mail:     { desc: "Mail from the Mail app on this Mac." },
+  apple_calendar: { desc: "Events from the Calendar app on this Mac." },
+  imessage:       { desc: "Messages on this Mac — who you talk to and about what." },
+  notion:         { desc: "Pages and databases from your Notion workspace." },
+  gdrive:         { desc: "Documents in your Drive, read-only." },
+  files:          { desc: "A folder on this machine, indexed where it sits." },
+  notes:          { desc: "Anything you type in yourself — the highest-trust source." },
+  github:         { desc: "Issues, pull requests and what you are shipping." },
+  linear:         { desc: "Issues, projects and cycles from your Linear workspace." },
+  slack:          { desc: "Channels a bot has been invited to, and what was said in them." },
+  telegram:       { desc: "Your Telegram conversations, read from this Mac." },
+  apple_health:   { desc: "Readings from an Apple Health export — numbers, never memories." },
+  google_fit:     { desc: "Activity and body measurements from your Google account." },
 };
 
-//: Group order and headings. `other` catches everything without a group, which
-//: is where a custom app or an MCP server lands.
+//: The two kinds of source, which is the difference a person can act on.
+//:
+//: Grouped by **where the data is**, not by topic. Topic was the old split
+//: (mail / chat / docs / code) and it answered a question nobody was asking:
+//: every row already says what it gives you. What no row said is whether
+//: anything leaves this Mac, which is the entire product promise and the one
+//: thing a person deciding whether to connect something actually wants.
 const CONNECTOR_GROUPS = [
-  { id: "mail",  title: "Email & calendar", sub: "Mail, scheduling, and the meetings on your week." },
-  { id: "chat",  title: "Messaging",        sub: "Where your conversations actually happen." },
-  { id: "docs",  title: "Docs & notes",     sub: "Documents, pages, and what you write down." },
-  { id: "code",  title: "Code & projects",  sub: "What you are building and what is in flight." },
-  { id: "other", title: "Custom sources",   sub: "Apps and servers you connected yourself." },
+  { id: "device", title: "On this Mac",
+    sub: "Read straight off this machine. No account is involved and nothing leaves it." },
+  { id: "account", title: "Your accounts",
+    sub: "You sign in with the service itself, and Chitragupta talks to it from this Mac. Nothing is routed through us." },
 ];
+
+//: How a source is reached, as a word on the row.
+//:
+//: This names the mechanism, which `/CLAUDE.md` would normally call an
+//: internal — the original note here said MCP is "an implementation detail
+//: they never need". That was reversed deliberately: the person running this
+//: asked to see which sources are ours and which are the vendor's own server,
+//: because it decides who to chase when one misbehaves. The *sections* stay
+//: jargon-free; only the tag names the route.
+const CONNECTOR_KINDS = {
+  builtin: { label: "Built-in", title: "Written into Chitragupta. We maintain it." },
+  mcp:     { label: "MCP", title: "The service's own server, speaking the Model Context Protocol. The vendor maintains it and owns the schema." },
+  custom:  { label: "Custom", title: "An API you pointed Chitragupta at yourself." },
+};
 
 //: The colour each mark already wears, lifted from its own artwork above, so a
 //: tile's glow is that product's colour and not one house colour applied to
@@ -112,7 +139,11 @@ function connectorTint(name) {
   return CONNECTOR_TINT[name] || "";
 }
 function connectorMeta(name) {
-  return CONNECTOR_META[name] || { group: "other", desc: "" };
+  return CONNECTOR_META[name] || { desc: "" };
+}
+//: Which section a row sits in, from the row itself rather than a lookup.
+function connectorGroup(c) {
+  return c.on_device ? "device" : "account";
 }
 
 // ── the connector list ─────────────────────────────────────────────────────
@@ -171,6 +202,10 @@ function _cnRowHtml(c, staleAfterMin) {
     : stale ? `Connected · last synced ${last}` : `Connected · synced ${last}`;
   const badge = !c.ready ? ""
     : `<span class="cn-badge ${stale ? "is-stale" : ""}">${stale ? "Stale" : "Connected"}</span>`;
+  // How it is reached, said on the row. `title` carries the difference for
+  // anyone who wants it, so the tag itself can stay one word.
+  const k = CONNECTOR_KINDS[c.kind] || CONNECTOR_KINDS.builtin;
+  const kind = `<span class="cn-kind is-${esc(c.kind || "builtin")}" title="${esc(k.title)}">${esc(k.label)}</span>`;
 
   const sync = c.ready && !onDemand
     ? `<button class="tiny ghost" data-sync="${esc(c.name)}">Sync</button>` : "";
@@ -201,7 +236,7 @@ function _cnRowHtml(c, staleAfterMin) {
       connectorTint(c.name) ? ` style="--brand:${connectorTint(c.name)}"` : ""
     }><i class="lt-sheen"></i>${connectorIcon(c.name)}</span>
     <span class="cn-text">
-      <span class="cn-name">${esc(c.label)}${badge}</span>
+      <span class="cn-name">${esc(c.label)}${kind}${badge}</span>
       <span class="cn-sub">${esc(status)}</span>
     </span>
     <span class="cn-actions">${sync}${fixBtn}${setup}${disconnect}${del}</span>
@@ -249,7 +284,7 @@ function renderConnectors(connectors, staleAfterMin) {
   const box = $("#connectors"); if (!box) return;
   _cnRows = connectors.map((c) => ({
     name: c.name, label: c.label, ready: Boolean(c.ready),
-    group: connectorMeta(c.name).group,
+    group: connectorGroup(c),
     html: _cnRowHtml(c, staleAfterMin),
   }));
   renderConnectorFilters();

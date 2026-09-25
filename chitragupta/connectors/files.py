@@ -52,6 +52,7 @@ class FilesConnector(Connector):
     _current_root: str | None = None
 
     name = "files"
+    runs_on_device = True
     label = "Local Files"
     # Driven by remembered folders rather than the class, because a folder
     # the user has never pointed at is not a source. The scheduler re-indexes

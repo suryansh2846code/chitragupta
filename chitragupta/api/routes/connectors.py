@@ -129,6 +129,10 @@ def connectors():
                     "reason": reason, "fix": inst.fix,
                     "always_available": cls.always_available,
                     "secret_field": cls.secret_field, "custom": False,
+                    # Where it reads from, and what wrote the client. Two
+                    # different facts and the screen shows both: the section
+                    # is `on_device`, the tag on the row is `kind`.
+                    "on_device": cls.runs_on_device, "kind": "builtin",
                     # **Superseded, and still theirs.** A retired connector
                     # keeps working for whoever has it set up, and the row has
                     # to say why it is the only one of its kind without a
@@ -150,6 +154,7 @@ def connectors():
         out.append({"name": inst.name, "label": inst.label, "ready": ready,
                     "reason": reason, "always_available": False,
                     "secret_field": None, "custom": True, "config": app,
+                    "on_device": False, "kind": "custom",
                     "state": state.get(inst.name)})
     # MCP-backed connectors, one per server the user added. `is_configured()`
     # starts the server, which is the only honest test of "can this run" — but
@@ -165,6 +170,10 @@ def connectors():
                     # records is working. The row has to say so without
                     # offering a Sync button that could only ever fail.
                     "can_sync": can_sync,
+                    # A stdio server is a process on this Mac reading this
+                    # Mac; a remote one is the vendor's endpoint. The section
+                    # follows where the data is, not who wrote the code.
+                    "on_device": not spec.is_remote, "kind": "mcp",
                     "config": spec.as_dict(), "state": state.get(inst.name)})
     return {"connectors": out}
 

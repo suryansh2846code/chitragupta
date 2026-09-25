@@ -79,6 +79,7 @@ CHECK_EVERY = 5000
 
 class AppleHealthConnector(ExportConnector):
     name = "apple_health"
+    runs_on_device = True
     label = "Apple Health"
     platforms = ("darwin",)
 

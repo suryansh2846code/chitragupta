@@ -20,6 +20,7 @@ APPLE_EPOCH = 978307200
 
 class IMessageConnector(Connector):
     name = "imessage"
+    runs_on_device = True
     label = "iMessage"
     auto_sync = True
     # Deliberately NOT incremental. A thread is folded into a single memory, so

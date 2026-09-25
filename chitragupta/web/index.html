@@ -448,7 +448,25 @@
     <!-- ── panel: connectors ───────────────────────────────────────────── -->
     <div class="ms-body sp" data-sp="connectors" hidden>
       <h1 class="ms-h1">Connectors</h1>
-      <p class="ms-sub" style="margin-bottom:18px">Everything your agents can read. Nothing leaves this machine.</p>
+      <p class="ms-sub">Everything your agents can read. Nothing leaves this machine.</p>
+
+      <!-- What the two tags on each row mean. Written out once, here, rather
+           than repeated per row: the distinction matters when something goes
+           wrong — a built-in is ours to fix, a vendor's server is theirs —
+           and it is unreadable as an abbreviation nobody defined. Every
+           source is reached exactly ONE of these ways; see
+           docs/REACHING-AN-APP.md for why that is a correctness property. -->
+      <dl class="cn-legend">
+        <div><dt><span class="cn-kind">Built-in</span></dt>
+          <dd>Written into Chitragupta. We maintain it, and it works whether or
+            not the service publishes anything.</dd></div>
+        <div><dt><span class="cn-kind is-mcp">MCP</span></dt>
+          <dd>The service's own server. The vendor owns the schema and keeps it
+            current, you sign in with them, and it usually does far more than a
+            hand-written client could.</dd></div>
+        <div><dt><span class="cn-kind">Custom</span></dt>
+          <dd>An API you pointed Chitragupta at yourself.</dd></div>
+      </dl>
 
       <div class="cn-toolbar">
         <div class="cn-search">

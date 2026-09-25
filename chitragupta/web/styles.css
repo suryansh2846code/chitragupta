@@ -1446,6 +1446,24 @@ textarea.ac-field-wide { resize: vertical; min-height: 58px; line-height: 1.45; 
   text-transform: uppercase; color: var(--ok); border: 1px solid currentColor;
   border-radius: 999px; padding: 1px 7px; font-weight: 500; }
 .cn-badge.is-stale { color: var(--north); }
+/* How a source is reached. Quieter than the CONNECTED badge on purpose — it
+   is a fact about the plumbing, not about whether the thing is working, and
+   a second loud pill beside the first would read as a second status. */
+.cn-kind { font-family: var(--mono); font-size: 9px; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--muted); border: 1px solid var(--line2);
+  border-radius: 4px; padding: 1px 6px; font-weight: 500; cursor: help; }
+/* The vendor's own server is the one worth picking out — it is the row whose
+   behaviour we do not control, and the one to chase somebody else about. */
+.cn-kind.is-mcp { color: var(--north); border-color: var(--north-track); }
+/* The legend. A definition list because that is what it is, and because the
+   tag has to render at the same size here as it does on a row — a key whose
+   swatch does not match the thing it explains is not a key. */
+.cn-legend { display: flex; flex-wrap: wrap; gap: 6px 22px; margin: 14px 0 20px; }
+.cn-legend > div { display: flex; align-items: baseline; gap: 8px;
+  flex: 1 1 260px; min-width: 0; }
+.cn-legend dt { flex: none; }
+.cn-legend dd { margin: 0; color: var(--muted); font-size: 12.5px;
+  line-height: 1.45; }
 .cn-actions { flex: none; display: flex; align-items: center; gap: 6px; }
 .cn-x { color: var(--faint); }
 .cn-x:hover { color: var(--danger); }
