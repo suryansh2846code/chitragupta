@@ -181,6 +181,7 @@
  "POST /api/telegram/login",
  "POST /api/telegram/password",
  "POST /api/usage/reset",
+ "POST /api/webhooks/{provider}",
  "PUT /api/agents/{agent_id}/avatar",
  "PUT /api/agents/{agent_id}/model"
 ]

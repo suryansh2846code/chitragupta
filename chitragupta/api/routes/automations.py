@@ -15,7 +15,8 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
+from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 
 from ...core import automation_store as store
@@ -210,6 +211,42 @@ def cancel_run(run_id: str):
     store.transition(run_id, store.RunState.CANCELLED,
                      reason="you stopped it", outcome="stopped")
     return {"ok": True, "state": str(store.RunState.CANCELLED)}
+
+
+@router.post("/api/webhooks/{provider}")
+async def receive_webhook(provider: str, request: Request):
+    """A provider's callback, into the one event pipeline.
+
+    Everything after `webhooks.receive` already existed: the event is
+    deduplicated by `core/events`, routed by `automation/router`, and run by the
+    same executor a scheduled automation uses. There is no webhook-specific
+    path beyond authenticating the caller.
+
+    **Unauthenticated callers are told nothing useful.** A 401 says "bad
+    signature" and the reason goes to the log — telling someone which part of
+    their forgery was wrong is helping them fix it.
+
+    Returns 202 on a duplicate as well as on a new event: a provider retrying
+    because our 200 was slow must be told "I have this" rather than handed an
+    error it will retry again.
+    """
+    from ...automation import engine, webhooks
+
+    body = await request.body()
+    delivery = webhooks.Delivery(provider=provider, body=body,
+                                 headers=dict(request.headers))
+    try:
+        event = webhooks.receive(delivery)
+    except webhooks.WebhookError as refused:
+        log.warning("webhook from %s refused: %s", provider, refused.reason)
+        raise HTTPException(refused.status, refused.public) from None
+
+    # The same front door a connector sync and the scheduler use. A webhook that
+    # bypassed this would be a second pipeline with its own deduplication, its
+    # own concurrency rules and its own bugs.
+    outcome = await run_in_threadpool(engine.ingest, event)
+    return {"accepted": True, "duplicate": bool(outcome.get("duplicate")),
+            "started": len(outcome.get("started") or [])}
 
 
 @router.post("/api/automations/resume")
