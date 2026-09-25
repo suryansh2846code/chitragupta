@@ -33,6 +33,38 @@ long tail is the thing that never finishes.
 
 ---
 
+## What a connector says it can do
+
+`mcp_manifest.py` answers the question a person asks when they add one, which
+is never *how many tools is that*:
+
+```
+GitHub reads 26 things, changes 16, 2 need care.
+  Can read            26   answers questions; agents use these without asking
+  Can change          16   each one puts a card in front of you first
+  Cannot be undone     2   delete_file, merge_pull_request — always ask
+  Its own settings     1   lists about the connector, not about you
+```
+
+Eight facts, four from the server and four from us, and the split is stated
+rather than blurred:
+
+| from the server | from us |
+|---|---|
+| what it can read | which tools you left switched on |
+| what it can change | how much we read per sync, and for how long |
+| what cannot be undone | first-party? version-pinned? answered just now? |
+| how it authenticates | its own endpoint, or a subprocess here |
+
+**Nothing is invented.** MCP has no standard for OAuth scopes or rate limits,
+so there is no field pretending to know them — a limit *we* impose is not a
+promise the vendor made, and a manifest that blurs the two will eventually be
+quoted back as theirs.
+
+Served on `GET /api/connectors/mcp/{id}/tools` beside the existing `tools`
+array, which the switches are still built from: the manifest is how a
+connector is *read*, the list is how it is *changed*.
+
 ## Phase 0 — A safety net, before anything else
 
 Nothing below is safe to build on a layer with no tests. Every meaningful

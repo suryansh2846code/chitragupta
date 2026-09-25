@@ -1480,6 +1480,28 @@ textarea.ac-field-wide { resize: vertical; min-height: 58px; line-height: 1.45; 
 .cn-avail .cn-group-title { display: flex; align-items: center; gap: 8px; }
 .cn-avail .cn-card { padding: 0 14px; }
 .cn-avail .cx-head:first-child { border-top: 0; margin-top: 0; }
+/* ── what a connector can do ──────────────────────────────────────────── */
+/* The sentence first, because it is the decision. Everything under it is the
+   working-out, and a person who reads only the first line has still read the
+   important part. */
+.cx-headline { font-size: 15px; font-weight: 600; margin: 0 0 10px;
+  line-height: 1.4; }
+.cx-facts { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; }
+.cx-fact { font-size: 11px; color: var(--muted); border: 1px solid var(--line2);
+  border-radius: 999px; padding: 2px 9px; }
+.cx-cap { margin-top: 16px; }
+.cx-cap-head { display: flex; align-items: baseline; gap: 8px;
+  font-size: 13px; font-weight: 600; }
+.cx-cap-n { font-family: var(--mono); font-size: 10px; color: var(--muted); }
+.cx-cap-note { font-size: 12px; color: var(--muted); margin: 3px 0 8px;
+  line-height: 1.45; }
+.cx-cap .cx-tool { display: flex; gap: 9px; align-items: flex-start;
+  padding: 5px 0; }
+.cx-cap .cx-tool input { margin-top: 3px; flex: none; }
+.cx-tool-text { min-width: 0; }
+.cx-tool-text code { font-size: 12px; }
+.cx-tool-text .conn-sub { display: block; opacity: .75; font-size: 12px;
+  line-height: 1.4; margin-top: 1px; }
 .cn-actions { flex: none; display: flex; align-items: center; gap: 6px; }
 .cn-x { color: var(--faint); }
 .cn-x:hover { color: var(--danger); }

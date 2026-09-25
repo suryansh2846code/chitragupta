@@ -65,6 +65,16 @@ One class per source, registered in `__init__.py::REGISTRY`.
   from the schema the server published, and narrowly: a missing required
   argument and a value outside an enum, nothing else. A home-grown validator
   would start refusing calls that would have worked.
+- **A count is not a capability.** `tools/list` returns a flat array — 45 for
+  GitHub, 45 for Notion — and a screen built straight on it says "this
+  connector has 45 tools", which nobody can consent to. `mcp_manifest.py` turns
+  that array into the sentence a person is actually deciding about: *"GitHub
+  reads 26 things, changes 16, 2 need care."* Three rules make it honest —
+  irreversible verbs are their own tier rather than louder writes, a server's
+  own furniture is not counted as things about the user, and a ceiling this app
+  imposes is labelled as ours. There is deliberately **no scopes field**: MCP
+  standardises none, what the vendor granted lives on their consent screen, and
+  "unknown" in a field nobody can fill is worse than not asking.
 - `mcp_tools.py` exposes a server's **read** tools to the agent loop and
   `write_tools()` the proposable ones. Listing starts every server, so it is
   TTL-cached; results are bounded and say so.

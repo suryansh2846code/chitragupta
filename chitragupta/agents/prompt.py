@@ -43,27 +43,23 @@ MAX_DESCRIPTION_CHARS = 150
 
 #: Lines that are structure rather than description. A vendor writes its tool
 #: docs in markdown, and the first line is very often a heading.
-_NOT_PROSE = ("#", "---", "===", "```", "|", "* ", "- ")
+#: Which line of a tool's docs is prose is one rule, shared with the connector
+#: manifest — two copies of "what is a heading" drift, and the copy that drifts
+#: is the one somebody is reading. `agents` may import `connectors`.
+from ..connectors.mcp_source import first_sentence as _prose_line
 
 
 def _first_sentence(text: str) -> str:
-    """The first line that actually says something.
+    """That sentence, sized and punctuated for a system prompt.
 
-    This used to be `split("\n")[0]`, and every one of Notion's write tools
-    opens with `## Overview` — so each was described to the model as
-    "## Overview", which looks like a description and carries nothing. A model
-    given a tool's name and no working description has to invent how to call it,
-    and that is exactly what happened: it reached for `in_trash`, which is real
-    in Notion's web API and is not a parameter of this tool.
+    The *rule* is shared; the *shape* is not. A prompt line is capped so twenty
+    tools do not become the system prompt, and closed with a full stop so the
+    next line does not read as a continuation of it. A manifest on screen wants
+    neither, and forcing one presentation on both is how a shared helper stops
+    being worth sharing.
     """
-    for raw in (text or "").splitlines():
-        line = raw.strip()
-        if not line or line.startswith(_NOT_PROSE):
-            continue
-        sentence = line.split(". ")[0].strip().rstrip(".")
-        if len(sentence) > 4:
-            return sentence[:MAX_DESCRIPTION_CHARS].rstrip() + "."
-    return ""
+    sentence = _prose_line(text)
+    return sentence[:MAX_DESCRIPTION_CHARS].rstrip() + "." if sentence else ""
 
 
 def _argument_names(ref: object) -> str:

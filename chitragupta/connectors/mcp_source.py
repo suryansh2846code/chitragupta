@@ -412,6 +412,36 @@ _SERVER_METADATA = frozenset({
 })
 
 
+#: Lines that are structure rather than description. A vendor writes its tool
+#: docs in markdown, and the first line is very often a heading.
+NOT_PROSE = ("#", "---", "===", "```", "|", "* ", "- ")
+
+
+def first_sentence(text: str) -> str:
+    """The first line of a tool's description that actually says something.
+
+    This used to be `split("\n")[0]`, and every one of Notion's write tools
+    opens with `## Overview` — so each was described as "## Overview", which
+    looks like a description and carries nothing. A model given a tool's name
+    and no working description has to invent how to call it, and that is
+    exactly what happened: it reached for `in_trash`, which is real in Notion's
+    web API and is not a parameter of that tool.
+
+    Lives here rather than in `agents/prompt.py`, where it was written, because
+    the manifest needs the same answer and a second copy of this rule would
+    drift — the copy that drifts always being the one you are reading. `agents`
+    may import `connectors`; the reverse is what the direction forbids.
+    """
+    for raw in (text or "").splitlines():
+        line = raw.strip()
+        if not line or line.startswith(NOT_PROSE):
+            continue
+        sentence = line.split(". ")[0].strip().rstrip(".")
+        if len(sentence) > 4:
+            return sentence
+    return ""
+
+
 def is_server_metadata(tool: str) -> bool:
     """Does this tool list the server's own furniture rather than the user's?"""
     head = (tool or "").lower().split("__")[-1]

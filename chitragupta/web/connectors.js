@@ -1149,24 +1149,77 @@ async function connectorTools(name, label) {
 
   const allowed = new Set(info.allowed_tools || []);
   const everything = allowed.size === 0;
+  const man = info.manifest || null;
+
   const row = (t) => `
-    <label class="cx-tool" style="display:flex;gap:9px;align-items:flex-start;padding:6px 0">
-      <input type="checkbox" data-tool="${esc(t.name)}"
-        ${everything || allowed.has(t.name) ? "checked" : ""} style="margin-top:3px" />
-      <span>
-        <code>${esc(t.name)}</code>
-        ${t.writes ? `<span class="conn-sub" style="color:var(--bad)">changes things — always asks you</span>`
-                   : `<span class="conn-sub">${esc(t.description || "reads only")}</span>`}
+    <label class="cx-tool">
+      <input type="checkbox" data-tool="${esc(t.tool)}"
+        ${everything || allowed.has(t.tool) ? "checked" : ""} />
+      <span class="cx-tool-text">
+        <code>${esc(t.tool)}</code>
+        ${t.summary ? `<span class="conn-sub">${esc(t.summary)}</span>` : ""}
       </span>
     </label>`;
 
-  $("#cxTools").innerHTML =
-    `<p class="t">Turn off anything you'd rather ${esc(label)} could not touch.
-       Unchecked tools are not offered to your agents at all.</p>
-     <div style="margin-top:10px">${info.tools.map(row).join("")}</div>
-     <div style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end">
-       <button id="ctCancel" class="tiny ghost">Cancel</button>
-       <button id="ctSave" class="tiny">Save</button></div>`;
+  // **Three groups, not one list.** A flat forty-five is an inventory, and
+  // nobody consents to an inventory. What a person is deciding is what this
+  // can reach and what it can change — so that is the shape, with the verbs
+  // that cannot be taken back in a tier of their own rather than as a louder
+  // shade of "changes".
+  const group = (title, note, caps) => !caps.length ? "" : `
+    <div class="cx-cap">
+      <div class="cx-cap-head">${esc(title)}
+        <span class="cx-cap-n">${caps.length}</span></div>
+      ${note ? `<p class="cx-cap-note">${esc(note)}</p>` : ""}
+      ${caps.map(row).join("")}
+    </div>`;
+
+  const chip = (on, text) => on
+    ? `<span class="cx-fact">${esc(text)}</span>` : "";
+  const v = (man && man.verification) || {};
+  const b = (man && man.bounds) || {};
+
+  $("#cxTools").innerHTML = !man
+    // A server too old or too odd to describe still gets its switches. The
+    // manifest is how this is *read*; the list is how it is *changed*, and
+    // losing the second because the first is missing would be a worse screen
+    // than the one this replaced.
+    ? `<div style="margin-top:10px">${info.tools.map((t) =>
+         row({ tool: t.name, summary: t.description })).join("")}</div>
+       <div style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end">
+         <button id="ctCancel" class="tiny ghost">Cancel</button>
+         <button id="ctSave" class="tiny">Save</button></div>`
+    : `<p class="cx-headline">${esc(man.headline)}</p>
+       <div class="cx-facts">
+         ${chip(man.auth !== "none", man.auth === "oauth"
+             ? "You signed in with them" : "Uses a key you provided")}
+         ${chip(man.remote, "Talks to their own server")}
+         ${chip(!man.remote, "Runs on this Mac")}
+         ${chip(v.first_party, "Published by the vendor")}
+         ${chip(v.known && !v.first_party, "Community server")}
+         ${chip(!v.known, "You added this one yourself")}
+         ${chip(v.pinned, "Version pinned")}
+         ${chip(man.restricted, "You have switched some tools off")}
+       </div>
+       ${group("Can read", "Answers questions. Your agents use these without asking.",
+               man.reads.filter((c) => !c.furniture))}
+       ${group("Can change", "Every one of these puts a card in front of you first.",
+               man.changes)}
+       ${group("Cannot be undone",
+               "These always ask, every single time — no standing approval covers them.",
+               man.needs_care)}
+       ${group("Its own settings",
+               "Lists about how this connector is configured, not about you.",
+               man.reads.filter((c) => c.furniture))}
+       <p class="cx-cap-note" style="margin-top:14px">Whatever you allow here,
+         this app reads at most ${esc(b.records_per_sync || 200)} records a sync
+         and gives any single call ${esc(b.seconds_per_call || 45)} seconds.
+         Those are our limits, not ${esc(label)}'s.</p>
+       <p class="cx-cap-note">Untick anything you would rather ${esc(label)}
+         could not touch. Unticked tools are never offered to your agents.</p>
+       <div style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end">
+         <button id="ctCancel" class="tiny ghost">Cancel</button>
+         <button id="ctSave" class="tiny">Save</button></div>`;
 
   $("#ctCancel").onclick = () => $("#brainModal").hidden = true;
   $("#ctSave").onclick = async () => {

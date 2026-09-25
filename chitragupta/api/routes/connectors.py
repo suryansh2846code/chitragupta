@@ -384,7 +384,25 @@ def connector_mcp_tools(server_id: str) -> dict[str, Any]:
             "writes": name in writes,
             "description": (getattr(tool, "description", "") or "").strip()[:150],
         })
-    return {"ok": True, "tools": rows, "allowed_tools": spec.allowed_tools}
+    # **Additive.** `tools` stays exactly as it was — it is what the switches
+    # are built from — and `manifest` is the same facts arranged as a decision
+    # rather than an inventory. A flat list of 45 tools is a count, and nobody
+    # can consent to a count.
+    from ...connectors.mcp_catalog import BY_ID
+    from ...connectors.mcp_manifest import manifest_of
+
+    entry = BY_ID.get(server_id)
+    manifest = manifest_of(spec, kinds, signed_in=True, verification={
+        # Ours, and each one a thing this app actually checked. A server not in
+        # the catalogue is not "unverified" as an accusation — it is one the
+        # user pointed us at themselves, which is a different sentence.
+        "known": entry is not None,
+        "first_party": bool(entry and entry.first_party),
+        "pinned": bool(entry and entry.pinned),
+        "answered": True,
+    })
+    return {"ok": True, "tools": rows, "allowed_tools": spec.allowed_tools,
+            "manifest": manifest.as_dict()}
 
 
 @router.patch("/api/connectors/mcp/{server_id}")
