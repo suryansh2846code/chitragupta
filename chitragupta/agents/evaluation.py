@@ -1083,4 +1083,51 @@ def run(*, include_slow: bool = True) -> Scorecard:
         _swap(runtime, "get_provider", saved_provider)
         _swap(runtime, "resolve_usable_model", saved_resolve)
 
+    # ── the harness's own economics ────────────────────────────────────────
+    # Every new capability gets a case here (`agents/CLAUDE.md`). These four
+    # are the ones that are invisible when they break: the turn still answers,
+    # it just costs more, thinks less, or quietly leaves work undone.
+    try:
+        from ..models import caching, reasoning
+        from ..models.base import Message as _Msg
+        from .effort import HIGH, LOW
+
+        long_prompt = "x" * 6000
+        system, _msgs, tools_out = caching.apply(
+            [{"type": "text", "text": long_prompt}],
+            [{"role": "user", "content": "hi"}],
+            [{"name": "t", "description": long_prompt, "input_schema": {}}],
+            stable_system_upto=0)
+        marked = (("cache_control" in system[0])
+                  + ("cache_control" in (tools_out or [{}])[-1]))
+        check("prompt_is_cached",
+              "The prefix a twelve-round turn re-sends is cached, not re-billed")(
+            marked == 2, f"{marked}/2 breakpoints placed")
+
+        check("reasoning_models_are_asked_to_reason",
+              "A thinking model gets a thinking budget")(
+            reasoning.anthropic_budget("claude-opus-5", HIGH.thinking_tokens,
+                                       HIGH.max_output_tokens) > 0
+            and reasoning.anthropic_budget("claude-3-haiku-20240307", 4000, 16000) == 0,
+            f"high asks for {HIGH.thinking_tokens} tokens of thought")
+
+        check("a_reply_is_not_cut_off_mid_sentence",
+              "One reply may run past a single page")(
+            LOW.max_output_tokens >= 2000 and HIGH.max_output_tokens >= 8000,
+            f"low {LOW.max_output_tokens}, high {HIGH.max_output_tokens}")
+
+        from . import planning as _planning
+        half_done = _planning.Plan(steps=[_planning.PlanStep("a", done=True),
+                                          _planning.PlanStep("b")])
+        nudge = _planning.unfinished_prompt(_planning.unfinished(half_done))
+        check("an_unfinished_plan_is_not_silently_abandoned",
+              "An agent cannot answer as though it did what it skipped")(
+            "b" in nudge and "partial answer" in nudge,
+            "the turn is told once, with both ways out")
+
+        _ = _Msg(role="system", content="x", stable=True).stable
+    except Exception as exc:                        # pragma: no cover - defensive
+        check("harness_economics", "The turn's cost controls are wired")(
+            False, f"{type(exc).__name__}: {exc}")
+
     return card

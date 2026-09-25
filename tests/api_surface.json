@@ -27,6 +27,7 @@
  "GET /api/agents/folders",
  "GET /api/agents/library",
  "GET /api/agents/permissions",
+ "GET /api/agents/quality",
  "GET /api/agents/tools",
  "GET /api/agents/{agent_id}/avatar",
  "GET /api/agents/{agent_id}/connectors",

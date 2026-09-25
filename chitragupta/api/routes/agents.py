@@ -136,6 +136,22 @@ def evaluate_agents():
     return run().as_dict()
 
 
+@router.get("/api/agents/quality")
+@calls_a_model
+def evaluate_answer_quality():
+    """Score whether the ANSWERS are right, not whether the harness works.
+
+    `/evaluate` runs against a scripted model and is free. This one asks the
+    model the user actually connected, against a brain seeded per case so an
+    invention is provably an invention — so it costs real tokens, and it
+    reports plainly when nothing is connected rather than scoring 0/0 and
+    looking like a pass.
+    """
+    from ...agents.quality import run
+
+    return run().as_dict()
+
+
 @router.get("/api/agents/{agent_id}/history")
 def history(agent_id: str):
     return {"history": AgentMemory().history(agent_id, limit=100)}
