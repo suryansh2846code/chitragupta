@@ -5,6 +5,18 @@ memory is a self-contained, embeddable unit.
 """
 from __future__ import annotations
 
+#: Extensions whose content is prose a human wrote, as opposed to data or code.
+#:
+#: Lives in `core/` because it is a statement about *content*, which is what
+#: this layer classifies — and because both of its readers sit above it.
+#: `connectors/files.py` uses it to decide whether a file is worth building a
+#: graph from; `brain` uses it for the same judgement during heuristic
+#: enrichment. With the set defined in the connector, `brain` imported
+#: `connectors` to read it — siblings, which `docs/ARCHITECTURE.md` §3 rule 2
+#: says must not import each other.
+PROSE_EXT = {".md", ".markdown", ".txt", ".rst", ".org"}
+
+
 import re
 
 _PARA = re.compile(r"\n\s*\n")

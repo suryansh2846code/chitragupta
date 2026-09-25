@@ -15,7 +15,11 @@ TEXT_EXT = {
 }
 # Only prose feeds the knowledge graph; code is still stored + searchable, but
 # extracting entities from source produces junk (TitleCase identifiers).
-PROSE_EXT = {".md", ".markdown", ".txt", ".rst", ".org"}
+# Defined in `core/chunk.py` — a statement about content, and read by
+# `brain` too. Re-exported here so `from .files import PROSE_EXT` keeps
+# working; see `docs/ARCHITECTURE.md` §3 rule 2.
+from ..core.chunk import PROSE_EXT
+
 IGNORE_DIRS = {
     ".git", "node_modules", "__pycache__", ".venv", "venv", "env",
     "dist", "build", "out", ".next", ".nuxt", "target", "coverage",

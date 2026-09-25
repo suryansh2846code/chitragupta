@@ -198,7 +198,7 @@ class MemoryStore:
             return None
 
         # Secret protection: drop blatant credential resets, redact inline secrets
-        from ..brain.canonical.redact import is_sensitive, redact
+        from .redact import is_sensitive, redact
         if is_sensitive(raw_text):
             return None
         safe_text = redact(raw_text)

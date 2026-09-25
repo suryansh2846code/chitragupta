@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from .home import default_home
 from .log import suppressed
 
 
@@ -34,15 +35,10 @@ if uses_dotenv():
     load_dotenv()
 
 
-def _default_home() -> Path:
-    """Where the brain lives. macOS-native by default, like Turnstone."""
-    override = os.environ.get("CHITRAGUPTA_HOME")
-    if override:
-        return Path(override).expanduser()
-    if os.name == "posix" and Path.home().joinpath("Library").exists():
-        return Path.home() / "Library" / "Chitragupta"
-    # Linux / Windows / headless fallback
-    return Path.home() / ".chitragupta"
+#: Where the brain lives. Defined in `home.py` — a leaf both this module and
+#: `log` can read without importing each other, which they were doing over this
+#: one path. See `home.default_home`.
+_default_home = default_home
 
 
 # Every Keychain read spawns `security`. Building the model catalog asks for

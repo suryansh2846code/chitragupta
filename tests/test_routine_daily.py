@@ -194,7 +194,10 @@ def test_the_schedule_reads_as_a_person_would_say_it(row, want):
 
 @pytest.fixture
 def store(tmp_path, monkeypatch):
-    import chitragupta.routines as routines_mod
+    # The store moved down to `core/routine_store.py` — a SQLite table is what
+    # `core/` owns, and two layers above needed the rows without importing each
+    # other. The singleton moved with it, so the stub follows the symbol.
+    import chitragupta.core.routine_store as routines_mod
     from chitragupta.config import get_settings
 
     monkeypatch.setattr(get_settings(), "home", tmp_path, raising=False)

@@ -47,13 +47,14 @@ def log_file() -> Path | None:
 def _log_dir() -> Path | None:
     """The Chitragupta home's log directory, or None if it cannot be written.
 
-    Imported lazily: `config` reads settings and the environment, and logging
-    must not drag that in at import time.
+    Reads `home.py` rather than `config`: logging must not drag settings in at
+    import time, and asking `config` for the path made the two a cycle over one
+    directory name.
     """
     try:
-        from .config import get_settings
+        from .home import default_home
 
-        path = get_settings().home / "logs"
+        path = default_home() / "logs"
         path.mkdir(parents=True, exist_ok=True)
         return path
     except Exception:

@@ -938,7 +938,7 @@ def _prose_suffixes() -> tuple[str, ...]:
     the enrichment loop, and imported from the connector so the list of what
     counts as prose is written down once.
     """
-    from ..connectors.files import PROSE_EXT
+    from ..core.chunk import PROSE_EXT
     return tuple(sorted(PROSE_EXT))
 
 
