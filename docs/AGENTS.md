@@ -40,6 +40,8 @@ run_turn(agent_id, text, effort=…, on_event=…)
   │    budget spent ──► one more call with tools withheld               │
   │  ───────────────────────────────────────────────────────────────────┘
   │
+  ├─ plan check             steps the agent never ticked off ──► told ONCE,
+  │                         with tools, so it can finish rather than apologise
   ├─ auto-learn             durable facts → raw memory + canonical curation
   └─ TurnResult             reply, trace, plan, effort, steps_used
 ```
@@ -301,15 +303,33 @@ the gate. A scorecard that cannot fail measures nothing, so
    own connectors, mid-turn*). What is still missing is the other half of that
    trade: a connector **write** is a propose → confirm action, so an agent
    cannot complete a task inside someone else's app in one turn, by design.
-2. **No agent-level quality evaluation.** The scorecard measures the harness.
-   Whether an answer is *good* still needs a real model and a person.
-3. **No settings UI for effort, permissions or approvals.** The API exists and
-   is tested; the drawer rows do not. Until then a queued action is only
-   reachable through a desktop notification and the API.
+2. ~~**No agent-level quality evaluation.**~~ **Shipped 2026-09-25** —
+   `agents/quality.py` asks the connected model a seeded golden set and grades
+   what the answer must and must not contain. It needs a real model and says so
+   when it has not got one; it does not need a person, because the failures
+   that matter here are not matters of taste. What is still missing is breadth:
+   five cases, each one a failure with a name in this repo.
+3. ~~**No settings UI for effort, permissions or approvals.**~~ **Shipped** —
+   the Model screen carries the effort control and *Acting without asking*, and
+   the approval card offers the grant where the user learns they want one.
 4. **`tools.py` sits at 65% coverage** — the lowest in the agent layer, and the
    part that touches the real world.
-5. **Delegation has no budget ceiling across a chain.** Depth and per-agent
-   budgets bound it, but three agents at High is still a lot of model calls. A
-   turn-wide token budget would bound it properly.
-6. **The plan is advisory.** The agent can ignore its own plan; nothing checks
-   at the end whether the steps were actually done.
+5. ~~**Delegation has no budget ceiling across a chain.**~~ **Shipped** — one
+   `ledger` in `runtime.py`, shared down the chain, so three agents at High
+   spend one budget between them rather than three.
+6. ~~**The plan is advisory.**~~ **Shipped 2026-09-25** — a turn ending with
+   steps its own plan never ticked off is told so once, and must either finish
+   them or say plainly which it skipped. Once, deliberately: a genuinely
+   impossible step would drive a second nudge forever.
+   `planning.unfinished_prompt`.
+
+**Where the remaining cost goes.** The three things that used to make a turn
+quietly expensive are now measured rather than assumed, and each has a case on
+the scorecard:
+
+* the stable prefix is **cached** rather than re-billed once per round
+  (`models/caching.py`);
+* a reasoning model is actually **asked to reason**, banded off the same effort
+  selector (`models/reasoning.py`);
+* a reply is no longer **capped at 1,500 tokens** — under a page, which a plan
+  with its reasoning did not fit in.

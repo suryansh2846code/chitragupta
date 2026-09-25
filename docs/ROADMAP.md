@@ -54,20 +54,46 @@
 
 ## Agent gaps worth naming
 Detail in [`AGENTS.md`](AGENTS.md) → *What is still missing*.
-- [ ] **A turn-wide token budget.** Depth and per-agent budgets bound delegation,
-      but three agents at High is still a lot of model calls on the user's own
-      plan.
-- [ ] **Answer-quality evaluation.** The scorecard measures the harness; whether
-      an answer is *good* needs a real model and a person.
-- [ ] **The plan is advisory** — nothing checks at the end whether the steps the
-      agent wrote for itself were actually done.
+- [x] **A turn-wide token budget.** **Shipped.** `runtime.py` carries a `ledger`
+      shared down the delegation chain, so three agents at High spend one budget
+      between them rather than three. This list still called for it on
+      2026-09-25, by which time it had been in the loop for some time — the
+      third time an item here was stale. Tick it in the commit that ships it.
+- [x] **The plan is advisory.** **Shipped 2026-09-25.** A turn that ends with
+      steps its own plan never ticked off is told so once, and must either do
+      them or say plainly which it skipped. Once, deliberately: a step that is
+      genuinely impossible would drive a second nudge forever.
+      `agents/planning.py::unfinished_prompt`, `tests/test_plan_completion.py`.
+- [x] **Answer-quality evaluation.** **Shipped 2026-09-25**, `agents/quality.py`
+      + `GET /api/agents/quality`. The deferral said "needs a real model and a
+      person"; half of that was doing a lot of work. The model half is true and
+      is not worked around — the cases run against whatever the user connected
+      and report *not measured* when nothing is. The person half is mostly
+      false: a fact invented, a fact in the brain and unused, a date stated as
+      today that is not, a half-answer presented whole — all checkable against
+      a brain seeded per case, which is the only way an invention is provably
+      an invention. A rubric graded by a judge model covers the genuinely
+      subjective remainder and is reported separately.
+
+      **The rule the suite is kept by:** a report that measured nothing must
+      never read as a pass. `0/0` and "2/5 against the mock" are both worse
+      than "not measured", because only the last one is true.
 - [ ] **`tools.py` at 65% coverage**, the lowest in the agent layer and the part
       that touches the real world.
 
 ## Deferred — needs a product decision
 
 ### Recall scaling
-**Status:** measured, deliberately not built. See [`SCALING.md`](SCALING.md).
+**Status: BUILT 2026-09-25.** Measured 25k memories at **1,145 ms → 15 ms
+(76x)** — better than the 32x predicted, because the profiling had missed a
+second cost: an N+1 that loaded a Memory object per scored row. Below
+`FULL_SCAN_LIMIT` nothing narrows, so a typical brain's answers are unchanged.
+The ranking risk this section warned about is covered by
+`tests/test_recall_scaling.py`, which forces the embedding into its worst case
+rather than hoping the filler rows arrange themselves. See
+[`SCALING.md`](SCALING.md).
+
+The item below is the original entry, kept for the reasoning.
 
 Recall is linear in memory count (~0.05 ms each) and runs on every agent turn.
 A real install sits at 3.3k memories / ~120 ms, which is fine; 10k is 430 ms
