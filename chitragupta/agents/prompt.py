@@ -88,6 +88,41 @@ def _argument_names(ref: object) -> str:
     return ", ".join(shown) + (f", +{more} more" if more > 0 else "")
 
 
+#: How many connector write tools to describe, across every server together.
+#:
+#: A budget rather than everything, because a person with six connectors has
+#: a hundred write tools and the system prompt is not the place for them. Forty
+#: covers every real setup seen so far and costs roughly 1.8k tokens.
+#:
+#: **Spent fairly and reported honestly**, which the flat `[:20]` it replaces
+#: was neither: it took whichever tools sorted first, so one chatty connector
+#: spent the whole budget and the rest became invisible — not merely unlisted,
+#: but something the agent would then tell the user was impossible.
+MAX_WRITE_TOOLS_SHOWN = 40
+
+
+def _fair_share(refs: list, budget: int) -> tuple[list, dict]:
+    """Up to `budget` tools, spread evenly over the servers that have them.
+
+    Returns what to show, and `{server_id: (label, how_many_left)}` for the
+    rest — because a caller that cannot say what it dropped will silently
+    claim it dropped nothing.
+    """
+    queues: dict[str, list] = {}
+    for ref in refs:
+        queues.setdefault(ref.server_id, []).append(ref)
+    chosen: list = []
+    # Round-robin: one from each server in turn, so the last connector added
+    # is as visible as the first, whatever it happens to be called.
+    while len(chosen) < budget and any(queues.values()):
+        for queue in queues.values():
+            if queue and len(chosen) < budget:
+                chosen.append(queue.pop(0))
+    left = {sid: (getattr(rest[0], "server_label", sid), len(rest))
+            for sid, rest in queues.items() if rest}
+    return chosen, left
+
+
 #: How many allowed values to spell out before saying how many more there are.
 #: Six covers every enum seen on a real server; a hundred-value one would be a
 #: system prompt of its own.
@@ -847,10 +882,12 @@ def _connector_actions(tools: list[str] | None) -> str:
         return ""
 
     rows: list[str] = []
+    left_out: dict[str, tuple[str, int]] = {}
     with suppressed("listing what the user's connectors can change"):
         from ..connectors.mcp_tools import write_tools
 
-        for ref in write_tools()[:20]:
+        shown, left_out = _fair_share(write_tools(), MAX_WRITE_TOOLS_SHOWN)
+        for ref in shown:
             described = _first_sentence(getattr(ref, "description", ""))
             line = (f'- server="{ref.server_id}" tool="{ref.tool}"'
                     f' — {ref.server_label}'
@@ -861,6 +898,17 @@ def _connector_actions(tools: list[str] | None) -> str:
             rows.append(line)
     if not rows:
         return ""
+    # **Say what was left out.** A list that is quietly cut reads as the whole
+    # truth: with twenty slots and Notion sorting first, every one of GitHub's
+    # sixteen other write tools vanished, and the agent told the user its
+    # GitHub access was read-only and it could only comment on issues. That
+    # was an honest report of what it had been shown, and completely wrong
+    # about what GitHub could do.
+    for label, count in left_out.values():
+        rows.append(f'- …and {count} more on {label}, not listed here. If the '
+                    f"user wants something you cannot see, say {label} may "
+                    "still be able to and offer to check its Permissions in "
+                    "Connectors — never that it cannot.")
     return (
         "CONNECTOR ACTIONS: the user has connectors that can CHANGE things. "
         "You may not call these directly — propose one and the user gets a "

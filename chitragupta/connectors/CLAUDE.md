@@ -68,6 +68,13 @@ One class per source, registered in `__init__.py::REGISTRY`.
 - `mcp_tools.py` exposes a server's **read** tools to the agent loop and
   `write_tools()` the proposable ones. Listing starts every server, so it is
   TTL-cached; results are bounded and say so.
+- **A bounded list must be shared fairly and say what it dropped.** The prompt
+  took `write_tools()[:20]`; Notion sorts first and publishes eighteen writes,
+  so sixteen of GitHub's eighteen never reached the model — and since the block
+  says *"use ONLY the arguments listed"*, an unlisted tool is one the agent
+  reports as impossible. It told a user its GitHub access was read-only. The
+  budget is now round-robin across servers and names what it left out, which
+  turns "it cannot" into "I cannot see it".
 - Never read another product's app-support directory for credentials or models.
 
 Rules: [`/CLAUDE.md`](../../CLAUDE.md) · [`docs/CONNECTORS.md`](../../docs/CONNECTORS.md)
