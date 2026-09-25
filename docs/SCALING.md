@@ -3,8 +3,34 @@
 > Measured 2026-09-12 on an M-series Mac, `hash` embedder (256-dim), against the
 > real `MemoryStore.search()`. Reproduce with `scripts/benchmark_recall.py`.
 >
-> **Conclusion: don't build this yet.** Typical users land well inside the
-> comfortable range. The trigger to revisit is at the bottom.
+> **BUILT 2026-09-25.** This document's conclusion was "don't build this yet",
+> and its trigger fired. Re-measured on the same script after the change:
+>
+> | memories | before | after | speedup |
+> |---|---|---|---|
+> | 1,000 | 38 ms | **17.5 ms** | 2.2x |
+> | 3,000 | 119 ms | **11.7 ms** | 10x |
+> | 10,000 | 430 ms | **13.1 ms** | 33x |
+> | 25,000 | 1,145 ms | **15.1 ms** | **76x** |
+>
+> Better than the 32x this document predicted, because the profiling below
+> missed a second cost of the same size: `search()` called `self.get(mid)` for
+> every row whose score cleared `min_score` — which at the default of 0.0 is
+> nearly all of them. One SELECT per memory in the brain, on every turn, to
+> build objects the sort then discarded. That is why 1,000 memories got 2.2x
+> faster without the pre-filter engaging at all: below `FULL_SCAN_LIMIT` every
+> row is still scored, and the ranking is unchanged.
+>
+> The ranking risk named under *What it would cost* is real and is now covered
+> by `tests/test_recall_scaling.py`, which forces the embedding into its worst
+> case rather than hoping the filler rows arrange themselves favourably. The
+> lexical net and the date filter are unioned on top of semantic top-K for
+> exactly that reason.
+>
+> **Still true and still worth doing:** cap the uncapped connectors. This change
+> raises the ceiling; it does not make an unbounded iMessage import a good idea.
+>
+> The original analysis follows unchanged.
 
 ## What we can do today
 
