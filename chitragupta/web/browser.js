@@ -18,8 +18,10 @@
 let WEB_POLL = null;
 
 async function loadBrowserSites() {
-  const box = $("#webSites");
-  if (!box) return;
+  // Guarded on the one container that is left. `#webSites` used to be a second
+  // list of the same sites and is gone; asking for it here would make the
+  // whole section silently do nothing.
+  if (!$("#webShelf")) return;
   let s;
   try {
     s = await api("/api/browser/status");
@@ -29,75 +31,11 @@ async function loadBrowserSites() {
 
   renderBrowserSetup(s);
 
-  box.innerHTML = (s.sites || []).length
-    ? s.sites.map((site) => `
-        <div class="cn-web-row" data-site="${esc(site.host)}">
-          <span class="cn-web-host">${esc(site.host)}</span>
-          <span class="cn-web-cap">${site.may_act ? "read &amp; change" : "read only"}</span>
-          <button class="tiny ghost" data-webact="${esc(site.host)}"
-                  data-on="${site.may_act ? "1" : ""}">${
-            site.may_act ? "Read only" : "Allow changes"}</button>
-          ${site.note && !site.note.startsWith("signed in from")
-            ? `<span class="cn-web-note">${esc(site.note)}</span>` : ""}
-          <button class="tiny ghost" data-webdel="${esc(site.host)}">Remove</button>
-        </div>`).join("")
-    // Not an error: this is the correct starting state, and saying so beats an
-    // empty box that reads as something having failed to load.
-    : `<div class="cn-web-empty">No sites yet. Agents cannot open any page
-         until you add one.</div>`;
-
-  // Letting an agent *change* things on a site is a second decision, made after
-  // the user has seen reading work — never folded into the press that allowed
-  // the site at all. Turning it on does not skip any approval: every click and
-  // every keystroke still collects a card. What it decides is whether that card
-  // may ever appear for this site.
-  box.querySelectorAll("[data-webact]").forEach((b) =>
-    b.onclick = async () => {
-      const host = b.dataset.webact, turningOn = !b.dataset.on;
-      // This press IS the consent, so it has to say what it actually permits.
-      // It used to promise a card per click as well, which was true and
-      // unusable: one WhatsApp reply is find, click the chat, type, send, and
-      // a person saying yes four times for one sentence stops reading by the
-      // third. A tap nobody reads is not consent.
-      if (turningOn && !confirm(
-          `Let agents type and click on ${host}?\n\n`
-          + "They can already read it. This lets them fill in its boxes and "
-          + "press its buttons while you are here, without asking each time — "
-          + "so approve it for a site you would be comfortable watching them "
-          + "work in.\n\n"
-          + "Automations are never allowed to do this, whatever you set here. "
-          + "You can turn it back off at any time.")) return;
-      b.disabled = true;
-      try {
-        await api(`/api/browser/sites/${encodeURIComponent(host)}/acting`, {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ allowed: turningOn }) });
-        toast(turningOn ? `Agents can ask to change things on ${host}`
-                        : `${host} is read-only again`);
-      } catch (e) {
-        toast(`Could not change that — ${String(e)}`);
-        b.disabled = false;
-        return;
-      }
-      loadBrowserSites();
-    });
-
-  box.querySelectorAll("[data-webdel]").forEach((b) =>
-    b.onclick = async () => {
-      const host = b.dataset.webdel;
-      b.disabled = true;
-      try {
-        await api(`/api/browser/sites/${encodeURIComponent(host)}`,
-                  { method: "DELETE" });
-        toast(`Agents can no longer read ${host}`);
-      } catch (e) {
-        toast(`Could not remove that — ${String(e)}`);
-        b.disabled = false;
-        return;
-      }
-      loadBrowserSites();
-    });
-
+  // **One row per site.** This screen used to draw every site twice: a card
+  // up top with its mark and Disconnect, and a row below with its permission
+  // and Remove — two lists of one fact, and the two buttons called the same
+  // endpoint. So LinkedIn appeared as `LinkedIn` and again as
+  // `www.linkedin.com`, and which one you pressed decided nothing.
   renderSiteShelf(s.sites || []);
 
   const forget = $("#webForget");
@@ -123,6 +61,19 @@ function siteAccount(grant) {
   return note;
 }
 
+//: Has the user actually signed in here, or merely allowed the address?
+//:
+//: **Two different permissions, and the card said "Signed in" to both.** A
+//: site you typed into the box is one agents may read; a site you connected
+//: is one they read *as you*. `signin.py` always writes a note — the account
+//: where it has one, "signed in from Connectors" where it does not — and a
+//: grant made by hand carries none. So the note is the signal, and claiming a
+//: sign-in that never happened is the kind of thing a person only discovers
+//: when they wonder why the agent cannot see their messages.
+function siteSignedIn(grant) {
+  return Boolean(String((grant && grant.note) || "").trim());
+}
+
 /** One card per site: its mark, whether it is connected, and as whom. */
 function renderSiteShelf(grants) {
   const box = $("#webShelf");
@@ -138,17 +89,32 @@ function renderSiteShelf(grants) {
   }));
   for (const g of byHost.values()) {
     if (siteSpec(g.host)) continue;
-    rows.push({ spec: { id: g.host, label: g.host, host: g.host,
-                        url: "https://" + g.host, tint: "var(--muted)",
-                        blurb: "", risk: "", icon: IC.connectors }, grant: g });
+    rows.push({ spec: siteSpecFor(g.host), grant: g });
   }
 
   box.innerHTML = rows.map(({ spec, grant }) => {
     const on = Boolean(grant);
     const who = on ? siteAccount(grant) : "";
+    // What this site is, and where it actually is. The host used to be the
+    // whole identity of the second row and was missing from the first, so a
+    // person reading "LinkedIn" could not tell which address it had granted.
+    const inAs = on && siteSignedIn(grant);
     const line = on
-      ? (who ? esc(who) : "Signed in")
+      ? `${esc(grant.host)} · ${who ? esc(who)
+          : inAs ? "Signed in" : "Allowed — agents can read it"}`
       : esc(spec.blurb || spec.host);
+    // The permission, stated rather than implied by which button is showing.
+    // A control that only offers the opposite makes you infer the present
+    // state from the label of the thing that would change it.
+    const cap = on
+      ? `<span class="site-cap${grant.may_act ? " is-act" : ""}">${
+          grant.may_act ? "read &amp; change" : "read only"}</span>`
+      : "";
+    const act = on
+      ? `<button type="button" class="tiny ghost" data-webact="${esc(grant.host)}"
+           data-on="${grant.may_act ? "1" : ""}">${
+           grant.may_act ? "Read only" : "Allow changes"}</button>`
+      : "";
     return `
       <div class="site-card${on ? " is-on" : ""}" data-site-id="${esc(spec.id)}">
         <span class="site-mark logo-tile" style="color:${esc(spec.tint)};--brand:${esc(spec.tint)}"><i class="lt-sheen"></i>${spec.icon}</span>
@@ -156,11 +122,53 @@ function renderSiteShelf(grants) {
           <div class="site-nm">${esc(spec.label)}</div>
           <div class="site-sub">${line}</div>
         </div>
+        ${cap}${act}
         ${on
-          ? `<button type="button" class="tiny ghost" data-site-off="${esc(grant.host)}">Disconnect</button>`
+          ? `<button type="button" class="tiny ghost" data-site-off="${esc(grant.host)}"
+               data-site-in="${inAs ? "1" : ""}">${inAs ? "Disconnect" : "Remove"}</button>`
           : `<button type="button" class="tiny" data-site-on="${esc(spec.id)}">Connect</button>`}
       </div>`;
-  }).join("");
+  }).join("") + (grants.length ? "" :
+    // Not an error: this is the correct starting state, and saying so beats a
+    // shelf of Connect buttons that never states the present position. It was
+    // the deleted list's job and had to come with it.
+    `<div class="cn-web-empty">No site is allowed yet. `
+    + `Agents cannot open any page until you connect one above, `
+    + `or add an address below.</div>`);
+
+  // Letting an agent *change* things on a site is a second decision, made
+  // after the user has seen reading work — never folded into the press that
+  // allowed the site at all. Turning it on does not skip any approval: what it
+  // decides is whether that card may ever appear for this site.
+  box.querySelectorAll("[data-webact]").forEach((b) =>
+    b.onclick = async () => {
+      const host = b.dataset.webact, turningOn = !b.dataset.on;
+      // This press IS the consent, so it has to say what it actually permits.
+      // It used to promise a card per click as well, which was true and
+      // unusable: one WhatsApp reply is find, click the chat, type, send, and
+      // a person saying yes four times for one sentence stops reading by the
+      // third. A tap nobody reads is not consent.
+      if (turningOn && !confirm(
+          `Let agents type and click on ${host}?\n\n`
+          + "They can already read it. This lets them fill in its boxes and "
+          + "press its buttons while you are here, without asking each time — "
+          + "so approve it for a site you would be comfortable watching them "
+          + "work in.\n\n"
+          + "Automations are never allowed to do this, whatever you set here. "
+          + "You can turn it back off at any time.")) return;
+      b.disabled = true;
+      try {
+        await api(`/api/browser/sites/${encodeURIComponent(host)}/acting`,
+                  { method: "POST", body: { allowed: turningOn } });
+        toast(turningOn ? `Agents can ask to change things on ${host}`
+                        : `${host} is read-only again`);
+      } catch (e) {
+        toast(`Could not change that — ${String(e)}`);
+        b.disabled = false;
+        return;
+      }
+      loadBrowserSites();
+    });
 
   box.querySelectorAll("[data-site-on]").forEach((b) => b.onclick = () => {
     const spec = SITE_CATALOG.find((x) => x.id === b.dataset.siteOn);
@@ -175,13 +183,23 @@ function renderSiteShelf(grants) {
   box.querySelectorAll("[data-site-off]").forEach((b) => b.onclick = async () => {
     const host = b.dataset.siteOff;
     // Disconnect ends the SESSION, not just the permission — say so, because a
-    // button that signs you out while promising less is a lie about what it did.
-    if (!confirm(`Disconnect ${host}? Agents stop reading it and the sign-in `
-                 + "is cleared, so you would sign in again next time.")) return;
+    // button that signs you out while promising less is a lie about what it
+    // did. For a site that was only ever allowed there is no session to end,
+    // and promising one would be the same lie pointing the other way.
+    // From the element, not from its own label. Reading the text back means a
+    // rewording silently changes behaviour, and a fake button in a harness has
+    // no text at all — which is how this was caught rather than shipped.
+    const wasIn = Boolean(b.dataset.siteIn);
+    if (!confirm(wasIn
+        ? `Disconnect ${host}? Agents stop reading it and the sign-in is `
+          + "cleared, so you would sign in again next time."
+        : `Remove ${host}? Agents can no longer open any page on it.`)) return;
     b.disabled = true;
     try {
       await api(`/api/browser/sites/${encodeURIComponent(host)}`, { method: "DELETE" });
-      toast(`${host} disconnected`);
+      // The consequence, not the mechanism. "Deleted" describes our row;
+      // "agents can no longer read it" describes what changed for the user.
+      toast(`Agents can no longer read ${host}`);
     } catch (e) {
       toast(`Could not disconnect that — ${String(e)}`);
       b.disabled = false;
@@ -376,6 +394,40 @@ const SITE_CATALOG = [
     icon: `<svg viewBox="0 0 24 24" width="17" height="17" fill="currentColor"><path d="M22 12a2.1 2.1 0 0 0-3.56-1.5 10.4 10.4 0 0 0-5.4-1.7l.92-4.33 3.01.64a1.8 1.8 0 1 0 .2-1.02l-3.7-.78a.5.5 0 0 0-.6.39l-1.06 5.09a10.4 10.4 0 0 0-5.35 1.7A2.1 2.1 0 1 0 4 15.62a4.1 4.1 0 0 0-.05.63c0 3.2 3.61 5.8 8.06 5.8s8.06-2.6 8.06-5.8a4 4 0 0 0-.05-.62A2.1 2.1 0 0 0 22 12zM8.4 13.5a1.5 1.5 0 1 1 1.5 1.5 1.5 1.5 0 0 1-1.5-1.5zm7.7 4.35a5.3 5.3 0 0 1-4.09 1.3 5.3 5.3 0 0 1-4.09-1.3.44.44 0 0 1 .62-.62 4.5 4.5 0 0 0 3.47 1.04 4.5 4.5 0 0 0 3.47-1.04.44.44 0 1 1 .62.62zm-.2-2.85a1.5 1.5 0 1 1 1.5-1.5 1.5 1.5 0 0 1-1.5 1.5z"/></svg>`,
   },
 ];
+
+//: The brand a bare hostname belongs to — `figma.com` and `www.figma.com`
+//: are both `figma`. The registered domain's own label, which is the part a
+//: person would call the site.
+function siteBrandKey(host) {
+  const parts = String(host || "").toLowerCase().replace(/^www\./, "").split(".");
+  // Walk past a public suffix that is itself two labels, so `bbc.co.uk` is
+  // `bbc` rather than `co`. Same shape as `connectRisk` below.
+  const tail = parts.slice(-2).join(".");
+  const i = /^(co|com|net|org|gov|ac)\.[a-z]{2}$/.test(tail) ? 3 : 2;
+  return parts.length >= i ? parts[parts.length - i] : parts[0] || "";
+}
+
+//: A site the user added by hand, dressed the same as one from the catalogue.
+//:
+//: **Adding a site should not cost it its identity.** A hand-added host used
+//: to get the generic connectors glyph and the muted grey, so `figma.com`
+//: looked like a row the app did not recognise — while its mark was sitting
+//: in `BRAND_MARKS` the whole time, fetched for the connector list. The same
+//: marks serve both, and anything with no published mark falls back to a
+//: monogram rather than to nothing, exactly as a connector does.
+function siteSpecFor(host) {
+  const key = siteBrandKey(host) || String(host || "");
+  const base = { id: host, label: host, host, url: "https://" + host,
+                 blurb: "", risk: "" };
+  // The marks live in `connectors.js`, which `index.html` loads first. Guarded
+  // rather than assumed: this file is also evaluated on its own by the
+  // harnesses, and a section that throws because another file moved is a
+  // section that blanks — which is the failure `tests/js/` exists to catch.
+  if (typeof connectorMark !== "function" || typeof markTint !== "function") {
+    return { ...base, tint: "var(--muted)", icon: IC.connectors };
+  }
+  return { ...base, tint: markTint(key), icon: connectorMark(key, host) };
+}
 
 function siteSpec(host) {
   const h = String(host || "").toLowerCase().replace(/^www\./, "");

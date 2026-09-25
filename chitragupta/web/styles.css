@@ -1124,6 +1124,15 @@ textarea.ac-field-wide { resize: vertical; min-height: 58px; line-height: 1.45; 
 .site-sub { font-size: 11.5px; color: var(--faint); margin-top: 2px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .site-card.is-on .site-sub { color: var(--north); }
+/* The permission, said rather than inferred from whichever button is showing.
+   Read-only is the quiet default; read & change is the one worth noticing,
+   because it is the setting that lets an agent press somebody's buttons. */
+.site-cap { flex: none; font-family: var(--mono); font-size: 9px;
+  letter-spacing: .08em; text-transform: uppercase; color: var(--muted);
+  border: 1px solid var(--line2); border-radius: 4px; padding: 1px 6px; }
+.site-cap.is-act { color: var(--north); border-color: var(--north-track); }
+.site-text { flex: 1; min-width: 0; }
+.site-sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ── signing in to a site, once ────────────────────────────────────────────
    Allowing a site and connecting one are different promises, so they are

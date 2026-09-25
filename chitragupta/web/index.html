@@ -524,8 +524,11 @@
              is signed in. Built from SITE_CATALOG in browser.js merged with the
              grants the server returns, so a site the user connected by hand
              still gets a card rather than disappearing into the list below. -->
+        <!-- One row per site, and only one. It used to be two: a card here
+             with the mark and Disconnect, and a list below with the
+             permission and Remove — the same site twice, and the two buttons
+             called the same endpoint. -->
         <div id="webShelf" class="cn-web-shelf"></div>
-        <div id="webSites" class="cn-web-list"></div>
         <div class="cn-web-add">
           <input id="webInput" class="set-input" type="text" autocomplete="off"
                  placeholder="example.com" aria-label="Website to allow" />

@@ -124,6 +124,23 @@ One persistent Chromium profile under `~/Library/Chitragupta/browser/`.
 * **A logged-in site is a connection, and the Connectors panel must say so.**
   Anything else and the user has no single place that answers "what can this app
   reach on my behalf".
+* **One row per site, carrying everything.** The panel drew each site twice for
+  a while — a card with its mark, account and *Disconnect*, and a row beneath
+  with its address, its permission and *Remove* — and both buttons called the
+  same endpoint. So LinkedIn appeared as `LinkedIn` and again as
+  `www.linkedin.com`, and which one you pressed decided nothing. The row now
+  carries the mark, the address, who is signed in, whether agents may change
+  things, and the one control that takes it away.
+* **Allowed is not signed in, and the row must not claim it is.** Typing an
+  address lets agents *read* a site; connecting one lets them read it **as
+  you**. The card said "Signed in" to both. `signin.py` always writes a note —
+  the account where it has one, `signed in from Connectors` where it does not —
+  so a note is the proof, and a grant without one says *Allowed* and offers
+  *Remove* rather than *Disconnect*.
+* **A site added by hand keeps its identity.** It used to get a generic glyph,
+  so `figma.com` read as something the app did not recognise while Figma's mark
+  sat in `BRAND_MARKS` already. The connector marks serve both screens, keyed
+  on the registered domain's own label; anything unpublished gets a monogram.
 
 MFA and CAPTCHA are not automated and should never be. When a page asks, the
 window comes forward and the user does it. That is a feature: a login the agent

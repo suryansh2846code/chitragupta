@@ -69,7 +69,10 @@ def test_nothing_allowed_is_stated_rather_than_left_blank():
     state and the panel says so."""
     out = _run({**BASE, "sites": []})
 
-    assert "No sites yet" in out["rendered"]["list"]
+    # Reworded when the two site lists became one: the shelf always shows a
+    # Connect card per catalogue site, so "no sites" was no longer true of
+    # what is on screen — "no site is allowed" is the fact being stated.
+    assert "No site is allowed yet" in out["rendered"]["list"]
     assert "cannot open any page" in out["rendered"]["list"]
 
 

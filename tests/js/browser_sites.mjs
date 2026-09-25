@@ -15,12 +15,25 @@ import { appSource } from "./_app_source.mjs";
 const APP_JS = process.argv[2];
 const { status, addError } = JSON.parse(fs.readFileSync(0, "utf8"));
 
-const buttonsFrom = (html, attr, key) => {
+//: A real `dataset` is camelCased and carries EVERY data attribute on the
+//: element, not just the one that was queried. This fake did neither, so
+//: `data-site-off` never reached `dataset.siteOff` and a second attribute on
+//: the same button was invisible — a handler reading either got `undefined`
+//: and the harness reported a call to `/sites/undefined` rather than a bug.
+const camel = (name) => name.replace(/^data-/, "").replace(/-([a-z])/g,
+  (_, c) => c.toUpperCase());
+
+const buttonsFrom = (html, attr) => {
   const found = [];
-  const re = new RegExp(`${attr}="([^"]*)"`, "g");
+  // The whole opening tag the attribute sits in, so its siblings come too.
+  const re = new RegExp(`<[^>]*?${attr}="[^"]*"[^>]*>`, "g");
   let m;
   while ((m = re.exec(html))) {
-    found.push({ dataset: { [key]: m[1] }, disabled: false, onclick: null });
+    const dataset = {};
+    for (const [, name, value] of m[0].matchAll(/(data-[\w-]+)="([^"]*)"/g)) {
+      dataset[camel(name)] = value;
+    }
+    found.push({ dataset, disabled: false, onclick: null });
   }
   return found;
 };
@@ -37,8 +50,7 @@ const makeEl = (tag = "div") => {
     querySelectorAll(sel) {
       const attr = (sel.match(/^\[([a-z-]+)\]$/) || [])[1];
       if (!attr) return [];
-      const key = attr.replace(/^data-/, "");
-      const made = buttonsFrom(this.innerHTML, attr, key);
+      const made = buttonsFrom(this.innerHTML, attr);
       made.forEach((b) => kept.push({ sel, b }));
       return made;
     },
@@ -98,7 +110,10 @@ try {
   error = `${e.constructor.name}: ${e.message}`;
 }
 
-const list = el("#webSites"), setup = el("#webSetup"), state = el("#webSetupState");
+// `#webShelf` is the one list now. `#webSites` was a second rendering of the
+// same sites and is gone — reading it here would report an empty string and
+// call every assertion about the list a failure.
+const list = el("#webShelf"), setup = el("#webSetup"), state = el("#webSetupState");
 const rendered = {
   list: list.innerHTML,
   setupHidden: setup.hidden,
@@ -109,7 +124,8 @@ const rendered = {
 
 // Remove the first site, if one rendered a button.
 let removed = null;
-const del = kept.find((k) => k.sel === "[data-webdel]");
+// Remove and Disconnect are one control now, on the card.
+const del = kept.find((k) => k.sel === "[data-site-off]");
 if (del) {
   calls.length = 0;
   try { await del.b.onclick(); removed = "ok"; }
