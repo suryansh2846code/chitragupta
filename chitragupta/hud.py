@@ -378,3 +378,18 @@ def close() -> None:
         _hud_window.load_url("about:blank")     # stop the page polling
     except Exception:
         logger.debug("sign-in window already hidden", exc_info=True)
+
+
+def _attach_to_api() -> None:
+    """Hand this module to the HTTP layer as its desktop surface.
+
+    Here rather than in `desktop.py` so the wiring sits beside the thing being
+    wired. `api/` must not import this module (`docs/ARCHITECTURE.md` §3 rule 5)
+    — importing in the other direction is fine, and is what makes the seam a
+    seam. Detached, the bridge answers "no native window", which is the truth
+    under `chitragupta serve`.
+    """
+    import sys
+
+    from .api import desktop_bridge
+    desktop_bridge.attach(sys.modules[__name__])

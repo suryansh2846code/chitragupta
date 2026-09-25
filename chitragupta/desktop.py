@@ -257,6 +257,7 @@ def run_app(dev: bool = False) -> None:
         return
 
     from . import hud
+    hud._attach_to_api()
 
     class _AppBridge:
         """Reachable from the page as `window.pywebview.api`.

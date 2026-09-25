@@ -57,20 +57,21 @@ def hud_note(body: HudNoteIn):
     provider was already connected, or asked for and refused. Without that, the
     two are indistinguishable from the backend.
     """
-    from ... import hud
+    from .. import desktop_bridge
 
-    hud.note("branch", provider=body.provider, branch=body.branch,
-             detail=body.detail[:200])
+    desktop_bridge.note("branch", provider=body.provider, branch=body.branch,
+                        detail=body.detail[:200])
     return {"ok": True}
 
 
 @router.get("/api/hud/diagnostics")
 def hud_diagnostics():
     """Whether the floating sign-in window exists, and what the last click did."""
-    from ... import hud
     from ...models import login_processes
+    from .. import desktop_bridge
 
-    return {**hud.diagnostics(), "login_processes": login_processes.alive()}
+    return {**desktop_bridge.diagnostics(),
+            "login_processes": login_processes.alive()}
 
 
 # ── actions (execute only after explicit user confirmation) ───────────────

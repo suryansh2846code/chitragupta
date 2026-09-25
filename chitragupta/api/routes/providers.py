@@ -140,8 +140,8 @@ def _start_sign_in(name: str) -> dict:
     if started.get("started"):
         # The floating card is raised by the page, not here: under --dev this
         # process is a separate uvicorn with no handle on the webview.
-        from ... import hud
-        started["timeout_seconds"] = hud.SIGNIN_TIMEOUT_SECONDS
+        from .. import desktop_bridge
+        started["timeout_seconds"] = desktop_bridge.signin_timeout_seconds()
     return started
 
 
