@@ -37,6 +37,48 @@ which caught three real defects in the process; each is recorded in its entry.
 
 ---
 
+## A13 — Two tests pass or fail depending on what ran before them · **OPEN**
+
+> Found 2026-09-25 while breaking the `models/` import cycle. **Pre-existing** —
+> reproduced on an untouched worktree at `HEAD` before any of that landed, so it
+> is not a consequence of the refactor.
+
+```bash
+pytest -q -k "docs or claude"     # 1 failed
+pytest -q                          # 3706 passed
+pytest tests/test_detection_is_not_consent.py -q   # passes
+```
+
+`test_connecting_claude_code_does_not_connect_the_api_provider` asserts that
+connecting claude-code leaves the **API** provider disconnected — the
+"detection is not consent" rule, which is a real invariant in `/CLAUDE.md`. It
+fails only under that `-k` selection. No pair of files reproduces it; it needs a
+longer chain, so something in the session leaves `claude` looking connected in a
+way the file's own `_disconnected_claude` fixture does not undo.
+
+**Why it matters more than a flaky test normally would.** The assertion is one
+of the load-bearing security invariants, and the failure mode is the *unsafe*
+direction: the provider reads as connected when it should not. A test that only
+notices under an unusual invocation is a test that would not notice in CI.
+
+**Partly addressed.** The `@ttl_cached(4.0)` account detectors in `accounts.py`
+were leaking between tests — a test that ran `detect_claude_account` for real
+left the answer in a four-second cache, and the next test, having carefully
+stubbed the CLI away, got *the developer's own account* back. `conftest.py`'s
+`_no_stale_cli_auth_cache` now calls `cache.clear_all()`, which fixed
+`test_10_claude_detection_does_not_expose_oauth_token` — a test that had been
+asserting against a real email address. The remaining failure is not that cache.
+
+**To close it:** find what leaves `claude` connected. The likely shapes are a
+`ProviderConnection` written by another file with no teardown, or a detection
+path reached through `connect_local_account("claude-code")`. Then give the
+connections store the same per-test reset the CLI auth caches now have — the
+session-scoped `CHITRAGUPTA_HOME` means every connection written by any test
+persists for the whole run, which is the underlying cause and is worth fixing
+once rather than per file.
+
+---
+
 ## A1 — ~~A live Google OAuth client secret is committed~~ · **CLOSED**
 
 > **Closed 2026-09-16.** Not by removing the file — that breaks first launch and
