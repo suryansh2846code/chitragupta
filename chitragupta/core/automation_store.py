@@ -158,6 +158,17 @@ CREATE TABLE IF NOT EXISTS automation_runs (
     actions_used      INTEGER NOT NULL DEFAULT 0,
     model_calls_used  INTEGER NOT NULL DEFAULT 0,
     deadline_at       TEXT NOT NULL DEFAULT '',
+    -- The user confirmed this exact action, with this content, at the moment
+    -- they scheduled it. Set ONLY by `engine.run_once`, from a row in
+    -- `scheduled_actions` that `actions.execute` wrote after a Confirm. See
+    -- the note in `executor._run_action`.
+    pre_approved      INTEGER NOT NULL DEFAULT 0,
+    -- The automation, for a run whose automation was never written down: a
+    -- reminder and a scheduled action are one occurrence, not a standing rule.
+    -- Without this a restart or a retry cannot resume them — the goal, the
+    -- policy and the limits only ever existed in the process that died. See
+    -- `engine.run_once` and `engine.recover`.
+    spec_json         TEXT NOT NULL DEFAULT '{}',
     created_at        TEXT NOT NULL,
     updated_at        TEXT NOT NULL,
     started_at        TEXT NOT NULL DEFAULT '',
@@ -211,6 +222,15 @@ ROUTINE_COLUMNS = {
     "next_run": "TEXT NOT NULL DEFAULT ''",
 }
 
+#: Columns added to `automation_runs` after it first shipped. Same reason as
+#: `ROUTINE_COLUMNS`: a machine that already has the table keeps the old shape,
+#: and the first read of a new column raises on a database full of real runs.
+RUN_COLUMNS = {
+    "plan_json": "TEXT NOT NULL DEFAULT '[]'",
+    "pre_approved": "INTEGER NOT NULL DEFAULT 0",
+    "spec_json": "TEXT NOT NULL DEFAULT '{}'",
+}
+
 _CONN: sqlite3.Connection | None = None
 _PATH_OVERRIDE: Path | None = None
 _LOCK = threading.Lock()
@@ -227,6 +247,10 @@ def _conn() -> sqlite3.Connection:
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA busy_timeout=5000")
     conn.executescript(_SCHEMA)
+    have = {r["name"] for r in conn.execute("PRAGMA table_info(automation_runs)")}
+    for column, decl in RUN_COLUMNS.items():
+        if column not in have:
+            conn.execute(f"ALTER TABLE automation_runs ADD COLUMN {column} {decl}")
     conn.commit()
     _CONN = conn
     return conn
@@ -259,6 +283,7 @@ def _run_public(row: sqlite3.Row) -> dict[str, Any]:
     out["trigger"] = _loads(out.pop("trigger_json", ""), {})
     out["context"] = _loads(out.pop("context_json", ""), {})
     out["plan"] = _loads(out.pop("plan_json", ""), [])
+    out["spec"] = _loads(out.pop("spec_json", ""), {})
     return out
 
 
@@ -268,7 +293,9 @@ def create_run(automation_id: str, *, automation_name: str = "",
                trigger: dict[str, Any] | None = None,
                max_attempts: int = 3, deadline_at: str = "",
                correlation_id: str = "", parent_run_id: str = "",
-               depth: int = 0) -> dict[str, Any]:
+               depth: int = 0, plan: list[dict[str, Any]] | None = None,
+               pre_approved: bool = False,
+               spec: dict[str, Any] | None = None) -> dict[str, Any]:
     """Open a run in PENDING. Nothing has happened yet, and it is on disk."""
     run_id = str(uuid.uuid4())
     now = _now()
@@ -276,12 +303,13 @@ def create_run(automation_id: str, *, automation_name: str = "",
         conn = _conn()
         conn.execute(
             "INSERT INTO automation_runs (id, automation_id, automation_name, "
-            "state, trigger_json, max_attempts, deadline_at, correlation_id, "
-            "parent_run_id, depth, created_at, updated_at) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            "state, trigger_json, plan_json, max_attempts, deadline_at, "
+            "correlation_id, parent_run_id, depth, pre_approved, spec_json, "
+            "created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (run_id, automation_id, automation_name, RunState.PENDING,
-             json.dumps(trigger or {}), max_attempts, deadline_at,
-             correlation_id or run_id, parent_run_id, depth, now, now))
+             json.dumps(trigger or {}), json.dumps(plan or []), max_attempts,
+             deadline_at, correlation_id or run_id, parent_run_id, depth,
+             1 if pre_approved else 0, json.dumps(spec or {}), now, now))
         conn.commit()
     return get_run(run_id) or {}
 

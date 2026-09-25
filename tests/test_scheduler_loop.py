@@ -526,13 +526,28 @@ def minute_tick(monkeypatch):
     **sends email and creates calendar events with nobody present**, once a
     minute, forever. It was entirely uncovered.
     """
+    # A database of this test's own. Due rows become automation runs now, and
+    # the event ledger deliberately refuses to fire `reminder:r1` twice — so
+    # two tests reusing that id would make the second one silently a duplicate.
+    import tempfile
+    from pathlib import Path as _Path
+
+    from chitragupta.core import automation_store as _store
+    from chitragupta.core import events as _events
+    _fresh = _Path(tempfile.mkdtemp()) / "automation.db"
+    _store.reset_for_tests(_fresh)
+    _events.reset_for_tests(_fresh)
+
     notes: list[tuple[str, str]] = []
     monkeypatch.setattr("chitragupta.notify.desktop_notify",
                         lambda title, message: notes.append((title, message)) or True)
 
     class _Reminders:
-        rows: list[dict] = []
-        fired: list[str] = []
+        # Instance state, not class state. Shared mutable defaults on a fixture
+        # class leak every row into the next test that uses it.
+        def __init__(self):
+            self.rows: list[dict] = []
+            self.fired: list[str] = []
 
         def due(self):
             return list(self.rows)
@@ -541,8 +556,9 @@ def minute_tick(monkeypatch):
             self.fired.append(rid)
 
     class _Scheduled:
-        rows: list[dict] = []
-        done: list[tuple[str, str]] = []
+        def __init__(self):
+            self.rows: list[dict] = []
+            self.done: list[tuple[str, str]] = []
 
         def due(self):
             return list(self.rows)
@@ -591,8 +607,16 @@ def test_a_scheduled_action_runs_and_is_marked_done(minute_tick):
     the worst failure this file can produce."""
     notes, _reminders, scheduled, mp = minute_tick
     scheduled.rows = [{"id": "s1", "type": "send_email", "params": '{"to": "a@b.test"}'}]
+    # `**kw` because the engine records where an action came from — the run is
+    # the caller now, not the scheduler, and `origin` goes into the action log.
     mp.setattr("chitragupta.actions.run_now",
-               lambda t, p: {"ok": True, "detail": "Sent to a@b.test"})
+               lambda t, p, **kw: {"ok": True, "detail": "Sent to a@b.test"})
+    # This test is about the scheduler's wiring, not about verification.
+    # With the action layer faked, the real `send_email` verifier would go
+    # and ask Gmail about a message that was never sent and correctly find
+    # nothing — a mismatch this test created, not behaviour worth asserting
+    # here. `tests/test_action_verification.py` covers the real thing.
+    mp.setattr("chitragupta.automation.engine._verify", lambda *a, **k: None)
 
     Scheduler()._fire_reminders()
 
@@ -603,19 +627,70 @@ def test_a_scheduled_action_runs_and_is_marked_done(minute_tick):
 def test_a_failing_scheduled_action_tells_the_user_and_stops(minute_tick):
     """A failure has to be both visible and final.
 
-    Silent would mean the user believes an email went out. Retried forever would
-    mean a notification every minute. Neither is acceptable, so it notifies once
-    and is marked done.
+    Silent would mean the user believes an email went out. Retried forever
+    would mean a notification every minute. Neither is acceptable.
+
+    **What changed, and what did not.** The old path notified on the first
+    failure and gave up — a transient connector blip lost the email. It now
+    retries with backoff, so the first tick is deliberately quiet, and the run
+    ends in `ESCALATED` with the user told what happened and why. The property
+    this test has always protected is unchanged: the user finds out, and it
+    stops. Only the number of attempts before it stops is different.
     """
     notes, _reminders, scheduled, mp = minute_tick
     scheduled.rows = [{"id": "s1", "type": "send_email", "params": "{}"}]
     mp.setattr("chitragupta.actions.run_now",
-               lambda t, p: {"ok": False, "error": "no recipient"})
+               lambda t, p, **kw: {"ok": False, "error": "no recipient"})
+    # This test is about the scheduler's wiring, not about verification.
+    # With the action layer faked, the real `send_email` verifier would go
+    # and ask Gmail about a message that was never sent and correctly find
+    # nothing — a mismatch this test created, not behaviour worth asserting
+    # here. `tests/test_action_verification.py` covers the real thing.
+    mp.setattr("chitragupta.automation.engine._verify", lambda *a, **k: None)
 
     Scheduler()._fire_reminders()
 
-    assert "no recipient" in notes[0][1]
+    # Marked done immediately: the *schedule* is spent, whatever the run does
+    # next. Leaving it pending would fire a second run on the next minute.
     assert [sid for sid, _ in scheduled.done] == ["s1"]
+    assert notes == [], "it announced a verdict before it had one"
+
+    from chitragupta.core import automation_store as store
+    run = store.recent_runs(limit=1)[0]
+    assert run["state"] == "retrying"
+
+    # Drive the retries the way a later tick would, with the clock moved on.
+    _exhaust(run["id"])
+
+    settled = store.get_run(run["id"])
+    assert settled["state"] == "escalated"
+    assert "no recipient" in settled["reason"]
+    assert notes, "it stopped without telling the user"
+    assert "no recipient" in notes[-1][1]
+
+
+def _exhaust(run_id: str) -> None:
+    """Advance one run past its backoff until it settles. No sleeping.
+
+    Through `engine.recover` — the same call a later tick makes — and not
+    through a hand-built `Automation`, which is the point: a scheduled action's
+    automation was never written to the routines table, so this is also the
+    test that such a run can be resumed at all.
+    """
+    from datetime import UTC, datetime, timedelta
+
+    from chitragupta.automation import engine
+    from chitragupta.core import automation_store as store
+
+    clock = [datetime.now(UTC)]
+    deps = engine.real_deps()
+    deps.now = lambda: clock[0]
+    terminal = {str(state) for state in store.TERMINAL_STATES}
+    for _ in range(8):
+        clock[0] += timedelta(hours=1)
+        engine.recover(deps=deps)
+        if str((store.get_run(run_id) or {}).get("state")) in terminal:
+            return
 
 
 def test_a_broken_reminder_store_does_not_stop_scheduled_actions(minute_tick):

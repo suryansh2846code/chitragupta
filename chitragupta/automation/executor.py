@@ -250,6 +250,25 @@ class Executor:
     # ── RUNNING → a plan ───────────────────────────────────────────────────
 
     def _make_plan(self, run: dict, automation: Automation) -> dict:
+        # A run whose plan was decided before it started — a reminder firing,
+        # a scheduled action the user confirmed hours ago. There is nothing for
+        # a model to work out, and asking one would spend the user's money to
+        # rediscover a decision they already made.
+        preset = run.get("plan") or []
+        already = [s for s in store.steps_for(run["id"]) if s["kind"] == "action"]
+        if preset and not already:
+            for seq, action in enumerate(preset):
+                action_type = str(action.get("type") or "")
+                params = dict(action.get("params") or {})
+                store.add_step(
+                    run["id"], kind="action", name=action_type, params=params,
+                    idem_key=idempotency.key_for(
+                        automation_id=automation.id, action_type=action_type,
+                        params=params,
+                        event_key=Event.from_dict(
+                            run.get("trigger") or {}).dedup_key, seq=seq))
+            return store.transition(run["id"], RunState.EXECUTING)
+
         event = Event.from_dict(run.get("trigger") or {})
         prior = [r for r in store.runs_for(automation.id, limit=4)
                  if r["id"] != run["id"]]
@@ -366,8 +385,29 @@ class Executor:
         # 2. The permission gate. The same one interactive agents use, asked
         #    the same question. Nothing in this module may widen its answer.
         verdict = self.deps.gate(action_type, params)
-        if not verdict.allowed:
+        if not verdict.allowed and not run.get("pre_approved"):
             return self._blocked_action(run, automation, step, verdict)
+        if not verdict.allowed:
+            # **The one case where a refusal does not stop the action, and it
+            # is not a bypass — it is not asking twice.** `pre_approved` is set
+            # only by `engine.run_scheduled`, only from a `scheduled_actions`
+            # row, and those rows are written only by `actions.execute` after
+            # the user pressed Confirm on a card showing this exact content and
+            # this exact time. The decision was made; the gate exists for
+            # actions nobody has seen.
+            #
+            # Recorded on the step rather than skipped silently, so the run
+            # history says which approval it is standing on. Before this,
+            # scheduled actions ran straight through `run_now` from the
+            # scheduler with no gate, no record and no run at all — this is
+            # strictly more visible than what it replaces.
+            log.info("run %s: %s proceeding on the approval given when it was "
+                     "scheduled (gate said: %s)",
+                     run["id"], action_type, verdict.reason)
+            store.add_step(run["id"], kind="approval", name=action_type,
+                           params={"pre_approved": True,
+                                   "gate_said": verdict.reason},
+                           state=StepState.DONE)
 
         # 3. Claim BEFORE the effect. A crash after this line leaves a claim in
         #    `CLAIMED`, which is the honest state: we do not know whether it

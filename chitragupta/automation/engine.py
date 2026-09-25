@@ -20,7 +20,7 @@ from ..core.events import Event
 from ..log import get_logger, suppressed
 from . import router, triggers
 from .executor import Deps, Executor, Verdict
-from .model import Automation
+from .model import Automation, Policy
 
 log = get_logger(__name__)
 
@@ -291,6 +291,26 @@ def ingest(event: Event, *, deps: Deps | None = None,
     return routed.as_dict()
 
 
+def automation_for(run: dict[str, Any]) -> Automation | None:
+    """The automation a run belongs to — standing rule or one occurrence.
+
+    A recurring automation is a `routines` row and is looked up. A reminder or
+    a scheduled action never had one: `run_once` builds an ephemeral
+    `Automation` and stores its spec **on the run**, because a run that cannot
+    say what its own policy and limits are cannot be resumed. Before the spec
+    was stored, the next tick after a scheduled action failed found no
+    automation, concluded it had been deleted and blocked the run — so a
+    scheduled action never got its retries and a failure was never escalated.
+    """
+    stored = get_automation(str(run.get("automation_id") or ""))
+    if stored is not None:
+        return stored
+    spec = run.get("spec") or {}
+    if not isinstance(spec, dict) or not spec.get("id"):
+        return None
+    return Automation.from_row(spec)
+
+
 def tick(*, deps: Deps | None = None,
          automations: list[Automation] | None = None) -> dict[str, Any]:
     """One beat of the clock: recover, then fire whatever is due.
@@ -356,6 +376,171 @@ def _since(connector: str) -> str:
     return str(row["first_seen"]) if row else ""
 
 
+def run_once(*, name: str, actions: list[tuple[str, dict[str, Any]]],
+             external_id: str, kind: str = "schedule.due",
+             agent_id: str = "personal", automation_id: str = "",
+             pre_approved: bool = False,
+             deps: Deps | None = None) -> dict[str, Any]:
+    """One durable run for work that was decided before it started.
+
+    A reminder and a scheduled action have no goal to reason about and no plan
+    to make — the user already said what should happen and when. What they were
+    missing is everything *after* that: a record, idempotency, verification,
+    retries and somewhere for a failure to go. Before this, a due reminder was
+    a `desktop_notify` call inside the scheduler and a due scheduled action was
+    a bare `run_now` — neither appeared in any history, and a reminder that
+    fired while the machine was asleep either fired twice or not at all.
+
+    So they become runs with the plan already filled in. The executor skips the
+    agent turn (`_make_plan` sees a preset plan) and everything else is the
+    path every other automation takes.
+
+    `external_id` is the row's own id, which is what makes firing twice
+    impossible: the event deduplicates, and if it somehow did not, the
+    idempotency claim would.
+    """
+    resolved = deps or real_deps()
+    plan = [{"type": t, "params": dict(p)} for t, p in actions]
+    event = Event(kind=kind, source="scheduler", external_id=external_id,
+                  subject=name[:200],
+                  data={"name": name, "actions": [t for t, _ in actions]})
+    if event_log.is_duplicate(event):
+        return {"ok": True, "duplicate": True, "run_id": ""}
+
+    # An ephemeral automation. Not written to the routines table: it is one
+    # occurrence of something the user already scheduled, not a standing rule,
+    # and putting it in the list of automations would fill that screen with a
+    # row per reminder.
+    one_off = Automation(
+        id=automation_id or f"once:{external_id}", name=name,
+        agent_id=agent_id, instruction=name, goal=name,
+        trigger={"type": "manual"}, conditions=[], policy=Policy())
+
+    run = store.create_run(one_off.id, automation_name=name,
+                           trigger=event.as_dict(), plan=plan,
+                           pre_approved=pre_approved, spec=_spec_row(one_off),
+                           correlation_id=event.correlation_id)
+    with suppressed("running a scheduled item"):
+        Executor(resolved).advance(run["id"], one_off)
+    settled = store.get_run(run["id"]) or {}
+    return {"ok": True, "duplicate": False, "run_id": run["id"],
+            "state": settled.get("state", "")}
+
+
+def _spec_row(one_off: Automation) -> dict[str, Any]:
+    """An ephemeral automation in the shape `Automation.from_row` reads.
+
+    Deliberately the routines-row shape rather than a new format: one reader
+    for both, so a stored spec can never drift from what a real automation
+    means by the same field.
+    """
+    return {
+        "id": one_off.id, "name": one_off.name, "agent_id": one_off.agent_id,
+        "instruction": one_off.instruction, "goal": one_off.goal,
+        "enabled": 1 if one_off.enabled else 0, "owner": one_off.owner,
+        "trigger_json": json.dumps(one_off.trigger),
+        "conditions_json": json.dumps(one_off.conditions),
+        "policy_json": json.dumps(one_off.policy.as_dict()),
+    }
+
+
+def fire_due(*, deps: Deps | None = None) -> dict[str, Any]:
+    """Everything whose time has come, as runs.
+
+    The one canonical path for scheduled execution. The scheduler used to do
+    three different things here — notify for a reminder, `run_now` for a
+    scheduled action, and a routine sweep — with three ways to fail and no
+    shared record. All three are now runs.
+
+    The stores stay where they are: `reminders` and `scheduled_actions` hold
+    what the user asked for, which is theirs. What changed is who executes it.
+    """
+    fired = {"reminders": 0, "actions": 0}
+
+    with suppressed("firing due reminders as automation runs"):
+        from ..reminders import get_reminders
+        reminders = get_reminders()
+        for row in reminders.due():
+            agent = str(row.get("agent_id") or "")
+            title = "◆ Chitragupta" + (f" · {agent.title()}" if agent else "")
+            outcome = run_once(
+                name=f"Reminder: {str(row.get('message') or '')[:60]}",
+                actions=[("notify", {"message": row.get("message") or "",
+                                     "title": title})],
+                external_id=f"reminder:{row.get('id')}",
+                agent_id=agent or "personal", deps=deps)
+            # Marked fired whether or not the run completed. A reminder whose
+            # notification failed must not be re-delivered tomorrow morning —
+            # the run carries the failure, which is where it belongs.
+            reminders.mark_fired(str(row.get("id")))
+            fired["reminders"] += 0 if outcome.get("duplicate") else 1
+
+    with suppressed("firing due scheduled actions as automation runs"):
+        import json as _json
+
+        from ..scheduled import get_scheduled
+        scheduled = get_scheduled()
+        for row in scheduled.due():
+            params = {}
+            with suppressed("reading a scheduled action's parameters"):
+                params = _json.loads(row.get("params") or "{}")
+            outcome = run_once(
+                name=f"Scheduled {row.get('type') or 'action'!s}",
+                actions=[(str(row.get("type") or ""), params)],
+                external_id=f"scheduled:{row.get('id')}",
+                agent_id=str(row.get("agent_id") or "") or "personal",
+                # The user confirmed this exact content at this exact time when
+                # they scheduled it. See `executor._run_action`.
+                pre_approved=True, deps=deps)
+            scheduled.mark_done(str(row.get("id")),
+                                _json.dumps(outcome)[:400])
+            fired["actions"] += 0 if outcome.get("duplicate") else 1
+            # The user scheduled this hours ago and is not watching. Telling
+            # them how it went is the whole reason they scheduled it rather
+            # than doing it — and it is behaviour the old path had, so losing
+            # it would be a regression dressed as a refactor.
+            if not outcome.get("duplicate"):
+                _announce_scheduled(outcome)
+
+    return fired
+
+
+def _announce_scheduled(outcome: dict[str, Any]) -> None:
+    """What a finished scheduled action tells the user.
+
+    Reads the run rather than the handler's return value, so "done" here means
+    the same thing it means everywhere else in the engine: the action ran, the
+    gate allowed it, and verification did not contradict it.
+    """
+    from ..core.automation_store import RunState
+
+    run = store.get_run(str(outcome.get("run_id") or "")) or {}
+    state = str(run.get("state") or "")
+    # The **action's** own sentence first. "Sent to ana@acme.com" is what the
+    # user scheduled and what the old path told them; the run's outcome for a
+    # preset plan is the generic "done", which says nothing they did not know.
+    detail = ""
+    for step in store.steps_for(str(run.get("id") or "")):
+        if step["kind"] == "action":
+            detail = str(step["result"].get("detail") or step.get("error") or "")
+            if detail:
+                break
+    detail = detail or str(run.get("reason") or run.get("outcome") or "")
+    if state not in {str(s) for s in store.TERMINAL_STATES}:
+        # Still retrying, or waiting on somebody. Announcing "failed" now would
+        # be wrong twice over: it is not finished, and the retry will usually
+        # succeed. If it does end badly, `_escalate` tells the user with the
+        # reason and what they need to do — a better message than this one.
+        return
+    with suppressed("telling the user a scheduled action finished"):
+        from ..notify import desktop_notify
+        if state == RunState.COMPLETED:
+            desktop_notify("◆ Chitragupta ✓", detail or "Action done")
+        else:
+            desktop_notify("◆ Chitragupta ⚠️",
+                           f"Scheduled action failed: {detail}")
+
+
 def recover(*, deps: Deps | None = None,
             automations: list[Automation] | None = None) -> list[str]:
     """Pick up every run the process left in flight.
@@ -372,8 +557,7 @@ def recover(*, deps: Deps | None = None,
 
     picked: list[str] = []
     for run in store.live_runs():
-        automation = by_id.get(run["automation_id"]) or \
-            get_automation(run["automation_id"])
+        automation = by_id.get(run["automation_id"]) or automation_for(run)
         if automation is None:
             # A run whose automation is gone cannot be finished — its goal,
             # its policy and its limits went with it. Blocked rather than
