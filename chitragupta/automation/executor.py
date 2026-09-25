@@ -698,12 +698,27 @@ class Executor:
         # failure is usually fine, and re-planning spends a model call to
         # arrive somewhere similar. Steps that already completed are skipped by
         # their own state, and the claim stops any that half-happened.
-        for step in store.steps_for(run["id"]):
+        steps = store.steps_for(run["id"])
+        for step in steps:
             if step["kind"] == "action" and step["state"] == StepState.FAILED:
                 store.finish_step(step["id"], state=StepState.PENDING)
-        return store.transition(run["id"], RunState.EXECUTING,
-                                next_attempt_at="",
-                                deadline_at=self._fresh_deadline(automation))
+
+        # **Unless the plan is what failed.** A provider blip during the agent
+        # turn leaves a run with no action steps at all, and sending that back
+        # to EXECUTING found nothing pending, moved to VERIFYING with nothing to
+        # verify, and **completed** — an automation that did nothing, reporting
+        # success, with the provider error sitting in `outcome` where the user
+        # reads it as the agent's reply. There is no work to retry here; the
+        # work is the turn, so it goes back and asks for one.
+        #
+        # A plan that legitimately proposed no actions never reaches this: it
+        # completes inside `_make_plan`, which is the difference between "it
+        # decided there was nothing to do" and "it never got to decide".
+        has_work = any(s["kind"] == "action" for s in steps)
+        return store.transition(
+            run["id"], RunState.EXECUTING if has_work else RunState.RUNNING,
+            next_attempt_at="",
+            deadline_at=self._fresh_deadline(automation))
 
     def _escalate(self, run: dict, automation: Automation, what: str,
                   needed: str) -> dict:
@@ -724,8 +739,13 @@ class Executor:
         return result
 
     def _complete(self, run: dict, automation: Automation, outcome: str) -> dict:
+        # The reason is cleared, not kept. A run that retried past a provider
+        # blip and then worked carries the blip in `reason`, and the history
+        # screen prints it beside the state — "Done · the agent could not run"
+        # is the row contradicting itself. The failed step is still there,
+        # which is where that belongs.
         result = store.transition(run["id"], RunState.COMPLETED,
-                                  outcome=outcome[:400])
+                                  outcome=outcome[:400], reason="")
         self._announce(run, automation, "automation.completed", outcome)
         return result
 

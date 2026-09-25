@@ -110,10 +110,22 @@ class FakeGate:
 
 @dataclass
 class FakeApprovals:
-    """Queued actions, and a way for a test to be the human."""
+    """Queued actions, and a way for a test to be the human.
+
+    **`approve` performs the action**, because the real one does:
+    `agents/approvals.approve` calls `actions.run_now` and the executor then
+    records the outcome rather than running it a second time. A fake that only
+    flipped a status made that whole branch invisible — a test could approve an
+    email and assert nothing about whether it was sent, and the one duplicate
+    this engine could still produce (the approval layer and the executor both
+    acting) was unassertable. `build_deps` wires `perform` to the same
+    `FakeWorld` the executor uses, so the count is across both paths.
+    """
 
     queued: dict[str, dict] = field(default_factory=dict)
     states: dict[str, str] = field(default_factory=dict)
+    #: Set by `build_deps` to `FakeWorld.perform`.
+    perform: Callable[[str, dict], dict] | None = None
     _n: int = 0
 
     def queue(self, **kw: Any) -> str:
@@ -126,8 +138,18 @@ class FakeApprovals:
     def state(self, approval_id: str) -> str:
         return self.states.get(approval_id, "missing")
 
-    def approve(self, approval_id: str) -> None:
+    def approve(self, approval_id: str) -> dict:
+        if self.states.get(approval_id) != "pending":
+            # What the real one does: a row that is no longer pending is
+            # refused, which is what makes a second tap harmless. A fake that
+            # performed twice would have made that guard untestable.
+            return {"ok": False, "error": f"Already {self.states.get(approval_id)}."}
         self.states[approval_id] = "approved"
+        row = self.queued.get(approval_id) or {}
+        if self.perform is None or not row:
+            return {"ok": True}
+        return self.perform(str(row.get("action_type") or ""),
+                            dict(row.get("params") or {}))
 
     def reject(self, approval_id: str) -> None:
         self.states[approval_id] = "rejected"
@@ -170,6 +192,8 @@ def build_deps(*, agent: FakeAgent | None = None, world: FakeWorld | None = None
     world = world or FakeWorld()
     gate = gate or FakeGate()
     approvals = approvals or FakeApprovals()
+    # The human's tap runs the action, exactly as `approvals.approve` does.
+    approvals.perform = world.perform
     clock = clock or Clock()
     notices: list[tuple[str, str]] = []
 
