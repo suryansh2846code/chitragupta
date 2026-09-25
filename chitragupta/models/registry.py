@@ -16,8 +16,9 @@ from functools import lru_cache
 
 from ..config import get_settings
 from ..log import get_logger
+from . import cache
 from .anthropic import AnthropicProvider
-from .base import ChatResult, LLMProvider, ToolCall
+from .base import DEFAULT_MAX_OUTPUT, ChatResult, LLMProvider, ToolCall
 from .claude_code import ClaudeCodeProvider
 from .cursor import CursorProvider
 from .deepseek import DeepSeekProvider
@@ -76,7 +77,7 @@ class MockProvider(LLMProvider):
         self.model = model or "mock-1"
 
 
-    def stream(self, messages, *, tools=None, temperature=0.7, max_tokens=1500):
+    def stream(self, messages, *, tools=None, temperature=0.7, max_tokens=DEFAULT_MAX_OUTPUT):
         """Stream the canned reply a few words at a time.
 
         The offline model is how this app runs on first launch with no keys, so
@@ -97,7 +98,7 @@ class MockProvider(LLMProvider):
             yield StreamEvent("text", chunk if i == 0 else " " + chunk)
         yield StreamEvent("done", result=result)
 
-    def chat(self, messages, *, tools=None, temperature=0.7, max_tokens=1500):
+    def chat(self, messages, *, tools=None, temperature=0.7, max_tokens=DEFAULT_MAX_OUTPUT):
         last = messages[-1]
         tool_names = {t.name for t in (tools or [])}
         # If we just got a tool result, produce a final answer from it.
@@ -392,7 +393,7 @@ def get_model_catalog(force_refresh: bool = False) -> list[dict]:
         conn = get_connection(pid)
         caps = get_capabilities(pid)
 
-        from .entitlements import is_provider_connected, provider_credentials
+        from .connection_state import is_provider_connected, provider_credentials
         is_conn, _user_plan, _ = is_provider_connected(pid)
         creds = provider_credentials(pid)
 
@@ -468,7 +469,7 @@ def list_providers() -> list[dict]:
         locality, destination = _LOCALITY.get(name, ("cloud", "Sent to the model provider."))
         conn = get_connection(name)
 
-        from .entitlements import is_provider_connected, provider_credentials
+        from .connection_state import is_provider_connected, provider_credentials
         is_conn, _user_plan, _ = is_provider_connected(name)
         creds = provider_credentials(name)
         acct = local_accounts.get(name)
@@ -513,12 +514,13 @@ def clear_provider_cache(provider: str | None = None) -> None:
     provider the user just connected re-discovers its real model list instead of
     serving the disconnected snapshot.
     """
-    get_provider.cache_clear()
-    from .cache import clear_all
-    from .discovery import clear_model_cache
+    from .cache import credentials_changed
 
-    clear_model_cache(provider)
-    clear_all()          # account detection and CLI listings are cached too
+    # The work now lives in the registered invalidators below, so a module that
+    # only has a credential to report — `chatgpt_auth` finishing a sign-in —
+    # can say so to a leaf instead of importing this one. This function stays
+    # because it is the name forty call sites already use.
+    credentials_changed(provider)
 
 
 # ── model-provider compatibility ──────────────────────────────────────────
@@ -609,7 +611,7 @@ class UnknownProvider(LLMProvider):
         return False, (f"'{self.name}' is not a model provider this version of "
                        "Chitragupta knows about")
 
-    def chat(self, messages, *, tools=None, temperature=0.7, max_tokens=1500):
+    def chat(self, messages, *, tools=None, temperature=0.7, max_tokens=DEFAULT_MAX_OUTPUT):
         # A chat() returns a ChatResult and never raises. Nothing should reach
         # here — `is_ready` is False — but a caller that skips the check gets
         # an empty answer rather than an exception it cannot translate.
@@ -700,3 +702,17 @@ def _wrap_usage(p: LLMProvider) -> None:
 
     p.chat = chat
     p.stream = stream
+
+
+@cache.on_credentials_change
+def _drop_memoized_providers(_provider: str | None = None) -> None:
+    """A provider instance captures its API key at construction time."""
+    get_provider.cache_clear()
+
+
+@cache.on_credentials_change
+def _drop_discovered_models(provider: str | None = None) -> None:
+    """Otherwise a provider the user just connected keeps serving the model
+    list it had while disconnected."""
+    from .discovery import clear_model_cache
+    clear_model_cache(provider)

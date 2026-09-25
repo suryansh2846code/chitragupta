@@ -201,7 +201,7 @@ def test_claude_code_reports_a_locked_model_cleanly():
     from chitragupta.models.base import Message
     from chitragupta.models.claude_code import ClaudeCodeProvider
 
-    with patch("chitragupta.models.claude_code.find_claude", return_value="/usr/bin/claude"), \
+    with patch("chitragupta.models.claude_cli.find_claude", return_value="/usr/bin/claude"), \
          patch("chitragupta.models.accounts.detect_claude_account",
                return_value={"plan": "Claude Free", "disabled_models": {}}), \
          patch("subprocess.run", side_effect=AssertionError("must not invoke the CLI")):
@@ -217,7 +217,7 @@ def test_claude_code_respects_a_cli_reported_disablement():
     from chitragupta.models.base import Message
     from chitragupta.models.claude_code import ClaudeCodeProvider
 
-    with patch("chitragupta.models.claude_code.find_claude", return_value="/usr/bin/claude"), \
+    with patch("chitragupta.models.claude_cli.find_claude", return_value="/usr/bin/claude"), \
          patch("chitragupta.models.accounts.detect_claude_account",
                return_value={"plan": "Claude Max",
                              "disabled_models": {"opus": "Update to 2.1.255+"}}), \

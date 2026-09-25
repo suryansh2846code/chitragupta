@@ -27,16 +27,14 @@ import json
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, field
 
-from .base import ChatResult, ToolCall
+from .base import ChatResult, StreamEvent, ToolCall
 
-
-@dataclass
-class StreamEvent:
-    """One thing that happened while the model was answering."""
-
-    kind: str                       # "text" | "done"
-    text: str = ""                  # for "text": the new fragment, not the total
-    result: ChatResult | None = None  # for "done": the whole response
+#: Re-exported: `StreamEvent` moved down to `base` with the other protocol
+#: types, so `base` could implement its own default `stream()` without
+#: importing the wire parsers. Every `from .streaming import StreamEvent` in
+#: the tree still reads the same.
+__all__ = ["StreamEvent", "anthropic_events", "from_result", "openai_events",
+           "sse_payloads", "stream_cli"]
 
 
 @dataclass

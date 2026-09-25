@@ -486,9 +486,14 @@ class _OAuthCallbackHandler(http.server.BaseHTTPRequestHandler):
                 conn.last_verified_at = now
                 save_connection(conn)
 
-                with suppressed("from .registry import clear_provider_cache …"):
-                    from .registry import clear_provider_cache
-                    clear_provider_cache()
+                # Reported to a leaf, not to the registry. Whatever holds
+                # credential-derived state has registered a clearer with
+                # `cache.on_credentials_change`; an auth module does not need
+                # to know which modules those are, and importing the top of the
+                # package to find out is what put it in a cycle.
+                with suppressed("dropping cached state after a ChatGPT sign-in"):
+                    from .cache import credentials_changed
+                    credentials_changed()
 
                 with _GLOBAL_AUTH_STATE.lock:
                     _GLOBAL_AUTH_STATE.status = "success"
@@ -799,7 +804,13 @@ def chat_with_chatgpt_subscription(
     # 1. What this account's plan can actually run
     supported_models, _meta, user_plan = resolve_subscription_models()
 
-    from .entitlements import evaluate_model_entitlement, get_best_unlocked_model
+    # The RULES, not the module that also goes looking for credentials. An
+    # auth module importing the catalog is an upward edge, and this one was
+    # load-bearing in the cycle. See `entitlement_rules`.
+    from .entitlement_rules import (
+        evaluate_model_entitlement,
+        get_best_unlocked_model,
+    )
 
     # 2. Select and validate model
     req_model = (model or "").strip()

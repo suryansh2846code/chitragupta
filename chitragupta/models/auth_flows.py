@@ -289,7 +289,7 @@ class ClaudeCodeFlow:
     provider_id = "claude-code"
 
     def start(self) -> AuthStart:
-        from .claude_code import find_claude
+        from .claude_cli import find_claude
 
         cli = find_claude()
         return AuthStart(
@@ -303,7 +303,7 @@ class ClaudeCodeFlow:
         )
 
     def status(self) -> AuthStatus:
-        from .claude_code import find_claude
+        from .claude_cli import find_claude
 
         return AuthStatus(provider_id=self.provider_id,
                           status="success" if find_claude() else "idle")

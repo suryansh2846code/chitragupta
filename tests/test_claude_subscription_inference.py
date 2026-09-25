@@ -40,7 +40,7 @@ def connected_account():
 
 # ── the bug ───────────────────────────────────────────────────────────────
 def test_subscription_never_calls_the_messages_api(connected_account):
-    with patch("chitragupta.models.claude_code.find_claude", return_value=CLI), \
+    with patch("chitragupta.models.claude_cli.find_claude", return_value=CLI), \
          patch("chitragupta.models.claude_code.ClaudeCodeProvider.chat",
                return_value=ChatResult(text="from the CLI")) as cli_chat, \
          patch("httpx.post", side_effect=AssertionError("posted to api.anthropic.com")) as post:
@@ -52,14 +52,14 @@ def test_subscription_never_calls_the_messages_api(connected_account):
 
 
 def test_subscription_is_not_ready_without_the_cli(connected_account):
-    with patch("chitragupta.models.claude_code.find_claude", return_value=None):
+    with patch("chitragupta.models.claude_cli.find_claude", return_value=None):
         ready, reason = AnthropicProvider(api_key="").is_ready()
     assert ready is False
     assert "Claude CLI" in reason
 
 
 def test_subscription_without_cli_explains_itself_instead_of_crashing(connected_account):
-    with patch("chitragupta.models.claude_code.find_claude", return_value=None), \
+    with patch("chitragupta.models.claude_cli.find_claude", return_value=None), \
          patch("httpx.post", side_effect=AssertionError("should not be called")):
         result = AnthropicProvider(api_key="").chat(HELLO)
     assert "⚠️" in result.text
@@ -77,7 +77,7 @@ def test_model_id_reaches_the_cli_unchanged(connected_account):
         def chat(self, *a, **kw):
             return ChatResult(text="ok")
 
-    with patch("chitragupta.models.claude_code.find_claude", return_value=CLI), \
+    with patch("chitragupta.models.claude_cli.find_claude", return_value=CLI), \
          patch("chitragupta.models.claude_code.ClaudeCodeProvider", FakeCLI):
         AnthropicProvider(model="claude-3-7-sonnet-latest", api_key="").chat(HELLO)
     assert seen["model"] == "claude-3-7-sonnet-latest"

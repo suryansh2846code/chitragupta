@@ -11,6 +11,7 @@ from unittest.mock import patch
 import httpx
 import pytest
 
+from chitragupta.models import connection_state
 from chitragupta.models.anthropic import AnthropicProvider
 from chitragupta.models.base import Message
 from chitragupta.models.claude_code import ClaudeCodeProvider
@@ -185,7 +186,7 @@ def test_cli_message_does_not_duplicate_the_cli_suffix():
 
 
 @pytest.mark.parametrize("make,finder", [
-    (ClaudeCodeProvider, "chitragupta.models.claude_code.find_claude"),
+    (ClaudeCodeProvider, "chitragupta.models.claude_cli.find_claude"),
     (CursorProvider, "chitragupta.models.cursor.find_cursor_cli"),
 ])
 def test_cli_providers_return_replies_on_failure(make, finder):
@@ -199,14 +200,14 @@ def test_cli_providers_return_replies_on_failure(make, finder):
 
 
 def test_model_not_found_suggests_models_the_user_can_run():
-    from chitragupta.models import discovery, entitlements
+    from chitragupta.models import discovery
     from chitragupta.models.discovery import DiscoveredModel, clear_model_cache
 
     clear_model_cache()
     with patch.object(discovery, "_discover_raw",
                       lambda pid, k: ([DiscoveredModel("good-1", "G", ""),
                                        DiscoveredModel("locked-1", "L", "", locked=True)], {})), \
-         patch.object(entitlements, "is_provider_connected",
+         patch.object(connection_state, "is_provider_connected",
                       lambda pid, api_key=None: (True, "Plan", {})):
         err = classify_http("openai", 404, "", model="gone-1")
     clear_model_cache()

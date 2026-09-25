@@ -25,13 +25,15 @@ backend. See `docs/development/cli-tool-bridge.md`.
 from __future__ import annotations
 
 import os
-import shutil
 import subprocess
-from pathlib import Path
 
 from ..log import get_logger
-from .base import ChatResult, LLMProvider, Message, parse_cli_json
-from .cli_login import augmented_path
+from . import claude_cli
+from .base import DEFAULT_MAX_OUTPUT, ChatResult, LLMProvider, Message, parse_cli_json
+from .claude_cli import (
+    _augmented_path,
+    find_claude,
+)
 from .errors import (
     ErrorKind,
     ProviderError,
@@ -40,24 +42,12 @@ from .errors import (
     parse_reset_at,
 )
 
+#: `find_claude` lives in `claude_cli` now — below both this module and
+#: `accounts`, which is what broke the last cycle in this package. Declared
+#: here so the old import path stays a promise rather than an accident.
+__all__ = ["ClaudeCodeProvider", "find_claude"]
+
 log = get_logger(__name__)
-
-# Bin dirs GUI apps miss: apps launched from Finder/.app get a minimal PATH
-# (/usr/bin:/bin:/usr/sbin:/sbin), so Homebrew, npm-global and the Claude Code
-# local install are invisible to shutil.which. Search them explicitly.
-_EXTRA_BIN_DIRS = [
-    "/opt/homebrew/bin", "/usr/local/bin",
-    str(Path.home() / ".local" / "bin"),
-    str(Path.home() / ".claude" / "local"),
-    str(Path.home() / ".npm-global" / "bin"),
-    str(Path.home() / "bin"),
-    "/opt/homebrew/sbin",
-]
-
-
-def _augmented_path() -> str:
-    return augmented_path(_EXTRA_BIN_DIRS)
-
 
 def _answered(result: ChatResult, bridge) -> ChatResult:
     """The CLI's answer, with the tool calls it already made taken back out.
@@ -79,24 +69,15 @@ def _answered(result: ChatResult, bridge) -> ChatResult:
     return result
 
 
-def find_claude() -> str | None:
-    """Locate the `claude` binary even when PATH is the stripped GUI default."""
-    found = shutil.which("claude", path=_augmented_path())
-    if found:
-        return found
-    for d in _EXTRA_BIN_DIRS:
-        cand = Path(d) / "claude"
-        if cand.exists() and os.access(cand, os.X_OK):
-            return str(cand)
-    return None
-
-
 class ClaudeCodeProvider(LLMProvider):
     name = "claude-code"
     model = "claude-code"
 
     def __init__(self, model: str | None = None, **_: object) -> None:
-        self._bin = find_claude()
+        # Module-qualified on purpose: `find_claude` is re-exported above for
+        # compatibility, but a test that patches the name where it LIVES must
+        # reach this call too. One symbol, one place to patch.
+        self._bin = claude_cli.find_claude()
         # Only honor a model name that is actually a Claude model — the global
         # CHITRAGUPTA_MODEL_NAME may be set for another backend (e.g. an Ollama tag).
         if model and any(k in model.lower()
@@ -207,7 +188,7 @@ class ClaudeCodeProvider(LLMProvider):
             cmd += ["--model", self.model]
         return cmd, prompt, {**os.environ, "PATH": _augmented_path()}
 
-    def stream(self, messages, *, tools=None, temperature=0.7, max_tokens=1500):
+    def stream(self, messages, *, tools=None, temperature=0.7, max_tokens=DEFAULT_MAX_OUTPUT):
         """Stream by asking the CLI for incremental events.
 
         All three vendor CLIs emit Anthropic Messages events, one JSON object
@@ -274,12 +255,16 @@ class ClaudeCodeProvider(LLMProvider):
             if bridge is not None:
                 bridge.close()
 
-    def chat(self, messages, *, tools=None, temperature=0.7, max_tokens=1500):
+    def chat(self, messages, *, tools=None, temperature=0.7, max_tokens=DEFAULT_MAX_OUTPUT):
         if not self._bin:
             return ChatResult(text="Claude Code CLI not available.")
 
         from .accounts import detect_claude_account
-        from .entitlements import evaluate_model_entitlement
+
+        # The rules only. `entitlements` also detects, which means importing it
+        # from a provider drags the whole catalog up behind it — the edge that
+        # made `models/` one unreadable lump. See `entitlement_rules`.
+        from .entitlement_rules import evaluate_model_entitlement
 
         acct = detect_claude_account()
         user_plan = acct.get("plan")

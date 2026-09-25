@@ -61,3 +61,37 @@ def clear_all() -> None:
         from ..config import forget_cached_secrets
 
         forget_cached_secrets()
+
+
+#: Things that hold state derived from a credential, and how to drop it.
+#:
+#: `clear_all` above flushes the probe caches declared in this module. This list
+#: is for the caches that live elsewhere and cannot be — the memoized provider
+#: instances in `registry` (they capture the API key at construction) and the
+#: model catalog in `discovery` (it would keep serving the disconnected
+#: snapshot). Each registers itself; nothing here imports them.
+#:
+#: The direction is the point. `chatgpt_auth` finishing a sign-in has to
+#: invalidate both, and it was doing so by importing `registry` — an auth module
+#: reaching the top of the package, which is one of the edges that made all of
+#: `models/` a single fourteen-module knot. Now it says "the credentials
+#: changed" to a leaf, and whoever cares has already said so.
+_invalidators: list[Callable[[str | None], None]] = []
+
+
+def on_credentials_change(fn: Callable[[str | None], None]) -> Callable[[str | None], None]:
+    """Register `fn` to run whenever a credential changes. Returns `fn`."""
+    _invalidators.append(fn)
+    return fn
+
+
+def credentials_changed(provider: str | None = None) -> None:
+    """A credential was added, removed or refreshed — drop what derives from it.
+
+    Safe to call before anything has registered: an empty list means nothing
+    has been built yet, which is the same outcome as clearing it.
+    """
+    for invalidate in list(_invalidators):
+        with suppressed("dropping cached state after a credential change"):
+            invalidate(provider)
+    clear_all()

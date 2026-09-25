@@ -83,8 +83,8 @@ def detect_claude_account() -> dict[str, Any]:
     cli_plan = None
 
     # 1. Prefer official Claude CLI status
-    with suppressed("from .claude_code import find_claude …"):
-        from .claude_code import find_claude
+    with suppressed("from .claude_cli import find_claude …"):
+        from .claude_cli import find_claude
         claude_bin = find_claude()
         if claude_bin:
             cli_installed = True
@@ -356,7 +356,7 @@ def connect_local_account(provider: str) -> tuple[bool, str, dict[str, Any]]:
     """Bind a detected on-computer account for the given provider to TURNOVER."""
     pid = provider.lower()
     if pid == "claude-code":
-        from .claude_code import find_claude
+        from .claude_cli import find_claude
         if not find_claude():
             return False, "Claude CLI not found on this computer", {}
         info = detect_claude_account()

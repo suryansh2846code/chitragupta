@@ -150,6 +150,16 @@ def _unused_imports(path: Path) -> list[str]:
                 if a.name != "*":
                     imported[a.asname or a.name] = True
     used = set()
+    # A name in `__all__` IS used — it is what the module exports. This is the
+    # rule the __init__.py exemption below used to state in a comment and not
+    # enforce; applied uniformly it also covers the deliberate re-exports that
+    # keep an import path working after a symbol moves to its own module
+    # (`entitlement_rules`, `connection_state`, `claude_cli`).
+    for n in ast.walk(tree):
+        if isinstance(n, ast.Assign) and any(
+                isinstance(t, ast.Name) and t.id == "__all__" for t in n.targets):
+            used.update(e.value for e in ast.walk(n)
+                        if isinstance(e, ast.Constant) and isinstance(e.value, str))
     for n in ast.walk(tree):
         if isinstance(n, ast.Name):
             used.add(n.id)
@@ -164,8 +174,9 @@ def _unused_imports(path: Path) -> list[str]:
 
 @pytest.mark.parametrize("path", sorted(MODELS_DIR.glob("*.py")), ids=lambda p: p.name)
 def test_no_unused_imports(path):
-    if path.name == "__init__.py":      # deliberate re-exports, guarded by __all__
-        return
+    # __init__.py is no longer exempt: `_unused_imports` now honours `__all__`,
+    # which is what the exemption was standing in for. A re-export that is not
+    # declared is still an unused import, which is the case worth catching.
     assert not _unused_imports(path), f"{path.name}: unused imports"
 
 

@@ -95,6 +95,23 @@ class Tool:
 
 
 @dataclass
+class StreamEvent:
+    """One thing that happened while the model was answering.
+
+    Lives here, beside `ChatResult` and `ToolCall`, because it is part of the
+    same protocol: it is what `LLMProvider.stream` yields. It used to live in
+    `streaming.py`, which meant `base` had to import the wire parsers to
+    implement its own default `stream()` while `streaming` imported `base` for
+    the types — a two-module cycle around one dataclass. `streaming` re-exports
+    it, so every existing import still reads the same.
+    """
+
+    kind: str                       # "text" | "done"
+    text: str = ""                  # for "text": the new fragment, not the total
+    result: ChatResult | None = None   # for "done": the whole response
+
+
+@dataclass
 class ChatResult:
     text: str
     tool_calls: list[ToolCall] = field(default_factory=list)
@@ -156,11 +173,14 @@ class LLMProvider:
         provider that really streams overrides this; the agent loop cannot tell
         the difference except in timing, which is the whole point.
         """
-        from .streaming import from_result
-
-        yield from from_result(self.chat(messages, tools=tools,
-                                         temperature=temperature,
-                                         max_tokens=max_tokens))
+        result = self.chat(messages, tools=tools, temperature=temperature,
+                           max_tokens=max_tokens)
+        # Built here rather than by calling `streaming.from_result`: that import
+        # was the only thing `base` needed from the wire-format layer, and it
+        # made the two modules a cycle. Four lines is cheaper than the edge.
+        if result.text:
+            yield StreamEvent("text", result.text)
+        yield StreamEvent("done", result=result)
 
 
 def parse_cli_json(stdout: str) -> dict:

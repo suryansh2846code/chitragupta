@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 import pytest
 
-from chitragupta.models import discovery, entitlements
+from chitragupta.models import connection_state, discovery
 from chitragupta.models.discovery import DiscoveredModel, clear_model_cache
 from chitragupta.models.entitlements import resolve_usable_model
 
@@ -21,7 +21,7 @@ LIVE = [DiscoveredModel("grok-4.6", "Grok 4.6", ""),
 @pytest.fixture
 def connected(monkeypatch):
     monkeypatch.setattr(discovery, "_discover_raw", lambda pid, k: (list(LIVE), {}))
-    monkeypatch.setattr(entitlements, "is_provider_connected",
+    monkeypatch.setattr(connection_state, "is_provider_connected",
                         lambda pid, api_key=None: (True, "xAI Grok", {}))
     clear_model_cache()
     yield
@@ -61,7 +61,7 @@ def test_a_plan_locked_model_is_replaced_with_one_the_user_can_run(monkeypatch):
     models = [DiscoveredModel("grok-4.6", "Grok 4.6", "", locked=True, plan_required="Tier 2"),
               DiscoveredModel("grok-4.3", "Grok 4.3", "")]
     monkeypatch.setattr(discovery, "_discover_raw", lambda pid, k: (models, {}))
-    monkeypatch.setattr(entitlements, "is_provider_connected",
+    monkeypatch.setattr(connection_state, "is_provider_connected",
                         lambda pid, api_key=None: (True, "Tier 1", {}))
     clear_model_cache()
     usable, replaced = resolve_usable_model("xai", "grok-4.6")
@@ -79,7 +79,7 @@ def test_nothing_usable_falls_back_to_the_provider_default(monkeypatch):
     monkeypatch.setattr(discovery, "_discover_raw",
                         lambda pid, k: ([DiscoveredModel("grok-4.6", "G", "", locked=True,
                                                          plan_required="Connect in Models")], {}))
-    monkeypatch.setattr(entitlements, "is_provider_connected",
+    monkeypatch.setattr(connection_state, "is_provider_connected",
                         lambda pid, api_key=None: (False, None, {}))
     clear_model_cache()
     usable, replaced = resolve_usable_model("xai", "grok-2-latest")
@@ -121,7 +121,7 @@ def test_absence_from_a_fallback_list_is_not_evidence(monkeypatch):
     still be perfectly valid — swapping it would silently change the model."""
     monkeypatch.setattr(discovery, "_discover_raw",
                         lambda pid, k: ([DiscoveredModel("grok-4.6", "G", "", is_fallback=True)], {}))
-    monkeypatch.setattr(entitlements, "is_provider_connected",
+    monkeypatch.setattr(connection_state, "is_provider_connected",
                         lambda pid, api_key=None: (True, "xAI Grok", {}))
     clear_model_cache()
     assert resolve_usable_model("xai", "grok-4.9-brand-new") == ("grok-4.9-brand-new", None)

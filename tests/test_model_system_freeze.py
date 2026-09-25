@@ -285,7 +285,7 @@ def test_10_claude_detection_does_not_expose_oauth_token(tmp_path):
     })
     fake_res = MagicMock(returncode=0, stdout=fake_cli_output)
 
-    with patch("chitragupta.models.claude_code.find_claude", return_value="/opt/homebrew/bin/claude"):
+    with patch("chitragupta.models.claude_cli.find_claude", return_value="/opt/homebrew/bin/claude"):
         with patch("subprocess.run", return_value=fake_res):
             info = detect_claude_account()
             assert info.get("found_on_computer") is True
@@ -432,7 +432,7 @@ def test_16_oauth_provider_functional():
 
 # ── 17. Existing CLI provider remains functional ──────────────────────────────
 def test_17_existing_cli_provider_functional():
-    with patch("chitragupta.models.claude_code.find_claude", return_value="/usr/local/bin/claude"):
+    with patch("chitragupta.models.claude_cli.find_claude", return_value="/usr/local/bin/claude"):
         prov = ClaudeCodeProvider(model="claude-sonnet-5")
         ready, _ = prov.is_ready()
         assert ready is True

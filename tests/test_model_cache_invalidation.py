@@ -12,7 +12,7 @@ import re
 import pytest
 from web_sources import app_source
 
-from chitragupta.models import discovery, entitlements
+from chitragupta.models import connection_state, discovery
 from chitragupta.models.discovery import (
     DiscoveredModel,
     clear_model_cache,
@@ -46,7 +46,7 @@ def _stub_connection(monkeypatch, state):
             return True, state.get("plan"), state.get("meta", {})
         return False, None, {}
 
-    monkeypatch.setattr(entitlements, "is_provider_connected", fake)
+    monkeypatch.setattr(connection_state, "is_provider_connected", fake)
 
 
 # ── the bug ───────────────────────────────────────────────────────────────
@@ -190,10 +190,10 @@ def test_composer_picker_offers_every_selectable_provider():
 def test_subscription_is_not_connected_without_a_gateway(monkeypatch):
     """It used to hardcode `return True` — advertising models every call failed on."""
     monkeypatch.delenv("CHITRAGUPTA_SUBSCRIPTION_BASE_URL", raising=False)
-    connected, plan, _ = entitlements.is_provider_connected("subscription")
+    connected, plan, _ = connection_state.is_provider_connected("subscription")
     assert connected is False and plan is None
 
     monkeypatch.setenv("CHITRAGUPTA_SUBSCRIPTION_BASE_URL", "http://localhost:8080/v1")
-    connected, plan, meta = entitlements.is_provider_connected("subscription")
+    connected, plan, meta = connection_state.is_provider_connected("subscription")
     assert connected is True
     assert meta["host"] == "http://localhost:8080/v1"

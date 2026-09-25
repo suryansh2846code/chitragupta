@@ -11,7 +11,7 @@ import re
 import pytest
 from web_sources import app_source
 
-from chitragupta.models import discovery, entitlements
+from chitragupta.models import connection_state, discovery
 from chitragupta.models.discovery import DiscoveredModel, clear_model_cache, get_discovered_models
 from chitragupta.models.entitlements import evaluate_model_entitlement
 from chitragupta.models.registry import _LOCALITY, MODEL_CATALOG, PRIMARY_PROVIDERS
@@ -26,7 +26,7 @@ def _clean():
 
 def _serve(monkeypatch, models, *, connected=True, plan=None):
     monkeypatch.setattr(discovery, "_discover_raw", lambda pid, api_key: (list(models), {}))
-    monkeypatch.setattr(entitlements, "is_provider_connected",
+    monkeypatch.setattr(connection_state, "is_provider_connected",
                         lambda pid, api_key=None: (connected, plan, {}))
 
 

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta, tzinfo
 from enum import StrEnum
@@ -235,13 +236,35 @@ def _kind_from_status(status: int) -> ErrorKind:
     return ErrorKind.UNKNOWN
 
 
+#: Answers "which models could this user run instead", or None.
+#:
+#: A hook rather than an import, because **`errors` is the bottom of this
+#: package**. Every provider imports it at module level to classify a failure,
+#: so an import from here reaching up into the model catalog put `errors` inside
+#: a fourteen-module cycle — the whole of `models/` became one lump that could
+#: not be read or tested a piece at a time. The edge existed to decorate one
+#: sentence in one error message, which is not worth the architecture.
+#:
+#: Inverted, the direction is right: the catalog offers alternatives, and
+#: `errors` asks without knowing who answers. `discovery` registers itself at
+#: the foot of its own module, so importing the catalog is what lights this up.
+#: Nothing registered means no suffix — identical to what the old `try/except`
+#: produced when discovery failed, which is the behaviour this has to match.
+_alternatives_supplier: Callable[[str], list[str]] | None = None
+
+
+def set_alternatives_supplier(fn: Callable[[str], list[str]] | None) -> None:
+    """Tell `errors` who can name the models a user can actually run."""
+    global _alternatives_supplier
+    _alternatives_supplier = fn
+
+
 def _alternatives(provider: str, model: str | None) -> str:
     """Name a few models this user can actually run, for a model-level failure."""
+    if _alternatives_supplier is None:
+        return ""
     try:
-        from .discovery import get_discovered_models
-
-        usable = [m["id"] for m in get_discovered_models(provider)[0]
-                  if not m.get("locked") and m["id"] != model][:3]
+        usable = [m for m in _alternatives_supplier(provider) if m != model][:3]
     except Exception:
         return ""
     return f" Available to you: {', '.join(f'`{m}`' for m in usable)}." if usable else ""

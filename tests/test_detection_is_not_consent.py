@@ -45,14 +45,14 @@ CLI_FOUND = "/opt/homebrew/bin/claude"
 
 # ── detection alone must not connect anything ────────────────────────────
 def test_installed_claude_cli_does_not_make_anthropic_ready():
-    with patch("chitragupta.models.claude_code.find_claude", return_value=CLI_FOUND):
+    with patch("chitragupta.models.claude_cli.find_claude", return_value=CLI_FOUND):
         ready, reason = AnthropicProvider(api_key="").is_ready()
     assert ready is False, "an installed CLI was treated as an authorised account"
     assert "ANTHROPIC_API_KEY" in reason or "sign in" in reason.lower()
 
 
 def test_installed_claude_cli_does_not_connect_claude_code():
-    with patch("chitragupta.models.claude_code.find_claude", return_value=CLI_FOUND):
+    with patch("chitragupta.models.claude_cli.find_claude", return_value=CLI_FOUND):
         connected, plan, _ = is_provider_connected("claude-code")
     assert connected is False
     assert plan is None
@@ -62,7 +62,7 @@ def test_detected_account_is_offered_not_used():
     """`found_on_computer` stays true — that is what renders 'Continue'."""
     from chitragupta.models.accounts import detect_claude_account
 
-    with patch("chitragupta.models.claude_code.find_claude", return_value=CLI_FOUND):
+    with patch("chitragupta.models.claude_cli.find_claude", return_value=CLI_FOUND):
         detected = detect_claude_account()
         creds = provider_credentials("claude")
 
@@ -74,7 +74,7 @@ def test_detected_account_is_offered_not_used():
 def test_catalog_never_promotes_a_provider_to_connected():
     from chitragupta.models.registry import get_model_catalog
 
-    with patch("chitragupta.models.claude_code.find_claude", return_value=CLI_FOUND):
+    with patch("chitragupta.models.claude_cli.find_claude", return_value=CLI_FOUND):
         catalog = {p["id"]: p for p in get_model_catalog()}
 
     for pid in ("claude", "claude-code"):
@@ -87,7 +87,7 @@ def test_catalog_never_promotes_a_provider_to_connected():
 
 # ── explicit consent works ───────────────────────────────────────────────
 def test_user_can_deliberately_connect_claude_code():
-    with patch("chitragupta.models.claude_code.find_claude", return_value=CLI_FOUND):
+    with patch("chitragupta.models.claude_cli.find_claude", return_value=CLI_FOUND):
         ok, msg, _ = connect_local_account("claude-code")
         assert ok, msg
         clear_provider_cache()
@@ -97,7 +97,7 @@ def test_user_can_deliberately_connect_claude_code():
 
 
 def test_connecting_claude_code_does_not_connect_the_api_provider():
-    with patch("chitragupta.models.claude_code.find_claude", return_value=CLI_FOUND):
+    with patch("chitragupta.models.claude_cli.find_claude", return_value=CLI_FOUND):
         connect_local_account("claude-code")
         clear_provider_cache()
         assert is_provider_connected("claude-code")[0] is True
@@ -105,7 +105,7 @@ def test_connecting_claude_code_does_not_connect_the_api_provider():
 
 
 def test_connect_claude_code_fails_without_the_cli():
-    with patch("chitragupta.models.claude_code.find_claude", return_value=None):
+    with patch("chitragupta.models.claude_cli.find_claude", return_value=None):
         ok, msg, _ = connect_local_account("claude-code")
     assert ok is False
     assert "not found" in msg.lower()

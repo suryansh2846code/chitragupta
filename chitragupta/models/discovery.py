@@ -14,6 +14,7 @@ from typing import Any
 import httpx
 
 from ..log import suppressed
+from . import errors
 from .base import _saved_key
 
 _CACHE_TTL = 3600  # 1 hour cache unless refreshed
@@ -695,7 +696,12 @@ def get_discovered_models(provider_id: str, force_refresh: bool = False,
     else:
         _, raw_models, discovery_meta = cached
 
-    from .entitlements import evaluate_model_entitlement, is_provider_connected
+    # The rules and the connection state, NOT `entitlements` — that module
+    # also picks a model to run, which needs this catalog, and importing it
+    # from here made the two mutually dependent. It was the last edge
+    # holding `models/` together as one component.
+    from .connection_state import is_provider_connected
+    from .entitlement_rules import evaluate_model_entitlement
 
     is_connected, user_plan, detected_meta = is_provider_connected(pid, api_key)
 
@@ -731,3 +737,17 @@ def get_discovered_models(provider_id: str, force_refresh: bool = False,
 
     account_meta: dict[str, Any] = {**detected_meta, **discovery_meta}
     return out, account_meta
+
+
+def _usable_model_ids(provider: str) -> list[str]:
+    """Ids this user can actually run, for `errors` to name in a message.
+
+    Registered below rather than imported by `errors`, which is the bottom of
+    this package and must not reach up into the catalog. See
+    `errors.set_alternatives_supplier`.
+    """
+    return [m["id"] for m in get_discovered_models(provider)[0]
+            if not m.get("locked")]
+
+
+errors.set_alternatives_supplier(_usable_model_ids)

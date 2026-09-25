@@ -59,7 +59,7 @@ class AnthropicProvider(LLMProvider):
                 # ...but a subscription still needs the CLI to actually run.
                 # Reporting ready without it is what produced a 401 on the first
                 # message the user sent.
-                from .claude_code import find_claude
+                from .claude_cli import find_claude
                 if find_claude():
                     return True, ""
                 return False, (
@@ -72,7 +72,8 @@ class AnthropicProvider(LLMProvider):
     def _subscription_backend(self) -> LLMProvider | None:
         """The Claude CLI, which is how a subscription runs inference."""
         if self._cli is None:
-            from .claude_code import ClaudeCodeProvider, find_claude
+            from .claude_cli import find_claude
+            from .claude_code import ClaudeCodeProvider
             if not find_claude():
                 return None
             # Pass the id through unchanged — the CLI accepts the same ids the
