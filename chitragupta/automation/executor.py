@@ -36,6 +36,13 @@ from .model import Automation
 
 log = get_logger(__name__)
 
+#: What a verification pass concluded. Recorded by name on every action step,
+#: because "done" has to be able to mean three different things and a boolean
+#: can only carry two of them.
+VERIFIED_SUCCESS = "VERIFIED_SUCCESS"
+VERIFIED_FAILURE = "VERIFIED_FAILURE"
+UNVERIFIABLE = "UNVERIFIABLE"
+
 
 @dataclass(frozen=True)
 class Verdict:
@@ -74,8 +81,12 @@ class Deps:
     #: `(action_type) -> bool` — does this action exist at all?
     action_exists: Callable[[str], bool]
     #: `(action_type, params, result) -> dict | None`. None means this action
-    #: cannot be verified, which is different from failing verification.
+    #: **declared** that it cannot be verified, which is a different answer
+    #: from failing verification — see `_verify_all`.
     verify: Callable[[str, dict, dict], dict | None] | None = None
+    #: `(action_type) -> str` — the action's own sentence about why it cannot
+    #: be checked. Shown to the user, so "we did not look" is never silent.
+    unverifiable_reason: Callable[[str], str] | None = None
     #: `(question, facts) -> (passed, confidence, detail)` for semantic
     #: conditions. None makes every semantic condition fail closed.
     judge: Callable[[str, dict], tuple[bool, float, str]] | None = None
@@ -523,10 +534,19 @@ class Executor:
     def _verify_all(self, run: dict, automation: Automation) -> dict:
         """Confirm the world actually changed. 200 is not evidence.
 
-        An action whose spec has no `verify` is *unverifiable*, not failed —
-        there is no API that will tell us a desktop notification was read. The
-        distinction is recorded so history does not read as if everything was
-        checked.
+        Every action ends in exactly one of three states, recorded **by name**
+        on the step:
+
+        * `VERIFIED_SUCCESS` — read back from the service, and it is there.
+        * `VERIFIED_FAILURE` — read back, and it is not. Retryable.
+        * `UNVERIFIABLE` — the action **declared** that it cannot be checked,
+          and said why.
+
+        The third has to stay its own answer. Folded into success, "done"
+        sometimes means "we did not look"; folded into failure, every
+        unverifiable action looks broken and the badge stops being read. It
+        carries `verification_detail` — the action's own sentence — so the run
+        history says *why* instead of leaving a blank.
         """
         if not automation.policy.verify or self.deps.verify is None:
             return self._complete(run, automation, run.get("outcome") or "done")
@@ -535,30 +555,64 @@ class Executor:
                  if s["kind"] == "action" and s["state"] == StepState.DONE]
         failures: list[str] = []
         for step in steps:
-            if step["result"].get("verified") or step["result"].get("unverifiable"):
+            # Only a *settled* answer is skipped. `VERIFIED_FAILURE` is
+            # deliberately not settled: a service can be eventually consistent,
+            # so the next attempt looks again. Skipping on any status at all
+            # meant a run that failed verification once was never re-checked and
+            # then completed — reporting success for a thing that is not there,
+            # which is the exact failure this stage exists to prevent.
+            if step["result"].get("verification_status") in (VERIFIED_SUCCESS,
+                                                             UNVERIFIABLE):
                 continue
-            checked = None
-            with suppressed("verifying an automation's action landed"):
+            checked: dict | None = None
+            reached = True
+            try:
                 checked = self.deps.verify(step["name"], step["params"],
                                            step["result"])
+            except Exception as exc:
+                # A verifier that could not *reach* the service has not proved
+                # anything either way. It is a failure for the run — absence of
+                # evidence is not evidence — but the reason says which it was,
+                # because "the calendar says no" and "the calendar is down" ask
+                # different things of the user.
+                reached = False
+                checked = {"verified": False,
+                           "detail": f"could not check: {str(exc)[:120]}"}
+                log.debug("verifying %s raised: %s", step["name"], exc)
+
             verify_step = store.add_step(run["id"], kind="verify",
                                          name=step["name"])
             if checked is None:
+                why = self._unverifiable_reason(step["name"])
                 store.finish_step(verify_step["id"], state=StepState.SKIPPED,
-                                  result={"unverifiable": True})
+                                  result={"verification_status": UNVERIFIABLE,
+                                          "detail": why})
                 store.finish_step(step["id"], state=StepState.DONE,
-                                  result={**step["result"], "unverifiable": True})
+                                  result={**step["result"],
+                                          "verification_status": UNVERIFIABLE,
+                                          "verification_detail": why})
                 continue
             if checked.get("verified"):
-                store.finish_step(verify_step["id"], state=StepState.DONE,
-                                  result=checked)
-                store.finish_step(step["id"], state=StepState.DONE,
-                                  result={**step["result"], "verified": True,
-                                          "verified_at": str(checked.get("at") or "")})
+                store.finish_step(
+                    verify_step["id"], state=StepState.DONE,
+                    result={**checked, "verification_status": VERIFIED_SUCCESS})
+                store.finish_step(
+                    step["id"], state=StepState.DONE,
+                    result={**step["result"], "verified": True,
+                            "verification_status": VERIFIED_SUCCESS,
+                            "verified_at": str(checked.get("at") or "")})
             else:
                 detail = str(checked.get("detail") or "not found afterwards")
-                store.finish_step(verify_step["id"], state=StepState.FAILED,
-                                  result=checked, error=detail)
+                store.finish_step(
+                    verify_step["id"], state=StepState.FAILED,
+                    result={**checked, "verification_status": VERIFIED_FAILURE,
+                            "reached_the_service": reached},
+                    error=detail)
+                store.finish_step(
+                    step["id"], state=StepState.DONE,
+                    result={**step["result"],
+                            "verification_status": VERIFIED_FAILURE,
+                            "verification_detail": detail})
                 failures.append(f"{step['name']}: {detail}")
 
         if failures:
@@ -566,6 +620,15 @@ class Executor:
                 run, automation,
                 "it could not confirm " + "; ".join(failures[:3]))
         return self._complete(run, automation, run.get("outcome") or "done")
+
+    def _unverifiable_reason(self, action_type: str) -> str:
+        """The action's own sentence about why it cannot be checked."""
+        if self.deps.unverifiable_reason is None:
+            return "this action cannot be checked afterwards"
+        reason = ""
+        with suppressed("reading why an action cannot be verified"):
+            reason = self.deps.unverifiable_reason(action_type) or ""
+        return reason or "this action cannot be checked afterwards"
 
     # ── retry, escalate, complete ──────────────────────────────────────────
 

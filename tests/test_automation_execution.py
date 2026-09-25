@@ -173,8 +173,11 @@ def test_an_unverifiable_action_is_not_treated_as_a_failure():
 
     assert run["state"] == RunState.COMPLETED
     action = next(s for s in store.steps_for(run["id"])
-              if s["kind"] == "action")
-    assert action["result"].get("unverifiable") is True
+                  if s["kind"] == "action")
+    assert action["result"]["verification_status"] == "UNVERIFIABLE"
+    # And it says WHY, so history does not leave a blank where a check
+    # should have been.
+    assert action["result"]["verification_detail"]
 
 
 def test_verification_can_be_turned_off_per_automation():

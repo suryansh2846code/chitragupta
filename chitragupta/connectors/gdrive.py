@@ -416,6 +416,42 @@ class GoogleDriveConnector(Connector):
         return {"ok": True, "id": permission_id, "shared_with": who,
                 "detail": f"Shared with {who} as {role}"}
 
+    def sharing_state(self, file_id: str, permission_id: str = "",
+                      email: str = "") -> dict:
+        """Is this document actually shared, and with whom? (READ)
+
+        For verification. `permissions().create` returning an id says Drive
+        accepted the request; it does not say the grant is on the file — and
+        "I shared it with your client" is exactly the sentence that has to be
+        true rather than plausible.
+
+        Matched on the permission id first and the address second: the id is
+        exact, and the address is what survives if Drive reissued the grant.
+        """
+        if not file_id:
+            return {"verified": False, "detail": "no document id"}
+        service, problem = self._service()
+        if service is None:
+            return {"verified": False, "detail": problem}
+        try:
+            listed = service.permissions().list(
+                fileId=file_id,
+                fields="permissions(id,type,role,emailAddress)").execute()
+        except Exception as exc:
+            # A read that failed is not a share that failed. Saying "not
+            # verified" with the reason is honest; saying "not shared" is not.
+            return {"verified": False, "detail": f"could not read sharing: {exc}"}
+
+        wanted = (email or "").strip().lower()
+        for entry in (listed or {}).get("permissions") or []:
+            if permission_id and str(entry.get("id") or "") == permission_id:
+                return {"verified": True, "role": entry.get("role", "")}
+            if wanted and str(entry.get("emailAddress") or "").lower() == wanted:
+                return {"verified": True, "role": entry.get("role", "")}
+            if not wanted and not permission_id and entry.get("type") == "anyone":
+                return {"verified": True, "role": entry.get("role", "")}
+        return {"verified": False, "detail": "that grant is not on the document"}
+
     def unshare(self, file_id: str, permission_id: str) -> dict:
         """Take access back (WRITE) — the inverse of `share`.
 

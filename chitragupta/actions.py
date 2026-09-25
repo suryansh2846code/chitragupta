@@ -114,10 +114,35 @@ class ActionSpec:
     #: never silently run now. Anything with this False refuses an `at`.
     schedulable: bool = False
 
+    #: An action the engine emits, never one a model may propose.
+    #:
+    #: `notify` is the case. A reminder is delivered by running an action, so it
+    #: has to be in the registry — but an agent has no business asking to put
+    #: words on the user's screen under our own title: a notification reading
+    #: "◆ Chitragupta" is our voice, and a page the agent read must not be able
+    #: to borrow it. So `parse_actions` drops these, and the prompt never
+    #: teaches them.
+    internal: bool = False
+
     #: Rung 5. `(params, result) -> dict` merged into the result. Reads the
     #: thing back from the service that now holds it, so "sent" is something we
     #: checked rather than something we assumed from a 200.
     verify: Callable[[dict, dict], dict] | None = None
+
+    #: Why this action **cannot** be verified, in one sentence, or "".
+    #:
+    #: `verify is None` used to mean two different things and the difference is
+    #: the whole point of rung 5: *"nobody has written a verifier yet"* is a gap
+    #: in the app, and *"there is no way to check this"* is a fact about the
+    #: world. Reporting them the same way lets the first quietly become
+    #: permanent, because the audit that would find it sees a registry where
+    #: half the actions look equally unverifiable.
+    #:
+    #: So an action with no verifier must say why here, and
+    #: `tests/test_action_verification.py` fails on any action that declares
+    #: neither. The sentence is shown to the user rather than logged: "Chitragupta
+    #: cannot confirm this one, because …" is a different promise from silence.
+    unverifiable_because: str = ""
 
     #: Rung 6. `(params, result) -> None`. Writes into the brain, where every
     #: agent can see it — not into one agent's conversation, where only that
@@ -417,8 +442,12 @@ def parse_actions(text: str) -> list[dict]:
             if items is None:
                 continue
             a["params"]["items"] = items
-        if t:
-            out.append(a)
+        if not t or (t in REGISTRY and REGISTRY[t].internal):
+            # An internal action is the engine's, not the model's. Dropped here
+            # rather than refused later, because the parser is the one place
+            # every caller of a model reply goes through.
+            continue
+        out.append(a)
     return out
 
 
@@ -861,6 +890,26 @@ def _writer(source: str, capability: str):
     return connector if callable(getattr(connector, capability, None)) else None
 
 
+def _notify(params: dict) -> dict:
+    """Put a line on the user's own screen. Nothing leaves the machine.
+
+    Exists so a **reminder can be an action**. Before this the scheduler called
+    `desktop_notify` itself, which meant the one thing reminders did was the one
+    thing that never appeared in the action log, was never gated, and could not
+    be retried or deduplicated. Making it an action is what lets a reminder be
+    an automation run like everything else.
+    """
+    message = (params.get("message") or params.get("body") or "").strip()
+    if not message:
+        return {"ok": False, "error": "nothing to say"}
+    title = (params.get("title") or "◆ Chitragupta").strip()
+    from .notify import desktop_notify
+    shown = desktop_notify(title, message)
+    # `False` means no notifier on this machine — not a failure of the action.
+    # Reporting it as one would make every headless run escalate.
+    return {"ok": True, "shown": bool(shown), "detail": message[:200]}
+
+
 def _set_reminder(params: dict) -> dict:
     from .reminders import get_reminders, parse_when
     message = (params.get("message") or params.get("body") or "").strip()
@@ -1177,6 +1226,149 @@ def _verify_event(params: dict, result: dict) -> dict:
     if gcal is None:
         return {}
     return gcal.event_exists(str(result.get("id") or ""))
+
+
+def _verify_cancel(params: dict, result: dict) -> dict:
+    """The event is *gone*. The one verifier whose success is an absence.
+
+    `event_exists` answers "is there a live event here", and cancelling
+    succeeded exactly when the answer is no — Google keeps the row with
+    `status: cancelled`, which that function already reads as not-existing.
+
+    Inverting it is the whole implementation, and it is worth writing down: a
+    verifier copy-pasted from `_verify_event` would report every successful
+    cancellation as a failure and every failed one as a success.
+    """
+    gcal = _writer("gcal", "event_exists")
+    if gcal is None:
+        return {}
+    event_id = (params.get("event_id") or params.get("id")
+                or result.get("id") or "").strip()
+    if not event_id:
+        return {"verified": False, "detail": "no event id to check"}
+    still_there = gcal.event_exists(event_id)
+    if still_there.get("verified"):
+        return {"verified": False, "detail": "the event is still on the calendar"}
+    return {"verified": True, "detail": "the event is gone"}
+
+
+def _verify_followup(params: dict, result: dict) -> dict:
+    """The open loop is in the brain.
+
+    The store *is* the external state here — there is no service beyond it —
+    and reading the row back is still worth doing: `add_open_loop` returning an
+    object proves it built one, not that it committed.
+    """
+    from .brain import get_brain
+
+    loop_id = str(result.get("id") or "")
+    if not loop_id:
+        return {"verified": False, "detail": "no follow-up id"}
+    loop = get_brain().store.get_open_loop(loop_id)
+    if loop is None:
+        return {"verified": False, "detail": "the follow-up is not stored"}
+    return {"verified": True, "detail": "tracked"}
+
+
+def _verify_reminder(params: dict, result: dict) -> dict:
+    from .reminders import get_reminders
+
+    rid = str(result.get("id") or "")
+    if not rid:
+        return {"verified": False, "detail": "no reminder id"}
+    row = get_reminders().get(rid)
+    if row is None:
+        return {"verified": False, "detail": "the reminder is not stored"}
+    return {"verified": True, "at": str(row.get("fire_at") or "")}
+
+
+def _verify_routine(params: dict, result: dict) -> dict:
+    from .core.routine_store import get_routines
+
+    rid = str(result.get("id") or "")
+    if not rid:
+        return {"verified": False, "detail": "no automation id"}
+    for row in get_routines().list():
+        if str(row.get("id")) == rid:
+            return {"verified": True, "detail": str(row.get("name") or "")}
+    return {"verified": False, "detail": "the automation is not stored"}
+
+
+def _verify_workout(params: dict, result: dict) -> dict:
+    from .training import get_session
+
+    session = get_session(str(result.get("session_id") or ""))
+    if session is None:
+        return {"verified": False, "detail": "the session is not stored"}
+    return {"verified": True, "detail": f"{session['blocks']} block(s) logged"}
+
+
+def _verify_share(params: dict, result: dict) -> dict:
+    """The grant is on the document, read back from Drive."""
+    drive = _writer("gdrive", "sharing_state")
+    if drive is None:
+        return {}
+    file_id = (params.get("file_id") or params.get("id") or "").strip()
+    return drive.sharing_state(file_id,
+                               permission_id=str(result.get("id") or ""),
+                               email=str(params.get("email") or ""))
+
+
+#: How many of a triage batch must actually show the change before it counts.
+#:
+#: Not 100%: Gmail applies `batchModify` asynchronously enough that a message
+#: read back immediately can still carry the old labels, and a verifier that
+#: demanded perfection would report a correct archive as a failure often
+#: enough to be useless. Not 50% either — most of the batch landing is the
+#: claim being made. This is the number that says "mostly worked" honestly.
+TRIAGE_VERIFY_FRACTION = 0.8
+
+
+def _verify_triage(params: dict, result: dict) -> dict:
+    """Did the emails actually move?
+
+    The hardest verifier here and the one with the most at stake: a triage that
+    reports twelve archived and moved none is a claim about the user's own
+    inbox, which they will notice is wrong before we do.
+
+    Checked against the *operation's* own definition of what should change, so
+    a new verb in `mail_triage.OPERATIONS` is covered without touching this.
+    """
+    from .mail_triage import OPERATIONS, group, parse_items
+
+    gmail = _writer("gmail", "message_labels")
+    if gmail is None:
+        return {}
+    items, _ = parse_items(params.get("items"))
+    if not items:
+        return {"verified": False, "detail": "nothing to check"}
+
+    checked = wrong = 0
+    for (verb, _label), ids in group(items).items():
+        operation = OPERATIONS.get(verb)
+        if operation is None:
+            continue
+        read = gmail.message_labels(list(ids))
+        if not read.get("ok"):
+            return {"verified": False,
+                    "detail": f"could not read the mailbox back: "
+                              f"{read.get('error') or 'unknown'}"}
+        for _mid, labels in (read.get("labels") or {}).items():
+            checked += 1
+            present = set(labels)
+            # Only the system labels are checked. A user label's id is created
+            # per mailbox, and `ensure_label` already proved that one exists —
+            # re-deriving it here would be a second source of truth for a name.
+            if any(gone in present for gone in operation.remove):
+                wrong += 1
+    if not checked:
+        return {"verified": False, "detail": "none of those messages could be read"}
+    landed = (checked - wrong) / checked
+    if landed >= TRIAGE_VERIFY_FRACTION:
+        return {"verified": True,
+                "detail": f"{checked - wrong} of {checked} confirmed"}
+    return {"verified": False,
+            "detail": f"only {checked - wrong} of {checked} actually changed"}
 
 
 # ── rung 6: remember ───────────────────────────────────────────────────────
@@ -1496,6 +1688,8 @@ REGISTRY: dict[str, ActionSpec] = {
         risk=Risk.RED,
         always_ask_because="Cancelling a meeting tells everybody in it, so it "
                            "always needs your approval.",
+        # Success here is an *absence* — see `_verify_cancel`.
+        verify=_verify_cancel,
         remember=_remember_cancel,
         # No undo. Recreating it would be a NEW invitation with a new id, sent
         # to everybody who has already been told it was cancelled — which is
@@ -1517,7 +1711,22 @@ REGISTRY: dict[str, ActionSpec] = {
         fields=["about", "who", "due", "thread_id"],
         # Green: one row in the user's own brain, reaching nobody.
         risk=Risk.GREEN,
+        verify=_verify_followup,
         undo=_undo_followup, undo_label="Stop tracking it",
+    ),
+    "notify": ActionSpec(
+        handler=_notify, label="Tell me",
+        fields=["message", "title"],
+        # The engine's own, for delivering a reminder. See `internal`.
+        internal=True,
+        # Green: the user's own screen. It reaches nobody.
+        risk=Risk.GREEN,
+        # **The canonical unverifiable action**, and the reason is a fact about
+        # the world rather than a gap in the app: the OS reports that a
+        # notification was posted and never whether a person read it.
+        unverifiable_because=(
+            "a desktop notification goes to the user's own screen, and the "
+            "operating system does not report whether it was seen"),
     ),
     "create_task": ActionSpec(
         handler=_create_task, label="Add task",
@@ -1532,6 +1741,7 @@ REGISTRY: dict[str, ActionSpec] = {
         fields=["message", "at"],
         # Green: a notification on the user's own laptop reaches nobody else.
         risk=Risk.GREEN,
+        verify=_verify_reminder,
         undo=_undo_row("reminder", "reminder"), undo_label="Cancel it",
     ),
     "create_routine": ActionSpec(
@@ -1540,6 +1750,7 @@ REGISTRY: dict[str, ActionSpec] = {
                 "instruction"],
         risk=Risk.RED,
         always_ask_because="Creating automations always needs your approval.",
+        verify=_verify_routine,
         undo=_undo_row("routine", "automation"), undo_label="Delete it",
     ),
     "mcp_action": ActionSpec(
@@ -1556,6 +1767,19 @@ REGISTRY: dict[str, ActionSpec] = {
         # identical approval can now be the last one.
         risk=Risk.AMBER, recipient_kind=TOOL_RECIPIENT,
         always_ask_when=_irreversible_tool_asks,
+        # **The one action that genuinely cannot be verified, and the reason is
+        # not laziness.** It runs somebody else's verb on somebody else's
+        # server. There is no general read that says what `acme:deploy_release`
+        # was supposed to do, and guessing at a counterpart — calling
+        # `get_release` because we posted to `create_release` — would be a
+        # verifier that is right often enough to be trusted and wrong exactly
+        # when it matters. Declaring it beats inventing it.
+        #
+        # The narrower thing that IS checked stays where it is: `undo_when`
+        # reads the server's own tool list to decide whether an inverse exists.
+        unverifiable_because=(
+            "it runs a tool on a connected app, and there is no general way to "
+            "read back what that tool was meant to do"),
         remember=_remember_connector_action,
         # **Undo where the server itself publishes the inverse, and nowhere
         # else.** The old note here said the verb belongs to somebody else's
@@ -1573,6 +1797,9 @@ REGISTRY: dict[str, ActionSpec] = {
         fields=["items"],
         risk=Risk.RED,
         always_ask_because="Changing your inbox always needs your approval.",
+        # Reads the mailbox back. "Archived twelve" is a claim about the user's
+        # own inbox, which they notice is wrong before we do.
+        verify=_verify_triage,
         undo=_undo_triage, undo_label="Put them back",
     ),
     "message_send": ActionSpec(
@@ -1591,6 +1818,7 @@ REGISTRY: dict[str, ActionSpec] = {
         fields=["blocks", "at", "note"],
         # Green: it writes one row in the user's own training log.
         risk=Risk.GREEN,
+        verify=_verify_workout,
     ),
 
     # ── work surfaces ────────────────────────────────────────────────────
@@ -1633,6 +1861,7 @@ REGISTRY: dict[str, ActionSpec] = {
         # allow-list: the audience is unbounded and a standing grant made
         # about one person must never quietly cover it.
         always_ask_when=_public_share_asks,
+        verify=_verify_share,
         undo=_undo_drive_share, undo_label="Take access back",
     ),
 }

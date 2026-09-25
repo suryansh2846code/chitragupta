@@ -115,6 +115,19 @@ def _verify(action_type: str, params: dict, result: dict) -> dict | None:
     return spec.verify(params, result) or {}
 
 
+def _unverifiable_reason(action_type: str) -> str:
+    """Why this action says it cannot be checked, from its own spec.
+
+    Read off `ActionSpec.unverifiable_because` rather than composed here, so
+    the sentence the user sees is written beside the action it describes. An
+    action with a verifier has no reason and returns "" — the executor only
+    asks when `verify` already returned None.
+    """
+    from ..actions import REGISTRY
+    spec = REGISTRY.get(action_type)
+    return str(getattr(spec, "unverifiable_because", "") or "") if spec else ""
+
+
 def _queue_approval(*, action_type: str, params: dict, reason: str,
                     blocked: tuple[str, ...], automation_id: str,
                     automation_name: str, agent_id: str) -> str:
@@ -240,7 +253,8 @@ def real_deps() -> Deps:
     return Deps(
         plan=_plan, parse_actions=parse_actions, gate=_gate, perform=_perform,
         queue_approval=_queue_approval, approval_state=_approval_state,
-        action_exists=_action_exists, verify=_verify, judge=_judge,
+        action_exists=_action_exists, verify=_verify,
+        unverifiable_reason=_unverifiable_reason, judge=_judge,
         recall=_recall, emit=ingest, notify=_notify,
     )
 

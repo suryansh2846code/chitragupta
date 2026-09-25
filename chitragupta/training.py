@@ -193,6 +193,25 @@ def log_session(blocks: list[Block], *, at: str = "", note: str = "") -> dict:
             "at": when, "detail": summarise_session(blocks)}
 
 
+def get_session(session_id: str) -> dict | None:
+    """One logged session, read back out of the table.
+
+    For verification: `log_session` returning a `session_id` proves it built an
+    insert, not that the rows are there. A handler that says "logged" and a
+    table that disagrees is exactly the case rung 5 exists to catch.
+    """
+    if not session_id:
+        return None
+    rows = _conn().execute(
+        "SELECT exercise, sets, reps, weight, at FROM lifts WHERE session_id=?",
+        (session_id,)).fetchall()
+    if not rows:
+        return None
+    return {"session_id": session_id, "blocks": len(rows),
+            "at": rows[0]["at"],
+            "exercises": sorted({r["exercise"] for r in rows})}
+
+
 def forget_session(session_id: str) -> int:
     """Remove a session that was logged wrong."""
     conn = _conn()
