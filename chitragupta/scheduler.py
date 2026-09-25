@@ -190,12 +190,24 @@ class Scheduler:
         except Exception:
             log.exception("graph enrichment after sync failed")
 
-        # fire routines: new-email ones if mail arrived, plus any due schedule ones
+        # What the sync produced becomes events; the engine decides what they
+        # start. This used to be `sweep(new_email_count=…)`, which could only
+        # say "some mail arrived" — no identity, so a redelivered message was
+        # indistinguishable from a new one, and no payload, so a condition had
+        # nothing to read. See `docs/AUTOMATION.md`.
         try:
-            from .routines import sweep
-            sweep(new_email_count=summary.get("gmail", {}).get("added", 0))
+            from .automation import engine
+            engine.after_sync(summary)
         except Exception:
-            log.exception("routine sweep after sync failed")
+            log.exception("turning a sync into automation events failed")
+
+        # Then the clock, for schedule- and interval-triggered automations, and
+        # to pick up anything a previous process left mid-flight.
+        try:
+            from .automation import engine
+            engine.tick()
+        except Exception:
+            log.exception("the automation tick after sync failed")
 
         self.last_run = datetime.now(UTC).isoformat()
         self.last_result = summary
@@ -228,6 +240,15 @@ class Scheduler:
         while not stop.is_set():
             # fire due reminders often (every minute); sync on the longer interval
             self._fire_reminders()
+            # Every minute, not every sync. A schedule set for 08:00 should
+            # fire at 08:00 rather than whenever the next connector sync
+            # happens to land, and a run left waiting on an approval that was
+            # answered five minutes ago should carry on now.
+            try:
+                from .automation import engine
+                engine.tick()
+            except Exception:
+                log.exception("the automation tick failed")
             if time.time() >= next_sync:
                 try:
                     self.sync_all(interactive=False)

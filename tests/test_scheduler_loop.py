@@ -106,9 +106,16 @@ def isolated(monkeypatch):
 
     monkeypatch.setattr("chitragupta.brain.get_brain", lambda: _Brain())
 
-    swept: list[int] = []
-    monkeypatch.setattr("chitragupta.routines.sweep",
-                        lambda new_email_count=0: swept.append(new_email_count))
+    # What a sync produced reaches the automation layer. It used to reach it as
+    # `sweep(new_email_count=N)` — a count, with no event identity, so a
+    # redelivered message was indistinguishable from a new one. Now the summary
+    # itself goes to `engine.after_sync`, which turns rows into events. The
+    # property under test is unchanged; its shape is not.
+    swept: list[dict] = []
+    monkeypatch.setattr("chitragupta.automation.engine.after_sync",
+                        lambda summary, **kw: swept.append(summary))
+    monkeypatch.setattr("chitragupta.automation.engine.tick",
+                        lambda **kw: {})
     return swept
 
 
@@ -644,25 +651,28 @@ def test_a_tick_with_nothing_due_is_silent(minute_tick):
 
 # ── routines ─────────────────────────────────────────────────────────────────
 
-def test_new_mail_count_reaches_the_routine_sweep(isolated, monkeypatch):
-    """A `new_email` routine fires on what Gmail actually added this pass.
+def test_what_a_sync_added_reaches_the_automation_engine(isolated, monkeypatch):
+    """An automation triggered by new mail fires on what Gmail actually added.
 
-    Passing the wrong number here is the difference between a routine that
-    triggers on new mail and one that never triggers at all, and neither state
-    is visible from anywhere else.
+    Losing this is the difference between an automation that triggers on new
+    mail and one that never triggers at all, and neither state is visible from
+    anywhere else.
     """
     _registry(monkeypatch, _source("gmail", added=4))
 
     Scheduler().sync_all()
 
-    assert isolated == [4]
+    assert len(isolated) == 1
+    assert isolated[0]["gmail"]["added"] == 4
 
 
-def test_a_sweep_with_no_new_mail_says_zero(isolated, monkeypatch):
-    """Not `None`, and not the last pass's count — `sweep` reads it as a
-    threshold and a stale number would re-fire routines against old mail."""
+def test_every_connector_that_added_something_is_handed_over(isolated, monkeypatch):
+    """Not just mail. The old call could only say "some email arrived", so a
+    Notion page or a GitHub push could not trigger anything at all — the whole
+    reason the engine takes a summary now rather than a count."""
     _registry(monkeypatch, _source("notion", added=3))
 
     Scheduler().sync_all()
 
-    assert isolated == [0]
+    assert len(isolated) == 1
+    assert isolated[0]["notion"]["added"] == 3
