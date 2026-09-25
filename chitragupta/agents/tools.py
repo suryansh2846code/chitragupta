@@ -318,6 +318,7 @@ TOOL_IMPLS = {
     "find_file": file_tools.find_file,
     "read_file": file_tools.read_file,
     "write_file": file_tools.write_file,
+    "edit_file": file_tools.edit_file,
     "move_file": file_tools.move_file,
     "run_python": code_tools.run_python,
     "browse_open": browse_tools.browse_open,
@@ -745,6 +746,36 @@ TOOL_DEFS: dict[str, Tool] = {
                                       "rename it where it is."},
             },
             "required": ["path", "to"],
+        },
+    ),
+    "edit_file": Tool(
+        name="edit_file",
+        description=(
+            "Change PART of a text file, leaving everything else exactly as it "
+            "is. Prefer this over write_file whenever the file already exists: "
+            "rewriting a whole file from memory drops lines, and you will not "
+            "notice which. Give the exact passage to find, including its "
+            "indentation, with enough surrounding lines that it appears only "
+            "once. Read the file first."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "path": {"type": "string"},
+                "find": {"type": "string",
+                         "description": "The exact text to replace, copied from "
+                                        "the file — not paraphrased."},
+                "replace": {"type": "string",
+                            "description": "What to put in its place. Empty "
+                                           "string deletes the passage."},
+                "all": {"type": "boolean",
+                        "description": "Replace every occurrence. Only pass "
+                                       "this when you mean all of them; by "
+                                       "default a passage that appears more "
+                                       "than once is refused rather than "
+                                       "changed arbitrarily."},
+            },
+            "required": ["path", "find", "replace"],
         },
     ),
     "write_file": Tool(

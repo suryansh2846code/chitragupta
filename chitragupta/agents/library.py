@@ -93,6 +93,11 @@ BASE_TOOLS = [
 #: cannot find one can only open what it was handed the path to, and
 #: "the latest proposal" is a description, not a path.
 _FILES = ["list_dir", "find_file", "read_file", "write_file",
+          # Changing part of a file rather than rewriting all of it. Offered
+          # alongside `write_file`, never instead of it: creating a file and
+          # amending one are different jobs, and an agent given only the
+          # second cannot start anything.
+          "edit_file",
           # Renaming and moving, both ends inside a granted folder.
           "move_file"]
 

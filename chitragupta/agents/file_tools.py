@@ -302,6 +302,78 @@ def write_file(path: str, content: str) -> ToolResult:
     return ToolResult(f"{verb} {real} ({len(body):,} characters).")
 
 
+def edit_file(path: str, find: str, replace: str, all: bool = False) -> ToolResult:
+    """Replace an exact passage inside a file, leaving the rest untouched.
+
+    Without this, changing one line of a long file means `read_file` then
+    `write_file` with the whole thing rewritten from the model's memory of it.
+    That is expensive — the file is billed twice, once in and once out — and it
+    is *lossy*, which is the part that actually hurts: a 900-line CSV comes back
+    with a row quietly dropped, and nothing in the result says so. The user
+    finds out later, from the file.
+
+    Three rules, and each one is a failure mode that has a name:
+
+    * **`find` must appear exactly.** Not fuzzily, not after normalising
+      whitespace. A near-match edited anyway is an edit to something the model
+      did not actually see.
+    * **`find` must appear ONCE**, unless `all` is passed deliberately. A
+      snippet that matches in four places and is replaced in the first is a
+      change to an arbitrary one of them, and which one is not knowable from
+      the reply.
+    * **Nothing is written when either rule is broken.** The failure says what
+      to do about it — how many matches there were, and to widen the passage —
+      because a model told only "no" re-issues the same call.
+    """
+    real, why = _resolve(path)
+    if real is None:
+        return ToolResult.failed(why)
+    if not real.exists():
+        return ToolResult.failed(f"There is no file at {real}.")
+    if real.is_dir():
+        return ToolResult.failed(f"{real.name} is a folder.")
+    if real.suffix.lower() not in TEXT_SUFFIXES:
+        return ToolResult.failed(
+            f"{real.name} is not a text file, so there is nothing to edit here.")
+    if not find:
+        return ToolResult.failed(
+            "Give the exact text to replace. To rewrite the whole file, use "
+            "write_file.")
+
+    try:
+        before = real.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        return ToolResult.failed(f"Could not read {real.name}: {exc}")
+
+    count = before.count(find)
+    if count == 0:
+        return ToolResult.failed(
+            f"That passage is not in {real.name}. Read the file again — it may "
+            "have changed, or the indentation may differ from what you have.")
+    if count > 1 and not all:
+        return ToolResult.failed(
+            f"That passage appears {count} times in {real.name}, so replacing "
+            "it would change an arbitrary one. Include more of the surrounding "
+            "lines to make it unique, or pass all=true to change every one.")
+
+    after = before.replace(find, replace, -1 if all else 1)
+    if len(after) > MAX_WRITE_CHARS:
+        return ToolResult.failed(
+            f"That edit would make {real.name} {len(after):,} characters, over "
+            f"the {MAX_WRITE_CHARS:,} limit.")
+
+    try:
+        real.write_text(after, encoding="utf-8")
+    except OSError as exc:
+        return ToolResult.failed(f"Could not write {real.name}: {exc}")
+
+    changed = count if all else 1
+    delta = len(after) - len(before)
+    return ToolResult(
+        f"Edited {real} — {changed} replacement{'s' if changed != 1 else ''}, "
+        f"{delta:+,} characters.")
+
+
 def move_file(path: str, to: str) -> ToolResult:
     """Rename or move a file, with BOTH ends inside a granted folder.
 
