@@ -32,6 +32,16 @@ def _local(day_offset: int, hour: int, minute: int = 0) -> str:
     return (base + timedelta(days=day_offset)).isoformat()
 
 
+def _label(day_offset: int, hour: int, minute: int = 0) -> str:
+    """The slot exactly as `meeting_tools` renders it, day included.
+
+    Anything that asserts on a bare clock time is asserting on whichever days
+    the answer happened to span today.
+    """
+    return datetime.fromisoformat(_local(day_offset, hour, minute)).strftime(
+        "%a %d %b, %-I:%M %p")
+
+
 def _next_weekday(offset: int = 1) -> int:
     """Days from today to the next weekday at least `offset` away."""
     today = datetime.now().astimezone()
@@ -121,10 +131,22 @@ def test_no_calendar_at_all_says_so(monkeypatch):
 # ── the arithmetic ─────────────────────────────────────────────────────────
 
 def test_a_busy_block_is_subtracted(cal):
+    """Asserted against the *label of the busy day*, never the bare time.
+
+    "9:00 AM" alone is only absent when the answer happens to cover one day,
+    which is true on a Sunday-to-Thursday run and false on a Friday: the range
+    then opens on Monday and Tuesday's own 9 AM is legitimately free. The test
+    passed four days in five and failed on the other two for a reason that had
+    nothing to do with the arithmetic.
+    """
     day = _next_weekday()
+    busy_at_nine = _label(day, 9)
     cal(busy={"primary": [(_local(day, 9), _local(day, 11))]})
     said = _find(when="tomorrow" if day == 1 else "next week")
-    assert "9:00 AM" not in said
+    assert busy_at_nine not in said
+    # The positive half: the day itself survived, so the block was subtracted
+    # rather than the whole day being dropped for some unrelated reason.
+    assert _label(day, 11) in said
 
 
 def test_the_other_persons_meetings_count_too(cal):
