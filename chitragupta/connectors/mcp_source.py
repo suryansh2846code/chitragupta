@@ -957,6 +957,39 @@ def _refusal(answer: Any, label: str) -> str:
     return f"{label} refused that: {said}"
 
 
+def _block_text(block: Any) -> str:
+    """The words in one reply block, wherever the server put them.
+
+    **A block is not always a `text` block.** MCP lets a tool answer with an
+    *embedded resource*, and the content then hangs off `block.resource.text`
+    rather than `block.text`. GitHub's `get_file_contents` does exactly that:
+    block one is the sentence "successfully downloaded text file (SHA: …)",
+    block two is the whole file. Reading only `.text` kept the sentence and
+    threw the file away — so an agent asked to improve a README was handed a
+    SHA, could not see a word of it, and correctly refused to overwrite what
+    it could not read.
+
+    The same omission ran through `sync()`, so any server answering in
+    resources contributed nothing to the brain but status lines.
+    """
+    text = getattr(block, "text", None)
+    if isinstance(text, str) and text:
+        return text
+    resource = getattr(block, "resource", None)
+    if resource is not None:
+        inner = getattr(resource, "text", None)
+        if isinstance(inner, str) and inner:
+            return inner
+        # A binary resource is base64 in `blob`. Decoding it would hand a model
+        # a wall of noise, so it is named rather than inlined.
+        if getattr(resource, "blob", None):
+            uri = getattr(resource, "uri", "") or "a file"
+            mime = getattr(resource, "mime_type", None) or getattr(
+                resource, "mimeType", "") or "binary"
+            return f"[{mime} content at {uri}, not shown]"
+    return ""
+
+
 def _records(result: Any) -> list[Any]:
     """Pull records out of whatever shape the tool answered with.
 
@@ -980,7 +1013,7 @@ def _records(result: Any) -> list[Any]:
 
     out: list[Any] = []
     for block in getattr(result, "content", None) or []:
-        text = getattr(block, "text", None)
+        text = _block_text(block)
         if not text:
             continue
         try:

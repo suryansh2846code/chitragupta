@@ -721,6 +721,16 @@ the exemption on something the rename cannot break — the connector, not the
 string — and add the case to `tests/test_one_way_to_connect.py`, which is where
 the retirement is already held.
 
+**Update 2026-09-25 — one cause found and fixed, which was bigger than it
+looked.** `_records()` read only `block.text`, and MCP lets a tool answer with
+an *embedded resource* whose content hangs off `block.resource.text`. GitHub's
+`get_file_contents` answers in exactly that shape — a status line plus the
+whole file — so the file was thrown away and a 7,806-character README reached
+an agent as a SHA. The same reader is what `sync()` uses, so **any server
+answering in resources had been contributing status lines to the brain and
+nothing else**. Fixed, with `tests/test_a_file_a_server_sends_is_actually_read.py`.
+Causes 1–3 below still stand and are still unfixed.
+
 Two smaller things found in the same pass, neither worth its own entry:
 
 * `is_server_metadata()` catches `list_*` furniture but not the imperative
