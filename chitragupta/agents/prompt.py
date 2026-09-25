@@ -18,6 +18,8 @@ the same reason `/CLAUDE.md` says no rule is written twice.
 """
 from __future__ import annotations
 
+from typing import Any
+
 from ..log import suppressed
 
 #: Every action an agent can propose. `Agent.actions` is checked against this,
@@ -65,7 +67,7 @@ def _first_sentence(text: str) -> str:
 
 
 def _argument_names(ref: object) -> str:
-    """What this tool takes, required ones starred.
+    """What this tool takes, required ones starred, closed sets spelled out.
 
     A model that is told a tool exists and not what it accepts fills the
     arguments in from whatever it remembers of that vendor's public API. The
@@ -81,8 +83,38 @@ def _argument_names(ref: object) -> str:
     # Required first: they are what a call fails without.
     names = sorted(props, key=lambda n: (n not in required, n))
     shown = [f"{n}*" if n in required else n for n in names[:MAX_ARGS_SHOWN]]
+    shown = [n + _choices(props.get(n.rstrip("*"))) for n in shown]
     more = len(names) - len(shown)
     return ", ".join(shown) + (f", +{more} more" if more > 0 else "")
+
+
+#: How many allowed values to spell out before saying how many more there are.
+#: Six covers every enum seen on a real server; a hundred-value one would be a
+#: system prompt of its own.
+MAX_CHOICES_SHOWN = 8
+
+
+def _choices(prop: Any) -> str:
+    """The values an argument is allowed to take, where the server fixed them.
+
+    **A name is not enough for a closed set, and this is the case that proved
+    it.** Notion's `notion-update-page` takes a required `command`, and it is
+    one of exactly six words. The model was handed `command*` and nothing else,
+    so it filled in `update_attributes` from whatever it remembered of Notion's
+    API, the server refused the call, and the user watched a confirmation card
+    fail for a reason no one in this app could have predicted.
+
+    Only closed sets. A free-text `page_id` has nothing to list, and listing
+    the *type* of every argument would drown the six words that matter.
+    """
+    if not isinstance(prop, dict):
+        return ""
+    values = prop.get("enum")
+    if not isinstance(values, list) or not values:
+        return ""
+    shown = [str(v) for v in values[:MAX_CHOICES_SHOWN]]
+    more = len(values) - len(shown)
+    return "=" + "|".join(shown) + (f"|+{more}" if more > 0 else "")
 
 
 def _identity(name: str, role: str, system_prompt: str) -> str:

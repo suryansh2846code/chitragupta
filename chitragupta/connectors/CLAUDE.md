@@ -56,6 +56,15 @@ One class per source, registered in `__init__.py::REGISTRY`.
 - `converse()` bounds the whole exchange, not just the reply — a server that
   hangs while starting never reaches a call, and one wedged server otherwise
   holds a slot in the six-wide probe lane forever.
+- **A model is told what an argument ACCEPTS, not only that it exists.** An
+  argument list of bare names is an invitation to remember a vendor's public
+  API: handed `command*`, a model filled in `update_attributes` for a Notion
+  tool whose `command` is one of exactly six words, and the user approved a
+  card that could never have worked. Closed sets are spelled out in the prompt
+  (`_argument_names`) and checked before the call (`argument_problem`) — both
+  from the schema the server published, and narrowly: a missing required
+  argument and a value outside an enum, nothing else. A home-grown validator
+  would start refusing calls that would have worked.
 - `mcp_tools.py` exposes a server's **read** tools to the agent loop and
   `write_tools()` the proposable ones. Listing starts every server, so it is
   TTL-cached; results are bounded and say so.

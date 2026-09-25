@@ -491,6 +491,55 @@ _IRREVERSIBLE_STEMS = (
 )
 
 
+def schema_of(kinds: ToolKinds, tool: str) -> dict | None:
+    """The input schema a server published for one of its tools."""
+    for published in kinds.tools:
+        if getattr(published, "name", "") != tool:
+            continue
+        raw = (getattr(published, "input_schema", None)
+               or getattr(published, "inputSchema", None))
+        return raw if isinstance(raw, dict) else None
+    return None
+
+
+def argument_problem(schema: dict | None, arguments: dict) -> str:
+    """Why this call cannot work, in the server's own words — or "".
+
+    **Checked here rather than discovered at the vendor.** A confirmation card
+    for `notion-update-page` went out with `command: "update_attributes"`, the
+    user approved it, and Notion refused: that argument is one of exactly six
+    words and `update_attributes` is not among them. Everything needed to know
+    that was already in the schema sitting in `ToolKinds.tools`.
+
+    Deliberately narrow. Only two things are checked — a required argument that
+    is absent, and a value outside a set the server itself closed — because
+    both are facts the server stated, and a home-grown JSON Schema validator
+    would start refusing calls that would have worked.
+    """
+    if not isinstance(schema, dict):
+        return ""
+    props = schema.get("properties")
+    props = props if isinstance(props, dict) else {}
+    missing = [name for name in (schema.get("required") or [])
+               if isinstance(name, str) and name not in (arguments or {})]
+    if missing:
+        return (f"it needs {_and_list(missing)}, which "
+                f"{'was' if len(missing) == 1 else 'were'} not given.")
+    for name, value in (arguments or {}).items():
+        allowed = (props.get(name) or {}).get("enum") if isinstance(
+            props.get(name), dict) else None
+        if isinstance(allowed, list) and allowed and value not in allowed:
+            choices = _and_list([str(v) for v in allowed], join="or")
+            return f"`{name}` has to be {choices} — not `{value}`."
+    return ""
+
+
+def _and_list(items: list[str], join: str = "and") -> str:
+    if len(items) == 1:
+        return f"`{items[0]}`"
+    return ", ".join(f"`{i}`" for i in items[:-1]) + f" {join} `{items[-1]}`"
+
+
 def is_irreversible(name: str) -> bool:
     """Would allowing this tool once mean allowing something unrecoverable?
 
@@ -1135,6 +1184,12 @@ class MCPConnector(Connector):
             live = classify_tools(await list_tools_in(session))
             if not live.kind_of(tool):
                 return ("missing", None)
+            # The server already said what this tool accepts. Sending a call it
+            # has to refuse costs a round trip and hands the user a vendor
+            # error where a sentence would do.
+            problem = argument_problem(schema_of(live, tool), arguments or {})
+            if problem:
+                return ("bad-arguments", problem)
             return ("ok", await call_tool_in(
                 session, tool, arguments or {}, CALL_TIMEOUT_SECONDS))
 
@@ -1145,6 +1200,9 @@ class MCPConnector(Connector):
             return {"ok": False, "error": explain(exc, self.label)}
         if outcome == "missing":
             return {"ok": False, "error": _no_such_tool(self.spec, self.label, tool)}
+        if outcome == "bad-arguments":
+            return {"ok": False,
+                    "error": f"{self.label} cannot run `{tool}` like that — {answer}"}
         if getattr(answer, "is_error", False):
             # The server said WHY, and this used to throw it away. So the user
             # was told only that it had not worked, the agent could not see the
