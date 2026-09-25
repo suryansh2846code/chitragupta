@@ -78,7 +78,7 @@ uv pip install -e ".[all]"              # + real embeddings & all connector SDKs
 ## Install (technical testers, macOS)
 
 ```bash
-curl -LsSf https://raw.githubusercontent.com/suryansh2846code/TURNOVER/main/scripts/install.sh | bash
+curl -LsSf https://raw.githubusercontent.com/suryansh2846code/chitragupta/main/scripts/install.sh | bash
 cd ~/chitragupta && .venv/bin/chitragupta app
 ```
 Local-first connectors (Files, Apple Mail, Apple Calendar, iMessage) need no
