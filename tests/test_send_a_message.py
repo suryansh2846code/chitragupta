@@ -114,9 +114,14 @@ def test_scheduling_is_declared_by_the_action_not_a_list_in_execute():
 
 def test_an_action_that_cannot_be_scheduled_refuses_rather_than_running_now(app):
     """Running now is the one outcome the user definitely did not ask for."""
-    result = execute("github_comment",
-                     {"url": "https://github.com/acme/api/issues/7",
-                      "body": "later please", "at": "tomorrow"})
+    # Any non-schedulable action does; this was `github_comment` before GitHub
+    # moved behind the vendor's own server, and `mcp_action` is the route a
+    # connector write takes now.
+    result = execute("mcp_action",
+                     {"server_id": "github", "tool": "add_issue_comment",
+                      "arguments": {"owner": "acme", "repo": "api",
+                                    "issue_number": 7, "body": "later please"},
+                      "at": "tomorrow"})
 
     assert result["ok"] is False
     assert "cannot be scheduled" in result["error"]

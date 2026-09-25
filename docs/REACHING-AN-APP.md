@@ -55,13 +55,23 @@ files · google_fit · telegram
 There is no MCP server for the Messages database on your Mac. There will not
 be one. These are the connectors the product is actually for.
 
-> **Gmail, Calendar, Drive and GitHub stay first-party today**, and the reason
-> is not that MCP could not do it. It is that seventeen of the eighteen jobs
-> are built on those exact methods, they are the only connector code that has
-> been exercised in anger, and replacing them means rewriting the whole action
+> **Gmail, Calendar and Drive stay first-party today**, and the reason is not
+> that MCP could not do it. It is that most of the eighteen jobs are built on
+> those exact methods, they are the only connector code that has been
+> exercised in anger, and replacing them means rewriting the whole action
 > layer against tools that have never run here. That is a real piece of work
 > with a real risk, and it should be a decision somebody makes on purpose —
 > not a side effect of a rule.
+>
+> **GitHub was that decision, made on purpose.** Its server publishes 45 tools
+> against the four written here. `github_comment` and `github_create_issue`
+> are gone; a write is an `mcp_action` against `add_issue_comment` or
+> `issue_write`. Nothing was dropped on the way: the grant still names the
+> repository (`github:add_issue_comment@acme/api`, narrower than the
+> `REPO_RECIPIENT` key it replaces, which covered merging a pull request too),
+> and the comment's Undo survived as a **retraction** — GitHub's server
+> publishes no delete-comment tool, so the button had to say what actually
+> happens. `tests/test_github_is_reached_one_way.py` holds the absences.
 
 ### 3 · Browser — when neither can act
 
@@ -87,6 +97,18 @@ has already chosen.
 | **Retired** | `Connector.prefer_mcp` names the server that supersedes it. The built-in is not offered at all. `notion` and `linear` declare it |
 | **Deduped** | A built-in whose source an MCP server the user has added already reaches is hidden — whatever we think is better, they have chosen |
 | **Shadowed** | `CatalogEntry.same_as` names the built-in an entry duplicates. Where that built-in is the route, **Add a connector** does not offer the server. `github`, `notion`, `linear` and `filesystem` declare it |
+
+**Being shown and being the route are two questions.** Conflating them is a bug
+this document has now seen from both ends. A *retired* connector that somebody
+still has configured stays on the Connectors screen — it is their state — but
+it is not the route, so the catalog must keep offering the server that replaces
+it. Reading "it is on screen" as "it is the route" hid GitHub's server from the
+one user who most needed it, and left the screen looking exactly as it had.
+
+A row for a superseded connector therefore says so, and carries a
+**Disconnect** — a retirement the user cannot act on is a retirement in name
+only, and until this landed a token-backed connector had no way out at all:
+once `ready`, the row offered *Sync* and nothing else.
 
 **A configured connector is never hidden.** Taking away something somebody set
 up, because we changed our mind about which route is better, is losing their

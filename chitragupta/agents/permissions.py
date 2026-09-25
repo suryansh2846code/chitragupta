@@ -289,17 +289,6 @@ def recipients_of(action_type: str, params: dict) -> list[str]:
         return (_every_address_in(str(params.get("email")
                                       or params.get("to") or ""))
                 or ["an unidentified recipient"])
-    if action_type in ("github_comment", "github_create_issue"):
-        # The repository, not the people. Nobody can enumerate who watches
-        # `acme/api`, and the gate's question is what it can *see* — which
-        # here is a key the user can read, compare and revoke.
-        from ..actions import github_target
-
-        owner, repo, _ = github_target(params)
-        # An unparseable target returns one anyway, so a malformed URL fails
-        # closed as an unknown recipient rather than reading as "reaches
-        # nobody" and running.
-        return [f"{owner}/{repo}" if owner and repo else "an unknown repository"]
     if action_type == "message_send":
         # Exactly one conversation, and the app is part of its identity. No
         # splitting: a chat id is opaque and picking addresses out of it the
@@ -362,6 +351,11 @@ def all_permissions() -> list[dict]:
 KIND_LABELS = {
     EMAIL_RECIPIENT: "Email",
     CHAT_RECIPIENT: "Messaging",
+    # Nothing produces a repository grant any more — GitHub moved behind
+    # `mcp_action`, whose key carries the repository itself. The list stays
+    # named so grants made before that are still readable on the allow-list
+    # screen and can still be revoked: a permission the user cannot see is one
+    # they cannot take back.
     REPO_RECIPIENT: "Repository",
     TOOL_RECIPIENT: "Connector tool",
 }

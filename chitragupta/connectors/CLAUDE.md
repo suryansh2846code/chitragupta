@@ -6,7 +6,9 @@ One class per source, registered in `__init__.py::REGISTRY`.
   the route — it feeds the brain *and* acts, over OAuth, with the vendor's own
   schema. A connector exists where nothing else can reach: the eight on-device
   sources. Offering both is how an agent writes down the route the user did not
-  set up, which is exactly what it did.
+  set up, which is exactly what it did. `notion`, `linear` and `github` have
+  stood down; each keeps syncing for whoever has it configured and none of
+  them can write any more.
   [`docs/REACHING-AN-APP.md`](../../docs/REACHING-AN-APP.md)
 - **The pairing is declared at both ends, and one function decides it.**
   `Connector.prefer_mcp` names the server that supersedes a built-in;

@@ -1,5 +1,11 @@
 """GitHub connector — ingests issues/PRs assigned to or opened by you.
 
+**Retired in favour of GitHub's own MCP server**, which is the route now:
+`prefer_mcp` below. It is kept, and keeps syncing, for anybody who had it
+configured — taking away a source somebody set up is how you lose their state
+to a decision they did not make. What it no longer has is a *write* path. That
+moved to `mcp_action`, against the vendor's own schema.
+
 Single-token auth: a GitHub personal access token (classic or fine-grained,
 `repo` read scope). Declared as a `secret_field`, so the UI renders an in-app
 field — no .env editing.
@@ -21,6 +27,13 @@ API = "https://api.github.com"
 class GitHubConnector(Connector):
     name = "github"
     label = "GitHub"
+    #: The vendor ships an MCP server. See `Connector.prefer_mcp`.
+    #:
+    #: Forty-five tools against the four hand-written here, the vendor's own
+    #: schema, and a token this app never has to describe the scopes of. The
+    #: reason it stayed first-party — that every GitHub action was built on
+    #: these methods — stopped being true when those actions moved.
+    prefer_mcp = "github"
     # Was never in the scheduler's list, for no reason anyone recorded: a
     # token-backed source the user connected that then never refreshed.
     auto_sync = True
@@ -51,109 +64,6 @@ class GitHubConnector(Connector):
         )
         with urllib.request.urlopen(req, timeout=30) as resp:
             return json.loads(resp.read())
-
-    # ── writing ──────────────────────────────────────────────────────────
-    #
-    # `sync` only ingests; these are named methods reachable solely through a
-    # confirmed action, the rule `connectors/CLAUDE.md` states for every
-    # connector that can change somebody else's system.
-
-    def _post(self, path: str, token: str, body: dict,
-              method: str = "POST") -> Any:
-        req = urllib.request.Request(
-            f"{API}{path}", method=method,
-            data=json.dumps(body).encode() if body else None,
-            headers={"Authorization": f"Bearer {token}",
-                     "Accept": "application/vnd.github+json",
-                     "Content-Type": "application/json",
-                     "User-Agent": "Chitragupta"},
-        )
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            raw = resp.read()
-            return json.loads(raw) if raw else {}
-
-    def _refusal(self, exc: Exception) -> dict:
-        """GitHub's "no" in the one sentence that says what to do about it."""
-        if isinstance(exc, urllib.error.HTTPError):
-            if exc.code in (401, 403):
-                return {"ok": False, "reauth": True, "error":
-                        "GitHub refused that — the token is read-only or has "
-                        "no access to that repository. Make one with `repo` "
-                        "scope and paste it under Connectors."}
-            if exc.code == 404:
-                return {"ok": False, "error":
-                        "GitHub says that does not exist. A private repository "
-                        "the token cannot see looks the same as a missing one."}
-            if exc.code == 410:
-                return {"ok": False, "error": "Issues are turned off on that "
-                                              "repository."}
-        return {"ok": False, "error": str(exc)[:200]}
-
-    def comment(self, owner: str, repo: str, number: int, body: str) -> dict:
-        """Add a comment to an issue or pull request (WRITE).
-
-        One endpoint for both: GitHub files PR conversation comments as issue
-        comments, and a caller that branched on the URL saying `/pull/` would
-        be reaching for the *review* API, which is a different thing that
-        wants a commit sha.
-        """
-        token = get_settings().get_secret("GITHUB_TOKEN")
-        if not token:
-            return {"ok": False, "error": "GitHub is not connected."}
-        try:
-            made = self._post(
-                f"/repos/{owner}/{repo}/issues/{number}/comments", token,
-                {"body": body})
-        except Exception as exc:
-            return self._refusal(exc)
-        return {"ok": True, "id": made.get("id"), "link": made.get("html_url"),
-                "owner": owner, "repo": repo,
-                "detail": f"Commented on {owner}/{repo}#{number}"}
-
-    def delete_comment(self, owner: str, repo: str, comment_id: str) -> dict:
-        """Remove a comment this app added. The inverse of `comment`."""
-        token = get_settings().get_secret("GITHUB_TOKEN")
-        if not token:
-            return {"ok": False, "error": "GitHub is not connected."}
-        try:
-            self._post(f"/repos/{owner}/{repo}/issues/comments/{comment_id}",
-                       token, {}, method="DELETE")
-        except urllib.error.HTTPError as exc:
-            if exc.code == 404:
-                return {"ok": True, "detail": "That comment was already gone"}
-            return self._refusal(exc)
-        except Exception as exc:
-            return self._refusal(exc)
-        return {"ok": True, "detail": "Comment deleted"}
-
-    def create_issue(self, owner: str, repo: str, title: str,
-                     body: str = "", labels: list[str] | None = None) -> dict:
-        """Open an issue (WRITE)."""
-        token = get_settings().get_secret("GITHUB_TOKEN")
-        if not token:
-            return {"ok": False, "error": "GitHub is not connected."}
-        payload: dict[str, Any] = {"title": title, "body": body}
-        if labels:
-            payload["labels"] = labels
-        try:
-            made = self._post(f"/repos/{owner}/{repo}/issues", token, payload)
-        except Exception as exc:
-            return self._refusal(exc)
-        return {"ok": True, "id": made.get("number"),
-                "link": made.get("html_url"), "owner": owner, "repo": repo,
-                "detail": f"Opened {owner}/{repo}#{made.get('number')}"}
-
-    def issue_exists(self, owner: str, repo: str, number: int) -> dict:
-        """Read one back, so "opened" is checked rather than assumed."""
-        token = get_settings().get_secret("GITHUB_TOKEN")
-        if not token:
-            return {"verified": False}
-        try:
-            got = self._get(f"/repos/{owner}/{repo}/issues/{number}", token)
-        except Exception:
-            return {"verified": False}
-        return {"verified": bool(got.get("number")),
-                "at": got.get("created_at", "")}
 
     def sync(self, *, max_items: int = 150, since: str | None = None,
              limit: int | None = None, full_history: bool = False,

@@ -117,7 +117,12 @@ _MESSAGES = ["list_chats", "read_chat"]
 #: agent that can file an issue and cannot search is an agent that files
 #: duplicates.
 _CODE = ["search_source", "sync_source"]
-_CODE_ACTIONS = ["github_comment", "github_create_issue"]
+#: Empty, and not an oversight. GitHub joined Linear and Notion behind
+#: `mcp_action` when it was retired in favour of the vendor's own server, and
+#: an agent reaches all three the same way — through the connector tools it is
+#: offered, with a per-tool grant. A named action here would be the second
+#: route this project spent a whole document removing.
+_CODE_ACTIONS: list[str] = []
 #: Writing a document where the user's team reads it. `drive_create_doc` is
 #: GREEN — it lands in their own Drive and reaches nobody until they share it
 #: — so it is the one an agent can prepare overnight without a tap.

@@ -112,10 +112,12 @@ def test_the_tiers_hold_exactly_the_actions_they_are_meant_to():
       `drive_share` is AMBER against the EMAIL list, because that is
       genuinely who it reaches — with `always_ask_when` refusing a public
       link, which has no recipient to allow-list.
-    * Notion and Linear appear in neither set. They are reached as custom
-      sources, so a write to either is an `mcp_action`, which is already
-      amber against its own per-tool list. Two routes to one connector meant
-      the agent could pick the one the user had not set up.
+    * Notion, Linear and GitHub appear in neither set. All three are reached
+      through the vendor's own server, so a write to any of them is an
+      `mcp_action`, which is already amber against its own per-tool list —
+      now keyed on the repository or workspace it acts in. Two routes to one
+      connector meant the agent could pick the one the user had not set up;
+      GitHub was the last one still carrying its own action types.
     * The browser's write tools are in neither set, and are not actions at all.
       A click cannot be promoted or allow-listed — *Save draft* and *Transfer
       £4,000* are the same call — so the consent is the **site**, granted once
@@ -125,7 +127,6 @@ def test_the_tiers_hold_exactly_the_actions_they_are_meant_to():
     never = frozenset({"create_routine", "mail_triage",
                        "update_event", "cancel_event"})
     outbound = frozenset({"send_email", "create_event", "message_send",
-                          "github_comment", "github_create_issue",
                           "mcp_action", "drive_share"})
 
     assert never == set(permissions.NEVER_UNATTENDED)

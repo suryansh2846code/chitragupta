@@ -29,21 +29,38 @@ import pytest
 
 from chitragupta.connectors import REGISTRY
 
+#: Retired in favour of the vendor's own server. Each had its write path
+#: removed in the same change; none of them is on this Mac.
+RETIRED = {"notion": "notion", "linear": "linear", "github": "github"}
 
-def test_the_two_with_vendor_servers_declare_it():
-    """Both had their write path removed in favour of MCP. The declaration is
+
+def test_the_ones_with_vendor_servers_declare_it():
+    """Each had its write path removed in favour of MCP. The declaration is
     what stops them being offered as a second way to do the same thing."""
-    assert REGISTRY["notion"].prefer_mcp == "notion"
-    assert REGISTRY["linear"].prefer_mcp == "linear"
+    for name, server in RETIRED.items():
+        assert REGISTRY[name].prefer_mcp == server
 
 
 def test_nothing_else_claims_a_server_it_does_not_have():
     """A connector that stood down for a server nobody ships would simply
     disappear — the user would lose the source with no way to get it back."""
     for name, cls in REGISTRY.items():
-        if name in ("notion", "linear"):
+        if name in RETIRED:
             continue
         assert not cls.prefer_mcp, f"{name} stands down for nothing"
+
+
+def test_a_retired_connector_keeps_no_way_to_write():
+    """Retiring a source is not a UI change. The built-in stays and keeps
+    syncing for anybody who had it configured — and loses its write methods,
+    because two ways to change somebody's account is the bug this whole file
+    is named after, one layer below the screen it was reported on."""
+    for name in RETIRED:
+        cls = REGISTRY[name]
+        for verb in ("comment", "create_issue", "delete_comment", "send",
+                     "create_page", "update"):
+            assert not hasattr(cls, verb), (
+                f"{name} is retired but can still {verb}()")
 
 
 def test_the_on_device_sources_can_never_stand_down():
@@ -54,6 +71,15 @@ def test_the_on_device_sources_can_never_stand_down():
                  "apple_health", "files"):
         assert not REGISTRY[name].prefer_mcp, (
             f"{name} is on-device — no server can replace it")
+
+
+def _rows(route) -> list[dict]:
+    """The screen's rows. The endpoint is async because it sits in the probe
+    lane — starting every MCP server is what makes it slow."""
+    payload = route.connectors()
+    if asyncio.iscoroutine(payload):
+        payload = asyncio.run(payload)
+    return payload["connectors"]
 
 
 def _names(route) -> set[str]:
@@ -122,20 +148,29 @@ def test_the_sources_that_have_no_server_are_untouched(catalog):
 
     names = _names(route)
 
-    for kept in ("gmail", "gcal", "github", "files", "notes"):
+    for kept in ("gmail", "gcal", "files", "notes"):
         assert kept in names, f"{kept} disappeared"
 
 
-def test_any_source_added_as_a_server_hides_its_unconfigured_built_in(catalog):
-    """The universal half of the rule, not just the two that were retired.
+def test_any_source_added_as_a_server_hides_its_unconfigured_built_in(
+        catalog, monkeypatch):
+    """The universal half of the rule, not just the ones that were retired.
 
     Add a server whose id matches ANY built-in and the built-in stops being
     offered — so "two of the same app on one screen" cannot happen again for
-    a source nobody has thought about yet.
-    """
-    route = catalog(["github"])
+    a source nobody has thought about yet. `gdrive` is the subject because it
+    is deliberately NOT retired: the rule has to hold for a connector that is
+    staying, or it is only the retirement wearing a different name.
 
-    assert "github" not in _names(route)
+    Its state is pinned rather than read off this machine — the developer who
+    happens to have Drive connected would otherwise see a different test from
+    the one CI runs.
+    """
+    monkeypatch.setattr(REGISTRY["gdrive"], "is_configured",
+                        lambda self: (False, "not set up"), raising=False)
+    route = catalog(["gdrive"])
+
+    assert "gdrive" not in _names(route)
 
 
 def test_a_configured_built_in_is_never_hidden_by_a_server(catalog, monkeypatch):
@@ -215,27 +250,53 @@ def test_no_source_is_reachable_from_both_screens_at_once(catalog, monkeypatch):
                                 lambda self, c=configured: (c, ""),
                                 raising=False)
             r = catalog([])
-            on_screen = entry.same_as in _names(r)
-            in_catalog = entry.id in {c["id"]
-                                      for c in r.connector_catalog()["available"]}
-            assert not (on_screen and in_catalog), (
-                f"{entry.name} is offered twice when its built-in is "
-                f"{'configured' if configured else 'not configured'}")
-            assert on_screen or in_catalog, (
-                f"{entry.name} is offered nowhere when its built-in is "
-                f"{'configured' if configured else 'not configured'}")
+            # **Offered to connect**, which is not the same as visible. A
+            # configured connector is shown because it is the user's state,
+            # and its row carries Sync rather than Connect — that is not a
+            # second way to set the source up, and a retired one sitting
+            # beside the server meant to replace it is the migration, not the
+            # bug. What must never happen twice is the *offer*.
+            rows = {row["name"]: row for row in _rows(r)}
+            offers_connect = (entry.same_as in rows
+                              and not rows[entry.same_as]["ready"])
+            catalog_rows = {c["id"]: c
+                            for c in r.connector_catalog()["available"]}
+            offers_add = (entry.id in catalog_rows
+                          and not catalog_rows[entry.id]["added"])
+            where = "configured" if configured else "not configured"
+            assert not (offers_connect and offers_add), (
+                f"{entry.name} can be connected two ways when its built-in "
+                f"is {where}")
+            assert offers_connect or offers_add or configured, (
+                f"{entry.name} cannot be connected at all when its built-in "
+                f"is {where}")
     assert route  # the module under test, imported for the reader
 
 
-def test_the_reported_case_github_is_offered_once(catalog, monkeypatch):
-    """The screenshot. GitHub connected under *Code & projects*, and **Add a
-    connector** still listing GitHub with an Add button beside it."""
+def test_a_configured_retired_connector_does_not_hide_its_replacement(
+        catalog, monkeypatch):
+    """The reported case, and the one that took two passes to get right.
+
+    GitHub sat CONNECTED on the Connectors screen. The first fix read that as
+    "the built-in is the route" and hid GitHub from the catalog — so the
+    server meant to *replace* it was the one thing the user could not reach,
+    and the screen looked exactly as before.
+
+    Being shown and being the route are two questions. A retired connector is
+    somebody's existing state; `prefer_mcp` says the server wins, and it says
+    so whether or not the old one is still set up.
+    """
     monkeypatch.setattr(REGISTRY["github"], "is_configured",
                         lambda self: (True, ""), raising=False)
     r = catalog([])
+    rows = {row["name"]: row for row in _rows(r)}
 
-    assert "github" in _names(r)
-    assert "github" not in {c["id"] for c in r.connector_catalog()["available"]}
+    assert "github" in rows, "their own connector must not vanish under them"
+    assert rows["github"]["superseded_by"] == "github", (
+        "and the row has to say why it is the only one without a future")
+    assert rows["github"]["can_disconnect"], (
+        "a retirement the user cannot act on is a retirement in name only")
+    assert "github" in {c["id"] for c in r.connector_catalog()["available"]}
 
 
 def test_a_retired_built_in_leaves_its_catalog_entry_standing(catalog, monkeypatch):

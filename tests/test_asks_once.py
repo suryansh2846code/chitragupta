@@ -77,10 +77,15 @@ MORNINGS = [
         {"app": "telegram", "chat": "4411", "text": "on my way"},
         "telegram:4411",
         id="message the same chat every morning"),
+    # Was `github_comment` against an `acme/api` key, until GitHub was retired
+    # in favour of its own server. The promise is unchanged and the key is
+    # narrower: it still names the repository, and now names the verb too.
     pytest.param(
-        "github_comment",
-        {"url": "https://github.com/acme/api/issues/7", "body": "bumping this"},
-        "acme/api",
+        "mcp_action",
+        {"server_id": "github", "tool": "add_issue_comment",
+         "arguments": {"owner": "acme", "repo": "api", "issue_number": 7,
+                       "body": "bumping this"}},
+        "github:add_issue_comment@acme/api",
         id="comment on the same repo every morning"),
     pytest.param(
         "mcp_action",

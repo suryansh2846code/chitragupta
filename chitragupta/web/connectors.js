@@ -158,7 +158,14 @@ function _cnRowHtml(c, staleAfterMin) {
   // clear it. That reason outranks the catalogue blurb: "Reads your local
   // iMessages" is true and useless when macOS is the thing standing in the way.
   const blocked = !c.ready && !!c.fix;
+  // A retired source says so. It keeps syncing and keeps everything it has
+  // already put in the brain — what it no longer does is grow, because the
+  // vendor's own server is the route now. Without this line the user reads a
+  // connector that quietly stopped gaining features as one that is broken,
+  // and has no idea there is somewhere to move to.
+  const superseded = c.ready && c.superseded_by;
   const status = !c.ready ? (blocked ? c.reason : (meta.desc || c.reason || "Not connected"))
+    : superseded ? `Connected · ${c.label}'s own server replaces this — disconnect to move across`
     : onDemand ? "Connected · answers your agents on demand"
     : !last ? "Connected · not synced yet"
     : stale ? `Connected · last synced ${last}` : `Connected · synced ${last}`;
@@ -176,6 +183,14 @@ function _cnRowHtml(c, staleAfterMin) {
   const setup = c.custom
     ? `<button class="tiny ghost" data-editapp="${esc(c.name)}">Edit</button>`
     : (c.ready || fixBtn ? "" : `<button class="tiny" data-setup="${esc(c.name)}">Connect</button>`);
+  // **A way out.** A token-backed connector had none: once it was ready the
+  // row offered Sync and nothing else, so a source could be connected and
+  // never unconnected — and a retirement the user cannot act on is a
+  // retirement in name only. Telegram and Google already had their own; this
+  // is the same control for everything that authenticates with a key.
+  const disconnect = c.can_disconnect
+    ? `<button class="tiny ghost" data-cnoff="${esc(c.name)}" data-cnlabel="${esc(c.label)}">Disconnect</button>`
+    : "";
   const del = c.custom
     ? `<button class="tiny ghost cn-x" data-delapp="${esc(c.name)}" title="Remove" aria-label="Remove ${esc(c.label)}">${IC.close}</button>`
     : c.mcp ? `<button class="tiny ghost" data-cntools="${esc(c.name)}" data-cnlabel="${esc(c.label)}" title="What this connector can do">Permissions</button>
@@ -189,7 +204,7 @@ function _cnRowHtml(c, staleAfterMin) {
       <span class="cn-name">${esc(c.label)}${badge}</span>
       <span class="cn-sub">${esc(status)}</span>
     </span>
-    <span class="cn-actions">${sync}${fixBtn}${setup}${del}</span>
+    <span class="cn-actions">${sync}${fixBtn}${setup}${disconnect}${del}</span>
   </div>`;
 }
 
@@ -207,6 +222,16 @@ function bindConnectorRowActions() {
     if (!confirm("Remove this custom app? (synced records stay in the brain.)")) return;
     await api(`/api/custom-apps/${id}`, { method: "DELETE" });
     toast("custom app removed"); loadBrain();
+  });
+  document.querySelectorAll("[data-cnoff]").forEach((b) => b.onclick = async () => {
+    // Says what it does and what it does not. The token goes; everything the
+    // connector already put in the brain stays, the same promise removing an
+    // MCP connector makes two handlers below.
+    if (!confirm(`Disconnect ${b.dataset.cnlabel}? The saved key is forgotten. `
+                 + "What it already synced stays in your brain.")) return;
+    await api(`/api/connectors/${encodeURIComponent(b.dataset.cnoff)}/secret`,
+              { method: "POST", body: JSON.stringify({ value: "" }) });
+    toast(`${b.dataset.cnlabel} disconnected`); loadBrain();
   });
   document.querySelectorAll("[data-cntools]").forEach((b) => b.onclick = () =>
     connectorTools(b.dataset.cntools, b.dataset.cnlabel));

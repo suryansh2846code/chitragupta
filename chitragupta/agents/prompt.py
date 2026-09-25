@@ -25,11 +25,11 @@ from ..log import suppressed
 KNOWN_ACTIONS = ("create_draft", "send_email", "create_event", "update_event",
                  "cancel_event", "create_followup", "set_reminder",
                  "create_routine", "mail_triage", "message_send",
-                 "github_comment", "github_create_issue", "log_workout",
-                 "create_task",
-                 # Phase 4. Notion and Linear are deliberately absent: they
-                 # are reached as custom sources through `mcp_action`, which
-                 # is one route rather than two. See `docs/ACTION-COVERAGE.md`.
+                 "log_workout", "create_task",
+                 # Phase 4. Notion, Linear and now GitHub are deliberately
+                 # absent: all three are reached through `mcp_action` against
+                 # the vendor's own server, which is one route rather than
+                 # two. See `docs/ACTION-COVERAGE.md`.
                  "drive_create_doc", "drive_share")
 
 #: Argument names listed per connector tool. Enough for a model to fill a call
@@ -187,23 +187,6 @@ _BLOCKS: dict[str, str] = {
         "invitation to people who have already been told it is cancelled — so "
         "when the user might mean *move*, propose `update_event` instead and "
         "say which you chose."
-    ),
-    "github_comment": (
-        '<action type="github_comment" '
-        'url="https://github.com/owner/repo/issues/87">What you want to '
-        "say.</action>\n"
-        "The URL comes from the issue or PR itself — `search_source(\"github\")` "
-        "or the link the user gave you. Never assemble one from a repository "
-        "name and a number you inferred: a comment on the wrong thread is "
-        "public and is somebody else's notification."
-    ),
-    "github_create_issue": (
-        '<action type="github_create_issue" repo="owner/repo" '
-        'title="Short, specific title" labels="bug">Body, in markdown. Say '
-        "what is wrong, what you expected, and where you saw it.</action>\n"
-        "An issue CANNOT be deleted afterwards — closing one leaves it there, "
-        "numbered, and everybody watching has already been told. Check with "
-        "`search_source` that you are not filing a duplicate."
     ),
     "create_followup": (
         '<action type="create_followup" who="rahul@work.test" due="in 3 days" '

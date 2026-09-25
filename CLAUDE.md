@@ -169,11 +169,19 @@ even when every test is green. Reasoning and measurements:
   read.** Outbound actions need a recipient on the explicit allow-list; a derived
   list is exactly what an injection would name. Interactive chat is deliberately
   not gated.
-- **Changing a third-party account always waits for one tap** — `mcp_action` and
-  `mail_triage` are in `NEVER_UNATTENDED` and there is nothing to allow-list
-  there. `message_send` *is* allow-listable, against its own list keyed
-  `app:chat` — a chat id means nothing outside the app it came from, so it is
-  never judged against the email list. A batch is **one** card covering every item, never one card each: a
+- **Changing a third-party account waits for a tap until the user says
+  otherwise, and the grant names what it reaches.** `mail_triage` is in
+  `NEVER_UNATTENDED` — its input is text strangers wrote, so there is nothing
+  safe to allow-list. `mcp_action` was too, and is now amber against a key of
+  its own: `server:tool@scope`, e.g. `github:add_issue_comment@acme/api`. One
+  verb, one container, nothing granted by default, and
+  `is_irreversible()` verbs still ask every single time. The argument for the
+  promotion is written out in
+  [`docs/ACTION-COVERAGE.md`](docs/ACTION-COVERAGE.md) § Per-tool grants —
+  read it before loosening anything further.
+  `message_send` is allow-listable against its own list keyed `app:chat` — a
+  chat id means nothing outside the app it came from, so it is never judged
+  against the email list. A batch is **one** card covering every item, never one card each: a
   tap nobody reads by the fourth time is not consent.
 - Streaming is a callback on the same loop, never a second loop.
 - Delegation guards live in a `ContextVar`: one `copy_context()` **per call**,

@@ -194,9 +194,9 @@ def test_acting_on_the_world_still_goes_through_the_user():
     assert {a for a in held if REGISTRY[a].risk is not Risk.GREEN} == {
         "send_email", "create_event", "update_event", "cancel_event",
         "mail_triage", "message_send", "create_routine",
-        "github_comment", "github_create_issue",
         # `drive_create_doc` is absent from this set on purpose — it is GREEN,
-        # because a document in the user's own Drive reaches nobody. Notion
-        # and Linear are absent because they are written to through
-        # `mcp_action`, which is already in this list.
+        # because a document in the user's own Drive reaches nobody. Notion,
+        # Linear and GitHub are absent because they are written to through
+        # `mcp_action`, which is already in this list. GitHub was the last of
+        # the three still carrying action types of its own.
         "drive_share"}

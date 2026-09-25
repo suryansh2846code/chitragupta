@@ -77,7 +77,14 @@ def _builtin_is_offered(name: str, cls, ready: bool, covered: set[str]) -> bool:
 
 
 def _offered_builtins() -> set[str]:
-    """The built-ins a catalog entry would be a second route to.
+    """The built-ins that ARE the route to their source, so the catalog stays quiet.
+
+    Being on the Connectors screen and being the route are two questions, and
+    conflating them kept GitHub's server out of the catalog after GitHub was
+    retired — the user had the built-in configured, so it was still shown, so
+    the thing meant to replace it was never offered. A retired connector is
+    somebody's existing state, not a way to connect: `prefer_mcp` says the
+    server wins, and it says so whether or not the old one is still set up.
 
     Only the sources some entry actually claims are asked. The catalog is not
     in the probe lane, and there is no reason to ask fifteen connectors whether
@@ -89,7 +96,7 @@ def _offered_builtins() -> set[str]:
     out = set()
     for twin in {e.same_as for e in CATALOG if e.same_as}:
         cls = REGISTRY.get(twin)
-        if cls is None:
+        if cls is None or cls.prefer_mcp:
             continue
         ready, _ = cls().is_configured()
         if _builtin_is_offered(twin, cls, ready, covered):
@@ -122,6 +129,18 @@ def connectors():
                     "reason": reason, "fix": inst.fix,
                     "always_available": cls.always_available,
                     "secret_field": cls.secret_field, "custom": False,
+                    # **Superseded, and still theirs.** A retired connector
+                    # keeps working for whoever has it set up, and the row has
+                    # to say why it is the only one of its kind without a
+                    # future — otherwise the user reads a source that quietly
+                    # stopped gaining features as one that is broken.
+                    "superseded_by": cls.prefer_mcp,
+                    # Whether there is a way OUT. A token-backed connector had
+                    # no disconnect at all: once `ready`, the row offered Sync
+                    # and nothing else, so a source could be connected and
+                    # never unconnected — and a retirement nobody can act on
+                    # is a retirement in name only.
+                    "can_disconnect": bool(cls.secret_field) and ready,
                     "state": state.get(name)})
     # user-defined custom API apps
     from ...connectors.custom_api import CustomAPIConnector, list_apps
