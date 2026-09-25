@@ -188,38 +188,120 @@ Each of these is real today. None is urgent on its own; they are written down so
 the next change does not deepen them. Evidence and cost:
 [`COMPLEXITY_AUDIT.md`](../COMPLEXITY_AUDIT.md).
 
-### 6.1 `api/` imports `desktop`
-`api/routes/workspace.py` (×2) and `api/routes/providers.py` (×1) do
-`from ... import hud`. The HTTP layer reaching into the window layer inverts
-rule 5 of §3. Currently masked by being a function-level import.
-*Should become:* a small bridge the desktop layer registers with the API, or the
-HUD routes moving to a desktop-owned router.
+### 6.1 ~~`api/` imports `desktop`~~ · **CLOSED 2026-09-25**
 
-### 6.2 `core/` imports `brain/`
-`core/store.py` → `brain.canonical.redact`. The redaction belongs on the ingest
-path and must stay there; the *direction* is the deviation.
-*Should become:* redaction moves down into `core/`, which is where a rule about
-what may be written to the database belongs.
+> Closed as prescribed: `api/desktop_bridge.py` is a three-function seam the
+> desktop layer **attaches** itself to (`hud._attach_to_api`, called from
+> `desktop.py`). `api/` now asks the bridge and never learns what answered.
+>
+> It was a genuine cycle, not just a reversed arrow — `desktop.py` imports
+> `api.app` to serve the window — and it was invisible because all three
+> imports sat inside function bodies.
+>
+> **Detached is the common case, not an error.** `chitragupta serve` is a
+> browser tab with no native window, and the bridge's defaults say exactly that
+> in the same shape the attached surface uses. A status endpoint that changes
+> shape with how the app was launched is one the frontend has to branch on.
+>
+> `tests/test_desktop_bridge.py` walks the AST of `api/` rather than grepping —
+> `from .. import desktop_bridge` contains the string `import desktop`, and a
+> substring check calls the fix a violation. It also exercises the **attached**
+> path, which nothing else could: every fallback is indistinguishable from the
+> real value, so a bridge nobody wired up passes every existing sign-in test.
+
+### 6.2 ~~`core/` imports `brain/`~~ · **CLOSED 2026-09-25**
+
+> Closed as prescribed: `redact.py` moved to `core/`, where a rule about what
+> may be written to the database belongs. `brain/canonical/redact.py` re-exports
+> both names, so every existing import reads the same, and the redaction still
+> runs on the ingest path before a credential can reach a model or the index —
+> only the direction changed.
+>
+> This was the edge that made `brain · connectors · core` a cycle at package
+> level. `PROSE_EXT` moved down to `core/chunk.py` at the same time, for the
+> same reason: `brain` was importing a *sibling* to read it (§3 rule 2).
+
+### 6.8 Three import cycles remain · **OPEN, and bounded**
+
+Measured 2026-09-25, counting lazy imports as the real edges they are. **27
+modules were in cycles; 11 are.** `tests/test_import_layering.py` pins the
+remaining three as a closed list — a new cycle fails, and a listed one that
+*grows* fails, which is the direction this rots in: `models/` reached fourteen
+by absorbing one more module each time somebody needed a fact from it.
+
+| cycle | modules | why it is still here |
+|---|---|---|
+| `agents.tools` · `library` · `connector_grants` · `browse_tools` · `message_tools` | 5 | `connector_grants` reads one **security-relevant** flag off a library template — `unrestricted_connectors`, which only Chief of Staff has — and `library` resolves the "everything" tool marker against `tools`. Moving where a template declares that flag changes how consent is expressed, which deserves more care than a cycle costs. |
+| `connectors.mcp_auth` · `mcp_source` · `mcp_tools` | 3 | One subsystem split three ways: auth needs the server spec, the spec needs its tools, the tools need auth to call them. |
+| `browser.chromium` · `session` · `signin` | 3 | A driver, the session it owns, and the sign-in flow that drives both. |
+
+*Should become:* for the first, the flag published from a leaf both sides read,
+so it is declared once and neither imports the other. The other two are single
+subsystems whose internal split is the accident; they read as cycles because the
+file boundaries do not match the concept boundaries.
 
 ### 6.3 Eight feature modules have no package
 `actions.py`, `routines.py`, `tasks.py`, `reminders.py`, `scheduled.py`,
 `scheduler.py`, `usage.py`, `notify.py` — 1,072 lines at the package root beside
 `config.py` and `log.py`, which are leaf utilities. This is why the import graph
 shows `root ↔ connectors`, `root ↔ agents` and `root ↔ brain` as cycles: "root"
-is two unrelated things under one name. `actions ↔ routines ↔ agents.approvals`
-is a genuine cycle inside it.
+is two unrelated things under one name.
+
+**The `actions ↔ routines ↔ agents.approvals` cycle this entry named is closed**
+(2026-09-25) — without the package. Three moves did it, and each is a rule:
+the schedule vocabulary and the routine store went down to `core/` (**data below
+every layer that reads it**); the action wording went to `action_phrasing.py`
+(**one wording, below both the card that asks and the log that records**); and
+`delegation`/`outcomes` re-enter the loop through `agents/entry.py` (**the
+recursion is the design, the import was not**). The naming problem this entry
+is really about is untouched.
 *Should become:* a `workspace/` package for the productivity layer, leaving
 `config`/`log` alone at the root.
 
-### 6.4 `models/` is one 14-module cycle
-`accounts · anthropic · chatgpt_auth · claude_code · cursor · deepseek ·
-discovery · entitlements · errors · gemini · grok_cli · openai_compat ·
-registry · xai` form a single strongly-connected component. There are no
-module-level cycles only because those edges live inside function bodies.
-*Should become:* a leaf module holding provider ids and plan tiers that
-`entitlements`, `discovery` and `errors` can all import without a back-edge.
-**This is the largest structural item in the codebase and the riskiest to
-change.** Not scheduled.
+### 6.4 ~~`models/` is one 14-module cycle~~ · **CLOSED 2026-09-25**
+
+> **Zero import cycles**, pinned by `tests/test_models_layering.py`. The
+> prescribed fix — "a leaf module holding provider ids and plan tiers" — was
+> most of it; two more edges needed the same treatment. The layering is now:
+>
+> ```
+> errors · base · streaming · capabilities · cache   nothing above them
+> entitlement_rules                                  pure policy, stdlib only
+> claude_cli                                         where the CLI is
+> accounts · connection_state                        what the user has
+> discovery                                          the catalog, decorated
+> entitlements                                       choosing a model to run
+> registry                                           everything
+> ```
+>
+> Five moves, each a rule rather than a cut: `errors` took a supplier hook
+> instead of importing `discovery` (**the floor may only touch modules that
+> touch nothing**); `StreamEvent` moved to `base` (**a protocol type belongs
+> with the protocol**); `chatgpt_auth` calls `cache.credentials_changed()`
+> (**an auth module reports to a leaf**); `entitlements` split into pure policy,
+> detection and choosing (**a provider re-checking a model must not drag the
+> catalog up behind it**); `find_claude` moved to `claude_cli` (**detection sits
+> below the provider that uses it**).
+>
+> Every moved name is re-exported and declared in `__all__`, and
+> `test_no_unused_imports` now honours `__all__` rather than exempting
+> `__init__.py` — a stricter check, not a looser one.
+
+### 6.7 `brain/` imports `connectors/` · **OPEN**
+`brain/brain.py` reaches sideways into `connectors` twice: `_maybe_fetch` live-
+searches Gmail or Drive when recall misses, and `_escape_hatch` starts a full
+archive sync when the user asks for one. §3 rule 2 sanctions the *opposite*
+direction only — a connector writing through `brain.ingest()` — so this is a
+violation that was never written down, because it lives inside function bodies
+like the others did.
+
+Both are real features on the recall path, and both hardcode `"gmail"` /
+`"gdrive"` routing inside `brain`. **Not fixed here deliberately:** moving them
+is a redesign of what recall is allowed to do, which is a product decision, not
+a defect fix — and the recall path carries the invariant that a curation failure
+can never break plain retrieval.
+*Should become:* on-demand fetch owned by the layer above both, with `brain`
+reporting a miss rather than resolving it.
 
 ### 6.5 Responsibilities sitting in the wrong subsystem
 | what | where it is | where it belongs |

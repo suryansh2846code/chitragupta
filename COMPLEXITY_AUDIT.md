@@ -28,12 +28,30 @@ readable. What it found has largely been acted on:
 | H.3 | no coverage measurement | **done** — runs in CI, 76%, no threshold |
 | — | CI was red | **done** — two missing extras; also recovered 20 silently-skipping macOS tests |
 
+**C.1 and C.2 closed 2026-09-25.** `models/` is now a **DAG — zero import
+cycles**, down from one strongly-connected component of fourteen modules.
+Pinned by `tests/test_models_layering.py`, which counts lazy imports as the real
+edges they are; a lint rule cannot see them, which is exactly how the knot
+survived this long.
+
+Five moves did it, each establishing a rule rather than just cutting an edge:
+
+| move | rule it establishes |
+|---|---|
+| `errors` took a supplier hook instead of importing `discovery` | **`errors` is the floor** — every provider imports it at module level, so it may only touch modules that touch nothing |
+| `StreamEvent` moved from `streaming` to `base` | **a protocol type belongs with the protocol**; it made `base` import the wire parsers to implement its own default |
+| `chatgpt_auth` calls `cache.credentials_changed()` | **an auth module reports to a leaf**; whoever holds derived state has already registered a clearer |
+| `entitlements` split into `entitlement_rules` (pure) + `connection_state` (detection) + itself (choosing) | **policy is pure and sits at the bottom**, so a provider re-checking a model — which it must — does not drag the catalog up behind it |
+| `find_claude` moved to `claude_cli` | **detection sits below the provider that uses it**, so `accounts` and `claude_code` stop importing each other |
+
+Every existing import path still works: the moved names are re-exported and
+declared in `__all__`, and `test_no_unused_imports` now honours `__all__` rather
+than exempting `__init__.py` — a stricter check, not a looser one.
+
 **Still open, and deliberately so:**
 
 | § | finding | why it was left |
 |---|---|---|
-| C.1 | the 14-module cycle in `models/` | genuine design change; touches provider auth |
-| C.2 | 199 function-level imports | mostly a symptom of C.1 |
 | C.3 | eight feature modules own no package | wide import churn for a naming win |
 | C.4 | `api/` imports `desktop` | needs a bridge; two subsystems |
 | C.5 | `core/` imports `brain/` | one import, low value alone |
