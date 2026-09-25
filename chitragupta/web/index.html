@@ -482,8 +482,28 @@
       <div id="connectors" class="connectors"></div>
       <div id="cnEmpty" class="cn-empty" hidden>No source matches that.</div>
 
+      <!-- **On the page, not behind a button.** This list was a modal you had
+           to know to open, so the answer to "what else can this reach?" was
+           invisible until you went looking — and the sources most people want
+           are the ones they have not thought of yet. It is also where the two
+           kinds stop being an abstraction: everything here is a vendor's own
+           MCP server, which is why the whole section carries one tag instead
+           of every row repeating it. -->
+      <section class="cn-avail" id="cnAvailable">
+        <div class="cn-group-head">
+          <div>
+            <h2 class="cn-group-title">Available to add
+              <span class="cn-kind is-mcp" title="The service's own server, speaking the Model Context Protocol. The vendor owns the schema and keeps it current.">MCP</span></h2>
+            <p class="cn-group-sub">Each one is the service's own server. You sign
+              in with them, nothing is routed through us, and the vendor keeps it
+              current — so these usually do far more than a hand-written
+              connector could.</p>
+          </div>
+        </div>
+        <div id="cxList" class="cn-card">Loading…</div>
+      </section>
+
       <div class="cn-add">
-        <button id="addConnector" class="tiny">+ Add a connector</button>
         <button id="addCustomApp" class="tiny ghost">+ Connect a custom app</button>
       </div>
 

@@ -68,6 +68,21 @@ def test_the_harness_reports_a_thrown_error():
 # ── the browser ────────────────────────────────────────────────────────────
 
 
+def test_a_reply_missing_its_list_does_not_take_the_screen_down():
+    """The catalog is a section of the Connectors page now, not a modal.
+
+    A modal that throws takes down something the user deliberately opened. A
+    section that throws takes down the sources they already have — the half of
+    that screen which must render whatever else is wrong. This was a real
+    crash the moment the list moved: `data.available.map` on a reply that had
+    no `available`, which killed the whole page.
+    """
+    out = run({"mode": "catalog", "api": {"/api/connectors/catalog": {}}})
+
+    assert out["ok"], out["error"]
+    assert out["addButtons"] == []
+
+
 def test_the_catalog_renders_every_available_connector():
     out = run({"mode": "catalog", "api": {"/api/connectors/catalog": CATALOG}})
 

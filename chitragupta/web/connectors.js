@@ -282,6 +282,14 @@ function bindConnectorRowActions() {
 
 function renderConnectors(connectors, staleAfterMin) {
   const box = $("#connectors"); if (!box) return;
+  // The catalog is part of this screen now, so it loads with it. Fired rather
+  // than awaited — what you already have must render immediately, and a slow
+  // catalog must never be what holds it up — and caught, because a section
+  // that fails must not take the sources you already have down with it.
+  Promise.resolve().then(loadConnectorCatalog).catch(() => {
+    const avail = $("#cxList");
+    if (avail) avail.textContent = "Could not load the connector list.";
+  });
   _cnRows = connectors.map((c) => ({
     name: c.name, label: c.label, ready: Boolean(c.ready),
     group: connectorGroup(c),
@@ -661,12 +669,16 @@ $("#addCustomApp").onclick = () => customAppForm();
 // servers, which is an implementation detail they never need — the same way
 // signing in to Claude never mentions a vendor CLI.
 
+// The catalog lives ON the Connectors page now, not in a modal. This stays as
+// the way back from the screens that drill into it — a permissions sheet, a
+// setup form — and it closes whatever is open and returns you to the list,
+// which is what "Back" meant when the list was a modal too.
 function connectorBrowser() {
-  openBrainModal("Add a connector",
-    `<p class="t">Connectors run on your Mac and talk to the service directly.
-       Nothing is routed through us, and you sign in with the service itself.</p>
-     <div id="cxList" class="t" style="margin-top:12px">Loading…</div>`);
+  const modal = $("#brainModal");
+  if (modal) modal.hidden = true;
   loadConnectorCatalog();
+  const box = $("#cnAvailable");
+  if (box && box.scrollIntoView) box.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 async function loadConnectorCatalog() {
@@ -679,6 +691,15 @@ async function loadConnectorCatalog() {
     box.textContent = "Could not load the connector list. " + String(e);
     return;
   }
+  // **A shape guard, not a nicety.** This list used to live in a modal, where
+  // a throw took down something the user had deliberately opened. It is part
+  // of the Connectors screen now, so the same throw would take down the
+  // sources they already have — the half of the screen that must always
+  // render. A reply missing `available` is treated as an empty catalog and
+  // said out loud, never as a reason for the page to stop.
+  data = data || {};
+  if (!Array.isArray(data.available)) data.available = [];
+  if (!Array.isArray(data.blocked)) data.blocked = [];
 
   const card = (c) => `
     <div class="cx-row" data-cx="${esc(c.id)}">
@@ -1035,7 +1056,10 @@ async function connectorTools(name, label) {
   };
 }
 
-$("#addConnector").onclick = () => connectorBrowser();
+// The button is gone — the list it opened is on the page. Guarded rather than
+// deleted outright because `app.js` is evaluated whole by the test harnesses,
+// and a null here throws before anything under test is reached.
+if ($("#addConnector")) $("#addConnector").onclick = () => connectorBrowser();
 
 // ── waiting for approval ─────────────────────────────────────────────────
 // An action an unattended agent wanted to take, held until the user decides.

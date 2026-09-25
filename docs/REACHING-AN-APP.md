@@ -157,6 +157,19 @@ us. The sections stay jargon-free; only the tag names the route.
 **Every source carries exactly one tag.** That is this document's rule made
 visible: if a source could ever show two, the bug is back.
 
+Below the two owned sections sits **Available to add** — the MCP catalog,
+grouped by its own shelves and carrying one **MCP** tag for the whole section,
+since every entry in it is a vendor's server. It was a modal behind a button
+until it was not: the answer to *what else can this reach?* was invisible
+unless you went looking, and the sources most people want are the ones they
+have not thought of yet.
+
+Moving it onto the page changed what a failure costs. A modal that throws
+takes down something the user deliberately opened; a section that throws takes
+down the sources they already have. So the loader guards the reply's shape and
+the call is caught at the boundary — the owned list renders whatever else is
+wrong with the catalog.
+
 The grouping used to be a map in `web/connectors.js` keyed by connector name,
 and four connectors were missing from it — Slack, Telegram, Apple Health and
 Google Fit landed under a heading reading *Custom sources*. A fact the backend

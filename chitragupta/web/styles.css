@@ -1464,6 +1464,13 @@ textarea.ac-field-wide { resize: vertical; min-height: 58px; line-height: 1.45; 
 .cn-legend dt { flex: none; }
 .cn-legend dd { margin: 0; color: var(--muted); font-size: 12.5px;
   line-height: 1.45; }
+/* The catalog, now a section of the page rather than a modal. Same head as an
+   owned group so the screen reads as one list of sources with a line through
+   it — what you have, then what you could have — and not as two widgets. */
+.cn-avail { margin-top: 30px; }
+.cn-avail .cn-group-title { display: flex; align-items: center; gap: 8px; }
+.cn-avail .cn-card { padding: 0 14px; }
+.cn-avail .cx-head:first-child { border-top: 0; margin-top: 0; }
 .cn-actions { flex: none; display: flex; align-items: center; gap: 6px; }
 .cn-x { color: var(--faint); }
 .cn-x:hover { color: var(--danger); }
@@ -2461,6 +2468,10 @@ button.tiny.running:hover { background: linear-gradient(to right,
    rather than hidden, so the reason lands where the control would have been. */
 .cx-head { font-size: 11px; text-transform: uppercase; letter-spacing: .06em;
            opacity: .55; margin: 0 0 6px; }
+/* Inline on the page the shelves need air above them — in a modal they were
+   separated by the scroll, and here they run straight into the row before. */
+.cn-avail .cx-head { margin: 18px 0 6px; padding-top: 14px;
+                     border-top: 1px solid var(--line); }
 .cx-row { display: flex; align-items: flex-start; justify-content: space-between;
           gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--line); }
 .cx-row:last-child { border-bottom: none; }
