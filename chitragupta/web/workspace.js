@@ -610,6 +610,10 @@ async function loadRoutines() {
       await api(`/api/routines/${b.dataset.toggleR}/toggle?on=${b.dataset.on !== "1"}`, { method: "POST" });
       loadRoutines();
     });
+    // State, next run and the history button come from `/api/automations`,
+    // which reads the same rows with the run ledger joined on. Called after the
+    // rows exist so it decorates rather than re-renders.
+    if (typeof loadAutomationState === "function") loadAutomationState();
     document.querySelectorAll("[data-del-r]").forEach((b) => b.onclick = async () => {
       const r = ROUTINES.find((x) => x.id === b.dataset.delR);
       // Deleting an automation stops future work; it does not undo past work.

@@ -396,6 +396,10 @@
           <button id="newRoutineBtn" class="tiny">+ New automation</button>
         </div>
         <div id="routineList" class="tasks"></div>
+        <!-- Filled by `automations.js` when a history button is
+             pressed. Hidden rather than absent so the routine list
+             still renders if that script fails to load. -->
+        <div id="automationDetail" class="auto-detail-panel" hidden></div>
       </section>
 
       <section class="ib-sec">
@@ -886,6 +890,7 @@
   <script src="/static/diagnostics.js"></script>
   <script src="/static/browser.js"></script>
   <script src="/static/webscreen.js"></script>
+  <script src="/static/automations.js"></script>
   <script src="/static/appearance.js"></script>
   <script src="/static/app.js"></script>
 </body>
