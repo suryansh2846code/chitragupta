@@ -2472,12 +2472,18 @@ button.tiny.running:hover { background: linear-gradient(to right,
    separated by the scroll, and here they run straight into the row before. */
 .cn-avail .cx-head { margin: 18px 0 6px; padding-top: 14px;
                      border-top: 1px solid var(--line); }
-.cx-row { display: flex; align-items: flex-start; justify-content: space-between;
-          gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--line); }
+/* Three children now — mark, text, button — so the text has to be the one
+   that grows. Without `flex:1` on it, `space-between` distributes the slack
+   around the text instead of after it, and every name sits at a different
+   x depending on how long its description is. */
+.cx-row { display: flex; align-items: center; gap: 12px;
+          padding: 10px 0; border-bottom: 1px solid var(--line); }
+.cx-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .cx-row:last-child { border-bottom: none; }
 .cx-row .conn-name { display: block; }
 .cx-row .conn-sub { display: block; opacity: .7; font-size: 12px;
-                    margin-top: 2px; line-height: 1.45; }
+                    line-height: 1.45; overflow: hidden;
+                    text-overflow: ellipsis; white-space: nowrap; }
 .cx-row button { flex: 0 0 auto; }
 .cx-off { opacity: .62; }
 .cx-off .conn-name { text-decoration: none; }
