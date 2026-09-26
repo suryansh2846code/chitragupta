@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
@@ -116,6 +116,21 @@ class ActionSpec:
     #: never silently run now. Anything with this False refuses an `at`.
     schedulable: bool = False
 
+    #: `field -> (deciding field, the values that make it relevant)`.
+    #:
+    #: A card that shows every field an action *has* shows fields that mean
+    #: nothing for the values in front of it. "Create automation" with a
+    #: new-email trigger drew **At**, **Days** and **Interval min** — three
+    #: empty boxes, none of which the handler would read, on a card whose whole
+    #: job is to let somebody check what is about to happen. Empty boxes are
+    #: not neutral: they read as something the user forgot to fill in.
+    #:
+    #: Declared here rather than in the frontend because the *handler* is what
+    #: decides which fields it reads, and a rule kept anywhere else drifts from
+    #: it. Published through `public()` as plain data.
+    depends_on: dict[str, tuple[str, tuple[str, ...]]] = field(
+        default_factory=dict)
+
     #: An action the engine emits, never one a model may propose.
     #:
     #: `notify` is the case. A reminder is delivered by running an action, so it
@@ -202,6 +217,8 @@ class ActionSpec:
         return {
             "label": self.label,
             "fields": list(self.fields),
+            "depends_on": {name: [decider, list(values)]
+                           for name, (decider, values) in self.depends_on.items()},
             "risk": self.risk.value,
             "reversible": self.undo is not None,
             "undo_label": self.undo_label,
@@ -962,29 +979,24 @@ def _set_reminder(params: dict) -> dict:
 def _resolve_agent(named: str) -> tuple[str, str]:
     """Which agent will run this, or a sentence saying why none will.
 
-    Accepts an id or the name on screen, because a model reads "Chief of Staff"
-    in the roster and writes it back with the capitals. Anything else is
-    refused with the real names in it, so the next attempt can be right rather
-    than being told "no".
+    Through `core.naming`, which is the same matching every place a model names
+    something from a list we hold. A model writes "Chief of Staff" where the id
+    is `chief-of-staff`, and writes "cheif" about as often as it writes
+    "chief" — both are unambiguous against a roster of three, and refusing
+    either cost a turn and showed the user an error about a typo they did not
+    make.
+
+    What it still refuses is a name that matches *nothing* ("inbox"), and one
+    that matches two things equally — because picking between those is a coin
+    toss wearing a decision's clothes.
     """
     from .agents import list_agents
+    from .core.naming import resolve
 
-    roster = list(list_agents())
-    if not roster:
-        return "", "there are no agents yet — make one first"
-
-    wanted = str(named or "").strip().casefold()
-    if not wanted:
-        # Nothing named. The first agent is a guess, and a guess is what this
-        # function exists to avoid.
-        return "", ("say which agent should run it — "
-                    + ", ".join(a.name for a in roster))
-    for agent in roster:
-        if wanted in (str(agent.id).casefold(), str(agent.name).casefold()):
-            return str(agent.id), ""
-    return "", (f"there is no agent called “{named}”. "
-                "The agents you have are: "
-                + ", ".join(a.name for a in roster))
+    found = resolve(named, list_agents(),
+                    key=lambda a: (a.id, a.name), label=lambda a: a.name,
+                    what="agent")
+    return (str(found.value.id), "") if found else ("", found.problem)
 
 
 def _create_routine(params: dict) -> dict:
@@ -1828,6 +1840,11 @@ REGISTRY: dict[str, ActionSpec] = {
         undo=_undo_row("reminder", "reminder"), undo_label="Cancel it",
     ),
     "create_routine": ActionSpec(
+        # Three of these are about a clock and one trigger is not a clock. See
+        # `depends_on` — this is the case it was written for.
+        depends_on={"at": ("trigger", ("daily",)),
+                    "days": ("trigger", ("daily",)),
+                    "interval_min": ("trigger", ("schedule",))},
         handler=_create_routine, label="Create automation",
         # Reaches no external system — one row in the user's own brain.
         fields=["name", "trigger", "agent", "at", "days", "interval_min",

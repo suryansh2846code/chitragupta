@@ -112,7 +112,10 @@ def test_an_unknown_agent_is_refused_with_the_real_list():
     token = delegation.enter("inbox", get_effort("high"))
     try:
         msg = delegation.refusal("marketing") or ""
-        assert "no agent called" in msg and "research" in msg
+        assert "no agent called" in msg
+        # The real roster, by the names a model reads in its prompt — so the
+        # next attempt can name one rather than guessing again.
+        assert "research" in msg.lower()
     finally:
         delegation.leave(token)
 

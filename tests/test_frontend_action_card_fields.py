@@ -49,6 +49,17 @@ CATALOG = {
         "risk": "red", "reversible": True, "undo_label": "Put them back",
         "always_ask_because": "Changing your inbox always needs your approval.",
     },
+    "create_routine": {
+        "label": "New automation",
+        "fields": ["name", "trigger", "agent", "at", "days",
+                   "interval_min", "instruction"],
+        "risk": "red", "reversible": True, "undo_label": "Delete it",
+        "always_ask_because": "Creating automations always needs your approval.",
+        # Three of these are about a clock, and one trigger is not a clock.
+        "depends_on": {"at": ["trigger", ["daily"]],
+                       "days": ["trigger", ["daily"]],
+                       "interval_min": ["trigger", ["schedule"]]},
+    },
 }
 
 EMAIL = {"type": "send_email",
@@ -348,3 +359,53 @@ def test_every_action_in_the_registry_has_a_label_to_fall_back_on():
     for name, spec in REGISTRY.items():
         assert spec.label.strip(), f"{name} has no label for a card to show"
         assert name not in spec.label, f"{name}'s label is its internal name"
+
+
+# ── a card shows what matters for the values in front of it ───────────────
+
+MAIL_WATCH = {"type": "create_routine", "params": {
+    "name": "Notify on mail from second Gmail", "trigger": "new_email",
+    "agent": "chief-of-staff",
+    "instruction": "When a new email arrives, summarise the last five."}}
+
+
+def test_a_card_does_not_draw_boxes_the_action_will_not_read():
+    """Three empty boxes — At, Days, Interval min — on a new-email automation,
+    none of which the handler reads.
+
+    An empty box is not neutral on a confirmation card: it reads as something
+    the user forgot to fill in, on the one screen whose job is letting them
+    check what is about to happen.
+    """
+    out = _run(MAIL_WATCH, {"ok": True, "detail": "Automation created"})
+
+    assert "At" not in out["editableFields"]
+    assert "Days" not in out["editableFields"]
+    assert "Interval min" not in out["editableFields"]
+    assert out["editableFields"] == ["Name", "Trigger", "Agent", "Instruction"]
+
+
+def test_the_clock_fields_come_back_for_a_clock_trigger():
+    """The control. Hiding them always would be the same bug pointing the other
+    way — a daily automation you cannot set the time on."""
+    daily = {"type": "create_routine", "params": {
+        "name": "Morning brief", "trigger": "daily", "agent": "chotu",
+        "at": "08:00", "days": "weekdays", "instruction": "Brief me."}}
+
+    out = _run(daily, {"ok": True, "detail": "Automation created"})
+
+    assert "At" in out["editableFields"]
+    assert "Days" in out["editableFields"]
+    assert "Interval min" not in out["editableFields"]
+
+
+def test_a_field_that_already_has_a_value_is_never_hidden():
+    """Whatever the rule says. Hiding something that would be saved is worse
+    than showing something that will not be — the user would be confirming a
+    value they were never shown."""
+    odd = {"type": "create_routine", "params": {
+        "name": "Odd one", "trigger": "new_email", "agent": "chotu",
+        "interval_min": 30, "instruction": "Do it."}}
+
+    out = _run(odd, {"ok": True, "detail": "Automation created"})
+    assert "Interval min" in out["editableFields"]
