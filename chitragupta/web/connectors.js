@@ -288,13 +288,39 @@ async function openPrivacySettings() {
   }
 }
 
-function _cnRowHtml(c, staleAfterMin) {
+//: How a health state paints, and what the badge calls it.
+//:
+//: Six states rather than the three the row could previously express. The two
+//: that matter most are the ones it could not say at all: a sign-in that has
+//: run out, which the user has to act on, and a service rate-limiting us, which
+//: they should *not* act on because it clears by itself. Telling those apart is
+//: the difference between a row somebody can use and a row that says "Stale".
+const CN_HEALTH = {
+  healthy: { dot: "ok", badge: "Connected", cls: "" },
+  syncing: { dot: "syncing", badge: "Syncing", cls: "" },
+  degraded: { dot: "stale", badge: "Behind", cls: "is-stale" },
+  rate_limited: { dot: "stale", badge: "Slowed down", cls: "is-stale" },
+  auth_required: { dot: "off", badge: "Sign in again", cls: "is-stale" },
+  error: { dot: "off", badge: "Not working", cls: "is-stale" },
+  disconnected: { dot: "off", badge: "", cls: "" },
+};
+
+function _cnRowHtml(c, staleAfterMin, health) {
   const meta = connectorMeta(c.name);
   const ls = c.state?.last_sync ? new Date(c.state.last_sync) : null;
   const ageMin = ls ? (Date.now() - ls.getTime()) / 60000 : null;
-  const stale = c.ready && ageMin !== null && ageMin > staleAfterMin;
   const last = ls ? ls.toLocaleDateString() : "";
-  const state = !c.ready ? "off" : stale ? "stale" : "ok";
+
+  // **The server's answer wins where there is one.** `health` is keyed by
+  // connector and is absent for a source nobody has connected yet — which is
+  // most of the list on a first run — so the timestamp guess below stays as the
+  // fallback rather than being deleted. A paused source is the clearest case
+  // for why the server has to be asked: nothing about a timestamp says "you
+  // switched this off".
+  const h = (health || []).find((row) => row.connector === c.name) || null;
+  const stale = h ? !h.ok : (c.ready && ageMin !== null && ageMin > staleAfterMin);
+  const state = h ? (CN_HEALTH[h.state] || CN_HEALTH.error).dot
+                  : (!c.ready ? "off" : stale ? "stale" : "ok");
   // What the row says about itself: connected sources report their freshness,
   // unconnected ones say what they would give you if you connected them.
   // A connector with no listing tool is connected and useful — your agents can
@@ -314,10 +340,20 @@ function _cnRowHtml(c, staleAfterMin) {
   const status = !c.ready ? (blocked ? c.reason : (meta.desc || c.reason || "Not connected"))
     : superseded ? `Connected · ${c.label}'s own server replaces this — disconnect to move across`
     : onDemand ? "Connected · answers your agents on demand"
+    // The server's own sentence, which already names what to do about it —
+    // "Sign in to Gmail again to keep this up to date", "Gmail is asking us to
+    // slow down. This will pick up on its own." Nothing here rewords it: the
+    // wording is decided once, next to the state that produced it, rather than
+    // twice.
+    : h && h.says && h.state !== "healthy" ? h.says
     : !last ? "Connected · not synced yet"
     : stale ? `Connected · last synced ${last}` : `Connected · synced ${last}`;
+  const look = h ? (CN_HEALTH[h.state] || CN_HEALTH.error) : null;
   const badge = !c.ready ? ""
-    : `<span class="cn-badge ${stale ? "is-stale" : ""}">${stale ? "Stale" : "Connected"}</span>`;
+    : look
+      ? (look.badge
+          ? `<span class="cn-badge ${look.cls}">${esc(look.badge)}</span>` : "")
+      : `<span class="cn-badge ${stale ? "is-stale" : ""}">${stale ? "Stale" : "Connected"}</span>`;
   // How it is reached, said on the row. `title` carries the difference for
   // anyone who wants it, so the tag itself can stay one word.
   const k = CONNECTOR_KINDS[c.kind] || CONNECTOR_KINDS.builtin;
@@ -419,7 +455,7 @@ function bindConnectorRowActions() {
   });
 }
 
-function renderConnectors(connectors, staleAfterMin) {
+function renderConnectors(connectors, staleAfterMin, health) {
   const box = $("#connectors"); if (!box) return;
   // The catalog is part of this screen now, so it loads with it. Fired rather
   // than awaited — what you already have must render immediately, and a slow
@@ -432,7 +468,7 @@ function renderConnectors(connectors, staleAfterMin) {
   _cnRows = connectors.map((c) => ({
     name: c.name, label: c.label, ready: Boolean(c.ready),
     group: connectorGroup(c),
-    html: _cnRowHtml(c, staleAfterMin),
+    html: _cnRowHtml(c, staleAfterMin, health),
   }));
   renderConnectorFilters();
   applyConnectorFilter();

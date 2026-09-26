@@ -51,6 +51,25 @@ script out of eleven does not fail; it passes.
   at its own weight beside every drawn icon, and it changes shape between macOS
   versions. A typographic arrow *inside a sentence* ("Add agent →", "System
   Settings → Privacy") is not an icon and stays; the design brief asks for it.
+- **A connector row shows what the server says it is doing, not what a
+  timestamp implies.** `/api/connectors/health` answers with a state and a
+  sentence naming what to do; the row used to derive staleness from `last_sync`
+  and could therefore say exactly three things. The two it could never say are
+  the two that matter: a sign-in that has run out (the user must act) and a
+  service rate-limiting us (the user must *not*). The timestamp path stays as
+  the fallback for a source the server has no row for, which is most of the
+  list on a first run.
+- **A selector in a click handler is a claim about markup, and it goes stale.**
+  `syncConn` looked for `.conn` / `.conn-sub` / `.dot` long after the row became
+  `.cn-row` / `.cn-sub` / `.cn-logo[data-state]`; `.conn` survived only as a CSS
+  rule, so every line guarded by `?.` silently did nothing — no "Syncing…", no
+  disabled button, no error on the row. `node --check` passes on all of it.
+  `tests/js/connector_sync_feedback.mjs` finds its elements *through the markup
+  the renderer produced*, which is the only shape of harness that can catch it.
+- **A disabled attribute is not a guard against a double click.** The row is
+  re-rendered wholesale by `loadBrain()`, and the fresh button arrives enabled.
+  `SYNCING` in `brain.js` is the set that survives a repaint; a first Gmail pass
+  runs for minutes, which is a long time to be able to start twice.
 - Relative API paths only (`/api/…`). Never a host or port — the desktop app
   binds a different loopback port per install.
 - `Cmd+R` reloads the frontend only. It cannot reload Python; without `--dev` a

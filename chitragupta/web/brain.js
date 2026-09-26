@@ -33,7 +33,23 @@ async function loadBrain() {
   CONNECTORS = connectors;
   if ($("#ctxSources")) $("#ctxSources").textContent = connectors.filter((c) => c.ready).length;
   const staleAfterMin = Math.max(120, (SYNC_INTERVAL_MIN || 30) * 4);
-  renderConnectors(connectors, staleAfterMin);
+  // **What each source is actually doing, from the server.** The row used to
+  // work this out itself from `last_sync` and a threshold, which let it say
+  // exactly three things: Connected, Stale, off. The server can now say a
+  // sign-in has run out, a service is rate-limiting us, a pass is running, or a
+  // source is paused — each with a sentence naming what to do. Guessing from a
+  // timestamp meant a user whose Gmail sign-in had expired read "Connected ·
+  // last synced 12 Sep", which is true and useless.
+  //
+  // Fetched separately and tolerantly: this endpoint reads state the app
+  // already holds and touches no service, but a source list that failed to
+  // render because a health call hiccupped would be a worse screen than one
+  // with less detail on it.
+  let health = [];
+  try {
+    health = (await api("/api/connectors/health")).connectors || [];
+  } catch (_) { health = []; }
+  renderConnectors(connectors, staleAfterMin, health);
   loadSyncStatus();
   loadApprovals();
   // The sites agents may read are part of the same answer as the connectors:
@@ -144,31 +160,59 @@ $("#syncAll").onclick = async () => {
   }, 3000);
 };
 
+//: Connectors with a sync in flight right now.
+//:
+//: The button is disabled too, but a `disabled` attribute is not the guard —
+//: the row is re-rendered wholesale by `loadBrain()` on every refresh, and the
+//: fresh button arrives enabled. This set survives that, so a sync that is
+//: still running cannot be started a second time by clicking a repainted
+//: button. A first Gmail pass can run for minutes, which is plenty of time.
+const SYNCING = new Set();
+
 async function syncConn(name) {
   if (name === "files") { openPicker(); return; }   // folder picker for local files
-  const row = document.querySelector(`.conn[data-conn="${CSS.escape(name)}"]`);
-  const subEl = row?.querySelector(".conn-sub");
-  const dotEl = row?.querySelector(".dot");
+
+  // **The selectors here were dead.** They looked for `.conn`, `.conn-sub` and
+  // `.dot`; the row renders `.cn-row`, `.cn-sub` and a `.cn-logo` carrying
+  // `data-state`. `.conn` survives only as a leftover CSS rule, so `row` was
+  // always null and — because every line below used `?.` — all of the feedback
+  // silently did nothing. Pressing Sync looked like pressing nothing until a
+  // toast arrived, which for a first sync is minutes, and a second click
+  // started a second sync. `node --check` passes on all of it, which is why
+  // `tests/js/connector_sync_feedback.mjs` clicks it instead.
+  const row = document.querySelector(`.cn-row[data-conn="${CSS.escape(name)}"]`);
+  const subEl = row?.querySelector(".cn-sub");
+  const logoEl = row?.querySelector(".cn-logo");
   const btn = row?.querySelector(`[data-sync="${CSS.escape(name)}"]`);
-  if (subEl) subEl.textContent = "syncing…";
-  if (dotEl) { dotEl.className = "dot syncing"; }
+
+  if (SYNCING.has(name)) {
+    toast(`${name} is already syncing`);
+    return;
+  }
+  SYNCING.add(name);
+  if (subEl) subEl.textContent = "Syncing…";
+  if (logoEl) logoEl.dataset.state = "syncing";
   if (btn) btn.disabled = true;
   try {
     const r = await api(`/api/connectors/${name}/sync`, {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ params: {} }) });
+      method: "POST", body: { params: {} } });
     if (r.errors?.length) {
+      // The backend writes these as sentences now — a sign-in that has run out,
+      // a service asking us to slow down — so it is shown rather than replaced
+      // with "error", which told the user nothing they could act on.
       toast(`${name}: ${r.errors[0]}`);
-      if (subEl) subEl.textContent = "error — see setup";
-      if (dotEl) dotEl.className = "dot off";
+      if (subEl) subEl.textContent = r.errors[0];
+      if (logoEl) logoEl.dataset.state = "off";
     } else {
       toast(`${name}: +${r.added} added${r.skipped ? ` · ${r.skipped} skipped` : ""}`);
-      loadBrain();          // re-render with fresh state (green dot, "synced today")
+      loadBrain();          // re-render with fresh state and a fresh health row
     }
   } catch (e) {
     toast(String(e));
-    if (subEl) subEl.textContent = "sync failed";
-    if (dotEl) dotEl.className = "dot off";
+    if (subEl) subEl.textContent = "Could not sync. Try again.";
+    if (logoEl) logoEl.dataset.state = "off";
   } finally {
+    SYNCING.delete(name);
     if (btn) btn.disabled = false;
   }
 }

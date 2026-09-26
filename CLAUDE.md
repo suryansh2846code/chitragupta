@@ -379,7 +379,7 @@ In order: **the focused test → the subsystem's suite → `pytest` →
 `ruff check chitragupta tests` → `mypy chitragupta` → the `tests/js/` harnesses if
 the frontend changed → `chitragupta app` opens and renders.**
 
-Baseline, measured 2026-09-26: **4717 passed, 30 skipped in ~2min15**, ruff
+Baseline, measured 2026-09-26: **4732 passed, 30 skipped in ~2min15**, ruff
 clean, mypy clean over 211 files, coverage 82%. Locally the split differs — some
 tests skip when a provider is genuinely connected on the machine. Run tests when
 stuck or finishing, not after every edit. Details:

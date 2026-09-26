@@ -1442,11 +1442,24 @@ textarea.ac-field-wide { resize: vertical; min-height: 58px; line-height: 1.45; 
 /* A connected source is marked on its own logo rather than by a separate dot
    in the row: the mark is what the eye lands on first. */
 .cn-logo[data-state="ok"]::after,
-.cn-logo[data-state="stale"]::after {
+.cn-logo[data-state="stale"]::after,
+.cn-logo[data-state="syncing"]::after {
   content: ""; position: absolute; right: -2px; bottom: -2px;
   width: 9px; height: 9px; border-radius: 50%;
   border: 2px solid var(--panel); background: var(--ok); }
 .cn-logo[data-state="stale"]::after { background: var(--north); }
+/* A pass in flight. Listed with the other two rather than left out: without a
+   rule of its own, `data-state="syncing"` matched nothing and the mark
+   *disappeared* while a sync ran — so the one moment the row is busiest was the
+   one moment it looked disconnected. */
+.cn-logo[data-state="syncing"]::after {
+  background: var(--accent); animation: cn-pulse 1.4s ease-in-out infinite; }
+@keyframes cn-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+/* Honoured because a pulsing dot is decoration, and decoration is the first
+   thing to drop for anybody who asked the OS to stop moving things. */
+@media (prefers-reduced-motion: reduce) {
+  .cn-logo[data-state="syncing"]::after { animation: none; }
+}
 .cn-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .cn-name { display: flex; align-items: center; gap: 8px; font-size: 14.5px; font-weight: 600; }
 .cn-sub { font-size: 12.5px; color: var(--muted); overflow: hidden;
