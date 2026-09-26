@@ -147,10 +147,15 @@ def test_the_second_gmail_sync_asks_only_for_new_mail(monkeypatch, fake_module,
     queries: list[str] = []
     conn, kwargs = harness.build(harness.BY_NAME["gmail"], monkeypatch,
                                  fake_module, tmp_path, 2)
-    real_list = type(conn)._list
-    monkeypatch.setattr(type(conn), "_list",
-                        lambda self, svc, q, n: (queries.append(q),
-                                                 real_list(self, svc, q, n))[1])
+    # Spied at `_page`, which is where the query now goes. It used to be
+    # `_list`, and that method is still there — `search_and_ingest` and
+    # `list_inbox` use it — so a spy on it would have gone right on passing
+    # while measuring nothing the sync does.
+    real_page = type(conn)._page
+    monkeypatch.setattr(type(conn), "_page",
+                        lambda self, svc, q, size, cursor: (
+                            queries.append(q),
+                            real_page(self, svc, q, size, cursor))[1])
 
     harness.sync(conn, kwargs)
     harness.sync(conn, kwargs)

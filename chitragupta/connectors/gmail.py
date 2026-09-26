@@ -3,14 +3,19 @@ from __future__ import annotations
 
 import base64
 import re
+from dataclasses import replace
 from datetime import UTC
 from typing import Any
 
 from ..log import get_logger
+from . import engine
 from .base import Connector, SyncResult
 from .capability import caps
 from .contract import AuthMethod, Limits, PaginationStrategy, SyncStrategy
+from .engine import Record
 from .google_auth import get_credentials, google_ready
+from .pagination import Page, cursor_of
+from .provenance import SourceRef
 
 log = get_logger(__name__)
 
@@ -101,6 +106,23 @@ def _safe_filename(name: object) -> str:
     return text.strip() or "attachment"
 
 
+def _received_at(msg: dict) -> str:
+    """When Gmail says the message arrived, as an ISO instant.
+
+    Empty when `internalDate` is missing or unreadable — which a caller must
+    treat as "no date", never as "today". Dating a message by when we read it
+    makes every message from a first sync look like it arrived this morning.
+    """
+    raw = msg.get("internalDate")
+    if not raw:
+        return ""
+    from datetime import datetime
+    try:
+        return datetime.fromtimestamp(int(raw) / 1000, UTC).isoformat()
+    except (ValueError, TypeError, OSError):
+        return ""
+
+
 def _to_epoch(stamp: str) -> int:
     """An ISO watermark as whole seconds, for Gmail's `after:` operator."""
     from datetime import datetime
@@ -117,6 +139,8 @@ class GmailConnector(Connector):
     provider = "google"
     auto_sync = True
     incremental = True
+    #: Per-page checkpoints: a pass that dies at message 1,900 resumes there.
+    resumable = True
     auth_method = AuthMethod.OAUTH2
     sync_strategy = SyncStrategy.TIMESTAMP
     pagination = PaginationStrategy.NEXT_TOKEN
@@ -144,59 +168,142 @@ class GmailConnector(Connector):
     def is_configured(self) -> tuple[bool, str]:
         return google_ready()
 
+    # ── the pass ─────────────────────────────────────────────────────────
+    #
+    # Gmail is the connector the engine's `hydrate` stage exists for.
+    # `messages.list` answers with ids and thread ids — no subject, no sender,
+    # no date — so the body is a second request *per message*. Reading every
+    # body and letting a content hash throw the duplicates away meant 600
+    # requests every half hour to keep almost nothing.
+    #
+    # Now the keep-or-skip decision is made from the id alone, before any body
+    # is fetched. Which works here for a reason specific to email: **a message
+    # is immutable.** Nobody edits a received email, so once we have read one,
+    # the id is sufficient to know we still have it. That is why the fingerprint
+    # below is the id itself rather than a digest of anything.
+    #
+    # Labels *do* change, and that is deliberately not treated as the message
+    # changing: an archived email is the same email, and folding labels into the
+    # fingerprint would re-read and re-store the entire mailbox every time the
+    # user tidied their inbox.
+
+    def _query(self, *, resume: str | None, full_history: bool) -> str:
+        """The search this pass runs.
+
+        Kept as its own method because it is the **window**, and the window is
+        what makes resuming safe: `_finish` only moves the watermark on a clean
+        pass, so a pass that failed halfway rebuilds the identical query and the
+        page token stored against it is still good.
+        """
+        from ..config import get_settings
+
+        if full_history:
+            return "-in:spam -in:trash"
+        if resume:
+            # Gmail's `after:` takes whole seconds and is inclusive-ish, so the
+            # overlap `since()` already applied is what keeps a message sent in
+            # the same second from slipping through.
+            return f"after:{_to_epoch(resume)} -in:spam -in:trash"
+        return (f"newer_than:{get_settings().gmail_recent_days}d "
+                f"-in:spam -in:trash")
+
+    def _page(self, service: Any, query: str, size: int, cursor: str) -> Page:
+        """One page of the listing — ids only, which is all Gmail offers here."""
+        listing = (service.users().messages()
+                   .list(userId="me", q=query, pageToken=cursor or None,
+                         maxResults=min(500, max(1, size))).execute())
+        return Page(
+            records=[Record(external_id=str(m["id"]),
+                            # The id *is* the change detector: a received email
+                            # is never edited. See the note above.
+                            fingerprint=str(m["id"]),
+                            extra={"thread_id": m.get("threadId", "")})
+                     for m in listing.get("messages", []) or []
+                     if m.get("id")],
+            next_cursor=cursor_of(listing, "nextPageToken"))
+
+    def _hydrate(self, service: Any, record: Record) -> Record:
+        """The second request, made only for a message we are keeping."""
+        msg = (service.users().messages()
+               .get(userId="me", id=record.external_id, format="full").execute())
+        headers = {h["name"].lower(): h.get("value", "")
+                   for h in msg.get("payload", {}).get("headers", [])
+                   if h.get("name")}
+        subject = headers.get("subject", "(no subject)")
+        sender = headers.get("from", "")
+        body = _extract_body(msg.get("payload", {})).strip() or msg.get("snippet", "")
+        return replace(
+            record,
+            text=(f"From: {sender}\nSubject: {subject}\n\n{body[:4000]}"
+                  if body else ""),
+            title=subject,
+            url=f"https://mail.google.com/mail/#all/{record.external_id}",
+            source_updated_at=_received_at(msg),
+            extra={**record.extra, "from": sender})
+
+    def _ingest(self, record: Record, source: SourceRef) -> str:
+        """One message into the brain, with where it came from attached.
+
+        `store.add` rather than `brain.ingest`, which is what this connector has
+        always done: a mailbox is bulk, and the background enricher picks the
+        rows up from `graphed=0` without paying for a per-message extraction.
+        """
+        mem = self.store.add(text=record.text, kind="email", title=record.title,
+                             **source.ingest_kwargs())
+        return mem.id if mem else ""
+
     def sync(self, *, query: str | None = None, max_results: int | None = None,
              since: str | None = None, limit: int | None = None,
              full_history: bool = False, cancel=None, progress=None,
              interactive: bool = True, **_: Any) -> SyncResult:
-        """Bounded by default: sync recent mail (fast, lean). Pass
-        full_history=True to pull the whole archive (the escape hatch).
+        """Bounded by default: recent mail. `full_history=True` is the escape
+        hatch that reads the whole archive.
 
-        On a second pass only mail newer than the last watermark is requested.
-        The background loop runs every 30 minutes and the default window is 90
-        days, so without this it re-downloaded up to 600 messages every half
-        hour to discard nearly all of them on a content-hash collision.
+        What this no longer does by hand: page the listing into one list before
+        touching any of it, fetch every body to find out which ones are new,
+        turn a `googleapiclient` error into `str(exc)`, and lose the whole pass
+        when the connection drops at message 1,900.
         """
+        from ..config import get_settings
+
         result = SyncResult(connector=self.name)
         service = self._service(result, interactive)
         if service is None:
             return self._finish(result)
 
-        from ..config import get_settings
         s = get_settings()
-        # Stamped before any fetch: mail that arrives while this runs must be
+        # Stamped before any fetch: mail that arrives *while* this runs must be
         # caught by the next pass, not fall just behind the new watermark.
         started = self.now()
         resume = since if since is not None else self.since(full_history=full_history)
-        if query is None:
-            if full_history:
-                query = "-in:spam -in:trash"
-            elif resume:
-                # Gmail's `after:` takes whole seconds and is inclusive-ish, so
-                # the overlap `since()` already applied is what keeps a message
-                # sent in the same second from slipping through.
-                query = f"after:{_to_epoch(resume)} -in:spam -in:trash"
-            else:
-                query = f"newer_than:{s.gmail_recent_days}d -in:spam -in:trash"
-        max_results = (limit or max_results
-                       or (s.gmail_max if full_history else s.gmail_recent_max))
-        try:
-            messages = self._list(service, query, max_results)
-            self.each_guarded(
-                messages, result,
-                lambda meta: 1 if self._ingest_message(service, meta) else 0,
-                cancel=cancel, progress=progress)
-            if full_history:
-                scope = "all mail"
-            elif resume:
-                scope = "new mail"
-            else:
-                scope = f"last {s.gmail_recent_days}d"
-            result.detail = result.detail or f"{scope}, {len(messages)} messages"
-            result.cursor = started
-        except Exception as exc:
-            result.errors.append(str(exc))
-            result.detail = "sync failed"
-        return self._finish(result)
+        search = query or self._query(resume=resume, full_history=full_history)
+        budget = (limit or max_results
+                  or (s.gmail_max if full_history else s.gmail_recent_max))
+
+        outcome = engine.run(
+            engine.Plan(
+                connector=self.name, manifest=self.manifest(),
+                resource_type="email",
+                fetch=lambda cursor: self._page(service, search, budget, cursor),
+                hydrate=lambda record: self._hydrate(service, record),
+                ingest=self._ingest,
+                connection_id=self.connection().id,
+                budget=budget,
+                # **Never sweeps.** The query is a *window* — `after:` or
+                # `newer_than:90d` — not an enumeration of the mailbox. Sweeping
+                # it would tombstone every message older than the window, which
+                # is almost all of them.
+                sweeps_deletions=False),
+            cancel=cancel, progress=progress, full_history=full_history)
+
+        scope = ("all mail" if full_history else "new mail" if resume
+                 else f"last {s.gmail_recent_days}d")
+        outcome.detail = f"{scope} — {outcome.detail}"
+        # The watermark still lives here, in `connector_state`, and still moves
+        # only on a clean pass. That is what keeps a resumed pass rebuilding the
+        # same query, which is what keeps its stored page token valid.
+        outcome.cursor = started
+        return self._finish(outcome)
 
     def search_and_ingest(self, terms: str, max_results: int = 8,
                           interactive: bool = False) -> list[str]:

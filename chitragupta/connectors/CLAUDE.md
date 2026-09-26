@@ -124,6 +124,24 @@ One class per source, registered in `__init__.py::REGISTRY`.
   allowed on purpose: a NAS in the user's house is what a local-first app is
   for. The one residual gap is named in
   [`docs/CONNECTOR-PLATFORM.md`](../../docs/CONNECTOR-PLATFORM.md) §7.
+- **A listing that carries no bodies is the normal shape, and `hydrate` is why.**
+  Gmail's `messages.list` answers with ids; the body is a second request *per
+  message*. So the keep-or-skip decision is answered from the id alone, before
+  anything is paid for — 602 requests on a first pass, 2 on every pass after it.
+  `Plan.hydrate` runs only for records the engine has decided to keep. Drive has
+  the same shape and still downloads a file to find out it already had it.
+- **Gmail's fingerprint is the message id, because a received email is
+  immutable.** Nobody edits mail that arrived, so the id is sufficient proof we
+  still have it. Labels are deliberately *not* in the fingerprint: an archived
+  email is the same email, and folding them in would re-read the whole mailbox
+  every time somebody tidied an inbox.
+- **A window is not an enumeration.** `after:` and `newer_than:90d` describe a
+  slice, so `gmail` sets `sweeps_deletions=False`. Sweeping a window tombstones
+  everything outside it — which for a mailbox is almost all of it.
+- **Build a monkeypatch from the fixture, never `pytest.MonkeyPatch()`.** A
+  hand-built one is never undone: four of them in the Gmail tests left `urlopen`
+  stubbed for the whole session and broke eighteen tests in `test_tool_bridge.py`,
+  a file with no connection to connectors at all.
 - Never read another product's app-support directory for credentials or models.
 
 Rules: [`/CLAUDE.md`](../../CLAUDE.md) · [`docs/CONNECTORS.md`](../../docs/CONNECTORS.md)

@@ -64,7 +64,10 @@ class Record:
     """
 
     external_id: str
-    text: str
+    #: Empty is legitimate **before** `hydrate` and never after it. A listing
+    #: that carries ids and no bodies produces records in exactly this state,
+    #: which is what lets the engine decide to skip one without paying for it.
+    text: str = ""
     title: str = ""
     url: str = ""
     #: When it last changed at the source. Drives both freshness and the
@@ -79,10 +82,25 @@ class Record:
     raw: Any = None
 
     @property
+    def identified(self) -> bool:
+        """Enough to decide whether we already have this, and nothing more.
+
+        **The half that a listing can answer.** Gmail's `messages.list` returns
+        ids and nothing else; the body is a second request per message. So the
+        keep-or-skip decision has to be answerable from this much alone, or the
+        connector pays for every body just to discover it already had it — which
+        is exactly what `gdrive` does today and what `gmail` did before the
+        engine. See `Plan.hydrate`.
+        """
+        return bool(self.external_id)
+
+    @property
     def usable(self) -> bool:
-        """An identity and something to say. A record with neither is not a
-        record — and one with no `external_id` can only ever be appended,
-        never superseded or tombstoned."""
+        """An identity *and* something to say. What must be true before ingest.
+
+        One with no `external_id` can only ever be appended — never superseded,
+        never tombstoned — and one with no text is nothing to remember.
+        """
         return bool(self.external_id and self.text.strip())
 
 
@@ -94,11 +112,29 @@ class Plan:
     manifest: ConnectorManifest
     resource_type: str
     #: `fetch(cursor) -> Page[Record]`. The one thing a connector must write.
+    #:
+    #: A listing may return records that are only **identified** — an id and
+    #: little else. That is the normal shape for the providers where it matters
+    #: most, and `hydrate` is how the rest arrives.
     fetch: Callable[[str], Page]
     #: Where to ingest. Injected so a test does not need a brain, and so the
     #: engine does not import `brain` at module scope — the one sanctioned
     #: connector → brain edge stays exactly where it already was.
     ingest: Callable[[Record, SourceRef], str]
+    #: `hydrate(record) -> Record`, for a provider whose listing does not carry
+    #: the content. Called **only** for records the engine has decided to keep,
+    #: which is the entire point of it existing.
+    #:
+    #: Gmail is the case that forced it: `messages.list` answers with ids, and
+    #: the body is one `messages.get` per message. Fetching every body and
+    #: letting a content hash sort it out means 600 requests per pass to keep
+    #: nothing — and `gdrive` does the same thing today, downloading a file to
+    #: discover it already had it. With this, an unchanged record costs one
+    #: index lookup (6 µs) instead of one HTTP round trip.
+    #:
+    #: None means the listing is already complete, which is the simpler and
+    #: rarer case (`custom_api`, a local file walk).
+    hydrate: Callable[[Record], Record] | None = None
     connection_id: str = ""
     #: Records this pass may take, across every page.
     budget: int = 0
@@ -246,7 +282,10 @@ def _walk(plan: Plan, connection: Any, run_id: str, result: SyncResult, *,
         requested, which is the whole of what makes this resumable.
         """
         for index, record in enumerate(records):
-            if not isinstance(record, Record) or not record.usable:
+            # `identified`, not `usable`: a listing that carries ids and no
+            # bodies is the normal shape, and demanding text here would throw
+            # away every record before `hydrate` had a chance to fetch one.
+            if not isinstance(record, Record) or not record.identified:
                 result.skipped += 1
                 continue
             seen_ids.add(record.external_id)
@@ -263,8 +302,33 @@ def _walk(plan: Plan, connection: Any, run_id: str, result: SyncResult, *,
                               items=len(records),
                               version=plan.manifest.version)
 
-    _, walked = walk(fetch, start=start, max_records=budget,
-                     cancel=cancel, on_page=commit)
+    try:
+        _, walked = walk(fetch, start=start, max_records=budget,
+                         cancel=cancel, on_page=commit)
+    except ConnectorError as exc:
+        # **A page marker the provider will not take back is not a dead end.**
+        # Resuming is the whole reason a cursor is stored, and a stored one can
+        # go stale — Gmail's page tokens expire, and a provider that has
+        # re-filtered underneath us rejects the old one outright. Left alone
+        # that fails identically on every pass forever, which is worse than the
+        # restart-from-zero it was built to avoid.
+        #
+        # Narrow on purpose: only on a *resume*, only for the kinds that mean
+        # "this request is wrong" rather than "come back later", and only once.
+        # A rate limit or an outage must still be left to the retry policy.
+        from .errors import ConnectorErrorKind
+
+        stale = (ConnectorErrorKind.VALIDATION, ConnectorErrorKind.NOT_FOUND)
+        if not start or exc.kind not in stale:
+            raise
+        log.info("%s: %s would not take the stored page marker — reading the "
+                 "window again", plan.connector, plan.manifest.display_name)
+        sync_state.clear(connection.id, plan.resource_type)
+        seen_ids.clear()
+        result.skipped = 0
+        result.added = 0
+        _, walked = walk(fetch, start="", max_records=budget,
+                         cancel=cancel, on_page=commit)
 
     if plan.sweeps_deletions:
         # `complete` is passed rather than inferred: sweeping a *truncated*
@@ -296,8 +360,30 @@ def _ingest_one(plan: Plan, connection: Any, run_id: str, record: Record,
         source_updated_at=record.source_updated_at)
 
     if verdict is Verdict.UNCHANGED:
-        # The point of asking before fetching the body: `gdrive` currently
-        # downloads a file to discover it already has it.
+        # **Before `hydrate`, which is the whole point.** This is the branch
+        # that turns a re-sync from 600 HTTP requests into 600 index lookups:
+        # `gdrive` downloads a file to discover it already has it, and `gmail`
+        # used to `messages.get` every message in its window every half hour.
+        result.skipped += 1
+        return
+
+    if plan.hydrate is not None:
+        # The expensive call, made only for what we are keeping. Its failure is
+        # one record skipped, not a failed pass — decision H2, and a mailbox
+        # with one unreadable message must still sync.
+        try:
+            record = plan.hydrate(record)
+        except Exception as exc:
+            result.skipped += 1
+            log.debug("%s: could not read %s: %s", plan.connector,
+                      record.external_id, exc)
+            return
+
+    if not record.usable:
+        # Hydrated and still nothing to remember — an empty message, a file we
+        # cannot extract text from. A skip, and deliberately **not** recorded
+        # as seen: nothing was stored, so the next pass should look again
+        # rather than skipping it forever on the strength of one bad read.
         result.skipped += 1
         return
 
