@@ -108,6 +108,15 @@ def test_the_phrase_is_read_past_punctuation_and_case():
     assert said_nothing("  Nothing to report…  ")
 
 
+def test_the_phrase_glued_to_the_end_of_a_sentence_still_counts():
+    """What a model actually wrote: "Page is loading. Let me wait for it to
+    finish.NOTHING TO REPORT" — the signal with no separator before it, which
+    no line-based reading catches. It was delivered as news five times."""
+    assert said_nothing(
+        "Page is loading. Let me wait for it to finish.NOTHING TO REPORT")
+    assert said_nothing("It never loaded the chat.\n\nNOTHING TO REPORT")
+
+
 def test_anything_beyond_the_phrase_is_treated_as_a_report():
     """Including an explanation that is probably harmless.
 
@@ -241,3 +250,56 @@ def test_the_turn_itself_leaves_nothing_in_the_chat():
         engine._plan("someone", "the prompt", {})
 
     assert seen.get("persist") is False
+
+
+# ── the window a watch looks at ────────────────────────────────────────────
+
+def window(created_at="2026-09-26T20:00:00+00:00", prior=None):
+    from chitragupta.automation import context
+    from chitragupta.core.events import Event
+
+    auto = automation(created_at=created_at)
+    snap = context.build(auto, Event(kind="schedule.tick", source="scheduler"),
+                         prior_runs=prior or [])
+    piece = next(p for p in snap.pieces if "window" in p.title)
+    return piece.body, snap.facts
+
+
+def test_the_first_run_looks_from_when_the_watch_started():
+    """"Started at 8pm, tell me about messages after 8pm." Without a floor the
+    first run reports whatever is at the top of a mailbox the user has had for
+    years, which reads as the automation inventing news."""
+    body, facts = window()
+
+    assert "2026-09-26T20:00:00+00:00" in body
+    assert "first run" in body
+    assert facts["watching_since"] == "2026-09-26T20:00:00+00:00"
+
+
+def test_a_later_run_moves_the_line_to_the_last_success():
+    """Otherwise every run re-reports everything since 8pm, which is the same
+    message every two minutes."""
+    body, facts = window(prior=[{"state": "completed",
+                                 "finished_at": "2026-09-26T21:30:00+00:00"}])
+
+    assert "AFTER 2026-09-26T21:30:00+00:00" in body
+    assert facts["last_completed_at"] == "2026-09-26T21:30:00+00:00"
+
+
+def test_a_run_that_failed_does_not_move_the_line():
+    """A run that could not look has not seen anything, and treating it as a
+    checkpoint loses whatever arrived while it was broken — which is exactly
+    the window the user cares about."""
+    body, _ = window(prior=[{"state": "escalated",
+                             "finished_at": "2026-09-26T21:30:00+00:00"}])
+
+    assert "AFTER 2026-09-26T20:00:00+00:00" in body
+
+
+def test_the_start_is_a_floor_a_stale_success_cannot_lower():
+    """A run that finished before the watch existed — an automation edited and
+    re-pointed — must not drag the window back before it started."""
+    body, _ = window(prior=[{"state": "completed",
+                             "finished_at": "2026-09-25T10:00:00+00:00"}])
+
+    assert "AFTER 2026-09-26T20:00:00+00:00" in body

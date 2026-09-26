@@ -355,11 +355,19 @@ def said_nothing(outcome: str) -> bool:
     #
     # Still not a prefix match: "Nothing to report from Ana, but Rahul replied"
     # keeps the phrase inside a sentence that goes on, and that is a report.
-    for line in text.upper().splitlines():
+    loud = text.upper()
+    for line in loud.splitlines():
         if line.strip().rstrip(".!… ") in (NOTHING_TO_REPORT,
                                            "RAN, NO ACTION NEEDED"):
             return True
-    return False
+    # Or it *ends* with the phrase. Models write "Page is loading. Let me wait
+    # for it to finish.NOTHING TO REPORT" — the signal glued to the end of a
+    # sentence with no separator, which no line-based reading catches.
+    #
+    # Ending with it is still not the same as starting with it: "Nothing to
+    # report from Ana, but Rahul replied" has the phrase at the front of a
+    # sentence that goes on, and that is a report.
+    return loud.rstrip(".!… ").endswith(NOTHING_TO_REPORT)
 
 
 #: A run that ended in one of these has something the user needs to see,

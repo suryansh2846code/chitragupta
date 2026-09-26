@@ -12,7 +12,7 @@ should not be one — the per-module table is the point, not the percentage. It
 has already earned itself: it is how `grok_cli.cancel_cli_login` was found to
 have no test while its byte-identical twin in `cursor.py` did.
 
-Four standing rules, each bought the hard way:
+Five standing rules, each bought the hard way:
 
 - **A test must never start a real sign-in.** `conftest.py` swaps the argv of any
   `login` spawn, because the flows reach `claude auth login`, which opens a
@@ -20,6 +20,19 @@ Four standing rules, each bought the hard way:
   one machine**. The guard is itself covered — a guard nobody exercises quietly
   stops working. Earlier versions of this mistake wrote to the real Keychain and
   bound the fixed OAuth port 1455.
+- **A test leaves nothing on the disk.** `conftest.py` wraps
+  `tempfile.mkdtemp`, records every directory the run makes and removes them
+  when it ends — so a new test needs no ceremony and gets it anyway. Nothing
+  removed anything before, and `automation_harness.fresh_store()` runs once per
+  test: a Chitragupta home is ~560 MB once a brain, an agents database and an
+  action log are in it, and an afternoon of running the suite left **29,474
+  directories and 64 GB**, taking the machine to zero bytes free. That stops the
+  whole computer rather than the test run, and nothing in the output said the
+  suite had done it. Measured after the fix: one 417-test run leaks **321**
+  directories without it and **0** with it. `CHITRAGUPTA_KEEP_TEST_DIRS=1` keeps
+  them for the afternoon you are reading a database a failing test left behind;
+  pytest's own `tmp_path` is left alone, because pytest already caps it at three
+  runs and those are the artifacts you inspect after a failure.
 - **Never delete, skip or weaken a test to get green.** If a test exposes an
   inconvenient architecture problem, that is the test doing its job.
 - **A shuffled run is part of finishing.** `pytest` takes files in the order you
