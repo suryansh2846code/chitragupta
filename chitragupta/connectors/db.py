@@ -158,6 +158,16 @@ CREATE INDEX IF NOT EXISTS idx_operation_recent
 #: caught rather than guarded, because SQLite has no `IF NOT EXISTS` for it.
 _ADDED_COLUMNS: list[tuple[str, str, str]] = [
     # (table, column, definition)
+    #
+    # **One record can become several memories.** Drive chunks a long document,
+    # so `memory_id` — one column, one value — could only ever record the first
+    # piece. That matters for exactly one feature and it is the one a user
+    # notices: *delete the data this source imported* would have left every
+    # chunk after the first orphaned in the brain, with nothing pointing at them.
+    #
+    # Additive, so a row written before this keeps working: `memory_id` still
+    # holds the first id and `memory_ids()` reads both columns.
+    ("connector_resources", "memory_ids", "TEXT NOT NULL DEFAULT '[]'"),
 ]
 
 #: One connection for the life of the process.

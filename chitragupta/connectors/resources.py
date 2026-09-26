@@ -37,6 +37,7 @@ every time a token narrowed.
 from __future__ import annotations
 
 import hashlib
+import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -186,32 +187,42 @@ def classify(connection_id: str, resource_type: str, external_id: str, *,
 
 
 def seen(connection_id: str, resource_type: str, external_id: str, *,
-         memory_id: str = "", fingerprint_: str = "",
-         source_updated_at: str = "",
+         memory_id: str = "", memories: list[str] | None = None,
+         fingerprint_: str = "", source_updated_at: str = "",
          state: ResourceState = ResourceState.ACTIVE) -> Resource:
     """Record that we have this version of this record.
 
     `first_seen` is preserved across updates — it is when this *thing* entered
     the brain, and resetting it on every edit would make every record look new
     on the day it was last touched.
+
+    **One record can become several memories.** Drive chunks a long document, so
+    `memories` takes the whole list while `memory_id` keeps the first for every
+    reader written before this existed. Recording only the first is what would
+    leave the rest orphaned when a user asks to delete what a source imported.
     """
+    ids = [m for m in (memories or ([memory_id] if memory_id else [])) if m]
     now = _now()
     conn = _db()
     conn.execute(
         """INSERT INTO connector_resources
-             (connection_id, resource_type, external_id, memory_id, state,
-              fingerprint, source_updated_at, first_seen, last_seen)
-           VALUES (?,?,?,?,?,?,?,?,?)
+             (connection_id, resource_type, external_id, memory_id, memory_ids,
+              state, fingerprint, source_updated_at, first_seen, last_seen)
+           VALUES (?,?,?,?,?,?,?,?,?,?)
            ON CONFLICT(connection_id, resource_type, external_id) DO UPDATE SET
              memory_id=CASE WHEN excluded.memory_id != ''
                             THEN excluded.memory_id
                             ELSE connector_resources.memory_id END,
+             memory_ids=CASE WHEN excluded.memory_ids != '[]'
+                             THEN excluded.memory_ids
+                             ELSE connector_resources.memory_ids END,
              state=excluded.state,
              fingerprint=excluded.fingerprint,
              source_updated_at=excluded.source_updated_at,
              last_seen=excluded.last_seen""",
-        (connection_id, resource_type, external_id, memory_id, state.value,
-         fingerprint_, source_updated_at, now, now))
+        (connection_id, resource_type, external_id, ids[0] if ids else "",
+         json.dumps(ids), state.value, fingerprint_, source_updated_at,
+         now, now))
     conn.commit()
     found = get(connection_id, resource_type, external_id)
     assert found is not None       # just written
@@ -302,8 +313,28 @@ def memory_ids(connection_id: str) -> list[str]:
     be offered honestly at all: without an identity table there is no list, and
     the only available implementation is "delete everything whose `source`
     string looks right".
+
+    **Both columns are read**, because that is what makes the `memory_ids`
+    migration additive: a row written before it exists has only `memory_id`, and
+    a chunked document written after it has several. Missing either would mean a
+    delete that quietly leaves part of the data behind — which is the one
+    outcome this control must never have.
     """
     rows = _db().execute(
-        "SELECT memory_id FROM connector_resources WHERE connection_id=? "
-        "AND memory_id != ''", (connection_id,)).fetchall()
-    return [str(r["memory_id"]) for r in rows]
+        "SELECT memory_id, memory_ids FROM connector_resources "
+        "WHERE connection_id=?", (connection_id,)).fetchall()
+    found: list[str] = []
+    for row in rows:
+        data = row_to_dict(row)
+        try:
+            parsed = json.loads(data.get("memory_ids") or "[]")
+        except ValueError:
+            parsed = []
+        if isinstance(parsed, list):
+            found.extend(str(m) for m in parsed if m)
+        first = str(data.get("memory_id") or "")
+        if first and first not in found:
+            found.append(first)
+    # Ordered and unique: a caller deletes these one by one, and asking the
+    # brain twice for the same id is a wasted round trip per duplicate.
+    return list(dict.fromkeys(found))

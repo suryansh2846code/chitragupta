@@ -307,6 +307,99 @@ def _custom_api(monkeypatch, fake_module, tmp_path, n):
     })
 
 
+class FakeDriveService:
+    """A Drive service that lists files and exports their text.
+
+    Drive had **no fake at all**, which is why none of the generic suites ran
+    against it and why its coverage sat at 15%: the registry at the bottom of
+    this file is what hands a connector the contract, crash-isolation,
+    idempotency and redaction tests, and one missing from it silently gets none
+    of them.
+
+    Only the Google-native export path is modelled. The byte-download path — PDF,
+    docx, pptx — goes through the vendor's `MediaIoBaseDownload`, and a
+    hand-rolled stand-in for that would be a test of the fake.
+    """
+
+    def __init__(self, files: list[dict], *, page_size: int = 100) -> None:
+        self._files = files
+        self._page_size = page_size
+        #: Counted, because the point of the migration is how *few* of these a
+        #: second pass makes.
+        self.listed = 0
+        self.exported = 0
+
+    def files(self):
+        return self
+
+    def list(self, **kw):
+        self.listed += 1
+        token = kw.get("pageToken")
+        start = int(token) if token else 0
+        size = min(self._page_size, kw.get("pageSize") or self._page_size)
+        page = self._files[start:start + size]
+        payload: dict = {"files": page}
+        if start + size < len(self._files):
+            payload["nextPageToken"] = str(start + size)
+        return _Exec(payload)
+
+    # `fileId` and `mimeType` are Google's own keyword names, not ours: the
+    # connector calls `files().export(fileId=..., mimeType=...)`, so a fake that
+    # renamed them would not be called at all.
+    def export(self, *, fileId, mimeType="text/plain", **kw):  # noqa: N803
+        self.exported += 1
+        found = next((f for f in self._files if f["id"] == fileId), None)
+        if found is None:
+            raise KeyError(fileId)
+        return _Exec(found.get("_text", f"Body of {fileId}").encode())
+
+    def get_media(self, **kw):       # pragma: no cover - see the class note
+        raise NotImplementedError(
+            "the byte-download path needs the vendor's MediaIoBaseDownload")
+
+
+def drive_files(n: int) -> list[dict]:
+    """`n` Google Docs, two of which were edited on the same day.
+
+    The same-day pair is deliberate: the check this connector used to make
+    compared `modifiedTime[:10]`, so a document edited twice in one day read as
+    unchanged the second time.
+    """
+    from chitragupta.connectors.gdrive import EXPORT_AS_TEXT
+
+    return [{
+        "id": f"file{i}",
+        "name": f"Launch plan {i}",
+        "mimeType": EXPORT_AS_TEXT,
+        "webViewLink": f"https://docs.google.test/d/file{i}",
+        "modifiedTime": f"2026-09-20T{i % 24:02d}:30:00.000Z",
+        "owners": [{"displayName": "Someone"}],
+        "_text": f"The launch plan, revision {i}. Shipping in October.",
+    } for i in range(n)]
+
+
+def _gdrive(monkeypatch, fake_module, tmp_path, n):
+    from chitragupta.connectors.gdrive import GoogleDriveConnector
+
+    service = FakeDriveService(drive_files(n))
+    install_google(monkeypatch, fake_module, service)
+    # The lazy `from googleapiclient.http import MediaIoBaseDownload` has to
+    # resolve even though no fixture here downloads bytes.
+    fake_module("googleapiclient.http", MediaIoBaseDownload=_NoDownloads)
+    connector = GoogleDriveConnector()
+    connector.fake_service = service          # so a test can count the calls
+    return connector
+
+
+class _NoDownloads:
+    """Stands in for `MediaIoBaseDownload` and is never reached by these
+    fixtures. Raising rather than returning empty bytes: a fixture that got here
+    would be silently reading nothing, and a test asserting on nothing passes."""
+
+    def __init__(self, *a, **kw) -> None:
+        raise NotImplementedError("no fixture here downloads bytes")
+
+
 def _set_secret(key: str, value: str) -> None:
     from chitragupta.config import get_settings
 
@@ -339,6 +432,10 @@ FAKES: tuple[ConnectorFake, ...] = (
     ConnectorFake("imessage", _imessage),
     ConnectorFake("apple_mail", _apple_mail),
     ConnectorFake("apple_calendar", _apple_calendar),
+    # Drive was absent from this registry, so none of the generic suites
+    # ran against it. Registering it is what gives it the contract,
+    # crash-isolation, idempotency and redaction tests.
+    ConnectorFake("gdrive", _gdrive),
     ConnectorFake("custom:testapp", _custom_api),
 )
 

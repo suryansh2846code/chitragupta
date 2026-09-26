@@ -142,6 +142,20 @@ One class per source, registered in `__init__.py::REGISTRY`.
   hand-built one is never undone: four of them in the Gmail tests left `urlopen`
   stubbed for the whole session and broke eighteen tests in `test_tool_bridge.py`,
   a file with no connection to connectors at all.
+- **Drive's fingerprint is the whole `modifiedTime`, not its date.** The check
+  this replaced compared `modifiedTime[:10]`, so a document edited twice in one
+  day read as unchanged the second time and the edit never arrived. A file is
+  mutable — unlike mail — so the timestamp *is* the change detector.
+- **One record can become several memories, and all of them are recorded.**
+  Drive chunks a long document. `ingest` may answer with a list, and
+  `resources.seen(memories=…)` stores every id — because recording only the
+  first is what leaves the rest orphaned when a user asks to delete what a
+  source imported.
+- **A connector missing from `tests/connectors/harness.py::FAKES` gets none of
+  the generic suites.** Drive was absent from it, so nothing exercised its
+  `sync()` at all and its coverage sat at 15% while looking tested. Registering
+  a fake is what hands a connector the contract, crash-isolation, idempotency
+  and redaction tests.
 - Never read another product's app-support directory for credentials or models.
 
 Rules: [`/CLAUDE.md`](../../CLAUDE.md) · [`docs/CONNECTORS.md`](../../docs/CONNECTORS.md)

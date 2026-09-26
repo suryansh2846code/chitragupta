@@ -120,7 +120,10 @@ class Plan:
     #: Where to ingest. Injected so a test does not need a brain, and so the
     #: engine does not import `brain` at module scope — the one sanctioned
     #: connector → brain edge stays exactly where it already was.
-    ingest: Callable[[Record, SourceRef], str]
+    #: Returns the memory id it stored, or **several** — Drive chunks a long
+    #: document into many. An empty answer means the brain already held
+    #: identical content, which is a skip rather than a failure.
+    ingest: Callable[[Record, SourceRef], Any]
     #: `hydrate(record) -> Record`, for a provider whose listing does not carry
     #: the content. Called **only** for records the engine has decided to keep,
     #: which is the entire point of it existing.
@@ -395,13 +398,20 @@ def _ingest_one(plan: Plan, connection: Any, run_id: str, record: Record,
         run_id=run_id, extra=dict(record.extra))
 
     try:
-        memory_id = plan.ingest(record, source)
+        stored = plan.ingest(record, source)
     except Exception as exc:
         result.skipped += 1
         log.debug("%s: skipped %s: %s", plan.connector, record.external_id, exc)
         return
 
-    if not memory_id:
+    # **One record can become several memories.** Drive chunks a long document,
+    # so `ingest` may answer with a list. A bare string is still accepted, which
+    # is what every connector that produces one memory per record returns and
+    # what keeps this additive.
+    ids = ([m for m in stored if m] if isinstance(stored, list)
+           else ([stored] if stored else []))
+
+    if not ids:
         # The brain already had identical content — dedup by content hash,
         # which still runs underneath this. Not an error and not an addition.
         result.skipped += 1
@@ -409,7 +419,8 @@ def _ingest_one(plan: Plan, connection: Any, run_id: str, record: Record,
         result.added += 1
 
     resources.seen(connection.id, plan.resource_type, record.external_id,
-                   memory_id=memory_id or (held.memory_id if held else ""),
+                   memories=ids or ([held.memory_id] if held and held.memory_id
+                                    else []),
                    fingerprint_=record.fingerprint,
                    source_updated_at=record.source_updated_at,
                    state=ResourceState.ACTIVE)

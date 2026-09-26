@@ -2,13 +2,18 @@
 from __future__ import annotations
 
 import io
+from dataclasses import replace
 from typing import Any
 
 from ..core.chunk import chunk_text
+from . import engine
 from .base import Connector, SyncResult
 from .capability import caps
 from .contract import AuthMethod, Limits, PaginationStrategy, SyncStrategy
+from .engine import Record
 from .google_auth import get_credentials, google_ready
+from .pagination import Page, cursor_of
+from .provenance import SourceRef
 
 
 # Which Drive mime types we know how to read, and how.
@@ -37,6 +42,8 @@ class GoogleDriveConnector(Connector):
     provider = "google"
     auto_sync = True
     incremental = True
+    #: Per-page checkpoints: a pass that dies on file 800 resumes there.
+    resumable = True
     auth_method = AuthMethod.OAUTH2
     sync_strategy = SyncStrategy.TIMESTAMP
     pagination = PaginationStrategy.NEXT_TOKEN
@@ -61,10 +68,132 @@ class GoogleDriveConnector(Connector):
     def is_configured(self) -> tuple[bool, str]:
         return google_ready()
 
+    # ── the pass ─────────────────────────────────────────────────────────
+    #
+    # Drive is the second connector on the shared engine and it is the same
+    # shape as Gmail: the listing carries names and modified times, and the
+    # *content* is a separate download per file. This connector already knew
+    # that and worked around it by hand — it built a set of
+    # `(file_id, modifiedTime)` out of the whole memories table on every pass:
+    #
+    #     for row in self.store._conn.execute(
+    #         "SELECT metadata, event_date FROM memories WHERE source=?", ...)
+    #
+    # which is a full scan of every Drive memory to answer a question a table
+    # now answers in 6 µs, and which compared only the *date* — so a file edited
+    # twice in one day read as unchanged.
+    #
+    # Two things are genuinely different from Gmail:
+    #
+    # * **A file is mutable.** So the fingerprint is `modifiedTime`, not the id.
+    # * **One file becomes several memories.** A long document is chunked, so
+    #   `_ingest` answers with a list and the identity table records all of them.
+    #   Recording only the first is what would leave the rest orphaned when
+    #   somebody asks to delete what Drive imported.
+
+    #: Drive mime types this connector can read, as a query fragment.
+    def _mime_filter(self) -> str:
+        kinds = [EXPORT_AS_TEXT, PDF_TYPE, DOCX_TYPE, PPTX_TYPE, GSLIDES,
+                 *PLAIN_TYPES]
+        return "(" + " or ".join(f"mimeType='{m}'" for m in kinds) + ")"
+
+    def _query(self, *, query: str | None, resume: str | None) -> str:
+        """The search this pass runs — the **window**, in Gmail's sense.
+
+        `_finish` only moves the watermark on a clean pass, so a pass that failed
+        halfway rebuilds this identical query and the page token stored against
+        it still means something.
+        """
+        if query:
+            return query
+        q = f"{self._mime_filter()} and trashed=false"
+        if resume:
+            # Filtered at Drive rather than locally, which is strictly better
+            # than listing everything and discarding it here. RFC-3339 with a
+            # 'Z', which is what the API expects.
+            q += f" and modifiedTime > '{_rfc3339(resume)}'"
+        return q
+
+    def _page(self, service: Any, query: str, size: int, cursor: str) -> Page:
+        """One page of the listing. Names and modified times, no content."""
+        listing = (
+            service.files()
+            .list(q=query, pageSize=min(100, max(1, size)),
+                  pageToken=cursor or None,
+                  # Shared-with-me and Shared Drives included: a document
+                  # somebody sent the user is exactly the one they will ask
+                  # about.
+                  includeItemsFromAllDrives=True, supportsAllDrives=True,
+                  corpora="allDrives",
+                  fields="nextPageToken,files(id,name,mimeType,webViewLink,"
+                         "modifiedTime,owners(displayName))")
+            .execute())
+        records = []
+        for f in listing.get("files", []) or []:
+            if not f.get("id"):
+                continue
+            owners = f.get("owners") or []
+            records.append(Record(
+                external_id=str(f["id"]),
+                title=f.get("name") or "",
+                url=f.get("webViewLink") or "",
+                source_updated_at=f.get("modifiedTime") or "",
+                # **The full timestamp, not its date.** The hand-rolled check
+                # this replaces compared `modifiedTime[:10]`, so a document
+                # edited twice in one day was read as unchanged the second time.
+                fingerprint=f.get("modifiedTime") or "",
+                extra={"owner": owners[0].get("displayName", "") if owners
+                       else "", "mime_type": f.get("mimeType") or ""},
+                raw=f))
+        return Page(records=records,
+                    next_cursor=cursor_of(listing, "nextPageToken"))
+
+    def _hydrate(self, service: Any, downloader_cls: Any,
+                 record: Record) -> Record:
+        """The download, made only for a file we are keeping.
+
+        This is the expensive half — an export, or a chunked byte download of a
+        PDF — and the whole reason `Plan.hydrate` exists. Before the engine it
+        ran for every file in the window on every pass.
+        """
+        return replace(record, text=self._read_file(service, record.raw,
+                                                    downloader_cls))
+
+    def _ingest(self, record: Record, source: SourceRef) -> list[str]:
+        """One file into the brain, as however many chunks it takes.
+
+        Returns every id, so *delete what Drive imported* can actually remove a
+        long document rather than its first page.
+        """
+        kwargs = source.ingest_kwargs()
+        metadata = kwargs.pop("metadata", {})
+        stored: list[str] = []
+        for index, chunk in enumerate(chunk_text(record.text)):
+            mem = self.store.add(
+                text=chunk, kind="doc",
+                title=record.title if index == 0
+                      else f"{record.title} (part {index + 1})",
+                # The chunk number rides beside the provenance rather than
+                # inside it: which piece of a document this is belongs to the
+                # record, not to where the record came from.
+                metadata={**metadata, "chunk": index},
+                **kwargs)
+            if mem:
+                stored.append(mem.id)
+        return stored
+
     def sync(self, *, query: str | None = None, max_results: int | None = None,
              since: str | None = None, limit: int | None = None,
              full_history: bool = False, cancel=None, progress=None,
              interactive: bool = True, **_: Any) -> SyncResult:
+        """One pass, through the shared engine.
+
+        What this no longer does by hand: page every file into one list before
+        reading any of it, scan the entire memories table to work out what it
+        already has, compare modified *dates* rather than times, turn a
+        `googleapiclient` error into `str(exc)`, and lose the whole pass when a
+        download fails partway.
+        """
         result = SyncResult(connector=self.name)
         started = self.now()
         resume = since if since is not None else self.since(full_history=full_history)
@@ -76,91 +205,41 @@ class GoogleDriveConnector(Connector):
             return self._finish(result)
 
         from ..config import get_settings
-        max_results = max_results or get_settings().drive_max
+        budget = limit or max_results or get_settings().drive_max
 
         try:
             creds = get_credentials(interactive=interactive)
-            service = build("drive", "v3", credentials=creds, cache_discovery=False)
-            all_types = [EXPORT_AS_TEXT, PDF_TYPE, DOCX_TYPE, PPTX_TYPE,
-                         GSLIDES, *PLAIN_TYPES]
-            mime_filter = (
-                "(" + " or ".join(f"mimeType='{m}'" for m in all_types)
-                + ")"
-            )
-            q = query or f"{mime_filter} and trashed=false"
-            if not query and resume:
-                # Drive can filter server-side, which is strictly better than
-                # listing every file and discarding it locally: the existing
-                # modified-date check below still runs, it just has far less to
-                # do. RFC-3339 with a 'Z', which is what the API expects.
-                q += f" and modifiedTime > '{_rfc3339(resume)}'"
-            # paginate + include Shared-with-me and Shared Drives
-            files: list[dict] = []
-            page_token = None
-            while len(files) < max_results:
-                listing = (
-                    service.files()
-                    .list(q=q, pageSize=min(100, max_results - len(files)),
-                          pageToken=page_token,
-                          includeItemsFromAllDrives=True, supportsAllDrives=True,
-                          corpora="allDrives",
-                          fields="nextPageToken,files(id,name,mimeType,webViewLink,"
-                                 "modifiedTime,owners(displayName))")
-                    .execute()
-                )
-                files += listing.get("files", [])
-                page_token = listing.get("nextPageToken")
-                if not page_token:
-                    break
-            # skip files we already have at the same modified date — no re-download
-            import json as _json
-            existing = set()
-            for row in self.store._conn.execute(
-                "SELECT metadata, event_date FROM memories WHERE source=?", (self.name,)):
-                try:
-                    fid = _json.loads(row["metadata"] or "{}").get("file_id")
-                except Exception:
-                    fid = None
-                if fid:
-                    existing.add((fid, row["event_date"]))
-
-            for f in files:
-                sig = (f["id"], (f.get("modifiedTime") or "")[:10] or None)
-                if sig in existing:
-                    result.skipped += 1
-                    continue
-                try:
-                    text = self._read_file(service, f, MediaIoBaseDownload)
-                except Exception as exc:
-                    result.errors.append(f"{f['name']}: {exc}")
-                    continue
-                if not text.strip():
-                    result.skipped += 1
-                    continue
-                event_date = (f.get("modifiedTime") or "")[:10] or None
-                owner = ""
-                if f.get("owners"):
-                    owner = f["owners"][0].get("displayName", "")
-                for i, chunk in enumerate(chunk_text(text)):
-                    mem = self.store.add(
-                        text=chunk,
-                        source=self.name,
-                        kind="doc",
-                        title=f["name"] if i == 0 else f"{f['name']} (part {i + 1})",
-                        uri=f.get("webViewLink"),
-                        event_date=event_date,
-                        metadata={"file_id": f["id"], "chunk": i, "owner": owner},
-                    )
-                    if mem:
-                        result.added += 1
-                    else:
-                        result.skipped += 1
-            result.detail = f"{len(files)} files"
+            service = build("drive", "v3", credentials=creds,
+                            cache_discovery=False)
         except Exception as exc:
-            result.errors.append(str(exc))
-            result.detail = "sync failed"
-        result.cursor = started
-        return self._finish(result)
+            # Sign-in failed, which is not a sync failure to retry — it is
+            # something the user has to do. Classified so the row says which.
+            from .errors import classify_exception
+            problem = classify_exception(self.name, exc, label=self.label)
+            result.errors.append(problem.message)
+            result.detail = "not signed in"
+            return self._finish(result)
+
+        search = self._query(query=query, resume=resume)
+        outcome = engine.run(
+            engine.Plan(
+                connector=self.name, manifest=self.manifest(),
+                resource_type="file",
+                fetch=lambda cursor: self._page(service, search, budget, cursor),
+                hydrate=lambda record: self._hydrate(
+                    service, MediaIoBaseDownload, record),
+                ingest=self._ingest,
+                connection_id=self.connection().id,
+                budget=budget,
+                # **Never sweeps.** The query filters by mime type and is
+                # bounded by `drive_max`, so "not in these results" covers every
+                # file this connector cannot read as well as every one past the
+                # budget. Sweeping it would tombstone most of a Drive.
+                sweeps_deletions=False),
+            cancel=cancel, progress=progress, full_history=full_history)
+
+        outcome.cursor = started
+        return self._finish(outcome)
 
     def search_and_ingest(self, terms: str, max_files: int = 5,
                           interactive: bool = False) -> list[str]:

@@ -288,6 +288,12 @@ that were previously spent finding out nothing had changed. `Plan.hydrate` is
 what makes it possible: the keep-or-skip decision is answered from the message
 id, before a body is paid for.
 
+Drive is the same shape and the same result — 202 requests down to 2 over 200
+files — plus two fixes that were not about cost at all. It used to scan **every
+Drive memory in the table** on every pass to rebuild what it already knew, and it
+compared modified *dates*, so a document edited twice in one day was read as
+unchanged the second time and the edit never reached the brain.
+
 The 13.4× is the N+1 the audit found in `gdrive`, removed for every connector
 that moves onto the engine: an unchanged record is recognised from the listing
 rather than downloaded to find out.
@@ -320,17 +326,16 @@ Written here so it is not claimed anywhere else.
   is a change to the brain's write path and needs its own landing with its own
   measurements. Recorded as `docs/ARCHITECTURE.md` §6.9.
 
-- **Two connectors are migrated onto the engine, not fifteen.** `custom_api`
-  and `gmail` are on it; every connector declares its manifest, uses the
-  capability floor and reports health. Drive, Calendar, Slack, Telegram and the
-  on-device sources still run their own hand-written `sync()`, so they do not
-  yet get per-page checkpoints or identity-based dedup. That is the migration
-  order §4 sets out — shared infrastructure first — and it is deliberately
-  unfinished rather than rushed.
+- **Three connectors are migrated onto the engine, not fifteen.**
+  `custom_api`, `gmail` and `gdrive` are on it; every connector declares its
+  manifest, uses the capability floor and reports health. Calendar, Slack,
+  Telegram and the on-device sources still run their own hand-written `sync()`,
+  so they do not yet get per-page checkpoints or identity-based dedup. That is
+  the migration order §4 sets out — shared infrastructure first — and it is
+  deliberately unfinished rather than rushed.
 
-  **Drive is next and is the same shape as Gmail**: it lists files, then
-  downloads each one, and today it downloads a file to discover it already has
-  it. `Plan.hydrate` is exactly that seam.
+  **Calendar is next.** Its window is `±180 days`, so the same "never sweep a
+  window" rule applies, and it is the last of the three Google connectors.
 
 - **A name that does not resolve is allowed through.** `outbound.py` refuses
   loopback and link-local by literal, by name and by resolution, and re-checks
