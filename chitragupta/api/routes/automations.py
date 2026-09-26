@@ -80,7 +80,26 @@ def _summary(automation: Any, runs: list[dict]) -> dict[str, Any]:
         # yet" forever, which reads as "nothing has happened" rather than "this
         # is broken".
         "agent_missing": _agent_is_gone(automation.agent_id),
+        # Enough of the report to put a reason on the row. The full one is its
+        # own endpoint, because the list draws twenty of these and each full
+        # check asks the connector layer whether it is signed in.
+        "readiness": _brief_readiness(automation),
     }
+
+
+def _brief_readiness(automation: Any) -> dict[str, Any]:
+    """Just the verdict and the sentence, for the list.
+
+    Without `app_state`, so the apps are not asked about — that is the slow
+    half, and a list of twenty automations must not make twenty connectors
+    check their sign-in. The full check, with the apps, is the endpoint.
+    """
+    from ...automation import readiness
+
+    with suppressed("checking whether an automation can run, for the list"):
+        report = readiness.review(automation)
+        return {"state": report["state"], "summary": report["summary"]}
+    return {"state": "ready", "summary": ""}
 
 
 def _agent_is_gone(agent_id: str) -> bool:
@@ -211,6 +230,49 @@ def recent_runs(limit: int = MAX_RUNS):
     return {"runs": store.recent_runs(limit=min(limit, MAX_RUNS))}
 
 
+@router.get("/api/automations/results")
+def automation_results(limit: int = 20):
+    """What the automations have actually produced, for the Inbox.
+
+    The history screen answers "why did it do that" and you have to go and open
+    it. This answers "what did they get me", in the one place a person already
+    looks — which is the difference between an automation somebody trusts and
+    one they forget they made.
+
+    Quiet runs are left out unless the automation asked for them: a watch that
+    looked every two minutes and found nothing is not news, and a line each time
+    saying so is a list nobody reads by lunchtime.
+    """
+    from ...automation import engine
+    from ...automation.model import worth_delivering
+
+    by_id = {}
+    with suppressed("listing automations for the results feed"):
+        by_id = {a.id: a for a in engine.list_automations()}
+
+    out = []
+    for run in store.recent_runs(limit=MAX_RUNS):
+        automation = by_id.get(run["automation_id"])
+        if automation is None or run["state"] not in store.TERMINAL_STATES:
+            continue
+        if not worth_delivering(automation.execution, run):
+            continue
+        out.append({
+            "run_id": run["id"],
+            "automation_id": automation.id,
+            "name": automation.name,
+            "state": run["state"],
+            "detail": run.get("outcome") or run.get("reason") or "",
+            "at": run.get("finished_at") or run.get("created_at") or "",
+            # Not every result is good news, and the two want different
+            # attention — one is something to read, the other something to do.
+            "needs_you": str(run["state"]) in ("escalated", "failed"),
+        })
+        if len(out) >= max(1, min(int(limit or 20), MAX_RUNS)):
+            break
+    return {"results": out}
+
+
 @router.get("/api/automations/{automation_id}")
 def get_automation(automation_id: str):
     from ...automation import engine
@@ -287,6 +349,38 @@ def update_automation(automation_id: str, body: AutomationIn):
     if not get_routines().set_fields(automation_id, **fields):
         raise HTTPException(404, "no such automation")
     return get_automation(automation_id)
+
+
+def _app_state(connector: str) -> tuple[str, bool]:
+    """What an app is called, and whether it is set up.
+
+    Here rather than in `automation/readiness.py`, which may not import
+    `connectors/`. The route is where the two layers are allowed to meet.
+    """
+    from ...connectors import REGISTRY
+
+    cls = REGISTRY.get(connector)
+    label = str(getattr(cls, "label", "") or connector)
+    ready = False
+    with suppressed("checking whether a connector is set up"):
+        ready = bool(cls and cls().is_configured()[0])
+    return label, ready
+
+
+@router.get("/api/automations/{automation_id}/readiness")
+def automation_readiness(automation_id: str):
+    """Can it actually run — asked before it is left alone for a month.
+
+    A report, never a decision: nothing here grants anything and nothing here
+    stops a run. A user who reads "it will stop and ask you" and is happy with
+    that should be able to save it and walk away.
+    """
+    from ...automation import engine, readiness
+
+    automation = engine.get_automation(automation_id)
+    if automation is None:
+        raise HTTPException(404, "no such automation")
+    return readiness.review(automation, app_state=_app_state)
 
 
 @router.post("/api/automations/{automation_id}/run")

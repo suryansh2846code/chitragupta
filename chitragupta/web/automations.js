@@ -66,6 +66,7 @@ async function loadAutomationState() {
     if (!line) return;
     const [word, cls] = AUTO_STATES[a.state] || ["", ""];
     if (cls) line.classList.add(cls);
+    if (a.readiness && a.readiness.state === "stuck") line.classList.add("is-bad");
 
     // The row's schedule text is written from the legacy columns, which cannot
     // describe "when a GitHub issue changes". Replaced here, from the spec the
@@ -80,11 +81,11 @@ async function loadAutomationState() {
       if (a.next_run) bits.push(`Next ${esc(autoWhen(a.next_run))}`);
       if (a.waiting) {
         bits.push(`${a.waiting} waiting for you`);
-      } else if (a.agent_missing) {
-        // It can never run: every turn would be asked of somebody who is not
-        // there. Said on the row, because "Not run yet" is what it looked like
-        // and that reads as "nothing has happened yet".
-        bits.push("cannot run — its agent is gone");
+      } else if (a.readiness && a.readiness.state === "stuck") {
+        // It cannot run at all, and "Not run yet" reads as "nothing has
+        // happened yet" rather than "nothing ever will". The reason is the
+        // first thing actually wrong, not a generic complaint.
+        bits.push(esc(a.readiness.summary.replace("It cannot run yet — ", "")));
       } else if (a.last_state) {
         // What happened last time, in the same words the history screen uses.
         // A row that only said when it would next run gave no way to tell
@@ -124,6 +125,35 @@ async function loadAutomationState() {
   });
 }
 
+/* Whether this automation has what it needs, asked while the user is still
+ * here to do something about it.
+ *
+ * Everything an automation needs is decided once and then checked at three in
+ * the morning, which is the worst possible moment to find out that the app it
+ * reads was disconnected. A report, never a gate: it does not stop anything
+ * being saved, because "it will stop and ask you" is a setting somebody may
+ * well want. */
+async function showReadiness(id) {
+  const target = $("#rmReady");
+  if (!target || !id) return;
+  target.hidden = false;
+  target.className = "am-ready is-checking";
+  target.textContent = "Checking what it needs…";
+  let report;
+  try {
+    report = await api(`/api/automations/${id}/readiness`);
+  } catch (_) {
+    target.hidden = true;
+    return;
+  }
+  target.className = `am-ready is-${esc(report.state || "ready")}`;
+  const rows = (report.checks || []).filter((c) => c.state !== "ready");
+  target.innerHTML = `<b>${esc(report.summary || "")}</b>` + (rows.length
+    ? `<ul>${rows.map((c) => `<li><span>${esc(c.name)}</span> — ${
+        esc(c.detail)}${c.fix ? ` <em>${esc(c.fix)}</em>` : ""}</li>`).join("")}</ul>`
+    : "");
+}
+
 /* Run it once, now, because waiting half an hour to find out whether it works
  * is how somebody decides it does not.
  *
@@ -140,6 +170,47 @@ async function runAutomationNow(id, button) {
   }
   if (button) { button.disabled = false; button.textContent = "Run now"; }
   loadRoutines();
+}
+
+/* What the automations produced, in the place a person already looks.
+ *
+ * The history screen answers "why did it do that" and you have to go and open
+ * it. This answers "what did they get me", which is the difference between an
+ * automation somebody trusts and one they forget they made. */
+async function loadAutomationResults() {
+  const host = $("#resultList");
+  if (!host) return;
+  let results = [];
+  try {
+    ({ results } = await api("/api/automations/results"));
+  } catch (_) {
+    host.innerHTML = "";
+    return;
+  }
+  if (!results.length) {
+    host.innerHTML = `<div class="ib-empty">Nothing yet. Results from your
+      automations show up here.</div>`;
+    return;
+  }
+  host.innerHTML = results.map((r) => `<div class="ib-row${
+    r.needs_you ? " is-bad" : ""}">
+      <span class="ib-state" data-on="1" aria-hidden="true"></span>
+      <span class="ib-text">
+        <span class="ib-name">${esc(r.name)}${r.needs_you
+          ? ` <span class="ib-badge">Needs you</span>` : ""}</span>
+        <span class="ib-meta">${esc(autoWhen(r.at))} · ${esc(
+          String(r.detail || RUN_WORDS[r.state] || r.state).slice(0, 160))}</span>
+      </span>
+      <span class="ib-actions">
+        <button class="tiny ghost" data-open-run="${esc(r.automation_id)}"
+          data-run-id="${esc(r.run_id)}">Open</button>
+      </span></div>`).join("");
+  host.querySelectorAll("[data-open-run]").forEach((button) => {
+    button.onclick = async () => {
+      await automationHistory(button.dataset.openRun);
+      runDetail(button.dataset.openRun, button.dataset.runId);
+    };
+  });
 }
 
 /* One automation's runs, newest first. */
@@ -393,6 +464,10 @@ function fieldOptions(selected) {
 //: How often "every so often" can mean. Minutes underneath, because that is
 //: what `interval_min` is, but nobody thinks in 1440 of them.
 const EVERY_CHOICES = [
+  // Two minutes is the floor because the scheduler's own loop wakes once a
+  // minute — asking for less would be asking for something it cannot do, and a
+  // setting that cannot be honoured is worse than one that is not offered.
+  [2, "Every 2 minutes"], [5, "Every 5 minutes"], [10, "Every 10 minutes"],
   [15, "Every 15 minutes"], [30, "Every 30 minutes"], [60, "Every hour"],
   [120, "Every 2 hours"], [360, "Every 6 hours"], [720, "Every 12 hours"],
   [1440, "Once a day"],
@@ -616,6 +691,13 @@ async function openBuilder(existing) {
   const once = $("#rmOnce");
   if (once) once.checked = !!POLICY.stop_after_success;
   renderExecution(EXECUTION);
+
+  const ready = $("#rmReady");
+  if (ready) ready.hidden = true;
+  // Only for one that exists. A new automation has nothing to check yet, and a
+  // panel saying "ready" before anything is filled in is a panel that means
+  // nothing.
+  if (existing) showReadiness(existing.id);
   renderTriggerChoices((trigger && trigger.type) || "event");
   if (trigger) {
     if (trigger.type === "event") {
@@ -755,6 +837,9 @@ function renderExecution(execution) {
       n === minutes ? " selected" : ""}>${esc(label)}</option>`).join("");
   }
 
+  const deliver = $("#rmDeliver");
+  if (deliver) deliver.value = spec.deliver || "needed";
+
   const browser = $("#rmBrowser");
   if (browser) browser.checked = spec.allow_browser !== false;
   const email = $("#rmEmail");
@@ -820,6 +905,7 @@ function builderExecution() {
     effort: value("#rmEffort"),
     connectors: builderApps(),
     check_minutes: parseInt(value("#rmCheck"), 10) || 0,
+    deliver: value("#rmDeliver") || "needed",
     allow_browser: on("#rmBrowser"),
     allow_email: on("#rmEmail"),
   };

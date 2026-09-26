@@ -270,3 +270,53 @@ def test_nothing_waiting_costs_nothing():
     scheduler = Scheduler()
     scheduler._sync_one_pass = lambda only: pytest.fail("it synced for nobody")
     assert scheduler.fast_check(now=1000.0) == []
+
+
+# ── what reaches the Inbox ─────────────────────────────────────────────────
+
+QUIET = {"state": "completed", "actions_used": 0}
+ACTED = {"state": "completed", "actions_used": 2}
+STOPPED = {"state": "escalated", "actions_used": 0}
+
+
+def test_a_watch_that_found_nothing_is_not_news():
+    """The default, and the reason it is the default. A watch polling every two
+    minutes that reported "nothing yet" each time is a list nobody reads by
+    lunchtime — and then the one that mattered is in it too."""
+    from chitragupta.automation.model import worth_delivering
+
+    assert worth_delivering(Execution(), QUIET) is False
+    assert worth_delivering(Execution(), ACTED) is True
+
+
+def test_something_that_stopped_and_needs_a_person_always_gets_through():
+    from chitragupta.automation.model import worth_delivering
+
+    assert worth_delivering(Execution(), STOPPED) is True
+
+
+def test_a_digest_reports_even_on_a_quiet_day():
+    """"Every morning, tell me what is coming" is a run whose whole point is
+    the report. Silence on a quiet day reads as the automation being broken."""
+    from chitragupta.automation.model import worth_delivering
+
+    assert worth_delivering(Execution(deliver="always"), QUIET) is True
+
+
+def test_never_means_never_including_the_bad_ones():
+    """A user who switched it off switched it off. Quietly overriding that is
+    how a setting stops being believed — and the run is still in the history
+    either way."""
+    from chitragupta.automation.model import worth_delivering
+
+    off = Execution(deliver="never")
+    assert worth_delivering(off, QUIET) is False
+    assert worth_delivering(off, ACTED) is False
+    assert worth_delivering(off, STOPPED) is False
+
+
+def test_an_unknown_delivery_setting_falls_back_to_the_safe_one():
+    """A hand-edited or out-of-date value must not mean "never", which would
+    silently stop a user hearing about anything."""
+    assert Execution.from_dict({"deliver": "whenever"}).deliver == "needed"
+    assert Execution.from_dict({}).deliver == "needed"

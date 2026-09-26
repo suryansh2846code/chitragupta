@@ -208,6 +208,24 @@ def build(automation: Any, event: Event, *, recall: Any = None,
         snap.add("Previous runs of this automation", "\n".join(lines), APP)
         snap.facts["prior_run_states"] = [r.get("state") for r in prior_runs]
 
+    # 5b. **When it last finished, exactly.** The list above is for a model to
+    #     read; this is for it to *use*. A watch that runs every two minutes is
+    #     asked to find what arrived "since the last check", and answering that
+    #     from a bulleted history means parsing prose for a timestamp — so it
+    #     either re-reports the same message every two minutes or invents a
+    #     window. Stated as one line, in one format, always the same place.
+    last_good = next((str(r.get("finished_at") or "") for r in prior_runs or []
+                      if str(r.get("state") or "") == "completed"
+                      and r.get("finished_at")), "")
+    snap.facts["last_completed_at"] = last_good
+    snap.add(
+        "When you last finished this successfully",
+        (f"{last_good} (UTC). Anything you are asked to find “since the last "
+         f"check” means since then." if last_good else
+         "Never — this is the first run. Treat everything you find as new, and "
+         "prefer the most recent rather than reporting a backlog."),
+        APP)
+
     if tasks:
         lines = [f"- {str(t.get('title', ''))[:120]}" for t in tasks[:10]]
         snap.add("Open tasks", "\n".join(lines), APP)

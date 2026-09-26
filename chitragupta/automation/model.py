@@ -207,6 +207,13 @@ class Policy:
         )
 
 
+#: When a run's result reaches the Inbox.
+DELIVER_ALWAYS = "always"
+DELIVER_WHEN_NEEDED = "needed"
+DELIVER_NEVER = "never"
+DELIVERY = (DELIVER_ALWAYS, DELIVER_WHEN_NEEDED, DELIVER_NEVER)
+
+
 @dataclass(frozen=True)
 class Execution:
     """How this automation runs, as opposed to what it does.
@@ -236,6 +243,15 @@ class Execution:
     #: even when its agent does.
     connectors: tuple[str, ...] = ()
 
+    #: When to put the result in the Inbox, where the user will actually find
+    #: it. `needed` is the default and the right one for a watch: a run that
+    #: looked and found nothing is not news, and a line every two minutes
+    #: saying "nothing yet" is a list nobody reads by lunchtime.
+    #:
+    #: `always` is for a digest — "every morning, tell me what is coming" is a
+    #: run whose *whole point* is the report, even on a quiet day.
+    deliver: str = DELIVER_WHEN_NEEDED
+
     #: May it read web pages at all. Acting on a page is refused for anything
     #: unattended whatever this says — that floor is `NEVER_UNATTENDED_TOOLS`
     #: and nothing here can lift it.
@@ -263,6 +279,7 @@ class Execution:
         return {"provider": self.provider, "model": self.model,
                 "effort": self.effort, "connectors": list(self.connectors),
                 "check_minutes": self.check_minutes,
+                "deliver": self.deliver,
                 "allow_browser": self.allow_browser,
                 "allow_email": self.allow_email}
 
@@ -281,6 +298,9 @@ class Execution:
             # scheduler to sync faster than its own loop can run.
             check_minutes=max(0, min(int(_as_int(data.get("check_minutes"))),
                                      24 * 60)),
+            deliver=(str(data.get("deliver") or "")
+                     if str(data.get("deliver") or "") in DELIVERY
+                     else DELIVER_WHEN_NEEDED),
             # Absent means allowed, so an automation stored before these
             # existed keeps doing what it did.
             allow_browser=bool(data.get("allow_browser", True)),
@@ -297,6 +317,30 @@ class Execution:
             return ("sending was switched off for this automation — turn on "
                     "“Let it send things” to allow it")
         return ""
+
+
+#: A run that ended in one of these has something the user needs to see,
+#: whatever the delivery setting says about quiet runs.
+NEEDS_THEM = frozenset({"escalated", "failed", "waiting_for_approval"})
+
+
+def worth_delivering(execution: Execution, run: dict[str, Any]) -> bool:
+    """Should this run's result go to the Inbox?
+
+    `never` means never, including the bad ones — a user who switched it off
+    switched it off, and quietly overriding that is how a setting stops being
+    believed. The run is still in the history either way; this is only about
+    whether it is put in front of them.
+    """
+    state = str(run.get("state") or "")
+    if execution.deliver == DELIVER_NEVER:
+        return False
+    if execution.deliver == DELIVER_ALWAYS:
+        return True
+    # "When needed": it acted, it stopped, or it wants something.
+    if state in NEEDS_THEM:
+        return True
+    return bool(int(run.get("actions_used") or 0))
 
 
 def _as_int(value: Any) -> int:

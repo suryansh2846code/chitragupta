@@ -257,6 +257,10 @@
              thing is one thought, which is what a person checks before
              pressing Create. -->
         <p class="am-readback" id="rmReadback"></p>
+        <!-- Whether it has what it needs, while the user is still here to do
+             something about it. Never a gate — "it will stop and ask you" is a
+             setting somebody may well want. -->
+        <div class="am-ready" id="rmReady" hidden></div>
         <label class="am-label">Name</label>
         <input id="rmName" placeholder="e.g. Tell me about client email" />
         <label class="am-label">Which agent does it</label>
@@ -374,6 +378,13 @@
                 your own mailbox. An address still has to be one you allowed.</em></span>
           </label>
 
+          <div class="am-solo">
+            <label class="am-sub">Put the result in my Inbox<select id="rmDeliver">
+              <option value="needed">Only when there is something</option>
+              <option value="always">Every time it runs</option>
+              <option value="never">Never</option>
+            </select></label>
+          </div>
           <div class="am-solo" id="rmCheckWrap">
             <label class="am-sub">Check the app this often<select id="rmCheck"></select></label>
           </div>
@@ -484,6 +495,16 @@
           <button id="taskAdd" class="tiny">Add</button>
         </div>
         <div id="taskList" class="tasks"></div>
+      </section>
+
+      <!-- What the automations produced. Above the list that makes them,
+           because a result is news and a list of automations is furniture. -->
+      <section class="ib-sec">
+        <div class="ib-head">
+          <div><h2 class="ib-title">Results</h2>
+            <p class="ib-sub">What your automations found while you were away.</p></div>
+        </div>
+        <div id="resultList" class="tasks"></div>
       </section>
 
       <section class="ib-sec">

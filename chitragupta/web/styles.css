@@ -3100,3 +3100,17 @@ button.tiny.running:hover { background: linear-gradient(to right,
   cursor: pointer; }
 .am-app input { margin: 0; }
 .am-app.is-on { border-color: var(--north-track); background: var(--north-dim); }
+
+/* What an automation still needs, read before walking away from it. Three
+   states, and the difference between them is what the user has to do: nothing,
+   expect a tap, or fix something. */
+.am-ready { margin: 0 0 4px; padding: 10px 12px; border-radius: 10px;
+  font-size: 12.5px; line-height: 1.55; border: 1px solid var(--line); }
+.am-ready.is-checking { color: var(--muted); }
+.am-ready.is-ready { border-color: rgba(95,207,142,.35); color: var(--ok); }
+.am-ready.is-asks { border-color: rgba(224,164,94,.35); color: var(--warn); }
+.am-ready.is-stuck { border-color: rgba(255,107,107,.35); color: var(--danger); }
+.am-ready ul { margin: 7px 0 0; padding-left: 16px; color: var(--muted); }
+.am-ready li { margin-top: 3px; }
+.am-ready li span { color: var(--text); }
+.am-ready li em { display: block; font-style: normal; color: var(--faint); }
