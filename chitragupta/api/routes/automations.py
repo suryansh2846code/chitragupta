@@ -138,6 +138,7 @@ def vocabulary():
     """
     from ...automation import conditions, sources, triggers
     from ...automation.model import Concurrency
+    from ...config import get_settings
 
     return {
         "triggers": triggers.describe(),
@@ -150,6 +151,14 @@ def vocabulary():
         # layer's idea and "Google Calendar" is the connector's, and the route
         # is where the two are allowed to meet.
         "sources": _event_sources(),
+        # How often a sync runs, which is what decides how soon an
+        # event-triggered automation notices. The builder says it out loud
+        # because the question gets asked — an agent was once asked "how often
+        # should I check Gmail, every 15 minutes or every hour?", which is a
+        # choice neither it nor the automation has. Reported, not offered:
+        # there is no endpoint that changes it, and a control that cannot work
+        # is worse than a sentence that is true.
+        "sync_minutes": max(1, get_settings().sync_interval_minutes),
         "concurrency": list(Concurrency.ALL),
         "names": {"triggers": triggers.known(),
                   "conditions": conditions.known()},

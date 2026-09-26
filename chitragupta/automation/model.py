@@ -119,6 +119,15 @@ class Policy:
     #: table before it goes".
     approval_timeout_seconds: int = 0
 
+    #: Turn itself off after one run that finished. "Tell me when the next
+    #: email from X arrives" is a *watch*, not a standing rule: it is answered
+    #: once and everything after that is noise the user has to go and stop.
+    #:
+    #: `COMPLETED` only. A run that was blocked, escalated or cancelled has not
+    #: answered anything, and switching the automation off then would lose the
+    #: watch the moment it hit a bad day.
+    stop_after_success: bool = False
+
     def as_dict(self) -> dict[str, Any]:
         return {
             "retry": {
@@ -137,6 +146,7 @@ class Policy:
             "verify": self.verify,
             "on_blocked_action": self.on_blocked_action,
             "approval_timeout_seconds": self.approval_timeout_seconds,
+            "stop_after_success": self.stop_after_success,
         }
 
     @staticmethod
@@ -193,6 +203,7 @@ class Policy:
             verify=bool(data.get("verify", True)),
             on_blocked_action=blocked,
             approval_timeout_seconds=int(_num(data, "approval_timeout_seconds", 0)),
+            stop_after_success=bool(data.get("stop_after_success", False)),
         )
 
 

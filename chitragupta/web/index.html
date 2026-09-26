@@ -252,6 +252,11 @@
     <div class="modal" role="dialog" aria-modal="true" aria-labelledby="rmTitle">
       <div class="modal-head"><b id="rmTitle">Create an automation</b><button id="rmClose" class="ghost tiny" aria-label="Close"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 4.5l7 7M11.5 4.5l-7 7"/></svg></button></div>
       <div class="am-body am-steps">
+        <!-- The automation said back as a sentence. Three steps in three boxes
+             is legible one box at a time; this is the only place the whole
+             thing is one thought, which is what a person checks before
+             pressing Create. -->
+        <p class="am-readback" id="rmReadback"></p>
         <label class="am-label">Name</label>
         <input id="rmName" placeholder="e.g. Tell me about client email" />
         <label class="am-label">Which agent does it</label>
@@ -280,6 +285,10 @@
                  can cause the event chosen on the left. -->
             <label class="am-sub">In which app<select id="rmEventSource"></select></label>
           </div>
+          <!-- How soon it will notice. Asked often enough that leaving it
+               unsaid made an agent invent a checking frequency it could not
+               set. Stated, not offered — nothing here can change it. -->
+          <p class="am-hint" id="rmSyncNote" hidden></p>
           <!-- Its own group, not a variant of the interval one. "Every morning
                at 8" and "every 60 minutes" are different questions, and one box
                that means different things depending on a dropdown above it is
@@ -292,6 +301,13 @@
                 <option value="mon,tue,wed,thu,fri">Weekdays</option>
                 <option value="sat,sun">Weekends</option>
               </select></label>
+          </div>
+          <!-- Whose eight in the morning. The trigger has read a timezone since
+               it was written and the form never asked, so it silently meant the
+               machine's — which is right until the user travels, and wrong
+               twice a year everywhere. -->
+          <div id="rmZoneWrap" class="am-solo" hidden>
+            <label class="am-sub">Timezone<select id="rmZone"></select></label>
           </div>
           <!-- One question, so one full-width control. It was a number box
                beside an empty label holding the word "minutes", which left a
@@ -314,7 +330,13 @@
 
         <section class="am-step">
           <h4 class="am-step-head"><span class="am-step-n">3</span> Do this</h4>
-          <textarea id="rmInstruction" rows="3" placeholder="e.g. Summarise it in one line and add it as a task"></textarea>
+          <textarea id="rmInstruction" rows="5" placeholder="e.g. Summarise it in one line and add it as a task.&#10;&#10;Be specific: say what to read, what to write, and what NOT to do. Every run starts fresh and remembers nothing, so the instruction has to stand on its own."></textarea>
+          <label class="am-check">
+            <input type="checkbox" id="rmOnce" />
+            <span>Stop after it works once
+              <em>For a watch — "tell me when the next one arrives". It pauses
+                itself once it has, instead of telling you again every time.</em></span>
+          </label>
           <p class="am-hint">It runs on its own — no confirm each time. You can pause or delete it whenever.</p>
         </section>
       </div>

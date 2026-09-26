@@ -3056,3 +3056,26 @@ button.tiny.running:hover { background: linear-gradient(to right,
    width changed with a run count — "History (12)" over "History" — moved Pause,
    Edit and the delete cross with it, so the column zig-zagged down the list. */
 .ib-hist { min-width: 66px; justify-content: center; }
+
+/* The automation as one sentence, above the boxes that build it. Three steps
+   are legible one at a time and never as a whole; this is where a person reads
+   back what they are about to create. */
+.am-readback {
+  margin: 0 0 4px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--north-dim);
+  border: 1px solid var(--north-track);
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text);
+}
+.am-readback:empty { display: none; }
+.am-readback b { color: var(--north); font-weight: 600; }
+
+/* A switch with its reason under it, rather than a bare label that needs the
+   docs to understand. */
+.am-check { display: flex; gap: 9px; margin-top: 12px; font-size: 13px; cursor: pointer; }
+.am-check input { margin: 2px 0 0; flex: none; }
+.am-check em { display: block; margin-top: 3px; font-size: 11.5px; line-height: 1.5;
+  font-style: normal; color: var(--muted); }

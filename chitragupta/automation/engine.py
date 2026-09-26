@@ -177,6 +177,33 @@ _MEMORABLE = {
 }
 
 
+def settle_watch(automation: Automation, run: dict[str, Any]) -> bool:
+    """Switch off an automation that has done the one thing it was for.
+
+    "Tell me when the next email from X arrives" is a **watch**, not a standing
+    rule: it is answered once, and every run after that is noise the user has
+    to go and stop by hand. `stop_after_success` says the user meant a watch.
+
+    Only on `COMPLETED`. A run that was blocked, escalated or cancelled has not
+    answered anything, and switching the watch off then would lose it on the
+    first bad day — which is the day it most needs to still be watching.
+
+    Paused, never deleted: the record stays, the user can see it did its job,
+    and turning it back on is one tap.
+    """
+    if not automation.policy.stop_after_success:
+        return False
+    if str(run.get("state") or "") != str(store.RunState.COMPLETED):
+        return False
+    with suppressed("switching off a watch that has done its job"):
+        from ..core.routine_store import get_routines
+        if get_routines().set_fields(automation.id, enabled=0):
+            log.info("automation %s watched for one thing and found it; paused",
+                     automation.id)
+            return True
+    return False
+
+
 def remember_outcome(automation: Automation, run: dict[str, Any]) -> bool:
     """Write a run's outcome to the brain, if it is the kind that belongs there.
 
@@ -288,6 +315,7 @@ def ingest(event: Event, *, deps: Deps | None = None,
             with suppressed("advancing an automation run"):
                 settled = executor.advance(run_id, automation)
                 remember_outcome(automation, settled or {})
+                settle_watch(automation, settled or {})
     return routed.as_dict()
 
 

@@ -676,6 +676,8 @@ function routineTriggerFields() {
   $("#rmDailyWrap").hidden = kind !== "schedule";
   const events = $("#rmEventWrap");
   if (events) events.hidden = kind !== "event";
+  const zone = $("#rmZoneWrap");
+  if (zone) zone.hidden = kind !== "schedule";
   if (typeof renderTriggerHint === "function") renderTriggerHint();
 }
 
@@ -694,6 +696,18 @@ if ($("#rmAddCond")) {
     if (typeof addCondition === "function") addCondition();
   };
 }
+// The sentence at the top follows every box that feeds it, or it describes an
+// automation the user has already changed.
+["#rmInstruction", "#rmOnce", "#rmAtTime", "#rmDays", "#rmInterval",
+ "#rmEventKind", "#rmEventSource", "#rmZone"].forEach((sel) => {
+  const node = $(sel);
+  if (!node) return;
+  const redraw = () => {
+    if (typeof renderReadback === "function") renderReadback();
+  };
+  node.addEventListener("input", redraw);
+  node.addEventListener("change", redraw);
+});
 $("#rmClose").onclick = () => $("#routineModal").hidden = true;
 $("#rmCreate").onclick = async () => {
   const name = $("#rmName").value.trim(), instruction = $("#rmInstruction").value.trim();

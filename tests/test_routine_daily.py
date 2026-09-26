@@ -377,3 +377,35 @@ def test_the_prompt_tells_the_agent_which_one_to_reach_for():
     assert 'at="8am"' in block
     assert "every morning" in block
     assert "drifts" in block, "nothing said why an interval is not a time"
+
+
+def test_the_prompt_never_shows_an_agent_id_that_may_not_exist():
+    """Where `agent="inbox"` came from.
+
+    The example in the prompt had a hardcoded id, and a model copied it instead
+    of reading the roster it had been given three lines earlier. The automation
+    it made could never run: every turn would have been asked of somebody who
+    is not there.
+
+    There is no agent every install has — not `inbox`, not `personal` — so the
+    example may not name one, and the block has to say where a real one comes
+    from.
+    """
+    from chitragupta.agents.prompt import _BLOCKS
+
+    block = _BLOCKS["create_routine"]
+    for invented in ('agent="inbox"', 'agent="personal"', 'agent="assistant"',
+                     'agent="mail"'):
+        assert invented not in block, f"the prompt still teaches {invented}"
+    assert "YOUR TEAM" in block, "it does not say where a real agent comes from"
+
+
+def test_the_prompt_does_not_offer_a_checking_frequency_for_mail():
+    """An agent asked the user "how often should I check Gmail — every 15
+    minutes, every hour?" That is the sync setting, which neither the agent nor
+    the automation can set, so the question had no answer it could honour."""
+    from chitragupta.agents.prompt import _BLOCKS
+
+    block = _BLOCKS["create_routine"]
+    mail = block.split("new_email —")[1].split("daily")[0]
+    assert "never offer" in mail.lower() or "not something this action" in mail

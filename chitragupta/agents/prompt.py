@@ -296,11 +296,19 @@ _BLOCKS: dict[str, str] = {
         '("whenever X emails me, forward it", "every morning digest my mail"), '
         "don't do it once — propose a standing automation:\n"
         '<action type="create_routine" name="Forward emails from Dana" '
-        'trigger="new_email" agent="inbox">When a new email arrives from '
+        'trigger="new_email" agent="AGENT-ID">When a new email arrives from '
         "dana@example.com, forward it with a short summary to me@example.com; "
         "ignore anything else.</action>\n"
+        "agent MUST be an id from YOUR TEAM above, or your own. This example "
+        "says AGENT-ID because there is no agent every user has — one that "
+        "invents a plausible-looking id like \"inbox\" or \"assistant\" makes an "
+        "automation that can never run, because every turn would be asked of "
+        "somebody who is not there.\n"
         "trigger is one of:\n"
-        '  new_email — when mail arrives.\n'
+        '  new_email — when mail arrives. It runs on the next sync that brings '
+        "mail in. How often that happens is the user's sync setting, NOT "
+        "something this action can set — never offer them a choice of how often "
+        "to check, and never add interval_min to it.\n"
         '  daily     — at a wall-clock time. Add at="8am" and optionally '
         'days="weekdays" (or "mon,wed,fri"; leave it out for every day). '
         "USE THIS whenever the user says a time of day — \"every morning\", "

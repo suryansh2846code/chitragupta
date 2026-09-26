@@ -283,7 +283,8 @@ def test_an_interval_is_stored_both_ways(vocabulary):
     assert out["trigger"] == {"type": "interval", "interval_min": 15}
     assert out["legacy"]["trigger"] == "schedule"
     assert out["legacy"]["interval_min"] == 15
-    assert out["words"] == "Every 15 min"
+    assert out["words"] == "Every 15 minutes", (
+        "the row and the menu describe the same repeat differently")
 
 
 # ── editing one that already exists ────────────────────────────────────────
@@ -617,3 +618,136 @@ def test_asking_for_it_yourself_shows_no_questions_at_all(vocabulary):
     out = drive(vocabulary, [{"op": "open"}, {"op": "trigger", "value": "manual"}])
     assert out["showing"] == {"event": False, "schedule": False,
                               "interval": False}
+
+
+# ── how soon "when it happens" actually is ─────────────────────────────────
+
+def test_an_event_automation_says_how_soon_it_will_notice(vocabulary):
+    """"When the mail arrives" reads as "the second it arrives". It is really
+    "on the next sync", and a user expecting the first thinks it is broken.
+
+    Asked often enough that an agent, with nothing on screen to go on, offered
+    the user a choice of checking frequency — which is neither its setting nor
+    the automation's.
+    """
+    out = drive(vocabulary, [
+        {"op": "open"}, {"op": "trigger", "value": "event"}])
+
+    assert str(vocabulary["sync_minutes"]) in out["syncNote"]
+    assert "minutes" in out["syncNote"]
+    assert "Sync now" in out["syncNote"], (
+        "it says you must wait without saying how not to")
+
+
+def test_the_note_is_only_there_when_it_is_true(vocabulary):
+    """A clock-triggered automation runs at the time you set. Telling that user
+    about sync intervals is telling them something irrelevant with the
+    authority of being on screen."""
+    for trigger in ("schedule", "interval", "manual"):
+        out = drive(vocabulary, [
+            {"op": "open"}, {"op": "trigger", "value": trigger}])
+        assert out["syncNote"] == "", f"{trigger} was told about syncing"
+
+
+def test_the_note_is_absent_rather_than_guessed_at(vocabulary):
+    """A build that cannot say how often it syncs says nothing, instead of
+    naming a number it made up."""
+    quiet = {**vocabulary, "sync_minutes": 0}
+    out = drive(quiet, [{"op": "open"}, {"op": "trigger", "value": "event"}])
+    assert out["syncNote"] == ""
+
+
+# ── the automation said back as one sentence ───────────────────────────────
+
+def test_the_form_reads_the_whole_automation_back(vocabulary):
+    """Three steps in three boxes are legible one box at a time and never as a
+    whole, and the whole is what a person checks before pressing Create."""
+    out = drive(vocabulary, [
+        {"op": "open"}, {"op": "trigger", "value": "event"},
+        {"op": "set", "sel": "#rmEventKind", "value": "email.received"},
+        {"op": "set", "sel": "#rmEventSource", "value": "gmail"},
+        {"op": "add"},
+        {"op": "type", "row": 0, "what": "field", "value": "event.from"},
+        {"op": "type", "row": 0, "what": "type", "value": "domain_is"},
+        {"op": "type", "row": 0, "what": "value", "value": "acme.com"},
+        {"op": "set", "sel": "#rmInstruction", "value": "summarise it for me"},
+    ])
+    said = out["readback"]
+    assert "An email arrives in gmail" in said
+    assert "only if" in said
+    assert "Who it is from" in said and "is from" in said and "acme.com" in said
+    assert "summarise it for me" in said
+
+
+def test_the_sentence_cannot_describe_something_other_than_what_is_saved(
+        vocabulary):
+    """It is built from the same functions that build what gets stored. A
+    readback assembled separately is a second description, and the two disagree
+    the first time one of them changes."""
+    out = drive(vocabulary, [
+        {"op": "open"}, {"op": "trigger", "value": "interval"},
+        {"op": "set", "sel": "#rmInterval", "value": "360"},
+        {"op": "set", "sel": "#rmInstruction", "value": "check the deploys"},
+    ])
+    assert out["trigger"] == {"type": "interval", "interval_min": 360}
+    assert "Every 6 hours" in out["readback"]
+
+
+def test_the_sentence_says_when_the_instruction_is_still_missing(vocabulary):
+    """Silence there reads as "nothing happens", which is also what an empty
+    step 3 produces — so it has to say which one it is."""
+    out = drive(vocabulary, [
+        {"op": "open"}, {"op": "trigger", "value": "manual"}])
+    assert "step 3" in out["readback"]
+
+
+# ── a watch that stops when it has answered ────────────────────────────────
+
+def test_a_one_off_watch_says_it_will_stop(vocabulary):
+    out = drive(vocabulary, [
+        {"op": "open"}, {"op": "trigger", "value": "event"},
+        {"op": "set", "sel": "#rmInstruction", "value": "tell me"},
+        {"op": "check", "sel": "#rmOnce", "value": True},
+        {"op": "save", "id": "a7"},
+    ])
+    assert "one-off watch" in out["readback"]
+    patch = next(c for c in out["calls"] if c["method"] == "PATCH")
+    assert patch["body"]["policy"]["stop_after_success"] is True
+
+
+def test_saving_one_policy_field_does_not_reset_the_others(vocabulary):
+    """The policy also holds retries, limits and the approval rule, and this
+    form asks about one of them. Sending a fresh object would quietly put the
+    rest back to their defaults."""
+    existing = {"id": "a8", "trigger": {"type": "manual"}, "conditions": [],
+                "policy": {"verify": False, "on_blocked_action": "escalate",
+                           "stop_after_success": False}}
+    out = drive(vocabulary, [
+        {"op": "open", "existing": {"id": "a8"}},
+        {"op": "check", "sel": "#rmOnce", "value": True},
+        {"op": "save", "id": "a8"},
+    ], automation=existing)
+
+    sent = next(c for c in out["calls"]
+                if c["method"] == "PATCH")["body"]["policy"]
+    assert sent["stop_after_success"] is True
+    assert sent["verify"] is False, "it reset verification"
+    assert sent["on_blocked_action"] == "escalate", "it reset the approval rule"
+
+
+# ── whose eight in the morning ─────────────────────────────────────────────
+
+def test_a_time_of_day_carries_a_timezone(vocabulary):
+    """The trigger has read one since it was written and the form never asked,
+    so it silently meant the machine's — right until the user travels."""
+    out = drive(vocabulary, [
+        {"op": "open"}, {"op": "trigger", "value": "schedule"},
+        {"op": "set", "sel": "#rmAtTime", "value": "08:00"},
+        {"op": "set", "sel": "#rmZone", "value": "Asia/Kolkata"},
+    ])
+    assert out["trigger"]["timezone"] == "Asia/Kolkata"
+
+
+def test_the_timezone_list_offers_where_you_are(vocabulary):
+    out = drive(vocabulary, [{"op": "open"}])
+    assert "where you are" in out["zoneHtml"]

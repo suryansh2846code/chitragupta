@@ -225,3 +225,57 @@ def test_a_failing_scheduled_action_is_retried_and_then_escalated():
     assert "no recipient" in settled["reason"]
     assert fakes["notices"], "it gave up without telling the user"
     assert int(settled["attempt"]) > 1, "it did not retry at all"
+
+
+# ── a watch that answers once and stops ────────────────────────────────────
+
+def test_a_watch_switches_itself_off_once_it_has_answered():
+    """"Tell me when the next email from X arrives" is a watch, not a standing
+    rule. It is answered once, and every run after that is noise the user has to
+    go and stop by hand.
+
+    Paused, never deleted: the record stays, they can see it did its job, and
+    turning it back on is one tap.
+    """
+    from chitragupta.core.routine_store import get_routines
+
+    routines = get_routines()
+    row = routines.create("Watch for mail", "personal", "new_email",
+                          "tell me", 60)
+    auto = Automation(id=row["id"], name="Watch for mail", agent_id="personal",
+                      instruction="tell me", goal="I am told",
+                      policy=Policy(stop_after_success=True))
+
+    assert engine.settle_watch(auto, {"state": "completed"}) is True
+    assert routines.get(row["id"])["enabled"] == 0
+
+
+def test_a_watch_that_did_not_finish_keeps_watching():
+    """A run that was blocked or escalated has not answered anything, and
+    switching the watch off then loses it on the first bad day — which is the
+    day it most needs to still be watching."""
+    from chitragupta.core.routine_store import get_routines
+
+    routines = get_routines()
+    row = routines.create("Watch again", "personal", "new_email", "tell me", 60)
+    auto = Automation(id=row["id"], name="Watch again", agent_id="personal",
+                      instruction="tell me", goal="",
+                      policy=Policy(stop_after_success=True))
+
+    for state in ("blocked", "escalated", "failed", "retrying", "cancelled"):
+        assert engine.settle_watch(auto, {"state": state}) is False
+    assert routines.get(row["id"])["enabled"] == 1
+
+
+def test_a_standing_automation_is_left_alone():
+    """The default. Most automations are rules, not watches, and one that
+    turned itself off after working once would be broken."""
+    from chitragupta.core.routine_store import get_routines
+
+    routines = get_routines()
+    row = routines.create("Every day", "personal", "daily", "do it", 60)
+    auto = Automation(id=row["id"], name="Every day", agent_id="personal",
+                      instruction="do it", goal="", policy=Policy())
+
+    assert engine.settle_watch(auto, {"state": "completed"}) is False
+    assert routines.get(row["id"])["enabled"] == 1

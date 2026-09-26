@@ -109,8 +109,37 @@ async function loadAutomationState() {
       button.title = a.runs ? `${a.runs} run(s) so far` : "It has not run yet";
       button.onclick = () => automationHistory(a.id);
       actions.insertBefore(button, actions.firstChild);
+
+      // "Run it now" — the endpoint has existed since the API shipped and
+      // nothing offered it. Waiting half an hour to find out whether an
+      // automation works is how somebody decides it does not.
+      const now = document.createElement("button");
+      now.className = "tiny ghost";
+      now.dataset.runR = a.id;
+      now.textContent = "Run now";
+      now.title = "Run it once, right now. The conditions and permissions still apply.";
+      now.onclick = () => runAutomationNow(a.id, now);
+      actions.insertBefore(now, actions.firstChild);
     }
   });
+}
+
+/* Run it once, now, because waiting half an hour to find out whether it works
+ * is how somebody decides it does not.
+ *
+ * Bypasses the trigger and nothing else: the conditions are still evaluated and
+ * the permission gate is still asked, so what happens here is what would have
+ * happened on its own. */
+async function runAutomationNow(id, button) {
+  if (button) { button.disabled = true; button.textContent = "Running…"; }
+  try {
+    await api(`/api/automations/${id}/run`, { method: "POST" });
+    toast("Ran it — open History to see what happened");
+  } catch (_) {
+    toast("Could not run that one");
+  }
+  if (button) { button.disabled = false; button.textContent = "Run now"; }
+  loadRoutines();
 }
 
 /* One automation's runs, newest first. */
@@ -221,7 +250,7 @@ async function runDetail(automationId, runId) {
 //: reader copes with empty — the modal must open on a machine where that call
 //: failed, holding the automation's real values, rather than not opening.
 let VOCAB = { triggers: [], conditions: [], fields: [], event_kinds: [],
-              sources: [] };
+              sources: [], sync_minutes: 0 };
 
 //: The condition rows on screen. The user's edits live here between renders,
 //: so adding a fourth row cannot discard what was typed into the third.
@@ -231,6 +260,10 @@ let COND_ROWS = [];
 //: express. Nothing is sent for conditions while it is true.
 let COND_LOCKED = false;
 
+//: The policy the automation already has, so saving one field does not wipe
+//: the others. Empty for a new one, which the engine fills with its defaults.
+let POLICY = {};
+
 async function loadVocabulary() {
   if (VOCAB.triggers.length) return VOCAB;
   try {
@@ -238,7 +271,7 @@ async function loadVocabulary() {
     VOCAB = {
       triggers: body.triggers || [], conditions: body.conditions || [],
       fields: body.fields || [], event_kinds: body.event_kinds || [],
-      sources: body.sources || [],
+      sources: body.sources || [], sync_minutes: body.sync_minutes || 0,
     };
   } catch (_) { /* the form still opens, with what the automation already has */ }
   return VOCAB;
@@ -283,11 +316,18 @@ function renderTriggerChoices(selected) {
     kinds.innerHTML = list.map((k) =>
       `<option value="${esc(k)}"${k === current ? " selected" : ""}>${
         esc(eventKindWords(k))}</option>`).join("");
+    // Set explicitly rather than left to the browser's "first option is
+    // selected": an empty kind saves a trigger the engine refuses to match,
+    // so the automation would sit there never firing.
+    if (!list.includes(kinds.value)) kinds.value = list[0];
   }
   const every = $("#rmInterval");
   if (every) every.innerHTML = everyOptions(every.value);
   renderSourceChoices();
   renderTriggerHint();
+  const zone = $("#rmZone");
+  if (zone) zone.innerHTML = zoneOptions(zone.value);
+  renderReadback();
 }
 
 /* What the chosen trigger is for, in one line under the menu.
@@ -302,6 +342,16 @@ function renderTriggerHint() {
   if (!hint || !select) return;
   const chosen = (VOCAB.triggers || []).find((t) => t.type === select.value);
   hint.textContent = (chosen && chosen.hint) || "";
+
+  // And, for an event, how soon it will actually notice. "When the mail
+  // arrives" reads as "the second it arrives"; it is really "on the next sync",
+  // and a user who expects the first is a user who thinks it is broken.
+  const note = $("#rmSyncNote");
+  if (!note) return;
+  const minutes = Number(VOCAB.sync_minutes) || 0;
+  const show = select.value === "event" && minutes > 0;
+  note.hidden = !show;
+  note.textContent = show ? `Chitragupta checks your apps every ${minutes} minutes, so this runs within about that long of it happening. Press Sync now on the Brain screen to check straight away.` : "";
 }
 
 /* The app list, redrawn whenever the kind of event changes — the two questions
@@ -426,6 +476,7 @@ function renderConditions() {
       ? "All of these have to be true for it to run."
       : "Leave this empty and it runs every time.";
   }
+  renderReadback();
   // Three columns and a remove button, the same three on every row whether or
   // not this condition takes a value. Laying them out with `flex: 1 1 28%`
   // meant a row for `is not empty` had two wide boxes where its neighbours had
@@ -478,6 +529,7 @@ function renderConditions() {
   host.querySelectorAll("[data-cond-value]").forEach((input) => {
     const write = () => {
       COND_ROWS[Number(input.dataset.condValue)].value = input.value;
+      renderReadback();
     };
     // It is a `select` for some fields and an `input` for others, and a browser
     // fires a different event for each.
@@ -544,6 +596,7 @@ async function openBuilder(existing) {
   await loadVocabulary();
   COND_ROWS = [];
   COND_LOCKED = false;
+  POLICY = {};
   let trigger = null;
   let conditions = [];
   if (existing) {
@@ -551,8 +604,11 @@ async function openBuilder(existing) {
       const body = await api(`/api/automations/${existing.id}`);
       trigger = body.trigger || null;
       conditions = body.conditions || [];
+      POLICY = body.policy || {};
     } catch (_) { /* legacy fields only */ }
   }
+  const once = $("#rmOnce");
+  if (once) once.checked = !!POLICY.stop_after_success;
   renderTriggerChoices((trigger && trigger.type) || "event");
   if (trigger) {
     if (trigger.type === "event") {
@@ -561,6 +617,7 @@ async function openBuilder(existing) {
     } else if (trigger.type === "schedule") {
       if ($("#rmAtTime") && trigger.at_time) $("#rmAtTime").value = trigger.at_time;
       if ($("#rmDays")) $("#rmDays").value = trigger.days || "";
+      if ($("#rmZone")) $("#rmZone").innerHTML = zoneOptions(trigger.timezone);
     } else if (trigger.type === "interval" && $("#rmInterval")) {
       // The options are rebuilt around the stored value before it is selected.
       // A browser drops an assignment to a value the list does not contain, so
@@ -585,6 +642,68 @@ async function openBuilder(existing) {
   renderConditions();
 }
 
+//: The timezones offered. The user's own first, because that is the answer
+//: almost every time, then the handful a person is likely to mean.
+const ZONES = ["UTC", "Europe/London", "Europe/Berlin", "America/New_York",
+               "America/Los_Angeles", "Asia/Kolkata", "Asia/Calcutta",
+               "Asia/Dubai", "Asia/Singapore", "Asia/Tokyo",
+               "Australia/Sydney"];
+
+function hereZone() {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+  } catch (_) { return ""; }
+}
+
+function zoneOptions(selected) {
+  const here = hereZone();
+  const chosen = selected || here;
+  const all = [];
+  for (const zone of [here, ...ZONES, chosen]) {
+    if (zone && !all.includes(zone)) all.push(zone);
+  }
+  return all.map((zone) => `<option value="${esc(zone)}"${
+    zone === chosen ? " selected" : ""}>${esc(
+      zone === here ? `${zone} — where you are` : zone)}</option>`).join("");
+}
+
+/* The whole automation as one sentence.
+ *
+ * The three steps are legible one box at a time and never as a whole, and the
+ * thing a person checks before pressing Create is the whole. Built from the
+ * same functions that build what gets saved, so it cannot describe something
+ * other than what will be stored.
+ */
+function renderReadback() {
+  const target = $("#rmReadback");
+  if (!target) return;
+  const when = triggerWords(builderTrigger());
+  const checks = COND_LOCKED ? null : builderConditions();
+  const instruction = (($("#rmInstruction") || {}).value || "").trim();
+  const once = ($("#rmOnce") || {}).checked;
+
+  if (!when) { target.innerHTML = ""; return; }
+
+  const parts = [`<b>${esc(when)}</b>`];
+  if (checks && checks.length) {
+    parts.push(`, but only if ${checks.map(readbackCheck).join(" and ")}`);
+  }
+  parts.push(`, I will: <b>${esc(instruction || "…say what to do in step 3")}</b>`);
+  if (once) parts.push(". Then I stop — it is a one-off watch");
+  target.innerHTML = parts.join("") + ".";
+}
+
+/* One check, as a person would say it. */
+function readbackCheck(check) {
+  const spec = conditionSpec(check.type);
+  const field = (VOCAB.fields || []).find((f) => f.path === check.field);
+  const name = field ? field.label : (check.field || "");
+  const value = Array.isArray(check.value) ? check.value.join(" or ")
+    : (check.question || check.value);
+  const label = spec ? spec.label : check.type;
+  return esc(`${name} ${label}${value === undefined ? "" : ` “${value}”`}`.trim());
+}
+
 /* The trigger spec the engine stores, from what the form says. */
 function builderTrigger() {
   const type = ($("#rmTrigger") || {}).value || "event";
@@ -595,8 +714,13 @@ function builderTrigger() {
     return spec;
   }
   if (type === "schedule") {
-    return { type: "schedule", at_time: ($("#rmAtTime") || {}).value || "",
-             days: ($("#rmDays") || {}).value || "" };
+    const spec = { type: "schedule", at_time: ($("#rmAtTime") || {}).value || "",
+                   days: ($("#rmDays") || {}).value || "" };
+    // Whose eight in the morning. Left out, it means the machine's — right
+    // until the user travels, and wrong twice a year everywhere.
+    const zone = (($("#rmZone") || {}).value || "").trim();
+    if (zone) spec.timezone = zone;
+    return spec;
   }
   if (type === "interval") {
     return { type: "interval",
@@ -670,6 +794,11 @@ async function saveBuilder(automationId) {
   const trigger = builderTrigger();
   const conditions = builderConditions();
   const body = conditions === null ? { trigger } : { trigger, conditions };
+  // Merged onto what is already stored, never replacing it: the policy also
+  // holds retries, limits and the approval rule, and this form asks about one
+  // of them. Sending a fresh object would reset the rest to their defaults.
+  body.policy = { ...(POLICY || {}),
+                  stop_after_success: !!($("#rmOnce") || {}).checked };
   try {
     await api(`/api/automations/${automationId}`, {
       method: "PATCH", headers: { "Content-Type": "application/json" },
@@ -695,8 +824,12 @@ function triggerWords(trigger) {
     return `${days || "Every day"} at ${routineClock(spec.at_time)}`;
   }
   if (spec.type === "interval") {
+    // The same words the menu offers. Written twice, they disagreed the first
+    // time either changed: the menu said "Every 6 hours" and the row said
+    // "Every 360 min" for the same automation.
     const mins = Number(spec.interval_min) || 60;
-    return mins === 60 ? "Every hour" : `Every ${mins} min`;
+    const known = EVERY_CHOICES.find(([n]) => n === mins);
+    return known ? known[1] : `Every ${mins} minutes`;
   }
   if (spec.type === "manual") return "Only when you ask";
   return "";

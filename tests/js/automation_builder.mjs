@@ -135,7 +135,7 @@ globalThis.fetch = async (url, opts = {}) => {
 new Function(appSource(path.dirname(APP_JS))
   + "\nglobalThis.__b = {openBuilder, addCondition, builderTrigger,"
   + " builderConditions, builderLegacy, saveBuilder, triggerWords,"
-  + " renderConditions};"
+  + " renderConditions, renderReadback};"
   // Replaced after the app defined it, so the real save handler is the one
   // that runs — a harness that reimplements the handler tests itself.
   + "\ntoast = (m) => globalThis.__toasts.push(String(m));")();
@@ -176,6 +176,11 @@ try {
     else if (step.op === "type") type(step.row, step.what, step.value);
     else if (step.op === "trigger") pick("#rmTrigger", step.value);
     else if (step.op === "set") pick(step.sel, step.value);
+    else if (step.op === "check") {
+      const node = el(step.sel);
+      node.checked = step.value !== false;
+      if (typeof node.onchange === "function") node.onchange();
+    }
     else if (step.op === "save") out.saved = await globalThis.__b.saveBuilder(step.id);
     else if (step.op === "create") {
       // The real handler, reached through the element the app bound it to.
@@ -186,6 +191,9 @@ try {
       if (typeof press !== "function") throw new Error("#rmCreate has no handler");
       await press();
     }
+  }
+  if (typeof globalThis.__b.renderReadback === "function") {
+    globalThis.__b.renderReadback();
   }
   out.trigger = globalThis.__b.builderTrigger();
   out.conditions = globalThis.__b.builderConditions();
@@ -205,6 +213,9 @@ process.stdout.write(JSON.stringify({
   conditionsHtml: el("#rmConditions").innerHTML,
   hint: el("#rmCondHint").textContent,
   triggerHint: el("#rmTriggerHint").textContent,
+  readback: el("#rmReadback").innerHTML,
+  zoneHtml: el("#rmZone").innerHTML,
+  syncNote: el("#rmSyncNote").hidden ? "" : el("#rmSyncNote").textContent,
   showing: {
     event: !el("#rmEventWrap").hidden,
     schedule: !el("#rmDailyWrap").hidden,
