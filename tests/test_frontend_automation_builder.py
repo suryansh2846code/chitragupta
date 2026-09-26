@@ -563,3 +563,57 @@ def test_changing_the_field_clears_a_value_that_no_longer_means_anything(
     ])
     assert out["conditions"] == [], "the old value survived into a new question"
     assert "gmail" not in out["conditionsHtml"]
+
+
+# ── the menu says what each choice is for ──────────────────────────────────
+
+def test_the_when_menu_explains_the_choice(vocabulary):
+    """Four names do not say which one to pick.
+
+    A user wanting "run when the mail arrives" chose **At a time of day**, then
+    asked for an "any time" option — which cannot exist, because for that
+    trigger the time *is* the rule. The answer was the first item in the same
+    menu, and nothing on screen said so.
+    """
+    out = drive(vocabulary, [
+        {"op": "open"}, {"op": "trigger", "value": "event"}])
+    assert "do not know when" in out["triggerHint"], (
+        "the option for 'I don't know when it is coming' does not say so")
+
+
+def test_the_explanation_follows_the_choice(vocabulary):
+    """A line that stays put while the menu moves is worse than none — it
+    describes the wrong thing with the authority of being on screen."""
+    clock = drive(vocabulary, [
+        {"op": "open"}, {"op": "trigger", "value": "schedule"}])
+    asked = drive(vocabulary, [
+        {"op": "open"}, {"op": "trigger", "value": "manual"}])
+
+    assert "at a time you pick" in clock["triggerHint"].lower()
+    assert "never runs on its own" in asked["triggerHint"].lower()
+    assert clock["triggerHint"] != asked["triggerHint"]
+
+
+def test_every_trigger_says_what_it_is_for(vocabulary):
+    """A trigger added with no explanation shows an empty line where every
+    other one explains itself."""
+    assert all(t["hint"] for t in vocabulary["triggers"])
+
+
+@pytest.mark.parametrize("trigger,shown", [
+    ("event", "event"), ("schedule", "schedule"), ("interval", "interval"),
+])
+def test_only_the_questions_that_trigger_asks_are_shown(vocabulary, trigger,
+                                                        shown):
+    """A time box under "something happens in an app" is a setting the user
+    filled in that does nothing."""
+    out = drive(vocabulary, [{"op": "open"}, {"op": "trigger", "value": trigger}])
+    assert out["showing"] == {"event": shown == "event",
+                              "schedule": shown == "schedule",
+                              "interval": shown == "interval"}
+
+
+def test_asking_for_it_yourself_shows_no_questions_at_all(vocabulary):
+    out = drive(vocabulary, [{"op": "open"}, {"op": "trigger", "value": "manual"}])
+    assert out["showing"] == {"event": False, "schedule": False,
+                              "interval": False}

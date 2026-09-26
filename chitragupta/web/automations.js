@@ -287,6 +287,21 @@ function renderTriggerChoices(selected) {
   const every = $("#rmInterval");
   if (every) every.innerHTML = everyOptions(every.value);
   renderSourceChoices();
+  renderTriggerHint();
+}
+
+/* What the chosen trigger is for, in one line under the menu.
+ *
+ * Four names do not say which one to pick. Somebody wanting "run when the mail
+ * arrives" chose "At a time of day" and then asked for an "any time" option,
+ * which cannot exist — for that trigger the time is the rule. The answer was
+ * the first item in the same menu, and nothing on screen said so. */
+function renderTriggerHint() {
+  const hint = $("#rmTriggerHint");
+  const select = $("#rmTrigger");
+  if (!hint || !select) return;
+  const chosen = (VOCAB.triggers || []).find((t) => t.type === select.value);
+  hint.textContent = (chosen && chosen.hint) || "";
 }
 
 /* The app list, redrawn whenever the kind of event changes — the two questions

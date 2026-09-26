@@ -204,6 +204,12 @@ process.stdout.write(JSON.stringify({
   triggerHtml: el("#rmTrigger").innerHTML,
   conditionsHtml: el("#rmConditions").innerHTML,
   hint: el("#rmCondHint").textContent,
+  triggerHint: el("#rmTriggerHint").textContent,
+  showing: {
+    event: !el("#rmEventWrap").hidden,
+    schedule: !el("#rmDailyWrap").hidden,
+    interval: !el("#rmIntervalWrap").hidden,
+  },
   addHidden: el("#rmAddCond").hidden,
   sourceHtml: el("#rmEventSource").innerHTML,
   everyHtml: el("#rmInterval").innerHTML,

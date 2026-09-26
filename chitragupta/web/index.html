@@ -267,6 +267,10 @@
                triggers the engine actually has. A list typed in here is a list
                that drifts, and the copy that drifts is the one people pick from. -->
           <select id="rmTrigger"></select>
+          <!-- What the chosen trigger is for. Four names in a menu do not say
+               which one to pick, and the one that gets picked wrongly is the
+               one whose answer was "you do not know when". -->
+          <p class="am-hint" id="rmTriggerHint"></p>
 
           <div id="rmEventWrap" class="am-pair" hidden>
             <label class="am-sub">What happens<select id="rmEventKind"></select></label>

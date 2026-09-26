@@ -676,6 +676,7 @@ function routineTriggerFields() {
   $("#rmDailyWrap").hidden = kind !== "schedule";
   const events = $("#rmEventWrap");
   if (events) events.hidden = kind !== "event";
+  if (typeof renderTriggerHint === "function") renderTriggerHint();
 }
 
 $("#newRoutineBtn").onclick = () => routineForm(null);
