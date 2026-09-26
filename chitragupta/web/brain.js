@@ -169,52 +169,120 @@ $("#syncAll").onclick = async () => {
 //: button. A first Gmail pass can run for minutes, which is plenty of time.
 const SYNCING = new Set();
 
+//: The one poll watching whatever is syncing, so a second Sync press does not
+//: start a second timer against the same job.
+let SYNC_POLL = null;
+
+/**
+ * The parts of a connector row, looked up the way the browser will.
+ *
+ * **The selectors here were dead.** They looked for `.conn`, `.conn-sub` and
+ * `.dot`; the row renders `.cn-row`, `.cn-sub` and a `.cn-logo` carrying
+ * `data-state`. `.conn` survives only as a leftover CSS rule, so the lookup was
+ * always null and — because every line used `?.` — all of the feedback silently
+ * did nothing. `node --check` passes on that, which is why
+ * `tests/js/connector_sync_feedback.mjs` clicks it instead.
+ */
+function _cnRowParts(name) {
+  const row = document.querySelector(`.cn-row[data-conn="${CSS.escape(name)}"]`);
+  return {
+    row,
+    sub: row?.querySelector(".cn-sub") || null,
+    logo: row?.querySelector(".cn-logo") || null,
+    btn: row?.querySelector(`[data-sync="${CSS.escape(name)}"]`) || null,
+    stop: row?.querySelector(`[data-syncstop="${CSS.escape(name)}"]`) || null,
+  };
+}
+
+/** Show one job's progress on its row. */
+function _cnShowJob(job) {
+  const parts = _cnRowParts(job.connector);
+  if (parts.sub) parts.sub.textContent = job.says;
+  if (parts.logo) {
+    parts.logo.dataset.state = job.running ? "syncing"
+      : job.state === "done" ? "ok" : "off";
+  }
+  if (parts.btn) parts.btn.disabled = Boolean(job.running);
+  // Stop only exists while there is something to stop — "anything the user
+  // starts, they can stop", and nothing they did not.
+  if (parts.stop) parts.stop.hidden = !job.running;
+}
+
+/**
+ * Follow whatever is syncing until it finishes.
+ *
+ * Started on load as well as after a press, which is what makes progress
+ * **survive a refresh**: the job lives on the server, so a reloaded page finds
+ * it and picks the count back up rather than showing a finished-looking row over
+ * a sync that is still running.
+ */
+async function watchSyncJobs() {
+  if (SYNC_POLL) return;
+  const tick = async () => {
+    let jobs = [];
+    try {
+      jobs = (await api("/api/connectors/jobs")).jobs || [];
+    } catch (_) { return; }        // a hiccup must not end the watch
+    let anyRunning = false;
+    for (const job of jobs) {
+      _cnShowJob(job);
+      if (job.running) { anyRunning = true; SYNCING.add(job.connector); }
+      else if (SYNCING.delete(job.connector)) {
+        // Only announce a job this page was watching. Otherwise a reload
+        // re-announces every sync of the last few minutes.
+        toast(`${job.label}: ${job.says}`);
+        loadBrain();
+      }
+    }
+    if (!anyRunning) { clearInterval(SYNC_POLL); SYNC_POLL = null; }
+  };
+  SYNC_POLL = setInterval(tick, 1200);
+  await tick();
+}
+
 async function syncConn(name) {
   if (name === "files") { openPicker(); return; }   // folder picker for local files
-
-  // **The selectors here were dead.** They looked for `.conn`, `.conn-sub` and
-  // `.dot`; the row renders `.cn-row`, `.cn-sub` and a `.cn-logo` carrying
-  // `data-state`. `.conn` survives only as a leftover CSS rule, so `row` was
-  // always null and — because every line below used `?.` — all of the feedback
-  // silently did nothing. Pressing Sync looked like pressing nothing until a
-  // toast arrived, which for a first sync is minutes, and a second click
-  // started a second sync. `node --check` passes on all of it, which is why
-  // `tests/js/connector_sync_feedback.mjs` clicks it instead.
-  const row = document.querySelector(`.cn-row[data-conn="${CSS.escape(name)}"]`);
-  const subEl = row?.querySelector(".cn-sub");
-  const logoEl = row?.querySelector(".cn-logo");
-  const btn = row?.querySelector(`[data-sync="${CSS.escape(name)}"]`);
 
   if (SYNCING.has(name)) {
     toast(`${name} is already syncing`);
     return;
   }
+  const parts = _cnRowParts(name);
   SYNCING.add(name);
-  if (subEl) subEl.textContent = "Syncing…";
-  if (logoEl) logoEl.dataset.state = "syncing";
-  if (btn) btn.disabled = true;
+  if (parts.sub) parts.sub.textContent = "Syncing…";
+  if (parts.logo) parts.logo.dataset.state = "syncing";
+  if (parts.btn) parts.btn.disabled = true;
+  if (parts.stop) parts.stop.hidden = false;
+
   try {
-    const r = await api(`/api/connectors/${name}/sync`, {
-      method: "POST", body: { params: {} } });
-    if (r.errors?.length) {
-      // The backend writes these as sentences now — a sign-in that has run out,
-      // a service asking us to slow down — so it is shown rather than replaced
-      // with "error", which told the user nothing they could act on.
-      toast(`${name}: ${r.errors[0]}`);
-      if (subEl) subEl.textContent = r.errors[0];
-      if (logoEl) logoEl.dataset.state = "off";
-    } else {
-      toast(`${name}: +${r.added} added${r.skipped ? ` · ${r.skipped} skipped` : ""}`);
-      loadBrain();          // re-render with fresh state and a fresh health row
-    }
+    // **Started, not awaited to completion.** The synchronous route holds one of
+    // six shared lane slots for the whole pass, and that is the lane this page
+    // loads through — so a first Gmail sync could make the screen that started
+    // it slow. `/sync/start` answers at once with a job to follow.
+    const started = await api(`/api/connectors/${encodeURIComponent(name)}/sync/start`,
+                             { method: "POST", body: { params: {} } });
+    if (started?.job) _cnShowJob(started.job);
+    watchSyncJobs();
   } catch (e) {
-    toast(String(e));
-    if (subEl) subEl.textContent = "Could not sync. Try again.";
-    if (logoEl) logoEl.dataset.state = "off";
-  } finally {
     SYNCING.delete(name);
-    if (btn) btn.disabled = false;
+    // A refusal carries a sentence naming which source holds the slot, so it is
+    // shown rather than replaced with "could not sync".
+    const said = String(e).replace(/^Error:\s*/, "");
+    toast(said);
+    if (parts.sub) parts.sub.textContent = said;
+    if (parts.logo) parts.logo.dataset.state = "off";
+    if (parts.btn) parts.btn.disabled = false;
+    if (parts.stop) parts.stop.hidden = true;
   }
+}
+
+/** Stop a sync the user started. Cooperative — it lands within one record. */
+async function stopSyncConn(name) {
+  try {
+    await api(`/api/connectors/${encodeURIComponent(name)}/sync/stop`,
+              { method: "POST" });
+  } catch (e) { toast(String(e)); return; }
+  toast("stopping…");
 }
 
 // ── brain detail modal (entity facts / memory search) ──────────────────────

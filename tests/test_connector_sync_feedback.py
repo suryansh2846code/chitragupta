@@ -130,7 +130,9 @@ def test_a_successful_sync_refreshes_the_screen():
     found = run()
 
     assert found["reloaded"]
-    assert any("+3 added" in t for t in found["toasts"])
+    # The wording comes from the job now, which says what it did rather than
+    # restating the numbers the row already shows.
+    assert any("already had" in t for t in found["toasts"]), found["toasts"]
 
 
 def test_the_body_is_an_object_so_it_is_sent_as_json():
@@ -139,7 +141,7 @@ def test_the_body_is_an_object_so_it_is_sent_as_json():
     against /api/open-browser, which this call had too."""
     found = run()
 
-    posted = [c for c in found["calls"] if c["url"].endswith("/sync")]
+    posted = [c for c in found["calls"] if c["url"].endswith("/sync/start")]
     assert posted and posted[0]["method"] == "POST"
     assert posted[0]["hasJsonHeader"], "the body was not encoded as JSON"
 
@@ -290,3 +292,86 @@ def test_the_time_shown_is_the_last_pass_that_worked():
 
     assert "2 min ago" not in found["html"], (
         "an attempt that failed was reported as a successful sync")
+
+
+# ── a sync is a background job now, with progress and a stop ──────────────
+
+
+def test_the_row_shows_how_far_a_sync_has_got():
+    """A count, not a spinner. `/CLAUDE.md`: "a spinner with no end state is a
+    bug"."""
+    found = run(hold=True, done=120, total=600)
+
+    assert found["midSub"] == "Syncing… 120 of 600"
+
+
+def test_a_source_that_cannot_say_how_much_there_is_still_reports_progress():
+    """A paged read never knows the total. "Syncing…" with no number beats a
+    progress bar frozen at 0%."""
+    found = run(hold=True, done=0, total=0)
+
+    assert found["midSub"] == "Syncing…"
+
+
+def test_the_request_is_not_held_open_for_the_whole_sync():
+    """The synchronous route occupies one of six shared lane slots for minutes —
+    the same lane this page loads through."""
+    found = run(hold=True)
+
+    started = [c for c in found["calls"] if c["url"].endswith("/sync/start")]
+    assert started, "the page still used the blocking route"
+    assert not [c for c in found["calls"] if c["url"].endswith("/sync")]
+
+
+def test_a_stop_button_appears_only_while_something_is_running():
+    """"Anything the user starts, they can stop" — and nothing they did not."""
+    found = run(hold=True)
+
+    assert found["midStopVisible"] is True
+    assert found["finalStopVisible"] is False
+
+
+def test_progress_is_picked_up_again_after_a_refresh():
+    """The job lives on the server, so a reloaded page finds it rather than
+    showing a finished-looking row over a sync that is still going.
+
+    This is also the only path that tests `_cnShowJob` on its own: `syncConn`
+    sets the row itself as well, so a press would pass even if the poll painted
+    nothing — which is exactly what happened when this assertion was weaker.
+    """
+    found = run(hold=True, done=40, total=600, rendered_only=True)
+
+    assert found["midSub"] == "Syncing… 40 of 600", (
+        "a page that never pressed Sync did not pick up the running job")
+    assert found["midStopVisible"] is True, (
+        "the poll did not reveal Stop, so a refreshed page cannot stop a sync "
+        "it is watching")
+    assert found["midButtonDisabled"] is True
+
+
+def test_a_second_source_is_refused_with_the_sentence_the_server_sent():
+    """One at a time, because two connectors ingesting at once means two writers
+    on the one SQLite connection. The refusal names which source holds the slot,
+    so it is something the user can act on."""
+    found = run(busy="Gmail is syncing right now. Wait for it to finish, "
+                     "or stop it first.")
+
+    assert "Gmail is syncing right now" in found["finalSub"]
+    assert any("Gmail is syncing" in t for t in found["toasts"])
+    assert found["finalButtonDisabled"] is False, "the button must come back"
+
+
+def test_a_sync_that_was_stopped_does_not_read_as_a_failure():
+    """A pass somebody deliberately ended is not a fault, and a user who sees
+    enough red badges stops reading them."""
+    found = run(syncResult={"added": 2, "skipped": 0, "errors": [],
+                            "cancelled": True})
+
+    assert found["finalSub"] == "Stopped"
+
+
+def test_pressing_stop_asks_the_server_to_stop_it():
+    found = run(hold=True, click_stop=True)
+
+    assert any(c["url"].endswith("/sync/stop") and c["method"] == "POST"
+               for c in found["calls"]), found["calls"]

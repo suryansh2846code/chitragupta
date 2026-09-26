@@ -403,6 +403,12 @@ function _cnRowHtml(c, staleAfterMin, health) {
 
   const sync = c.ready && !onDemand
     ? `<button class="tiny ghost" data-sync="${esc(c.name)}">Sync</button>` : "";
+  // **Hidden until there is something to stop**, rather than absent: the row is
+  // not re-rendered while a sync runs, so a button created on demand would have
+  // nothing to attach to. Rendered once and revealed by `_cnShowJob`.
+  const stop = c.ready && !onDemand
+    ? `<button class="tiny ghost" data-syncstop="${esc(c.name)}" hidden>Stop</button>`
+    : "";
   // **Only on a source that is actually connected.** A Details panel on a row
   // the user has not set up would open onto four disabled controls and a count
   // of zero, which is a control that cannot work — the thing `/CLAUDE.md`
@@ -442,7 +448,7 @@ function _cnRowHtml(c, staleAfterMin, health) {
       <span class="cn-name">${esc(c.label)}${kind}${badge}</span>
       <span class="cn-sub">${esc(status)}</span>
     </span>
-    <span class="cn-actions">${sync}${details}${fixBtn}${setup}${disconnect}${del}</span>
+    <span class="cn-actions">${sync}${stop}${details}${fixBtn}${setup}${disconnect}${del}</span>
   </div>`;
 }
 
@@ -487,6 +493,8 @@ function bindConnectorRowActions() {
     connectorTools(b.dataset.cntools, b.dataset.cnlabel));
   document.querySelectorAll("[data-cndetail]").forEach((b) => b.onclick = () =>
     connectorDetails(b.dataset.cndetail, b.dataset.cnlabel));
+  document.querySelectorAll("[data-syncstop]").forEach((b) => b.onclick = () =>
+    stopSyncConn(b.dataset.syncstop));
   document.querySelectorAll("[data-delmcp]").forEach((b) => b.onclick = async () => {
     const id = b.dataset.delmcp.split(":")[1];
     // Say what removing does and does not do. Silently keeping the memories
@@ -514,6 +522,10 @@ function renderConnectors(connectors, staleAfterMin, health) {
   }));
   renderConnectorFilters();
   applyConnectorFilter();
+  // Pick up a sync that is already running — one started by another tab, or by
+  // this page before it was reloaded. This is the half of "progress survives a
+  // refresh" that a spinner drawn in the browser cannot do on its own.
+  watchSyncJobs();
 }
 
 function renderConnectorFilters() {

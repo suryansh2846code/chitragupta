@@ -70,6 +70,16 @@ script out of eleven does not fail; it passes.
   re-rendered wholesale by `loadBrain()`, and the fresh button arrives enabled.
   `SYNCING` in `brain.js` is the set that survives a repaint; a first Gmail pass
   runs for minutes, which is a long time to be able to start twice.
+- **Long work is started, not awaited.** `syncConn` calls
+  `/api/connectors/{name}/sync/start` and follows the job; the blocking route
+  still exists and a screen must not use it, because it holds one of six shared
+  lane slots for the whole pass — the lane this page loads through. The watch is
+  also started from `renderConnectors`, which is what makes progress survive a
+  refresh: the job lives on the server, so a reloaded page finds it instead of
+  drawing a finished-looking row over a sync that is still going.
+- **A progress bar with no total is worse than a count.** A paged read never
+  knows how much there is, so `percent` is `null` rather than 0 and the row says
+  "Syncing… 40" instead of freezing at 0%.
 - Relative API paths only (`/api/…`). Never a host or port — the desktop app
   binds a different loopback port per install.
 - `Cmd+R` reloads the frontend only. It cannot reload Python; without `--dev` a

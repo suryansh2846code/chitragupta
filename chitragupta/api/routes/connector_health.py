@@ -26,7 +26,14 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from ...config import get_settings
-from ...connectors import REGISTRY, get_connector, observability, resources, sync_state
+from ...connectors import (
+    REGISTRY,
+    get_connector,
+    jobs,
+    observability,
+    resources,
+    sync_state,
+)
 from ...connectors import connections as conns
 from ...connectors import health as health_mod
 from ...log import get_logger, suppressed
@@ -227,6 +234,59 @@ def connector_forget_data(name: str, connection_id: str = "") -> dict[str, Any]:
     return {"ok": True, "removed": removed,
             "detail": f"Removed {removed} item{'' if removed == 1 else 's'}. "
                       f"{found.display} is still connected."}
+
+
+class SyncStartIn(BaseModel):
+    """Options for one pass — the same `params` the synchronous route takes.
+
+    Defined above the route that uses it, because FastAPI resolves the
+    annotation at decoration time (`api/CLAUDE.md`).
+    """
+
+    params: dict[str, Any] = {}
+
+
+@router.post("/api/connectors/{name}/sync/start")
+def connector_sync_start(name: str, body: SyncStartIn) -> dict[str, Any]:
+    """Begin a sync in the background and answer immediately with the job.
+
+    **Additive.** `POST /api/connectors/{name}/sync` is untouched and still runs
+    the whole pass inside the request; this is the version a screen should use,
+    because holding a request open for a first Gmail pass occupies one of six
+    shared lane slots for minutes — the same lane the Connectors page loads
+    through.
+    """
+    connector = _connector(name)
+    try:
+        job = jobs.start(connector.name, label=connector.label,
+                         params=dict(body.params))
+    except jobs.BusyError as exc:
+        # 409, not 500 and not 200: the request was well-formed and the state
+        # says no. The sentence names which source holds the slot, because
+        # "busy" alone is a refusal nobody can act on.
+        raise HTTPException(409, str(exc)) from None
+    return {"ok": True, "job": job.as_dict()}
+
+
+@router.post("/api/connectors/{name}/sync/stop")
+def connector_sync_stop(name: str) -> dict[str, Any]:
+    """Ask a running sync to stop. *"Anything the user starts, they can stop."*
+
+    Cooperative, and it reaches all the way in — the token is the one the item
+    loop, the page walk and every backoff already check, so a stop lands within
+    one record rather than at the end of the pass.
+    """
+    return {"stopped": jobs.stop(_connector(name).name)}
+
+
+@router.get("/api/connectors/jobs")
+def connector_jobs() -> dict[str, Any]:
+    """Every sync the user started, newest first.
+
+    What a page reads on load so progress **survives a refresh** — the half of
+    the rule a spinner drawn in the browser cannot satisfy on its own.
+    """
+    return {"jobs": [job.as_dict() for job in jobs.all_jobs()]}
 
 
 @router.get("/api/connectors/diagnostics")

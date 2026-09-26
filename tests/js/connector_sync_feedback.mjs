@@ -65,13 +65,25 @@ function rowFrom(html, name) {
   }
   const syncBtn = new RegExp(`data-sync="${name}"`).test(html)
     ? makeEl("syncBtn") : null;
+  const stopBtn = new RegExp(`data-syncstop="${name}"`).test(html)
+    ? Object.assign(makeEl("stopBtn"), { hidden: true }) : null;
   const row = makeEl("row");
   row.querySelector = (sel) => {
+    // Longest-prefix first: `[data-syncstop=` also starts with `[data-sync`.
+    if (sel.startsWith("[data-syncstop")) return stopBtn;
     if (sel.startsWith("[data-sync")) return syncBtn;
     return children.get(sel) || null;
   };
   row._children = children;
   row._syncBtn = syncBtn;
+  if (stopBtn) {
+    // Bound the way `bindConnectorRowActions` binds it. The harness does not run
+    // that function — it renders one row rather than the list — so the wiring is
+    // reproduced here rather than assumed.
+    stopBtn.dataset.syncstop = name;
+    stopBtn.onclick = () => globalThis.__stop(name);
+  }
+  row._stopBtn = stopBtn;
   return row;
 }
 
@@ -105,9 +117,36 @@ globalThis.localStorage = { getItem: () => null, setItem() {}, removeItem() {} }
 globalThis.sessionStorage = { getItem: () => null, setItem() {} };
 globalThis.confirm = () => true;
 globalThis.setTimeout = (fn) => fn;
+//: The poll, driven by the harness rather than by a clock. `setInterval` in a
+//: test is either flaky or slow; ticking it is neither, and it is the only way
+//: to look at the row *between* two polls.
+const ticks = [];
+globalThis.setInterval = (fn) => { ticks.push(fn); return ticks.length; };
+globalThis.clearInterval = () => {};
 
-let release;
-const held = new Promise((resolve) => { release = resolve; });
+let released = false;
+
+function running(s) {
+  return { id: "j1", connector: s.connector.name, label: s.connector.label,
+           state: "running", running: true, done: s.done ?? 0,
+           total: s.total ?? 0, doing: "", percent: null, added: 0, skipped: 0,
+           errors: [], detail: "",
+           says: s.total ? `Syncing… ${s.done ?? 0} of ${s.total}` : "Syncing…" };
+}
+
+function finished(s) {
+  const r = s.syncResult || { added: 3, skipped: 1, errors: [] };
+  const failed = (r.errors || []).length > 0;
+  return { id: "j1", connector: s.connector.name, label: s.connector.label,
+           state: r.cancelled ? "cancelled" : failed ? "failed" : "done",
+           running: false, done: s.done ?? r.added ?? 0, total: s.total ?? 0,
+           doing: "", percent: null, added: r.added ?? 0,
+           skipped: r.skipped ?? 0, errors: r.errors || [],
+           detail: r.detail || "",
+           says: r.cancelled ? "Stopped"
+               : failed ? r.errors[0]
+               : r.detail || `${r.added ?? 0} new, ${r.skipped ?? 0} already had` };
+}
 
 globalThis.fetch = async (url, options = {}) => {
   calls.push({ url: String(url), method: options.method || "GET",
@@ -116,11 +155,26 @@ globalThis.fetch = async (url, options = {}) => {
                  options.headers &&
                  String(options.headers["Content-Type"] || "").includes("json")) });
   let payload = { ok: true };
-  if (String(url).includes("/sync")) {
-    // Held open so the test can observe the row *mid-sync*, which is the state
-    // the dead selectors made unobservable.
-    if (scenario.hold) await held;
-    payload = scenario.syncResult || { added: 3, skipped: 1, errors: [] };
+  const key = String(url);
+  if (key.includes("/sync/start")) {
+    if (scenario.busy) {
+      // A 409 from the server: another source holds the slot.
+      return { ok: false, status: 409, statusText: "Conflict",
+               headers: { get: () => "application/json" },
+               json: async () => ({ detail: scenario.busy }),
+               text: async () => JSON.stringify({ detail: scenario.busy }) };
+    }
+    payload = { ok: true, job: running(scenario) };
+  } else if (key.includes("/api/connectors/jobs")) {
+    // Held so the test can observe the row *mid-sync*, which is the state the
+    // dead selectors made unobservable. After the hold, the job has finished.
+    if (scenario.hold && !released) {
+      payload = { jobs: [running(scenario)] };
+    } else {
+      payload = { jobs: [finished(scenario)] };
+    }
+  } else if (key.includes("/sync/stop")) {
+    payload = { stopped: true };
   }
   return { ok: true, status: 200, statusText: "OK",
            headers: { get: () => "application/json" },
@@ -132,6 +186,8 @@ new Function(src + `
   globalThis.__row = _cnRowHtml;
   globalThis.__when = _cnWhen;
   globalThis.__sync = syncConn;
+  globalThis.__watch = watchSyncJobs;
+  globalThis.__stop = stopSyncConn;
   // Replaced by assignment, not via globalThis: these are top-level function
   // declarations, so the caller resolves the binding and not a global of the
   // same name.
@@ -152,24 +208,37 @@ try {
   theRow = rowFrom(html, scenario.connector.name);
   result.rowFound = theRow !== null;
 
-  const inFlight = globalThis.__sync(scenario.connector.name);
+  if (scenario.rendered_only) {
+    // A page that never pressed Sync — what a refresh looks like. The watch has
+    // to find the running job by itself.
+    await globalThis.__watch();
+  } else {
+    await globalThis.__sync(scenario.connector.name);
+  }
 
   if (scenario.hold) {
     // Mid-sync: what does the row say, and is the button shut?
     result.midSub = theRow?._children.get(".cn-sub")?.textContent ?? null;
     result.midLogoState = theRow?._children.get(".cn-logo")?.dataset.state ?? null;
     result.midButtonDisabled = theRow?._syncBtn?.disabled ?? null;
+    result.midStopVisible = theRow?._stopBtn
+      ? theRow._stopBtn.hidden === false : null;
     // A second press while the first is still running must not start another.
-    const second = globalThis.__sync(scenario.connector.name);
-    result.callsDuringHold = calls.filter((c) => c.url.includes("/sync")).length;
-    release();
-    await second;
+    await globalThis.__sync(scenario.connector.name);
+    result.callsDuringHold =
+      calls.filter((c) => c.url.includes("/sync/start")).length;
+    if (scenario.click_stop) await theRow?._stopBtn?.onclick?.();
+    // Now let the job finish and run one more poll.
+    released = true;
   }
-  await inFlight;
+  for (const tick of ticks) await tick();
 
   result.finalSub = theRow?._children.get(".cn-sub")?.textContent ?? null;
   result.finalButtonDisabled = theRow?._syncBtn?.disabled ?? null;
-  result.syncCalls = calls.filter((c) => c.url.includes("/sync")).length;
+  result.finalStopVisible = theRow?._stopBtn
+    ? theRow._stopBtn.hidden === false : null;
+
+  result.syncCalls = calls.filter((c) => c.url.includes("/sync/start")).length;
   result.toasts = globalThis.__toasts || [];
   result.reloaded = Boolean(globalThis.__reloaded);
   result.picker = Boolean(globalThis.__picker);

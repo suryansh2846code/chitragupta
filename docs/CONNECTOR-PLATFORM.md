@@ -320,11 +320,18 @@ Written here so it is not claimed anywhere else.
   changed is that nothing above them assumes it any more.
 
 - **One connector at a time.** `scheduler.py::_sync_all` is still a serial
-  loop. The *bound* exists — `limits.py` gives each connector a rate budget and
-  a lane, and `engine.run` holds one per request — but running two connectors
-  at once means concurrent writers on the one `MemoryStore` connection, which
-  is a change to the brain's write path and needs its own landing with its own
+  loop, and `jobs.py` refuses a second user-started sync while one is running.
+  The *bound* exists — `limits.py` gives each connector a rate budget and a
+  lane, and `engine.run` holds one per request — but running two connectors at
+  once means concurrent writers on the one `MemoryStore` connection, which is a
+  change to the brain's write path and needs its own landing with its own
   measurements. Recorded as `docs/ARCHITECTURE.md` §6.9.
+
+- **A sync job survives a refresh, not a restart.** `jobs.py` keeps them in the
+  process, which is what the rule asks for and all it needs to be: the durable
+  position is the checkpoint, and `sync_state.recover()` clears the in-flight
+  marker on launch so the next pass resumes from the last committed page. A job
+  is the *view* of a pass, not the record of one.
 
 - **Three connectors are migrated onto the engine, not fifteen.**
   `custom_api`, `gmail` and `gdrive` are on it; every connector declares its

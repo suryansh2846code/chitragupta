@@ -258,3 +258,99 @@ def test_no_endpoint_here_returns_a_credential():
         lowered = blob.lower()
         assert "ghp_" not in lowered
         assert "authorization" not in lowered
+
+
+# ── starting a sync without holding the request open ──────────────────────
+
+
+def test_starting_a_sync_answers_immediately_with_a_job():
+    """The synchronous route holds one of six shared lane slots for the whole
+    pass — the same lane the Connectors page loads through."""
+    import threading
+
+    from chitragupta.connectors import jobs
+
+    release = threading.Event()
+
+    def slow(*, cancel=None, progress=None, interactive=False, **params):
+        from chitragupta.connectors.base import SyncResult
+        release.wait(3.0)
+        return SyncResult(connector="gmail", added=1)
+
+    original = jobs.start
+    jobs.start = lambda name, **kw: original(name, **{**kw, "run": slow})
+    try:
+        response = client.post("/api/connectors/gmail/sync/start", json={})
+        assert response.status_code == 200
+        job = response.json()["job"]
+        assert job["running"] and job["state"] == "running"
+        assert job["says"] == "Syncing…"
+    finally:
+        release.set()
+        jobs.start = original
+        jobs.reset_for_tests()
+
+
+def test_a_second_source_is_refused_with_a_sentence_not_a_crash():
+    """409: the request was well-formed and the state says no."""
+    import threading
+
+    from chitragupta.connectors import jobs
+
+    release = threading.Event()
+
+    def slow(*, cancel=None, progress=None, interactive=False, **params):
+        from chitragupta.connectors.base import SyncResult
+        release.wait(3.0)
+        return SyncResult(connector="x")
+
+    try:
+        jobs.start("gmail", label="Gmail", run=slow)
+        response = client.post("/api/connectors/gdrive/sync/start", json={})
+
+        assert response.status_code == 409
+        assert "Gmail" in response.json()["detail"]
+    finally:
+        release.set()
+        jobs.reset_for_tests()
+
+
+def test_every_job_can_be_read_back_so_progress_survives_a_refresh():
+    from chitragupta.connectors import jobs
+    from chitragupta.connectors.base import SyncResult
+
+    try:
+        jobs.start("gmail", label="Gmail",
+                   run=lambda **kw: SyncResult(connector="gmail", added=2,
+                                               detail="2 new"))
+        payload = client.get("/api/connectors/jobs").json()
+
+        assert [j["connector"] for j in payload["jobs"]] == ["gmail"]
+    finally:
+        jobs.reset_for_tests()
+
+
+def test_stopping_a_sync_that_is_not_running_says_so():
+    response = client.post("/api/connectors/gmail/sync/stop")
+
+    assert response.status_code == 200
+    assert response.json()["stopped"] is False
+
+
+def test_starting_a_sync_on_an_unknown_source_is_a_sentence():
+    response = client.post("/api/connectors/not-a-thing/sync/start", json={})
+
+    assert response.status_code == 404
+    assert "know" in response.json()["detail"]
+
+
+def test_the_synchronous_route_is_untouched():
+    """Additive: every existing caller and test keeps working."""
+    import json
+    import pathlib
+
+    frozen = json.loads(
+        (pathlib.Path(__file__).parent / "api_surface.json").read_text())
+
+    assert "POST /api/connectors/{name}/sync" in frozen
+    assert "POST /api/connectors/{name}/sync/start" in frozen
