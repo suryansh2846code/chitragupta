@@ -20,7 +20,7 @@ from ..core.events import Event
 from ..log import get_logger, suppressed
 from . import router, triggers
 from .executor import Deps, Executor, Verdict
-from .model import Automation, Policy
+from .model import Automation, Policy, worth_delivering
 
 log = get_logger(__name__)
 
@@ -201,6 +201,41 @@ _MEMORABLE = {
 }
 
 
+def deliver_result(automation: Automation, run: dict[str, Any]) -> bool:
+    """Put what a run found where the user will actually read it.
+
+    In the chat of the agent that ran it. That is the answer to "where did it
+    go": a result filed only under Automations → History is a result somebody
+    has to go looking for, and nobody goes looking for something they do not
+    know happened. The agent's own conversation is where they already are, and
+    it is the right place for a second reason — they can reply to it, and the
+    agent has the run in its history when they do.
+
+    Written as the **agent's** message, because the agent is who said it. Not
+    the user's, who said nothing, and not a system notice, which is a thing to
+    dismiss rather than a thing to answer.
+
+    Quiet runs are left out. The agent decides that, by saying so — see
+    `model.NOTHING_TO_REPORT`.
+    """
+    if not worth_delivering(automation.execution, run):
+        return False
+    detail = str(run.get("outcome") or run.get("reason") or "").strip()
+    if not detail:
+        return False
+
+    state = str(run.get("state") or "")
+    head = (f"◆ {automation.name}" if state == str(store.RunState.COMPLETED)
+            else f"◆ {automation.name} — stopped and needs you")
+    with suppressed("putting an automation's result in its agent's chat"):
+        from ..agents.agent import AgentMemory
+
+        AgentMemory().append(automation.agent_id, "assistant",
+                             f"{head}\n\n{detail}")
+        return True
+    return False
+
+
 def settle_watch(automation: Automation, run: dict[str, Any]) -> bool:
     """Switch off an automation that has done the one thing it was for.
 
@@ -339,6 +374,7 @@ def ingest(event: Event, *, deps: Deps | None = None,
             with suppressed("advancing an automation run"):
                 settled = executor.advance(run_id, automation)
                 remember_outcome(automation, settled or {})
+                deliver_result(automation, settled or {})
                 settle_watch(automation, settled or {})
     return routed.as_dict()
 

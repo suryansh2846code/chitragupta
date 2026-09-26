@@ -319,6 +319,36 @@ class Execution:
         return ""
 
 
+#: What an agent replies when it looked and there was nothing.
+#:
+#: The decision has to be the agent's, because it is the only thing that looked.
+#: Counting actions instead — which is what this did first — gets a watch
+#: exactly backwards: "tell me what arrived" is *answered by the reply* and uses
+#: no actions at all, so the one run that found something was filed as the quiet
+#: one and never reached the user.
+#:
+#: A fixed phrase rather than a judgement about the text, so a run that says
+#: nothing is indistinguishable from a run that says nothing, however the model
+#: phrases the rest.
+NOTHING_TO_REPORT = "NOTHING TO REPORT"
+
+
+def said_nothing(outcome: str) -> bool:
+    """Did the agent say there was nothing worth telling the user?
+
+    The phrase has to be the **whole** reply, bar trailing punctuation. A
+    prefix match reads "Nothing to report from Ana, but Rahul replied" as
+    silence, which is the one mistake that cannot be afforded here: a wrong
+    "this is a report" costs a line in a chat, and a wrong "nothing happened"
+    loses the thing the user set the automation up for.
+
+    The agent is asked for exactly this phrase and nothing else, so a reply
+    that wanders is a reply with something in it.
+    """
+    head = (outcome or "").strip().upper().rstrip(".!… ")
+    return head in ("", NOTHING_TO_REPORT, "RAN, NO ACTION NEEDED")
+
+
 #: A run that ended in one of these has something the user needs to see,
 #: whatever the delivery setting says about quiet runs.
 NEEDS_THEM = frozenset({"escalated", "failed", "waiting_for_approval"})
@@ -337,10 +367,14 @@ def worth_delivering(execution: Execution, run: dict[str, Any]) -> bool:
         return False
     if execution.deliver == DELIVER_ALWAYS:
         return True
-    # "When needed": it acted, it stopped, or it wants something.
+    # "When needed": it stopped, it acted, or it has something to say.
     if state in NEEDS_THEM:
         return True
-    return bool(int(run.get("actions_used") or 0))
+    if int(run.get("actions_used") or 0):
+        return True
+    # A report IS the result for most watches. The agent is asked to say so
+    # when there is nothing, and anything else is something.
+    return not said_nothing(str(run.get("outcome") or ""))
 
 
 def _as_int(value: Any) -> int:
