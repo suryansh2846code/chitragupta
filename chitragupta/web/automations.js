@@ -279,13 +279,25 @@ function renderTriggerChoices(selected) {
       `<option value="${esc(k)}"${k === current ? " selected" : ""}>${
         esc(eventKindWords(k))}</option>`).join("");
   }
-  const sources = $("#rmSourceList");
-  if (sources) {
-    // The apps that actually produce the chosen kind of event. A free-text box
-    // with no suggestions is a box people type "gmail " into.
-    sources.innerHTML = (VOCAB.sources || []).map((name) =>
-      `<option value="${esc(name)}"></option>`).join("");
-  }
+  const every = $("#rmInterval");
+  if (every) every.innerHTML = everyOptions(every.value);
+  renderSourceChoices();
+}
+
+/* The app list, redrawn whenever the kind of event changes — the two questions
+ * are one question asked twice, and leaving Gmail selected under "a calendar
+ * event changes" is an automation that can never fire. */
+function renderSourceChoices() {
+  const apps = $("#rmEventSource");
+  const kinds = $("#rmEventKind");
+  if (!apps) return;
+  const kind = kinds ? kinds.value : "";
+  const chosen = apps.value;
+  apps.innerHTML = sourceOptions(kind, chosen);
+  // Keep the app only if it still makes sense for this kind of event.
+  const still = (VOCAB.sources || []).some(
+    (a) => a.id === chosen && (!kind || a.kind === kind));
+  apps.value = still ? chosen : "";
 }
 
 /* The "what to check" menu, as options. Named by the server, so the words a
@@ -304,6 +316,42 @@ function fieldOptions(selected) {
     f.path === selected ? " selected" : ""}>${esc(f.label)}</option>`).join("");
 }
 
+//: How often "every so often" can mean. Minutes underneath, because that is
+//: what `interval_min` is, but nobody thinks in 1440 of them.
+const EVERY_CHOICES = [
+  [15, "Every 15 minutes"], [30, "Every 30 minutes"], [60, "Every hour"],
+  [120, "Every 2 hours"], [360, "Every 6 hours"], [720, "Every 12 hours"],
+  [1440, "Once a day"],
+];
+
+/* The interval list, keeping a value this list does not offer.
+ * An automation set to 45 minutes must not become 15 because somebody opened
+ * it to read the name. */
+function everyOptions(selected) {
+  const minutes = Number(selected) || 60;
+  const known = EVERY_CHOICES.some(([n]) => n === minutes);
+  const all = known ? EVERY_CHOICES
+    : [...EVERY_CHOICES, [minutes, `Every ${minutes} minutes`]]
+      .sort((a, b) => a[0] - b[0]);
+  return all.map(([n, label]) => `<option value="${n}"${
+    n === minutes ? " selected" : ""}>${esc(label)}</option>`).join("");
+}
+
+/* The apps that can cause this kind of event, as options.
+ *
+ * Empty means any of them, which is the honest default: an automation that
+ * cares about email usually cares about email, not about which client it
+ * arrived in. */
+function sourceOptions(kind, selected) {
+  const apps = (VOCAB.sources || []).filter((a) => !kind || a.kind === kind);
+  const known = apps.some((a) => a.id === selected);
+  const all = known || !selected ? apps
+    : [...apps, { id: selected, label: selected }];
+  return [`<option value="">Any connected app</option>`].concat(
+    all.map((a) => `<option value="${esc(a.id)}"${
+      a.id === selected ? " selected" : ""}>${esc(a.label)}</option>`)).join("");
+}
+
 //: An event kind in a person's words. Falls back to the kind itself, so a new
 //: one is readable rather than absent — "issue.changed" is worse than "An issue
 //: changes" and much better than nothing.
@@ -319,6 +367,23 @@ const EVENT_WORDS = {
   "health.recorded": "A health reading is recorded",
 };
 function eventKindWords(kind) { return EVENT_WORDS[kind] || kind; }
+
+/* What this field's value can be, when the answer is a known list.
+ *
+ * "Which app it came from" is a choice between the apps this build has, not a
+ * sentence — and a text box there is a box somebody types "Gmail" into when the
+ * engine is comparing against "gmail". Returns null when the value really is
+ * free text, which is most of them.
+ */
+function valueChoices(field) {
+  if (field === "event.source" || field === "event_source" || field === "event.app") {
+    return (VOCAB.sources || []).map((a) => [a.id, a.label]);
+  }
+  if (field === "event_kind") {
+    return (VOCAB.event_kinds || []).map((k) => [k, eventKindWords(k)]);
+  }
+  return null;
+}
 
 /* Draw the condition rows from COND_ROWS. */
 function renderConditions() {
@@ -361,10 +426,7 @@ function renderConditions() {
         conditionChoices().map((c) => `<option value="${esc(c.type)}"${
           c.type === row.type ? " selected" : ""}>${esc(c.label)}</option>`)
           .join("")}</select>
-      ${valueKind ? `<input class="cond-value" data-cond-value="${i}"
-        value="${esc(row.value || "")}"
-        ${valueKind === "number" ? 'type="number"' : ""}
-        placeholder="${esc(placeholder)}" />`
+      ${valueKind ? valueControl(i, row, valueKind, placeholder)
         : `<span class="cond-none"></span>`}
       <button class="tiny ghost ib-x" data-cond-del="${i}"
         aria-label="Remove this check">${IC.close}</button>
@@ -375,7 +437,18 @@ function renderConditions() {
   // only at save time loses whatever a re-render happened to wipe.
   host.querySelectorAll("[data-cond-field]").forEach((select) => {
     const write = () => {
-      COND_ROWS[Number(select.dataset.condField)].field = select.value;
+      const row = COND_ROWS[Number(select.dataset.condField)];
+      const was = valueChoices(row.field);
+      row.field = select.value;
+      const now = valueChoices(row.field);
+      // A value picked from one list means nothing in another, and a value
+      // typed for a free-text field means nothing in a list. Cleared rather
+      // than carried across, so the row never shows an answer to a question it
+      // is no longer asking.
+      if (String(was) !== String(now)) {
+        row.value = "";
+        renderConditions();
+      }
     };
     // Both, because it is a `select` now and the harness drives whichever the
     // app bound — and because a browser fires `change`, not `input`, on one.
@@ -383,9 +456,13 @@ function renderConditions() {
     select.oninput = write;
   });
   host.querySelectorAll("[data-cond-value]").forEach((input) => {
-    input.oninput = () => {
+    const write = () => {
       COND_ROWS[Number(input.dataset.condValue)].value = input.value;
     };
+    // It is a `select` for some fields and an `input` for others, and a browser
+    // fires a different event for each.
+    input.oninput = write;
+    input.onchange = write;
   });
   host.querySelectorAll("[data-cond-type]").forEach((select) => {
     select.onchange = () => {
@@ -399,6 +476,30 @@ function renderConditions() {
       renderConditions();
     };
   });
+}
+
+/* The value box, or a list where the answers are known.
+ *
+ * Only for a single value: "is one of" takes several, and a one-line select
+ * cannot say that. That one stays a text box with a placeholder showing the
+ * shape it wants.
+ */
+function valueControl(i, row, valueKind, placeholder) {
+  const choices = valueKind === "text" ? valueChoices(row.field) : null;
+  if (!choices || !choices.length) {
+    return `<input class="cond-value" data-cond-value="${i}"
+      value="${esc(row.value || "")}"
+      ${valueKind === "number" ? 'type="number"' : ""}
+      placeholder="${esc(placeholder)}" />`;
+  }
+  const current = String(row.value || "");
+  const known = choices.some(([value]) => value === current);
+  const all = known || !current ? choices : [...choices, [current, current]];
+  return `<select class="cond-value" data-cond-value="${i}">${
+    [`<option value="">Pick one…</option>`].concat(
+      all.map(([value, label]) => `<option value="${esc(value)}"${
+        value === current ? " selected" : ""}>${esc(label)}</option>`))
+      .join("")}</select>`;
 }
 
 function addCondition() {
@@ -441,6 +542,10 @@ async function openBuilder(existing) {
       if ($("#rmAtTime") && trigger.at_time) $("#rmAtTime").value = trigger.at_time;
       if ($("#rmDays")) $("#rmDays").value = trigger.days || "";
     } else if (trigger.type === "interval" && $("#rmInterval")) {
+      // The options are rebuilt around the stored value before it is selected.
+      // A browser drops an assignment to a value the list does not contain, so
+      // setting it first silently turned "every 45 minutes" into every hour.
+      $("#rmInterval").innerHTML = everyOptions(trigger.interval_min || 60);
       $("#rmInterval").value = String(trigger.interval_min || 60);
     }
   }

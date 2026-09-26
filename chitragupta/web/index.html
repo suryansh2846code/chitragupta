@@ -270,9 +270,11 @@
 
           <div id="rmEventWrap" class="am-pair" hidden>
             <label class="am-sub">What happens<select id="rmEventKind"></select></label>
-            <label class="am-sub">In which app
-              <input id="rmEventSource" list="rmSourceList" placeholder="any app" />
-              <datalist id="rmSourceList"></datalist></label>
+            <!-- A list, not a box you type an app's name into. The box asked
+                 people to remember our spelling of "gcal", and a typo in it is
+                 an automation that never fires. It offers only the apps that
+                 can cause the event chosen on the left. -->
+            <label class="am-sub">In which app<select id="rmEventSource"></select></label>
           </div>
           <!-- Its own group, not a variant of the interval one. "Every morning
                at 8" and "every 60 minutes" are different questions, and one box
@@ -287,9 +289,12 @@
                 <option value="sat,sun">Weekends</option>
               </select></label>
           </div>
-          <div id="rmIntervalWrap" class="am-pair" hidden>
-            <label class="am-sub">Every<input id="rmInterval" type="number" min="1" value="60" /></label>
-            <label class="am-sub">&nbsp;<span class="am-unit">minutes</span></label>
+          <!-- One question, so one full-width control. It was a number box
+               beside an empty label holding the word "minutes", which left a
+               blank cell where every other step has a second field — the exact
+               ragged edge this layout is meant not to have. -->
+          <div id="rmIntervalWrap" class="am-solo" hidden>
+            <label class="am-sub">How often<select id="rmInterval"></select></label>
           </div>
         </section>
 

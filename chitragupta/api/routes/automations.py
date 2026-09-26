@@ -88,6 +88,26 @@ def list_automations():
     return {"automations": out}
 
 
+def _event_sources() -> list[dict[str, str]]:
+    """Every app that produces events: its id, its name, and what it produces.
+
+    `kind` is here so the builder can offer only the apps that can actually
+    cause the event the user picked — "a calendar event changes" has no
+    business listing Gmail, and a menu of fifteen apps where two are possible
+    is a menu somebody picks wrongly from.
+    """
+    from ...automation import sources
+    from ...connectors import REGISTRY
+
+    out = []
+    for connector, (kind, _trust) in sorted(sources.EVENT_KINDS.items()):
+        cls = REGISTRY.get(connector)
+        out.append({"id": connector,
+                    "label": str(getattr(cls, "label", "") or connector),
+                    "kind": kind})
+    return out
+
+
 @router.get("/api/automations/vocabulary")
 def vocabulary():
     """What a trigger or condition may say, so the UI builds a form from the
@@ -111,9 +131,12 @@ def vocabulary():
         "conditions": conditions.describe(),
         "fields": sources.condition_fields(),
         "event_kinds": sorted({kind for kind, _ in sources.EVENT_KINDS.values()}),
-        # The apps that produce events at all, so "in which app" suggests names
-        # that exist rather than asking the user to remember our spelling.
-        "sources": sorted(sources.EVENT_KINDS),
+        # The apps that produce events, each with the name it is called by and
+        # the kind of event it makes. Joined here rather than in `sources.py`,
+        # which may not import `connectors` — an event kind is the automation
+        # layer's idea and "Google Calendar" is the connector's, and the route
+        # is where the two are allowed to meet.
+        "sources": _event_sources(),
         "concurrency": list(Concurrency.ALL),
         "names": {"triggers": triggers.known(),
                   "conditions": conditions.known()},

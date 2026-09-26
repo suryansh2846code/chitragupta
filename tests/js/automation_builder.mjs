@@ -140,6 +140,18 @@ new Function(appSource(path.dirname(APP_JS))
   // that runs — a harness that reimplements the handler tests itself.
   + "\ntoast = (m) => globalThis.__toasts.push(String(m));")();
 
+/** Choose a value the way a person does: set it, then let the page react.
+ *
+ *  A browser fires `change` on a select, and the app hangs real work off that —
+ *  the app list is redrawn from the kind of event chosen beside it. A harness
+ *  that only assigned `.value` would test a page nobody had touched.
+ */
+function pick(selector, value) {
+  const node = el(selector);
+  node.value = value;
+  if (typeof node.onchange === "function") node.onchange();
+}
+
 /** Type into the row the builder drew. */
 function type(index, what, value) {
   const rows = el("#rmConditions").live || [];
@@ -162,8 +174,8 @@ try {
     if (step.op === "open") await globalThis.__b.openBuilder(step.existing || null);
     else if (step.op === "add") globalThis.__b.addCondition();
     else if (step.op === "type") type(step.row, step.what, step.value);
-    else if (step.op === "trigger") el("#rmTrigger").value = step.value;
-    else if (step.op === "set") el(step.sel).value = step.value;
+    else if (step.op === "trigger") pick("#rmTrigger", step.value);
+    else if (step.op === "set") pick(step.sel, step.value);
     else if (step.op === "save") out.saved = await globalThis.__b.saveBuilder(step.id);
     else if (step.op === "create") {
       // The real handler, reached through the element the app bound it to.
@@ -193,6 +205,7 @@ process.stdout.write(JSON.stringify({
   conditionsHtml: el("#rmConditions").innerHTML,
   hint: el("#rmCondHint").textContent,
   addHidden: el("#rmAddCond").hidden,
-  sourceListHtml: el("#rmSourceList").innerHTML,
+  sourceHtml: el("#rmEventSource").innerHTML,
+  everyHtml: el("#rmInterval").innerHTML,
   eventKindHtml: el("#rmEventKind").innerHTML,
 }));

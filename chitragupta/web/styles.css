@@ -3020,15 +3020,10 @@ button.tiny.running:hover { background: linear-gradient(to right,
   letter-spacing: .12em;
 }
 .am-sub > input, .am-sub > select { width: 100%; margin: 0; }
-.am-unit {
-  align-self: center;
-  padding: 9px 0;
-  font-family: var(--sans);
-  font-size: 13px;
-  text-transform: none;
-  letter-spacing: 0;
-  color: var(--muted);
-}
+
+/* A step that asks one question still sits on the same top margin as one that
+   asks two, so the gap above it does not change with the trigger. */
+.am-solo { margin-top: 10px; }
 
 /* A check: what to look at, how to test it, what to compare with, remove.
    A grid and not flex, because the columns have to line up DOWN the list as

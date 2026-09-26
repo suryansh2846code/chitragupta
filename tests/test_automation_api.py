@@ -152,7 +152,11 @@ def test_the_vocabulary_says_what_each_entry_asks_for(client):
     assert "event.from" in paths
     assert labels["event.from"] == "Who it is from"
     assert all(f["label"] for f in body["fields"])
-    assert "gmail" in body["sources"], "the apps that produce events are named"
+    apps = {a["id"]: a for a in body["sources"]}
+    assert apps["gmail"]["label"] == "Gmail", "an app is offered by its id"
+    assert apps["gmail"]["kind"] == "email.received", (
+        "without the kind the builder cannot hide the apps that cannot cause "
+        "the chosen event")
 
 
 def test_no_field_is_offered_twice_under_the_same_name(client):

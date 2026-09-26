@@ -407,12 +407,67 @@ def test_a_spec_that_could_not_be_stored_is_not_reported_as_success(vocabulary):
 
 # ── the shape of the form itself ───────────────────────────────────────────
 
-def test_the_app_box_suggests_apps_that_exist(vocabulary):
-    """"In which app" is a free-text box because a new connector should work
-    without a frontend change. Free text with no suggestions is a box people
-    type "Gmail " into."""
+def test_the_app_is_picked_from_a_list_by_its_real_name(vocabulary):
+    """It was a text box you typed an app's id into.
+
+    That asked people to remember that Google Calendar is spelled `gcal`, and a
+    typo in it is an automation that never fires with nothing on screen saying
+    why.
+    """
+    out = drive(vocabulary, [
+        {"op": "open"}, {"op": "trigger", "value": "event"},
+        {"op": "set", "sel": "#rmEventKind", "value": "email.received"},
+    ])
+    assert "Any connected app" in out["sourceHtml"]
+    assert 'value="gmail"' in out["sourceHtml"]
+    assert ">Gmail<" in out["sourceHtml"], "it shows the id instead of the name"
+
+
+def test_only_the_apps_that_can_cause_that_event_are_offered(vocabulary):
+    """A menu of fifteen apps where two are possible is a menu somebody picks
+    wrongly from — and "a calendar event changes, in Gmail" is an automation
+    that can never fire."""
+    out = drive(vocabulary, [
+        {"op": "open"}, {"op": "trigger", "value": "event"},
+        {"op": "set", "sel": "#rmEventKind", "value": "calendar.changed"},
+    ])
+    assert ">Google Calendar<" in out["sourceHtml"]
+    assert ">Apple Calendar<" in out["sourceHtml"]
+    assert ">Gmail<" not in out["sourceHtml"]
+
+
+def test_changing_the_event_drops_an_app_that_no_longer_fits(vocabulary):
+    """Pick Gmail, then change your mind to calendars. Leaving Gmail selected
+    would save an automation that silently never runs."""
+    out = drive(vocabulary, [
+        {"op": "open"}, {"op": "trigger", "value": "event"},
+        {"op": "set", "sel": "#rmEventKind", "value": "email.received"},
+        {"op": "set", "sel": "#rmEventSource", "value": "gmail"},
+        {"op": "set", "sel": "#rmEventKind", "value": "calendar.changed"},
+    ])
+    assert out["trigger"] == {"type": "event", "kind": "calendar.changed"}, (
+        "it kept an app that cannot produce this event")
+
+
+def test_how_often_is_a_list_of_spans_not_a_number_box(vocabulary):
+    """"Every (minutes): 1440" is a unit conversion the user should not be
+    doing, and it sat beside an empty cell where every other step has a second
+    field."""
     out = drive(vocabulary, [{"op": "open"}])
-    assert 'value="gmail"' in out["sourceListHtml"]
+    assert "Every hour" in out["everyHtml"]
+    assert "Once a day" in out["everyHtml"]
+    assert 'value="1440"' in out["everyHtml"]
+
+
+def test_an_interval_the_list_does_not_offer_is_kept(vocabulary):
+    """An automation set to 45 minutes must not become 15 because somebody
+    opened it to read the name."""
+    existing = {"id": "a4", "trigger": {"type": "interval", "interval_min": 45},
+                "conditions": []}
+    out = drive(vocabulary, [{"op": "open", "existing": {"id": "a4"}}],
+                automation=existing)
+    assert out["trigger"] == {"type": "interval", "interval_min": 45}
+    assert "Every 45 minutes" in out["everyHtml"]
 
 
 def test_the_form_is_three_numbered_steps():
@@ -465,3 +520,46 @@ def test_a_check_can_always_be_removed_on_a_narrow_window():
     assert "@media (max-width: 560px)" in css
     narrow = css.split("@media (max-width: 560px)")[1]
     assert ".cond-row { grid-template-columns: 1fr 1fr; }" in narrow
+
+
+def test_a_value_with_known_answers_is_a_list(vocabulary):
+    """"Which app it came from" is a choice between the apps this build has,
+    not a sentence — and a text box there is a box somebody types "Gmail" into
+    while the engine compares against "gmail"."""
+    out = drive(vocabulary, [
+        {"op": "open"}, {"op": "add"},
+        {"op": "type", "row": 0, "what": "field", "value": "event.source"},
+        {"op": "type", "row": 0, "what": "type", "value": "equals"},
+        {"op": "type", "row": 0, "what": "value", "value": "gmail"},
+    ])
+    assert "<select class=\"cond-value\"" in out["conditionsHtml"]
+    assert ">Gmail<" in out["conditionsHtml"]
+    assert out["conditions"] == [
+        {"type": "equals", "field": "event.source", "value": "gmail"}]
+
+
+def test_a_value_with_no_known_answers_is_still_a_box(vocabulary):
+    """Most of them. "Contains the word invoice" cannot be a menu."""
+    out = drive(vocabulary, [
+        {"op": "open"}, {"op": "add"},
+        {"op": "type", "row": 0, "what": "field", "value": "event.title"},
+        {"op": "type", "row": 0, "what": "type", "value": "contains"},
+        {"op": "type", "row": 0, "what": "value", "value": "invoice"},
+    ])
+    assert "<input class=\"cond-value\"" in out["conditionsHtml"]
+    assert out["conditions"] == [
+        {"type": "contains", "field": "event.title", "value": "invoice"}]
+
+
+def test_changing_the_field_clears_a_value_that_no_longer_means_anything(
+        vocabulary):
+    """`gmail` picked for "which app" is not an answer to "subject contains".
+    Carried across, it would read as a check the user never wrote."""
+    out = drive(vocabulary, [
+        {"op": "open"}, {"op": "add"},
+        {"op": "type", "row": 0, "what": "field", "value": "event.source"},
+        {"op": "type", "row": 0, "what": "value", "value": "gmail"},
+        {"op": "type", "row": 0, "what": "field", "value": "event.title"},
+    ])
+    assert out["conditions"] == [], "the old value survived into a new question"
+    assert "gmail" not in out["conditionsHtml"]
