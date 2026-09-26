@@ -175,20 +175,29 @@ def test_no_rule_styles_every_label_in_the_body():
     assert ".am-label" in CSS
 
 
-def test_both_modals_use_the_same_label_class():
+def test_no_label_in_the_automation_modal_is_left_unstyled():
     """The automation modal shares `.am-body`. When the blanket rule went, its
-    labels went with it unless they carry the class too.
+    labels went with it unless they carry a class of their own.
 
-    Counted against the labels that are actually there rather than against a
-    number. The number was 5, and the next field added to this modal made it 6
-    — at which point the test says "6 != 5", which is not the defect it exists
-    to catch and is fixed by editing the test. Comparing the two counts asks
-    the real question: is any label here unstyled?
+    The question is "is any label here unstyled?", not "do they all carry the
+    same class". They deliberately do not: `.am-label` is a section heading and
+    `.am-sub` is the small caption on a field inside a step, and collapsing
+    them would mean "At" and "Name" being set in the same size.
+
+    Checked against the stylesheet rather than against a list of class names,
+    so a label given a class nobody ever wrote a rule for still fails.
     """
+    import re
+
     body = INDEX.split('id="routineModal"', 1)[1].split('id="agentModal"', 1)[0]
     assert "<label>" not in body, "a bare label is left with no style"
-    assert body.count('class="am-label"') == body.count("<label"), (
-        "a label in the automation modal does not carry .am-label")
+
+    labels = re.findall(r'<label([^>]*)>', body)
+    for attrs in labels:
+        classes = re.search(r'class="([^"]*)"', attrs)
+        assert classes, f"a label with no class: <label{attrs}>"
+        for name in classes.group(1).split():
+            assert f".{name}" in CSS, f"nothing styles .{name}"
 
 
 def test_the_fields_cannot_be_squeezed_by_a_long_tool_list():

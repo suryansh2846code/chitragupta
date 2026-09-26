@@ -93,10 +93,10 @@ def known() -> list[str]:
 #: because `evaluate` handles them itself — a group holds other conditions and
 #: `semantic` costs a model call.
 _SPECIAL: dict[str, dict[str, Any]] = {
-    "all": {"label": "all of these", "group": True},
-    "any": {"label": "any of these", "group": True},
-    "not": {"label": "none of these", "group": True},
-    "semantic": {"label": "a model judges (costs a model call)",
+    "all": {"label": "all of these are true", "group": True},
+    "any": {"label": "any of these is true", "group": True},
+    "not": {"label": "none of these is true", "group": True},
+    "semantic": {"label": "Chitragupta decides (asks the model — costs a call)",
                  "field": False, "value": "prompt"},
 }
 
@@ -134,7 +134,7 @@ def _text(value: Any) -> str:
 
 # ── deterministic ──────────────────────────────────────────────────────────
 
-@register("equals", label="is exactly", value="text")
+@register("equals", label="is", value="text")
 def _equals(spec: dict, facts: dict) -> tuple[bool, str]:
     path = spec.get("field", "")
     actual = _dig(facts, path)
@@ -187,7 +187,7 @@ def _in(spec: dict, facts: dict) -> tuple[bool, str]:
     return ok, f"{path} is one of {len(options)}" if ok else f"{path} is not in the list"
 
 
-@register("domain_is", label="is an address at the domain", value="text")
+@register("domain_is", label="is from", value="text")
 def _domain_is(spec: dict, facts: dict) -> tuple[bool, str]:
     """The domain of an address-shaped field.
 
@@ -204,7 +204,7 @@ def _domain_is(spec: dict, facts: dict) -> tuple[bool, str]:
     return ok, f"domain is {domain}" if ok else f"domain is {domain or 'unknown'}, not {expected}"
 
 
-@register("exists", label="is there at all", value="")
+@register("exists", label="is not empty", value="")
 def _exists(spec: dict, facts: dict) -> tuple[bool, str]:
     path = spec.get("field", "")
     value = _dig(facts, path)
@@ -212,7 +212,7 @@ def _exists(spec: dict, facts: dict) -> tuple[bool, str]:
     return ok, f"{path} is present" if ok else f"{path} is missing"
 
 
-@register("older_than_days", label="is older than (days)", value="number")
+@register("older_than_days", label="is older than this many days", value="number")
 def _older_than_days(spec: dict, facts: dict) -> tuple[bool, str]:
     """Nothing has happened here for N days — the "no activity" condition."""
     path = spec.get("field", "")
@@ -242,7 +242,7 @@ def _count_at_least(spec: dict, facts: dict) -> tuple[bool, str]:
     return ok, f"{path} has {count} (wanted {want})"
 
 
-@register("is_true", label="is true", value="")
+@register("is_true", label="is switched on", value="")
 def _is_true(spec: dict, facts: dict) -> tuple[bool, str]:
     path = spec.get("field", "")
     ok = bool(_dig(facts, path))

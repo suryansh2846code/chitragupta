@@ -109,17 +109,62 @@ EXTRA_FIELDS = ("from", "sender", "to", "repository", "repo", "author", "path",
 #: Always on an event, whatever the source produced it.
 BASE_FIELDS = ("title", "body", "uri", "source")
 
+#: What each field is called on screen.
+#:
+#: Here rather than in the frontend because the *name* and the *path* have to
+#: stay attached: `event.from` is what the engine reads and "Who it's from" is
+#: what a person picks, and a form that kept its own half of that pairing would
+#: drift into offering a field no event carries.
+#:
+#: A field with no entry falls back to its path. That is deliberately not an
+#: error — a new key lifted onto an event should appear in the builder straight
+#: away, reading a bit technical, rather than not appear at all.
+FIELD_NAMES: dict[str, str] = {
+    "event.title": "Subject or title",
+    "event.body": "The text of it",
+    "event.uri": "Link to it",
+    "event.source": "Which app it came from",
+    "event.from": "Who it is from",
+    "event.sender": "Who sent it",
+    "event.to": "Who it was sent to",
+    "event.repository": "Repository",
+    "event.repo": "Repository",
+    "event.author": "Who wrote it",
+    "event.path": "File path",
+    "event.channel": "Channel",
+    "event.chat_id": "Chat",
+    "event.app": "App",
+    "event.labels": "Labels on it",
+    "event.state": "Its status",
+    "event.url": "Link to it",
+    "event_kind": "What kind of thing happened",
+    "event_source": "Which app it came from",
+}
 
-def condition_fields() -> list[str]:
-    """The dotted paths a condition may be written against.
+
+def condition_fields() -> list[dict[str, str]]:
+    """The things a condition can ask about — the path, and its name on screen.
 
     The facts a condition sees are assembled in `executor._check_conditions`;
     these are the leaves of it that mean something to a person. Not exhaustive
     by design — a condition may address any path — but a user should never have
-    to guess the common ones.
+    to guess, or type, the common ones.
+
+    Duplicates by name are dropped: `event.repo` and `event.repository` are the
+    same question asked of two connectors, and offering "Repository" twice is a
+    menu that makes the user wonder what the difference is.
     """
-    return [f"event.{name}" for name in (*BASE_FIELDS, *EXTRA_FIELDS)] + [
+    paths = [f"event.{name}" for name in (*BASE_FIELDS, *EXTRA_FIELDS)] + [
         "event_kind", "event_source"]
+    out: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for path in paths:
+        label = FIELD_NAMES.get(path, path)
+        if label in seen:
+            continue
+        seen.add(label)
+        out.append({"path": path, "label": label})
+    return out
 
 
 def _extras(row: dict[str, Any]) -> dict[str, Any]:

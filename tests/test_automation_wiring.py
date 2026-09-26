@@ -393,8 +393,11 @@ def test_the_fields_a_condition_can_address_are_the_ones_a_row_carries():
     assert event.data["labels"] == ["INBOX"]
     assert "secret" not in event.data, "it lifted a key nothing can address"
     assert "state" not in event.data, "an empty value is not a field"
+    offered = {f["path"]: f["label"] for f in sources.condition_fields()}
     for name in ("from", "labels"):
-        assert f"event.{name}" in sources.condition_fields()
+        assert f"event.{name}" in offered, f"event.{name} is carried but never offered"
+        assert offered[f"event.{name}"] != f"event.{name}", (
+            "the path is being shown where a name should be")
 
 
 def test_rows_are_read_back_out_of_the_brain(monkeypatch):
