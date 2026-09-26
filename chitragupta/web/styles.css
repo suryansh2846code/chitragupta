@@ -1502,6 +1502,20 @@ textarea.ac-field-wide { resize: vertical; min-height: 58px; line-height: 1.45; 
 .cx-tool-text code { font-size: 12px; }
 .cx-tool-text .conn-sub { display: block; opacity: .75; font-size: 12px;
   line-height: 1.4; margin-top: 1px; }
+
+/* The Details panel: one block per account, then what the source can do.
+   Reuses `.cx-cap*` for the capability groups so the two panels that answer
+   "what can this reach" look like one screen rather than two. */
+.cn-acct { border: 1px solid var(--line2); border-radius: 10px;
+  padding: 11px 13px; margin-bottom: 10px; }
+.cn-acct-head { display: flex; align-items: center; gap: 8px;
+  margin-bottom: 4px; }
+.cn-acct-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
+/* A capability reads as a sentence, so it is set as prose rather than as the
+   monospace `code` the MCP tool list uses — `send:email` is the machine's
+   spelling and never reaches this panel. */
+.cn-cap { font-size: 12.5px; line-height: 1.5; padding: 2px 0;
+  color: var(--text); }
 .cn-actions { flex: none; display: flex; align-items: center; gap: 6px; }
 .cn-x { color: var(--faint); }
 .cn-x:hover { color: var(--danger); }

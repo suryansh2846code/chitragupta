@@ -325,6 +325,14 @@ function _cnRowHtml(c, staleAfterMin) {
 
   const sync = c.ready && !onDemand
     ? `<button class="tiny ghost" data-sync="${esc(c.name)}">Sync</button>` : "";
+  // **Only on a source that is actually connected.** A Details panel on a row
+  // the user has not set up would open onto four disabled controls and a count
+  // of zero, which is a control that cannot work — the thing `/CLAUDE.md`
+  // forbids first. MCP rows keep their own Permissions button instead: it is
+  // the same question answered from the server's published tool list.
+  const details = c.ready && !c.mcp
+    ? `<button class="tiny ghost" data-cndetail="${esc(c.name)}" data-cnlabel="${
+        esc(c.label)}">Details</button>` : "";
   // Opening a System Settings pane needs the native bridge, which exists only
   // in the desktop app — in a browser tab there is nothing behind the button,
   // and a control that cannot work is worse than no control. The sentence in
@@ -356,7 +364,7 @@ function _cnRowHtml(c, staleAfterMin) {
       <span class="cn-name">${esc(c.label)}${kind}${badge}</span>
       <span class="cn-sub">${esc(status)}</span>
     </span>
-    <span class="cn-actions">${sync}${fixBtn}${setup}${disconnect}${del}</span>
+    <span class="cn-actions">${sync}${details}${fixBtn}${setup}${disconnect}${del}</span>
   </div>`;
 }
 
@@ -399,6 +407,8 @@ function bindConnectorRowActions() {
   });
   document.querySelectorAll("[data-cntools]").forEach((b) => b.onclick = () =>
     connectorTools(b.dataset.cntools, b.dataset.cnlabel));
+  document.querySelectorAll("[data-cndetail]").forEach((b) => b.onclick = () =>
+    connectorDetails(b.dataset.cndetail, b.dataset.cnlabel));
   document.querySelectorAll("[data-delmcp]").forEach((b) => b.onclick = async () => {
     const id = b.dataset.delmcp.split(":")[1];
     // Say what removing does and does not do. Silently keeping the memories
@@ -1247,3 +1257,160 @@ if ($("#addConnector")) $("#addConnector").onclick = () => connectorBrowser();
 // The queue, the notification and the endpoints existed before this; what did
 // not was anywhere to look, which made a desktop notification the only trace a
 // request ever happened. A queue nobody can see is not an approval system.
+
+// ── what one source holds, and the controls over it ──────────────────────
+//
+// The four questions `/CLAUDE.md` says a user must be able to answer about a
+// connected source — *what was imported, from which account, when, and can I
+// stop it* — had no screen, because nothing underneath could answer them.
+// `connector_resources` ties each memory to the record it came from, so
+// "what did this import" is a count rather than a guess from the source string.
+//
+// Deliberately a separate panel from the row. The row is the glance; this is
+// the decision, and putting six numbers and four buttons on every row would
+// make the glance unreadable — *"do not overwhelm users with implementation
+// details by default"*.
+
+function _cnStateLabel(state) {
+  return {
+    healthy: "Up to date", syncing: "Syncing now", degraded: "Behind",
+    rate_limited: "Slowed down by the service",
+    auth_required: "Needs you to sign in", error: "Not working",
+    disconnected: "Not connected",
+  }[state] || "Unknown";
+}
+
+// A capability, as a sentence rather than as `send:email`. The colon form is
+// the machine's; a person reads "Send email".
+function _cnCapability(cap) {
+  const [verb, resource] = String(cap).split(":");
+  const said = {
+    read: "Read", search: "Search", download: "Download", create: "Create",
+    update: "Change", upload: "Upload", archive: "Archive",
+    unshare: "Remove access to", send: "Send", share: "Share",
+    notify: "Notify about", delete: "Delete", cancel: "Cancel",
+    merge: "Merge",
+  }[verb] || verb;
+  return `${said} ${String(resource || "").replace(/_/g, " ")}`;
+}
+
+async function connectorDetails(name, label) {
+  openBrainModal(`${label}`, `<div id="cnDetail" class="t">Loading…</div>`);
+  let manifest, data, health;
+  try {
+    // Three calls, none of which reaches the source: every one reads state we
+    // already hold. The expensive question is `GET /api/connectors`, which is
+    // in the probe lane for exactly that reason.
+    [manifest, data, health] = await Promise.all([
+      api(`/api/connectors/${encodeURIComponent(name)}/manifest`),
+      api(`/api/connectors/${encodeURIComponent(name)}/data`),
+      api("/api/connectors/health"),
+    ]);
+  } catch (e) {
+    $("#cnDetail").textContent = "Could not read this connector. " + String(e);
+    return;
+  }
+
+  const accounts = data.accounts || [];
+  const rows = (health.connectors || []).filter((h) => h.connector === name);
+  const reads = manifest.reads || [];
+  const writes = manifest.writes || [];
+
+  const caps = (title, note, list) => !list.length ? "" : `
+    <div class="cx-cap">
+      <div class="cx-cap-head">${esc(title)}
+        <span class="cx-cap-n">${list.length}</span></div>
+      <p class="cx-cap-note">${esc(note)}</p>
+      ${list.map((c) => `<div class="cn-cap">${esc(_cnCapability(c))}</div>`).join("")}
+    </div>`;
+
+  // An account with nothing behind it yet is still shown: the controls are how
+  // a user acts on it, and hiding the row hides the controls.
+  const account = (a) => {
+    const h = rows.find((r) => r.connection_id === a.connection.id) || {};
+    const c = a.counts || {};
+    return `<div class="cn-acct" data-acct="${esc(a.connection.id)}">
+      <div class="cn-acct-head">
+        <strong>${esc(a.connection.display)}</strong>
+        <span class="cn-badge ${h.ok ? "" : "is-stale"}">${
+          esc(_cnStateLabel(h.state))}</span>
+      </div>
+      <p class="cx-cap-note">${esc(h.says || a.connection.says || "")}</p>
+      <p class="cx-cap-note">${esc(c.total || 0)} item${
+        (c.total === 1) ? "" : "s"} imported${
+        c.deleted ? `, ${esc(c.deleted)} since removed at the source` : ""}${
+        h.last_success ? ` · last updated ${
+          new Date(h.last_success).toLocaleString()}` : ""}${
+        h.next_sync ? ` · next ${esc(h.next_sync)}` : ""}</p>
+      <div class="cn-acct-actions">
+        <button class="tiny ghost" data-cnpause="${esc(a.connection.id)}"
+          data-cnname="${esc(name)}">${
+            a.connection.paused ? "Resume syncing" : "Pause syncing"}</button>
+        <button class="tiny ghost" data-cnresync="${esc(a.connection.id)}"
+          data-cnname="${esc(name)}">Sync everything again</button>
+        <button class="tiny ghost" data-cnforget="${esc(a.connection.id)}"
+          data-cnname="${esc(name)}" data-cnlabel="${esc(label)}">Delete imported data</button>
+      </div>
+    </div>`;
+  };
+
+  const b = manifest.limits || {};
+  $("#cnDetail").innerHTML = `
+    ${accounts.length
+      ? accounts.map(account).join("")
+      : `<p class="cx-cap-note">Nothing has been imported from ${esc(label)} yet.</p>`}
+    ${caps("Can reach", "Your agents use these without asking.", reads)}
+    ${caps("Can change",
+           "Every one of these puts a card in front of you first.", writes)}
+    ${manifest.required_scopes && manifest.required_scopes.length
+      ? `<p class="cx-cap-note">Needs ${esc(manifest.required_scopes.length)}
+           permission${manifest.required_scopes.length === 1 ? "" : "s"} from
+           ${esc(label)} to work.</p>` : ""}
+    <p class="cx-cap-note" style="margin-top:14px">This app reads at most
+      ${esc(b.records_per_sync || 0)} records a sync from ${esc(label)}, and
+      ${b.requests ? `no more than ${esc(b.requests)} requests a minute`
+                   : "does not limit how often it asks"}.
+      Those are our limits, not ${esc(label)}&rsquo;s.</p>`;
+
+  // **Two of these delete nothing and one deletes only what was imported.**
+  // Saying so in the confirm is the whole point: a control whose effect a user
+  // has to guess at is one they will not press, or will press once and regret.
+  const reload = () => { $("#brainModal").hidden = true; loadBrain(); };
+  document.querySelectorAll("[data-cnpause]").forEach((btn) => btn.onclick = async () => {
+    const paused = btn.textContent.trim().startsWith("Resume");
+    const where = `/api/connectors/${encodeURIComponent(btn.dataset.cnname)}/${
+      paused ? "resume" : "pause"}`;
+    try {
+      await api(where, { method: "POST", body: { connection_id: btn.dataset.cnpause } });
+    } catch (e) { toast(String(e)); return; }
+    toast(paused ? "syncing resumed" : "syncing paused");
+    reload();
+  });
+  document.querySelectorAll("[data-cnresync]").forEach((btn) => btn.onclick = async () => {
+    if (!confirm("Read everything from this source again? Nothing is deleted — "
+                 + "anything already in your brain stays.")) return;
+    try {
+      await api(`/api/connectors/${encodeURIComponent(btn.dataset.cnname)}/resync`,
+                { method: "POST", body: { connection_id: btn.dataset.cnresync } });
+    } catch (e) { toast(String(e)); return; }
+    toast("the next sync will read everything again");
+    reload();
+  });
+  document.querySelectorAll("[data-cnforget]").forEach((btn) => btn.onclick = async () => {
+    if (!confirm(`Delete everything imported from ${btn.dataset.cnlabel}?\n\n`
+                 + "This removes it from your brain. You stay connected, and "
+                 + "nothing is deleted at the source.")) return;
+    let out;
+    try {
+      // One template literal, deliberately. Split across a `+`, the surface
+      // check in `test_frontend_calls_real_endpoints.py` sees only the first
+      // half — `/api/connectors/${…}` — and reports a control that reaches no
+      // endpoint. It was right to: nothing could verify the real path.
+      out = await api(`/api/connectors/${encodeURIComponent(btn.dataset.cnname)}/data`
+                      + `?connection_id=${encodeURIComponent(btn.dataset.cnforget)}`,
+                      { method: "DELETE" });
+    } catch (e) { toast(String(e)); return; }
+    toast(out?.detail || "imported data removed");
+    reload();
+  });
+}

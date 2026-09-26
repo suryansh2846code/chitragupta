@@ -45,6 +45,41 @@ def _custom_apps() -> list[dict]:
     return []
 
 
+def _may_run(connector: Any) -> bool:
+    """Has the user switched this source off, or does its credential need them?
+
+    `is_configured()` answers *can it work*; this answers *should it run*, and
+    they are different questions. A connector whose sign-in has expired passes
+    the first and fails the second — and syncing it anyway records the same
+    identical error every thirty minutes, which turns a fixable problem into
+    background noise the user learns to scroll past.
+
+    Suppressed rather than guarded: a connector that cannot answer this is one
+    the sweep should still try, because the alternative is a source that
+    silently stops syncing because of a bookkeeping failure.
+    """
+    with suppressed("checking whether a connector is switched on"):
+        return bool(connector.connection().runnable)
+    return True
+
+
+def _recover_interrupted() -> None:
+    """Clear the in-flight marker on passes that never reported an ending.
+
+    A crash, a kill, a power cut. The **cursor is left alone** — it is the last
+    committed page and is correct; the only thing wrong is the marker, and
+    clearing it is what lets the next pass resume rather than be refused as
+    already running.
+    """
+    from .connectors import connections, sync_state
+
+    with suppressed("recovering interrupted syncs on launch"):
+        for connection in connections.all_connections():
+            for state in sync_state.recover(connection.id):
+                log.info("%s: resuming %s from %s", connection.connector,
+                         state.resource_type, state.cursor or "the beginning")
+
+
 def _mcp_servers() -> list[str]:
     """Ids of the MCP-backed connectors the user has configured."""
     from .connectors.mcp_source import list_servers
@@ -103,6 +138,8 @@ class Scheduler:
             inst = cls()
             ready, _ = inst.is_configured()
             if not ready:
+                continue
+            if not _may_run(inst):
                 continue
             try:
                 # The cancel token goes *into* the connector. Checking it only
@@ -177,6 +214,15 @@ class Scheduler:
         if removed:
             summary["_deduped"] = removed
 
+        # Keep the operational history bounded. A connector stuck in a retry
+        # loop writes a row per attempt, and the durable position is the sync
+        # cursor — history past the ceiling costs disk and answers nothing the
+        # checkpoint does not.
+        with suppressed("pruning connector history"):
+            from .connectors import events, observability
+            observability.prune()
+            events.prune()
+
         # enrich the knowledge graph from everything just synced (LLM-first,
         # incremental) — this is what makes the graph rich from ANY connector.
         try:
@@ -221,6 +267,10 @@ class Scheduler:
         except Exception as exc:
             import sys
             print(f"[chitragupta] startup migration skipped: {exc}", file=sys.stderr)
+        # A pass that was in flight when the app last stopped. Done on launch
+        # rather than on the first sweep, so a connector whose recovery is
+        # needed is not blocked behind twenty minutes of timer.
+        _recover_interrupted()
         # small initial delay, then an immediate first sync (no manual CLI needed)
         if stop.wait(20):
             return

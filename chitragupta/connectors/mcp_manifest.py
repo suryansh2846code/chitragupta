@@ -41,6 +41,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from .capability import Access
+from .capability import Capability as VerbOnResource
+from .capability import parse as parse_capability
 from .mcp_source import (
     CALL_TIMEOUT_SECONDS,
     MAX_HARVEST_TOOLS,
@@ -55,10 +58,36 @@ from .mcp_source import (
 #: Mirrors `MCPConnector.sync`'s own default rather than re-deciding it.
 SYNC_RECORD_BUDGET = 200
 
+#: This module's three kinds, as the app-wide capability vocabulary.
+#:
+#: **Two vocabularies, joined rather than merged, and the join is one table.**
+#: `capability.py` speaks verbs on resources (`send:email`) so the permission
+#: layer can reason about what a thing *does* without knowing which app is
+#: behind it. This module speaks read/change/care, because that is what a
+#: person weighing a connector is actually deciding between and because a
+#: server's own verb is the only name that tool has.
+#:
+#: `Resource.RECORD` on every row, and that is the honest answer rather than a
+#: shortcut: one MCP endpoint publishes `merge_pull_request` and `create_page`,
+#: and we know the tier of each and genuinely do not know what the second one
+#: *is*. Guessing a resource here would put a word on the approval card that
+#: nothing checked.
+_AS_CAPABILITY: dict[str, VerbOnResource] = {
+    "read": parse_capability("read:record"),
+    "change": parse_capability("update:record"),
+    "care": parse_capability("delete:record"),
+}
+
 
 @dataclass(frozen=True)
 class Capability:
-    """One thing a connector can do, named the way a person would say it."""
+    """One thing a connector can do, named the way a person would say it.
+
+    Named the same as `capability.Capability` and deliberately not merged with
+    it — see `_AS_CAPABILITY` for why the two vocabularies exist and how they
+    join. Imported as `VerbOnResource` here so a reader of this file is never
+    looking at two things called `Capability`.
+    """
 
     tool: str
     #: "read" · "change" · "care" — what this does, not what it is called.
@@ -68,6 +97,23 @@ class Capability:
     permitted: bool
     #: Arguments the server says it cannot run without.
     needs: list[str] = field(default_factory=list)
+
+    @property
+    def capability(self) -> VerbOnResource:
+        """This tool in the app-wide vocabulary, so one gate judges it.
+
+        What makes an MCP write pass through the *same* chain as a first-party
+        one rather than a parallel path of its own: `actions.mcp_action`
+        declares `update:record`, `capability_problems()` checks the floor
+        against it, and `MCPConnector.capabilities` is the ceiling it has to
+        sit inside.
+        """
+        return _AS_CAPABILITY[self.kind]
+
+    @property
+    def access(self) -> Access:
+        """The permission tier. `care` is destructive; nothing else is."""
+        return self.capability.access
 
     @property
     def is_furniture(self) -> bool:
@@ -118,7 +164,12 @@ class Manifest:
         def rows(caps: list[Capability]) -> list[dict[str, Any]]:
             return [{"tool": c.tool, "kind": c.kind, "summary": c.summary,
                      "permitted": c.permitted, "needs": list(c.needs),
-                     "furniture": c.is_furniture} for c in caps]
+                     "furniture": c.is_furniture,
+                     # Published so a card and the agent prompt can say what a
+                     # tool *does* in the same words a first-party action uses,
+                     # instead of each screen re-deriving it from `kind`.
+                     "capability": str(c.capability),
+                     "access": c.access.value} for c in caps]
 
         return {
             "server_id": self.server_id, "name": self.name,

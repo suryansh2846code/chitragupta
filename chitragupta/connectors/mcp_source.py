@@ -36,6 +36,8 @@ from typing import Any
 from ..config import get_settings
 from ..log import get_logger, suppressed
 from .base import Connector, SyncResult
+from .capability import caps
+from .contract import AuthMethod, Limits
 
 log = get_logger(__name__)
 
@@ -1123,11 +1125,40 @@ class MCPConnector(Connector):
     # agreed name for one across servers. Dedup carries the repeat pass.
     incremental = False
 
+    #: **A ceiling, not an inventory.** Every other connector knows its own
+    #: verbs at import time; this one does not, because the verbs belong to
+    #: somebody else's server and are only knowable by asking it. What IS
+    #: knowable without a probe is the worst case: an MCP server can read, can
+    #: change, and can do something irreversible.
+    #:
+    #: The per-server truth already exists and is not duplicated here —
+    #: `mcp_manifest.manifest_of(spec, kinds)` turns one server's published
+    #: tool list into *"reads 26 things, changes 16, 2 need care"*, from the
+    #: probe the caller has already paid for. Restating it as a capability set
+    #: would mean starting the server to answer a question about the class.
+    #:
+    #: `record` rather than a guessed resource, for the reason `Resource.RECORD`
+    #: exists: one endpoint publishes `merge_pull_request` and `create_page`,
+    #: and we know the tier of each and genuinely do not know what the second
+    #: one is.
+    capabilities = caps("read:record", "update:record", "delete:record")
+    limits = Limits(requests=0, concurrency=1,
+                    records_per_sync=200,
+                    seconds_per_request=CALL_TIMEOUT_SECONDS)
+
     def __init__(self, spec: MCPServerSpec, store=None) -> None:
         super().__init__(store)
         self.spec = spec
         self.name = f"mcp:{spec.id}"
         self.label = spec.name
+        # Per-instance, because it is a property of the server the user added
+        # rather than of this class: Linear runs a full OAuth server, GitHub's
+        # takes a pasted token, and a local stdio server signs in to nothing.
+        self.auth_method = {
+            "oauth": AuthMethod.OAUTH2,
+            "token": AuthMethod.API_KEY,
+        }.get(spec.auth, AuthMethod.NONE if spec.is_remote else AuthMethod.LOCAL)
+        self.provider = spec.id
 
     def status(self) -> tuple[bool, str, bool]:
         """(ready, reason, can_sync) from a single probe.

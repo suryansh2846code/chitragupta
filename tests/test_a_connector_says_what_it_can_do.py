@@ -169,3 +169,54 @@ def test_the_required_arguments_come_from_the_server():
 def test_a_capability_knows_furniture_on_its_own():
     assert Capability("list_templates", "read", "", True).is_furniture
     assert not Capability("list_issues", "read", "", True).is_furniture
+
+
+# ── the two vocabularies join ─────────────────────────────────────────────
+
+
+def test_a_tool_reports_itself_in_the_app_wide_vocabulary():
+    """So an MCP write passes through the *same* gate as a first-party one,
+    rather than down a parallel path of its own. `actions.mcp_action` declares
+    `update:record`; these are what it has to sit inside."""
+    man = build([_Tool("list_issues", read_only=True),
+                 _Tool("create_issue", required=["title"]),
+                 _Tool("delete_file", required=["path"])])
+
+    assert str(man.reads[0].capability) == "read:record"
+    assert str(man.changes[0].capability) == "update:record"
+    assert str(man.needs_care[0].capability) == "delete:record"
+
+
+def test_care_is_destructive_in_the_shared_vocabulary_too():
+    """The tier has to survive the translation, or the join is decorative."""
+    from chitragupta.connectors.capability import Access
+
+    man = build([_Tool("merge_pull_request", required=["x"]),
+                 _Tool("add_issue_comment", required=["body"]),
+                 _Tool("list_issues", read_only=True)])
+
+    assert man.needs_care[0].access is Access.DESTRUCTIVE
+    assert man.changes[0].access is Access.WRITE
+    assert man.reads[0].access is Access.READ
+
+
+def test_the_capability_crosses_the_wire():
+    man = build([_Tool("create_issue", required=["title"])])
+
+    row = man.as_dict()["changes"][0]
+
+    assert row["capability"] == "update:record"
+    assert row["access"] == "write"
+
+
+def test_every_tool_the_manifest_lists_sits_inside_what_the_connector_declares():
+    """The ceiling. A manifest that named a capability `MCPConnector` does not
+    declare would be a write the floor check could never see."""
+    from chitragupta.connectors.mcp_source import MCPConnector
+
+    man = build([_Tool("list_issues", read_only=True),
+                 _Tool("create_issue", required=["t"]),
+                 _Tool("delete_file", required=["p"])])
+
+    for cap in [*man.reads, *man.changes, *man.needs_care]:
+        assert cap.capability in MCPConnector.capabilities

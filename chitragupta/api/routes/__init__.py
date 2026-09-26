@@ -19,6 +19,7 @@ from . import (
     agents,
     brain,
     browser,
+    connector_health,
     connectors,
     diagnostics,
     providers,
@@ -32,6 +33,13 @@ ALL_ROUTERS: tuple[APIRouter, ...] = (
     agents.router,
     brain.router,
     providers.router,
+    # **Before `connectors`**, and the order is load-bearing per the note
+    # above: this module's paths are literal (`/health`, `/manifest`,
+    # `/diagnostics`) where `connectors` owns the parameterised
+    # `/{name}/…` family. Mounted the other way, a future `GET
+    # /api/connectors/{name}` would swallow `GET /api/connectors/health` and
+    # the screen would ask for a connector called "health".
+    connector_health.router,
     connectors.router,
     workspace.router,
     diagnostics.router,
