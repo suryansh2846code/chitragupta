@@ -236,6 +236,9 @@ def _browser_errors() -> tuple:
 
 def browse_open(url: str) -> ToolResult:
     """Open a page on an allowed site and read it."""
+    refused = _may_look()
+    if refused:
+        return refused
     try:
         _refuse_while_signing_in()
         return _answer(get_session().open(url))
@@ -256,6 +259,9 @@ def browse_read(since: str | None = None) -> ToolResult:
     difference between this capability feeling cheap and feeling reckless on
     somebody's own model plan.
     """
+    refused = _may_look()
+    if refused:
+        return refused
     try:
         _refuse_while_signing_in()
         reading = get_session().read()
@@ -346,6 +352,9 @@ def browse_wait(until: str = "", seconds: float = 15.0) -> ToolResult:
     With nothing named, this waits for the page to change at all, which is the
     right question after pressing something.
     """
+    refused = _may_look()
+    if refused:
+        return refused
     from ..browser import page as pagemod
 
     try:
@@ -406,6 +415,9 @@ def browse_find(what: str) -> ToolResult:
     JavaScript, because a model that can do either has full control of whatever
     account the page belongs to.
     """
+    refused = _may_look()
+    if refused:
+        return refused
     try:
         session = get_session()
     except _browser_errors() as exc:
@@ -462,10 +474,33 @@ NOT_WHILE_UNWATCHED = (
 )
 
 
+NO_BROWSING = (
+    "This automation is not allowed to look at web pages. Turn on “Let it read "
+    "web pages” in the automation if it needs to."
+)
+
+
+def _may_look() -> ToolResult | None:
+    """The one gate every page tool passes through — reading included.
+
+    Separate from `_may_change`, because the two refuse for different reasons
+    and a user reading the message needs the right one. This one is an
+    automation's own ceiling; the other is the floor under everything
+    unattended, and nothing can lift that.
+    """
+    from . import permissions
+
+    if permissions.browsing_banned():
+        return ToolResult.failed(NO_BROWSING)
+    return None
+
+
 def _may_change() -> ToolResult | None:
     """The one gate every write tool passes through. None means go ahead."""
     from . import permissions
 
+    if permissions.browsing_banned():
+        return ToolResult.failed(NO_BROWSING)
     if permissions.unattended():
         return ToolResult.failed(NOT_WHILE_UNWATCHED)
     return None
@@ -522,6 +557,9 @@ def _change(kind: str, *, ref: str = "", label: str = "",
 def browse_sites() -> ToolResult:
     """Which sites the user has allowed. Orientation, so an agent can say what it
     is able to do instead of discovering it by being refused."""
+    refused = _may_look()
+    if refused:
+        return refused
     grants = origins.list_grants()
     if not grants:
         return ToolResult(

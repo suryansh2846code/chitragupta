@@ -161,11 +161,17 @@ class FakeAgent:
 
     replies: list[str] = field(default_factory=list)
     prompts: list[str] = field(default_factory=list)
+    #: The ceilings each turn was asked to run under, so a test can assert that
+    #: an automation's own settings reached the turn rather than being stored
+    #: and ignored.
+    executions: list[dict] = field(default_factory=list)
     raises: bool = False
     default: str = "Nothing to do."
 
-    def __call__(self, agent_id: str, prompt: str) -> tuple[str, int]:
+    def __call__(self, agent_id: str, prompt: str,
+                 execution: dict | None = None) -> tuple[str, int]:
         self.prompts.append(prompt)
+        self.executions.append(dict(execution or {}))
         if self.raises:
             raise RuntimeError("the model is unreachable")
         reply = self.replies.pop(0) if self.replies else self.default

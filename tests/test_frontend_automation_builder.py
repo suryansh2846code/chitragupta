@@ -268,8 +268,12 @@ def test_a_time_of_day_is_stored_both_ways_and_they_agree(vocabulary):
         {"op": "set", "sel": "#rmAtTime", "value": "07:30"},
         {"op": "set", "sel": "#rmDays", "value": "mon,tue,wed,thu,fri"},
     ])
-    assert out["trigger"] == {"type": "schedule", "at_time": "07:30",
-                              "days": "mon,tue,wed,thu,fri"}
+    # The timezone rides along on every schedule now, rather than the spec
+    # silently meaning whichever machine happened to save it.
+    assert out["trigger"]["type"] == "schedule"
+    assert out["trigger"]["at_time"] == "07:30"
+    assert out["trigger"]["days"] == "mon,tue,wed,thu,fri"
+    assert out["trigger"]["timezone"]
     assert out["legacy"] == {"trigger": "daily", "at_time": "07:30",
                              "days": "mon,tue,wed,thu,fri", "interval_min": 60}
     assert out["words"] == "Weekdays at 7:30 AM"
@@ -296,8 +300,8 @@ def test_editing_loads_what_the_automation_already_says(vocabulary):
                                 "value": "urgent"}]}
     out = drive(vocabulary, [{"op": "open", "existing": {"id": "a1"}}],
                 automation=existing)
-    assert out["trigger"] == {"type": "schedule", "at_time": "09:15",
-                              "days": "sat,sun"}
+    assert out["trigger"]["at_time"] == "09:15"
+    assert out["trigger"]["days"] == "sat,sun"
     assert out["conditions"] == [{"type": "contains", "field": "event.body",
                                   "value": "urgent"}]
 
@@ -381,8 +385,9 @@ def test_creating_one_writes_the_routine_row_and_then_the_spec(vocabulary):
 
     patched = writes[1]
     assert patched["url"] == "/api/automations/new-1"
-    assert patched["body"]["trigger"] == {"type": "schedule", "at_time": "06:45",
-                                          "days": "sat,sun"}
+    assert patched["body"]["trigger"]["at_time"] == "06:45"
+    assert patched["body"]["trigger"]["days"] == "sat,sun"
+    assert patched["body"]["trigger"]["timezone"]
     assert patched["body"]["conditions"] == [
         {"type": "domain_is", "field": "event.from", "value": "acme.com"}]
 
@@ -751,3 +756,78 @@ def test_a_time_of_day_carries_a_timezone(vocabulary):
 def test_the_timezone_list_offers_where_you_are(vocabulary):
     out = drive(vocabulary, [{"op": "open"}])
     assert "where you are" in out["zoneHtml"]
+
+
+# ── how it runs ────────────────────────────────────────────────────────────
+
+def test_only_providers_this_install_has_are_offered(vocabulary):
+    """A menu of models the account cannot reach is a menu that 404s when
+    picked, and that reads as the app being broken."""
+    out = drive(vocabulary, [{"op": "open"}])
+    assert "Your usual model" in out["providerHtml"]
+    for entry in vocabulary["providers"]:
+        assert f'value="{entry["id"]}"' in out["providerHtml"]
+
+
+def test_the_model_list_follows_the_provider(vocabulary):
+    """Models belong to one provider. Offering all of them together is offering
+    a pairing that cannot run."""
+    entry = next((p for p in vocabulary["providers"] if p["models"]), None)
+    if entry is None:
+        pytest.skip("no connected provider with models in this environment")
+    out = drive(vocabulary, [
+        {"op": "open"}, {"op": "set", "sel": "#rmProvider", "value": entry["id"]}])
+    assert f'value="{entry["models"][0]["id"]}"' in out["modelHtml"]
+
+
+def test_nothing_chosen_means_the_users_own_settings(vocabulary):
+    """The default, and what every automation made before this has."""
+    out = drive(vocabulary, [{"op": "open"}])
+    assert out["execution"]["provider"] == ""
+    assert out["execution"]["model"] == ""
+    assert out["execution"]["effort"] == ""
+    assert out["execution"]["connectors"] == []
+    assert out["execution"]["check_minutes"] == 0
+
+
+def test_the_two_switches_start_on(vocabulary):
+    """They take capability away. Starting them off would quietly make every
+    new automation less able than the agent running it."""
+    out = drive(vocabulary, [{"op": "open"}])
+    assert out["execution"]["allow_browser"] is True
+    assert out["execution"]["allow_email"] is True
+
+
+def test_the_apps_are_offered_by_name(vocabulary):
+    out = drive(vocabulary, [{"op": "open"}])
+    assert 'data-app="gmail"' in out["appsHtml"]
+    assert ">Gmail<" in out["appsHtml"]
+
+
+def test_a_saved_scope_comes_back_ticked(vocabulary):
+    existing = {"id": "aX", "trigger": {"type": "manual"}, "conditions": [],
+                "execution": {"connectors": ["gmail"], "allow_email": False,
+                              "check_minutes": 2}}
+    out = drive(vocabulary, [{"op": "open", "existing": {"id": "aX"}}],
+                automation=existing)
+    assert out["execution"]["connectors"] == ["gmail"]
+    assert out["execution"]["allow_email"] is False
+    assert out["execution"]["check_minutes"] == 2
+    assert "is-on" in out["appsHtml"]
+
+
+def test_how_it_runs_is_sent_with_everything_else(vocabulary):
+    out = drive(vocabulary, [
+        {"op": "open"}, {"op": "trigger", "value": "manual"},
+        {"op": "check", "sel": "#rmEmail", "value": False},
+        {"op": "save", "id": "aY"}])
+    sent = next(c for c in out["calls"] if c["method"] == "PATCH")["body"]
+    assert sent["execution"]["allow_email"] is False
+    assert sent["execution"]["allow_browser"] is True
+
+
+def test_checking_faster_is_off_unless_asked(vocabulary):
+    """It spends calls against the user own account."""
+    out = drive(vocabulary, [{"op": "open"}])
+    assert "At the normal time" in out["checkHtml"]
+    assert out["execution"]["check_minutes"] == 0

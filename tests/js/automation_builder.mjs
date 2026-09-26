@@ -45,7 +45,10 @@ function parseChildren(html) {
     }
     if (!Object.keys(data).length) continue;
     const value = (attrs.match(/ value="([^"]*)"/) || [])[1] || "";
+    // A checkbox the app wrote as checked reads back as checked. Without this
+    // the harness says every box is off, and a saved choice looks lost.
     out.push({ tag: m[1], dataset: data, value, attrs,
+               checked: / checked(?=[ />])/.test(attrs),
                oninput: null, onchange: null, onclick: null });
   }
   return out;
@@ -82,6 +85,15 @@ const makeEl = (tag = "div") => {
     set(v) {
       html = String(v);
       node.children.length = 0;
+      // A browser sets a select's value from whichever option carries
+      // `selected`. Without this the harness reads every freshly drawn menu as
+      // empty, and a stored choice looks like it was lost on the way in.
+      const picked = html.match(/<option value="([^"]*)"[^>]* selected/);
+      if (picked) node.value = picked[1];
+      else if (/<option /.test(html)) {
+        const first = html.match(/<option value="([^"]*)"/);
+        if (first && !html.includes(' selected')) node.value = first[1];
+      }
       // Re-parsed on every write, exactly like a browser: a row the app just
       // re-rendered is a new object, and a handler bound to the old one is gone.
       node.live = parseChildren(html);
@@ -135,7 +147,8 @@ globalThis.fetch = async (url, opts = {}) => {
 new Function(appSource(path.dirname(APP_JS))
   + "\nglobalThis.__b = {openBuilder, addCondition, builderTrigger,"
   + " builderConditions, builderLegacy, saveBuilder, triggerWords,"
-  + " renderConditions, renderReadback};"
+  + " renderConditions, renderReadback, builderExecution,"
+  + " renderModelChoices};"
   // Replaced after the app defined it, so the real save handler is the one
   // that runs — a harness that reimplements the handler tests itself.
   + "\ntoast = (m) => globalThis.__toasts.push(String(m));")();
@@ -215,6 +228,13 @@ process.stdout.write(JSON.stringify({
   triggerHint: el("#rmTriggerHint").textContent,
   readback: el("#rmReadback").innerHTML,
   zoneHtml: el("#rmZone").innerHTML,
+  execution: (() => {
+    try { return globalThis.__b.builderExecution(); } catch (_) { return null; }
+  })(),
+  appsHtml: el("#rmApps").innerHTML,
+  providerHtml: el("#rmProvider").innerHTML,
+  modelHtml: el("#rmModel").innerHTML,
+  checkHtml: el("#rmCheck").innerHTML,
   syncNote: el("#rmSyncNote").hidden ? "" : el("#rmSyncNote").textContent,
   showing: {
     event: !el("#rmEventWrap").hidden,

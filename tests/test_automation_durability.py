@@ -79,7 +79,7 @@ def test_a_crash_before_the_action_leaves_nothing_done_and_resumes():
     """
     attempts = {"n": 0}
 
-    def dies_the_first_time(agent_id, prompt):
+    def dies_the_first_time(agent_id, prompt, execution=None):
         attempts["n"] += 1
         if attempts["n"] == 1:
             raise RuntimeError("the lid closed")
@@ -380,7 +380,7 @@ def test_a_run_that_runs_too_long_stops_and_says_so():
     deps, fakes = build_deps(gate=allowed(), clock=clock)
     auto = automation(policy=Policy(limits=Limits(max_duration_seconds=60)))
 
-    def a_very_slow_turn(agent_id, prompt):
+    def a_very_slow_turn(agent_id, prompt, execution=None):
         # The time has to pass *inside* the run: this is the hang the deadline
         # exists for, not a run that was started late.
         clock.advance(hours=2)

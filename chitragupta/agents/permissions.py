@@ -38,7 +38,7 @@ from ..actions import (
     Risk,
 )
 from ..config import get_settings
-from ..log import get_logger
+from ..log import get_logger, suppressed
 
 log = get_logger(__name__)
 
@@ -161,6 +161,31 @@ _UNATTENDED: contextvars.ContextVar[bool] = contextvars.ContextVar(
 def unattended() -> bool:
     """Is this turn running with nobody watching — a routine, a schedule?"""
     return bool(_UNATTENDED.get())
+
+
+#: Set for a turn that may not look at web pages at all.
+#:
+#: A narrowing, like everything an automation may say about itself: acting on a
+#: page is already refused for anything unattended (`NEVER_UNATTENDED_TOOLS`)
+#: and this cannot lift that. It exists because *reading* is still a reach into
+#: somebody else's text, and an automation that only touches mail should not be
+#: able to follow a link out of it.
+_NO_BROWSING: contextvars.ContextVar[bool] = contextvars.ContextVar(
+    "chitragupta_no_browsing", default=False)
+
+
+def without_browsing():
+    """Refuse every page tool for this turn. Returns a token for `allow_browsing`."""
+    return _NO_BROWSING.set(True)
+
+
+def allow_browsing(token) -> None:
+    with suppressed("clearing this turn's browsing ban"):
+        _NO_BROWSING.reset(token)
+
+
+def browsing_banned() -> bool:
+    return bool(_NO_BROWSING.get())
 
 
 @contextlib.contextmanager

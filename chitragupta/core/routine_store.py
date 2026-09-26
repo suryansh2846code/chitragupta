@@ -65,6 +65,7 @@ _ADDED_COLUMNS = {
     "trigger_json": "TEXT NOT NULL DEFAULT ''",
     "conditions_json": "TEXT NOT NULL DEFAULT ''",
     "policy_json": "TEXT NOT NULL DEFAULT ''",
+    "execution_json": "TEXT NOT NULL DEFAULT ''",
     "owner": "TEXT NOT NULL DEFAULT ''",
     "updated_at": "TEXT NOT NULL DEFAULT ''",
     "next_run": "TEXT NOT NULL DEFAULT ''",
@@ -77,7 +78,7 @@ _ADDED_COLUMNS = {
 _WRITABLE = frozenset({
     "name", "agent_id", "instruction", "enabled", "at_time", "days",
     "interval_min", "trigger", "goal", "trigger_json", "conditions_json",
-    "policy_json", "owner", "next_run", "last_result",
+    "policy_json", "execution_json", "owner", "next_run", "last_result",
 })
 
 

@@ -208,6 +208,111 @@ class Policy:
 
 
 @dataclass(frozen=True)
+class Execution:
+    """How this automation runs, as opposed to what it does.
+
+    Every field **narrows or substitutes; none of them widen.** An automation
+    may never be allowed to do something an interactive agent may not — so the
+    two switches here can only take capability away, and the permission gate is
+    asked afterwards either way.
+
+    Empty means "whatever the user's settings say", which is what every
+    automation made before this existed has, and what a user who does not care
+    should keep. A stored provider or model is a *request*, re-checked before
+    use like every other one.
+    """
+
+    #: Blank for the user's default. A long unattended job on a cheap model and
+    #: a careful one on an expensive model are different decisions from what the
+    #: user wants their chat to use.
+    provider: str = ""
+    model: str = ""
+    effort: str = ""
+
+    #: The only apps this automation may reach. **Empty means unscoped** — it
+    #: uses whatever its agent may use, which is how every existing automation
+    #: behaves. Non-empty is a ceiling, and it beats even an agent marked
+    #: unrestricted: a mail-watching automation has no business in the calendar
+    #: even when its agent does.
+    connectors: tuple[str, ...] = ()
+
+    #: May it read web pages at all. Acting on a page is refused for anything
+    #: unattended whatever this says — that floor is `NEVER_UNATTENDED_TOOLS`
+    #: and nothing here can lift it.
+    allow_browser: bool = True
+
+    #: Check the apps this automation watches this often, in minutes. Zero
+    #: means the app's normal sync cadence, which is every half hour.
+    #:
+    #: A *request*, and the scheduler honours the tightest one across every
+    #: enabled automation — two of them asking for different numbers is one
+    #: question with one answer, not two schedules. It only ever makes checking
+    #: more frequent, never less: an automation cannot slow down a sync that
+    #: other parts of the app depend on.
+    #:
+    #: The cost is real and falls on the user's own API quota, which is why it
+    #: is off unless somebody asks.
+    check_minutes: int = 0
+
+    #: May it send anything outward — an email, a message. A draft is not
+    #: outbound and stays allowed: it lands in the user's own drafts, which is
+    #: the safe half of "write this for me".
+    allow_email: bool = True
+
+    def as_dict(self) -> dict[str, Any]:
+        return {"provider": self.provider, "model": self.model,
+                "effort": self.effort, "connectors": list(self.connectors),
+                "check_minutes": self.check_minutes,
+                "allow_browser": self.allow_browser,
+                "allow_email": self.allow_email}
+
+    @staticmethod
+    def from_dict(raw: Any) -> Execution:
+        data: dict[str, Any] = raw if isinstance(raw, dict) else {}
+        names = data.get("connectors")
+        scoped = tuple(str(c).strip().lower() for c in names
+                       if str(c).strip()) if isinstance(names, list) else ()
+        return Execution(
+            provider=str(data.get("provider") or "").strip(),
+            model=str(data.get("model") or "").strip(),
+            effort=str(data.get("effort") or "").strip(),
+            connectors=scoped,
+            # Bounded here rather than trusted: a stored 0.1 would ask the
+            # scheduler to sync faster than its own loop can run.
+            check_minutes=max(0, min(int(_as_int(data.get("check_minutes"))),
+                                     24 * 60)),
+            # Absent means allowed, so an automation stored before these
+            # existed keeps doing what it did.
+            allow_browser=bool(data.get("allow_browser", True)),
+            allow_email=bool(data.get("allow_email", True)),
+        )
+
+    def blocks(self, action_type: str) -> str:
+        """Why this automation may not run that action, or "".
+
+        A refusal, never a permission: returning "" means *this* setting has no
+        objection, and `permissions.check` is still asked afterwards.
+        """
+        if not self.allow_email and action_type in OUTBOUND_ACTIONS:
+            return ("sending was switched off for this automation — turn on "
+                    "“Let it send things” to allow it")
+        return ""
+
+
+def _as_int(value: Any) -> int:
+    try:
+        return int(float(value))
+    except (TypeError, ValueError):
+        return 0
+
+
+#: Actions that put something in front of another person. `create_draft` is
+#: deliberately not one: a draft lands in the user's own mailbox, which is the
+#: half of "write this for me" that reaches nobody.
+OUTBOUND_ACTIONS = frozenset({"send_email", "message_send"})
+
+
+@dataclass(frozen=True)
 class Automation:
     """One automation, as the engine reads it."""
 
@@ -221,6 +326,7 @@ class Automation:
     trigger: dict[str, Any] = field(default_factory=dict)
     conditions: list[dict[str, Any]] = field(default_factory=list)
     policy: Policy = field(default_factory=Policy)
+    execution: Execution = field(default_factory=Execution)
     created_at: str = ""
     updated_at: str = ""
     last_run: str = ""
@@ -272,6 +378,7 @@ class Automation:
             trigger=trigger,
             conditions=list(_json("conditions_json", [])),
             policy=Policy.from_dict(_json("policy_json", {})),
+            execution=Execution.from_dict(_json("execution_json", {})),
             created_at=str(row.get("created_at") or ""),
             updated_at=str(row.get("updated_at") or ""),
             last_run=str(row.get("last_run") or ""),

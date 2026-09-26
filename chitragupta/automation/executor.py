@@ -67,7 +67,10 @@ class Deps:
     """
 
     #: `(agent_id, prompt) -> (reply_text, model_calls)`. Runs unattended.
-    plan: Callable[[str, str], tuple[str, int]]
+    #: `(agent_id, prompt, execution) -> (reply, model calls)`. The third is
+    #: the automation's own ceilings, applied around the turn rather than
+    #: inside it, so the tools are under them too.
+    plan: Callable[..., tuple[str, int]]
     #: `(reply_text) -> [{"type": str, "params": dict}]`
     parse_actions: Callable[[str], list[dict]]
     #: `(action_type, params) -> Verdict`. **The permission system.**
@@ -279,7 +282,8 @@ class Executor:
         step = store.add_step(run["id"], kind="plan", name="agent turn")
         prompt = self._prompt(automation, snapshot)
         try:
-            reply, calls = self.deps.plan(automation.agent_id, prompt)
+            reply, calls = self.deps.plan(automation.agent_id, prompt,
+                                          automation.execution.as_dict())
         except Exception as exc:
             store.finish_step(step["id"], state=StepState.FAILED, error=str(exc)[:300])
             return self._fail_or_retry(run, automation,
@@ -382,8 +386,19 @@ class Executor:
                 f"it tried more than the {automation.policy.limits.max_actions} "
                 "actions allowed")
 
-        # 2. The permission gate. The same one interactive agents use, asked
-        #    the same question. Nothing in this module may widen its answer.
+        # 2a. What this automation said about itself. A **narrowing only**: it
+        #     can refuse an action the gate would have allowed, and it can
+        #     never allow one the gate refuses, because the gate is asked next
+        #     either way. Checked before the gate so the reason the user reads
+        #     is the setting they chose, not a permission they did not.
+        forbidden = automation.execution.blocks(action_type)
+        if forbidden:
+            store.finish_step(step["id"], state=StepState.SKIPPED,
+                              error=forbidden[:300])
+            return self._block(run["id"], forbidden)
+
+        # 2b. The permission gate. The same one interactive agents use, asked
+        #     the same question. Nothing in this module may widen its answer.
         verdict = self.deps.gate(action_type, params)
         if not verdict.allowed and not run.get("pre_approved"):
             return self._blocked_action(run, automation, step, verdict)

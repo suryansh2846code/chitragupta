@@ -248,7 +248,8 @@ def run_case(case: Case) -> Score:
             return dict(answer) if answer else None
         return {"verified": True}
 
-    def plan(agent_id: str, prompt: str) -> tuple[str, int]:
+    def plan(agent_id: str, prompt: str,
+             execution: dict | None = None) -> tuple[str, int]:
         calls[0] += 1
         return case.reply, 1
 

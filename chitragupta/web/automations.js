@@ -250,7 +250,7 @@ async function runDetail(automationId, runId) {
 //: reader copes with empty — the modal must open on a machine where that call
 //: failed, holding the automation's real values, rather than not opening.
 let VOCAB = { triggers: [], conditions: [], fields: [], event_kinds: [],
-              sources: [], sync_minutes: 0 };
+              sources: [], sync_minutes: 0, providers: [], efforts: [] };
 
 //: The condition rows on screen. The user's edits live here between renders,
 //: so adding a fourth row cannot discard what was typed into the third.
@@ -264,6 +264,9 @@ let COND_LOCKED = false;
 //: the others. Empty for a new one, which the engine fills with its defaults.
 let POLICY = {};
 
+//: How it runs — model, apps, and the switches. Same reasoning.
+let EXECUTION = {};
+
 async function loadVocabulary() {
   if (VOCAB.triggers.length) return VOCAB;
   try {
@@ -272,6 +275,7 @@ async function loadVocabulary() {
       triggers: body.triggers || [], conditions: body.conditions || [],
       fields: body.fields || [], event_kinds: body.event_kinds || [],
       sources: body.sources || [], sync_minutes: body.sync_minutes || 0,
+      providers: body.providers || [], efforts: body.efforts || [],
     };
   } catch (_) { /* the form still opens, with what the automation already has */ }
   return VOCAB;
@@ -597,6 +601,7 @@ async function openBuilder(existing) {
   COND_ROWS = [];
   COND_LOCKED = false;
   POLICY = {};
+  EXECUTION = {};
   let trigger = null;
   let conditions = [];
   if (existing) {
@@ -605,10 +610,12 @@ async function openBuilder(existing) {
       trigger = body.trigger || null;
       conditions = body.conditions || [];
       POLICY = body.policy || {};
+      EXECUTION = body.execution || {};
     } catch (_) { /* legacy fields only */ }
   }
   const once = $("#rmOnce");
   if (once) once.checked = !!POLICY.stop_after_success;
+  renderExecution(EXECUTION);
   renderTriggerChoices((trigger && trigger.type) || "event");
   if (trigger) {
     if (trigger.type === "event") {
@@ -702,6 +709,120 @@ function readbackCheck(check) {
     : (check.question || check.value);
   const label = spec ? spec.label : check.type;
   return esc(`${name} ${label}${value === undefined ? "" : ` “${value}”`}`.trim());
+}
+
+//: How often a watch may ask for its app to be checked. The first entry is
+//: "leave it alone", because that is the right answer for almost everything and
+//: anything faster spends the user's own API quota.
+const CHECK_CHOICES = [
+  [0, "At the normal time"], [2, "Every 2 minutes"], [5, "Every 5 minutes"],
+  [15, "Every 15 minutes"], [30, "Every 30 minutes"],
+];
+
+/* Draw everything under "How it runs" from what this install actually has.
+ *
+ * The providers are the ones the user has connected, so the menu cannot offer
+ * a model their account 404s on — which is what "the app is broken" looks like
+ * from the outside. */
+function renderExecution(execution) {
+  const spec = execution || {};
+  const providers = VOCAB.providers || [];
+
+  const provider = $("#rmProvider");
+  if (provider) {
+    provider.innerHTML = [`<option value="">Your usual model</option>`].concat(
+      providers.map((p) => `<option value="${esc(p.id)}"${
+        p.id === spec.provider ? " selected" : ""}>${esc(p.label)}</option>`)
+    ).join("");
+  }
+  renderModelChoices(spec.model);
+
+  const effort = $("#rmEffort");
+  if (effort) {
+    effort.innerHTML = [`<option value="">Whatever you usually use</option>`]
+      .concat((VOCAB.efforts || []).map((e) => `<option value="${esc(e.id)}"${
+        e.id === spec.effort ? " selected" : ""}>${esc(e.label)}</option>`))
+      .join("");
+  }
+
+  const check = $("#rmCheck");
+  if (check) {
+    const minutes = Number(spec.check_minutes) || 0;
+    const known = CHECK_CHOICES.some(([n]) => n === minutes);
+    const all = known ? CHECK_CHOICES
+      : [...CHECK_CHOICES, [minutes, `Every ${minutes} minutes`]];
+    check.innerHTML = all.map(([n, label]) => `<option value="${n}"${
+      n === minutes ? " selected" : ""}>${esc(label)}</option>`).join("");
+  }
+
+  const browser = $("#rmBrowser");
+  if (browser) browser.checked = spec.allow_browser !== false;
+  const email = $("#rmEmail");
+  if (email) email.checked = spec.allow_email !== false;
+
+  renderAppChoices(spec.connectors || []);
+}
+
+/* The models the chosen provider offers. Redrawn when the provider changes, or
+ * the list underneath belongs to a different one. */
+function renderModelChoices(selected) {
+  const target = $("#rmModel");
+  const provider = $("#rmProvider");
+  if (!target) return;
+  const chosen = provider ? provider.value : "";
+  const entry = (VOCAB.providers || []).find((p) => p.id === chosen);
+  const models = (entry && entry.models) || [];
+  const keep = selected !== undefined ? selected : target.value;
+  const known = models.some((m) => m.id === keep);
+  const all = known || !keep ? models : [...models, { id: keep, label: keep }];
+  target.innerHTML = [`<option value="">Its default model</option>`].concat(
+    all.map((m) => `<option value="${esc(m.id)}"${
+      m.id === keep ? " selected" : ""}>${esc(m.label)}</option>`)).join("");
+  target.disabled = !chosen;
+}
+
+/* The apps, as switches. Nothing ticked is unscoped, which is what every
+ * automation made before this has — so an empty set is never sent as a ceiling
+ * of nothing. */
+function renderAppChoices(chosen) {
+  const host = $("#rmApps");
+  if (!host) return;
+  const picked = new Set((chosen || []).map((c) => String(c).toLowerCase()));
+  host.innerHTML = (VOCAB.sources || []).map((app) => `<label class="am-app${
+    picked.has(app.id) ? " is-on" : ""}">
+      <input type="checkbox" data-app="${esc(app.id)}"${
+        picked.has(app.id) ? " checked" : ""} />
+      <span>${esc(app.label)}</span></label>`).join("");
+  host.querySelectorAll("[data-app]").forEach((box) => {
+    box.onchange = () => renderAppChoices(builderApps());
+  });
+}
+
+/* Which apps are ticked right now. */
+function builderApps() {
+  const host = $("#rmApps");
+  if (!host) return [];
+  // `Array.from`, because a real `querySelectorAll` returns a NodeList and a
+  // NodeList has `forEach` but not `filter` — the kind of thing that works in
+  // a test double and throws in the browser.
+  return Array.from(host.querySelectorAll("[data-app]"))
+    .filter((box) => box.checked)
+    .map((box) => box.dataset.app);
+}
+
+/* How it runs, as the engine stores it. */
+function builderExecution() {
+  const value = (sel) => (($(sel) || {}).value || "").trim();
+  const on = (sel) => (($(sel) || {}).checked !== false);
+  return {
+    provider: value("#rmProvider"),
+    model: value("#rmModel"),
+    effort: value("#rmEffort"),
+    connectors: builderApps(),
+    check_minutes: parseInt(value("#rmCheck"), 10) || 0,
+    allow_browser: on("#rmBrowser"),
+    allow_email: on("#rmEmail"),
+  };
 }
 
 /* The trigger spec the engine stores, from what the form says. */
@@ -799,6 +920,7 @@ async function saveBuilder(automationId) {
   // of them. Sending a fresh object would reset the rest to their defaults.
   body.policy = { ...(POLICY || {}),
                   stop_after_success: !!($("#rmOnce") || {}).checked };
+  body.execution = builderExecution();
   try {
     await api(`/api/automations/${automationId}`, {
       method: "PATCH", headers: { "Content-Type": "application/json" },

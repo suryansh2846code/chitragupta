@@ -83,7 +83,7 @@ def test_the_whole_turn_runs_unattended(monkeypatch):
 
     saw = {}
 
-    def fake_turn(agent_id, prompt):
+    def fake_turn(agent_id, prompt, **kw):
         saw["unattended"] = permissions.unattended()
         saw["agent"] = agent_id
         return SimpleNamespace(reply="did it", trace=[])
@@ -106,7 +106,7 @@ def test_the_tool_calls_a_turn_made_are_counted(monkeypatch):
     trace = [SimpleNamespace(kind="tool_call"), SimpleNamespace(kind="text"),
              SimpleNamespace(kind="tool_call"), SimpleNamespace(kind="tool_call")]
     monkeypatch.setattr("chitragupta.agents.run_turn",
-                        lambda a, p: SimpleNamespace(reply="", trace=trace))
+                        lambda a, p, **kw: SimpleNamespace(reply="", trace=trace))
     _reply, calls = engine._plan("personal", "x")
     assert calls == 3
 

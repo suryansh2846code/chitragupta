@@ -168,6 +168,44 @@ def acting() -> str:
     return _ACTING.get()
 
 
+# ── the one-turn ceiling ─────────────────────────────────────────────────
+#
+#: The opposite of `_ONCE`, and the reason both exist. A grant **widens** what
+#: one turn may reach; this **narrows** it, and narrowing is the only direction
+#: an automation is allowed to move in — one may never be able to do something
+#: an interactive agent may not.
+#:
+#: `None` means unscoped, which is every turn a person is sitting in front of.
+#: A frozenset means these and nothing else, and it beats a stored grant and an
+#: unrestricted agent both: a mail-watching automation has no business in the
+#: calendar even when the agent running it does.
+_ONLY: contextvars.ContextVar[frozenset[str] | None] = contextvars.ContextVar(
+    "chitragupta_only_connectors", default=None)
+
+
+def only_these(connectors: list[str] | None):
+    """Limit this turn to these connectors. Returns a token for `release_only`.
+
+    An empty list is not a scope — it is "nothing was chosen", which means
+    unscoped. An automation that may reach no app at all is not a thing anyone
+    wants, and reading it that way would silently break every automation whose
+    settings are empty because they predate this.
+    """
+    clean = frozenset(str(c).strip().lower() for c in (connectors or [])
+                      if str(c).strip())
+    return _ONLY.set(clean or None)
+
+
+def release_only(token) -> None:
+    with suppressed("releasing this turn's connector ceiling"):
+        _ONLY.reset(token)
+
+
+def scoped_to() -> frozenset[str] | None:
+    """The ceiling on this turn, or None when there is not one."""
+    return _ONLY.get()
+
+
 # ── the one-turn grant ───────────────────────────────────────────────────
 def allow_for_this_turn(connectors: list[str] | None):
     """Grant these connectors for the current turn. Returns a token for `reset`."""
@@ -253,6 +291,12 @@ def may_use(agent_id: str, connector: str) -> bool:
     name = str(connector or "").strip().lower()
     if not name:
         return True                      # not a connector tool; not ours to gate
+    # The ceiling is checked FIRST and beats everything under it, including an
+    # unrestricted agent. Anywhere else in this function and it would be a
+    # suggestion rather than a limit.
+    ceiling = scoped_to()
+    if ceiling is not None and name not in ceiling:
+        return False
     if unrestricted(agent_id):
         return True
     if name in granted_this_turn():
@@ -266,6 +310,13 @@ def describe(agent_id: str) -> dict:
 
     from_mcp = list(connector_ids())
     every = from_mcp + [c for c in first_party_labels() if c not in set(from_mcp)]
+    ceiling = scoped_to()
+    if ceiling is not None:
+        # Under a ceiling the answer is the ceiling, whatever the agent holds.
+        return {"agent_id": agent_id, "unrestricted": False,
+                "allowed": sorted(c for c in every if c in ceiling),
+                "must_ask": [], "this_turn": sorted(ceiling),
+                "scoped": True}
     if unrestricted(agent_id):
         return {"agent_id": agent_id, "unrestricted": True,
                 "allowed": list(every), "must_ask": [], "this_turn": []}

@@ -33,6 +33,10 @@ log = get_logger(__name__)
 #: emits it; nothing else should.
 TICK = "schedule.tick"
 
+#: The trigger type that waits for something to happen, named so that the two
+#: other modules which ask "is this one of those" do not spell it themselves.
+EVENT = "event"
+
 WEEKDAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 
 

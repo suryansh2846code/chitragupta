@@ -683,6 +683,12 @@ function routineTriggerFields() {
 
 $("#newRoutineBtn").onclick = () => routineForm(null);
 $("#rmTrigger").onchange = routineTriggerFields;
+// The model list belongs to the provider beside it.
+if ($("#rmProvider")) {
+  $("#rmProvider").onchange = () => {
+    if (typeof renderModelChoices === "function") renderModelChoices("");
+  };
+}
 // The app list depends on the kind of event chosen beside it, so it is redrawn
 // when that changes — otherwise Gmail stays selected under "a calendar event
 // changes", which is an automation that can never fire.

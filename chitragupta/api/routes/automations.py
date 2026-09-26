@@ -68,6 +68,7 @@ def _summary(automation: Any, runs: list[dict]) -> dict[str, Any]:
         "trigger": automation.trigger,
         "conditions": automation.conditions,
         "policy": automation.policy.as_dict(),
+        "execution": automation.execution.as_dict(),
         "next_run": upcoming or automation.next_run,
         "last_run": automation.last_run,
         "last_outcome": (recent or {}).get("outcome", ""),
@@ -99,6 +100,40 @@ def list_automations():
     for automation in engine.list_automations():
         out.append(_summary(automation, store.runs_for(automation.id, limit=10)))
     return {"automations": out}
+
+
+def _usable_providers() -> list[dict[str, Any]]:
+    """Providers this user has connected, with the models each offers.
+
+    Resolved per user, never hardcoded: a list typed in here is a list that
+    offers a model the account cannot reach, and "the app is broken" is what
+    that reads as when it 404s on the first run.
+    """
+    out: list[dict[str, Any]] = []
+    with suppressed("listing providers an automation could run on"):
+        from ...models import get_model_catalog
+
+        for entry in get_model_catalog():
+            if not entry.get("connected"):
+                continue
+            out.append({
+                "id": entry.get("id", ""),
+                "label": entry.get("name") or entry.get("id", ""),
+                "models": [{"id": m.get("id", ""),
+                            "label": m.get("name") or m.get("id", "")}
+                           for m in (entry.get("models") or [])],
+            })
+    return out
+
+
+def _effort_names() -> list[dict[str, str]]:
+    """The effort levels, in the words the rest of the app uses for them."""
+    with suppressed("listing the effort levels an automation could run at"):
+        from ...agents.effort import LEVELS
+
+        return [{"id": str(name), "label": str(name).replace("_", " ").title()}
+                for name in LEVELS]
+    return []
 
 
 def _event_sources() -> list[dict[str, str]]:
@@ -159,6 +194,11 @@ def vocabulary():
         # there is no endpoint that changes it, and a control that cannot work
         # is worse than a sentence that is true.
         "sync_minutes": max(1, get_settings().sync_interval_minutes),
+        # What an automation may be told to run as. The providers the user has
+        # actually connected, and the effort levels that exist — a menu of
+        # models this install cannot reach is a menu that 404s when picked.
+        "providers": _usable_providers(),
+        "efforts": _effort_names(),
         "concurrency": list(Concurrency.ALL),
         "names": {"triggers": triggers.known(),
                   "conditions": conditions.known()},
@@ -207,6 +247,12 @@ class AutomationIn(BaseModel):
     trigger: dict[str, Any] | None = None
     conditions: list[dict[str, Any]] | None = Field(default=None)
     policy: dict[str, Any] | None = None
+    #: How it runs — model, apps, and the two switches. Re-parsed through
+    #: `Execution.from_dict` before storing, for the same reason the policy is:
+    #: a hand-edited or out-of-date one cannot put a value the engine will not
+    #: understand into the database. Every field of it narrows or substitutes;
+    #: none of them widen, so this is not the permission hole it looks like.
+    execution: dict[str, Any] | None = None
 
 
 @router.patch("/api/automations/{automation_id}")
@@ -217,7 +263,7 @@ def update_automation(automation_id: str, body: AutomationIn):
     hand-edited or out-of-date one cannot put a value the engine will not
     understand into the database.
     """
-    from ...automation.model import Policy
+    from ...automation.model import Execution, Policy
     from ...core.routine_store import get_routines
 
     fields: dict[str, Any] = {}
@@ -234,6 +280,9 @@ def update_automation(automation_id: str, body: AutomationIn):
     if "policy" in data:
         fields["policy_json"] = json.dumps(
             Policy.from_dict(data["policy"]).as_dict())
+    if "execution" in data:
+        fields["execution_json"] = json.dumps(
+            Execution.from_dict(data["execution"]).as_dict())
 
     if not get_routines().set_fields(automation_id, **fields):
         raise HTTPException(404, "no such automation")

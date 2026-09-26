@@ -339,6 +339,47 @@
           </label>
           <p class="am-hint">It runs on its own — no confirm each time. You can pause or delete it whenever.</p>
         </section>
+
+        <!-- Folded away, because none of it is needed to make an automation
+             work and all of it is needed by somebody. Everything in here
+             either substitutes (which model) or takes capability away (which
+             apps, pages, sending) — there is no switch that lets an automation
+             do something its agent could not. -->
+        <details class="am-more">
+          <summary>How it runs</summary>
+
+          <div class="am-pair">
+            <label class="am-sub">Model<select id="rmProvider"></select></label>
+            <label class="am-sub">&nbsp;<select id="rmModel"></select></label>
+          </div>
+          <div class="am-solo">
+            <label class="am-sub">Effort<select id="rmEffort"></select></label>
+          </div>
+
+          <label class="am-label">Apps it may use</label>
+          <p class="am-hint">Nothing ticked means whatever its agent may use.
+            Ticking some limits it to those, even if the agent may reach more.</p>
+          <div id="rmApps" class="am-apps"></div>
+
+          <label class="am-check">
+            <input type="checkbox" id="rmBrowser" checked />
+            <span>Let it read web pages
+              <em>It can never click, type or submit on a page — that is off for
+                anything running unattended, whatever this says.</em></span>
+          </label>
+          <label class="am-check">
+            <input type="checkbox" id="rmEmail" checked />
+            <span>Let it send things
+              <em>Email and messages. Drafts are always allowed — they land in
+                your own mailbox. An address still has to be one you allowed.</em></span>
+          </label>
+
+          <div class="am-solo" id="rmCheckWrap">
+            <label class="am-sub">Check the app this often<select id="rmCheck"></select></label>
+          </div>
+          <p class="am-hint">Checking faster than usual costs calls against your
+            own account, so it is off unless you ask.</p>
+        </details>
       </div>
       <div class="modal-foot"><span></span><button id="rmCreate">Create automation</button></div>
     </div>

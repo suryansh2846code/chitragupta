@@ -67,18 +67,42 @@ def _mark_ran(automation: Automation, run: dict) -> None:
 
 # ── the real dependencies ──────────────────────────────────────────────────
 
-def _plan(agent_id: str, prompt: str) -> tuple[str, int]:
-    """One agent turn, unattended.
+def _plan(agent_id: str, prompt: str,
+          execution: dict[str, Any] | None = None) -> tuple[str, int]:
+    """One agent turn, unattended, inside this automation's ceilings.
 
     `as_unattended()` wraps the **whole turn**, not the actions it proposes.
     The point is that the tools are inside it too: a browser that can click is
     not like an action, because by the time an action would have been proposed
     the click has already happened.
+
+    The three ceilings go on for the same reason and come off on every path
+    out. Each one only ever takes capability away — an automation may not be
+    able to do something an interactive agent cannot, so there is no argument
+    here that widens anything. The permission gate is still asked afterwards.
     """
     from ..agents import run_turn
-    from ..agents.permissions import as_unattended
-    with as_unattended():
-        result = run_turn(agent_id, prompt)
+    from ..agents.connector_grants import only_these, release_only
+    from ..agents.permissions import (
+        allow_browsing,
+        as_unattended,
+        without_browsing,
+    )
+
+    spec = execution or {}
+    scope = only_these(list(spec.get("connectors") or []))
+    no_pages = without_browsing() if not spec.get("allow_browser", True) else None
+    try:
+        with as_unattended():
+            result = run_turn(
+                agent_id, prompt,
+                provider_name=str(spec.get("provider") or "") or None,
+                model_name=str(spec.get("model") or "") or None,
+                effort=str(spec.get("effort") or "") or None)
+    finally:
+        release_only(scope)
+        if no_pages is not None:
+            allow_browsing(no_pages)
     calls = len([s for s in getattr(result, "trace", []) if s.kind == "tool_call"])
     return (result.reply or ""), max(1, calls)
 
@@ -359,6 +383,39 @@ def tick(*, deps: Deps | None = None,
     with suppressed("pruning the event ledger"):
         event_log.forget_old()
     return {"resumed": resumed, "fired": fired}
+
+
+def wanted_sooner() -> dict[str, int]:
+    """Connectors an automation wants checked faster, and how often, in minutes.
+
+    "Tell me when the next email from X arrives" is answered by a sync, so how
+    quickly it is answered is how often that source is checked. The normal
+    cadence is half an hour, which is right for keeping a brain current and
+    wrong for a watch somebody is sitting waiting on.
+
+    The tightest request wins per connector: two automations asking different
+    numbers of the same app is one question with one answer. Only ever faster —
+    an automation cannot slow down a sync the rest of the app depends on.
+    """
+    from . import triggers
+
+    wanted: dict[str, int] = {}
+    with suppressed("reading which sources an automation wants checked sooner"):
+        for automation in list_automations():
+            minutes = int(automation.execution.check_minutes or 0)
+            if not automation.enabled or minutes <= 0:
+                continue
+            spec = automation.trigger or {}
+            if str(spec.get("type") or "") != triggers.EVENT:
+                continue
+            # No source named means "any app that makes this kind of event",
+            # and there is no honest way to poll "any" — the user has to say
+            # which one before we spend their quota on it.
+            source = str(spec.get("source") or "").strip().lower()
+            if not source:
+                continue
+            wanted[source] = min(wanted.get(source, minutes), minutes)
+    return wanted
 
 
 def after_sync(summary: dict[str, Any], *, deps: Deps | None = None,
