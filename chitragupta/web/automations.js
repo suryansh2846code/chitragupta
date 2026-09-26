@@ -236,8 +236,8 @@ async function automationHistory(id) {
     <div class="auto-runs">${runs.length ? runs.map((r) => `
       <button class="auto-run" data-run="${esc(r.id)}">
         <span class="auto-run-state">${esc(RUN_WORDS[r.state] || r.state)}</span>
-        <span class="ib-meta">${esc(autoWhen(r.created_at))} · ${esc(
-          (r.outcome || r.reason || "").slice(0, 90))}</span>
+        <span class="ib-meta auto-run-why">${esc(autoWhen(r.created_at))} · ${
+          esc(r.outcome || r.reason || "")}</span>
       </button>`).join("")
       : `<div class="ib-empty">It has not run yet.</div>`}</div>
     <div id="runDetail"></div>`;
@@ -264,6 +264,11 @@ async function runDetail(automationId, runId) {
   const { run, steps } = data;
   const trigger = run.trigger || {};
   const context = run.context || {};
+  // What the agent actually replied, which lives on the plan step and was shown
+  // nowhere — so a run that failed inside the model showed a tidy list of
+  // stages and none of the words explaining why nothing came out.
+  const planned = (steps || []).find((s) => s.kind === "plan");
+  const reply = (planned && planned.result && planned.result.reply) || "";
 
   //: Named for what happened rather than for the internal step kind — a user
   //: reading their own automation should not have to learn our vocabulary.
@@ -276,9 +281,13 @@ async function runDetail(automationId, runId) {
       ? `${STEP_WORDS[s.kind]} ${esc(s.name)}`
       : esc(STEP_WORDS[s.kind] || s.kind);
     const detail = s.error || (s.result && (s.result.detail || s.result.reason)) || "";
+    // The whole thing. It used to be cut at 140 characters, which is enough to
+    // say "the openai model failed: Attempted to access streaming response
+    // content, without ha…" — the half that names the problem removed, and the
+    // half that says something went wrong kept.
     return `<li class="auto-step is-${esc(s.state)}">
       <span>${label}</span>
-      <span class="ib-meta">${esc(String(detail).slice(0, 140))}</span></li>`;
+      <span class="ib-meta auto-step-why">${esc(String(detail))}</span></li>`;
   }).join("");
 
   const warned = (context.injection_attempts || []).length
@@ -295,6 +304,8 @@ async function runDetail(automationId, runId) {
         ${run.reason ? `· ${esc(run.reason)}` : ""}</p>
       ${warned}
       <ol class="auto-steps">${rows || "<li>Nothing recorded.</li>"}</ol>
+      ${reply ? `<details class="auto-reply"><summary>What it said</summary>
+        <pre>${esc(reply)}</pre></details>` : ""}
       <p class="ib-meta">Saw ${Number(context.chars || 0)} characters of context
         from ${(context.pieces || []).length} source(s).
         Used ${Number(run.actions_used || 0)} action(s) and

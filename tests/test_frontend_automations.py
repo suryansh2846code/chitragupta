@@ -145,3 +145,48 @@ def test_names_are_escaped():
     out = _run(automation={**AUTOMATION, "name": '<img src=x onerror=alert(1)>'})
     assert "<img" not in out["historyHtml"]
     assert "&lt;img" in out["historyHtml"]
+
+
+# ── history is read when something went wrong ──────────────────────────────
+
+LONG = ("The **openai** model failed: Attempted to access streaming response "
+        "content, without having called read() first. This is the whole "
+        "sentence, and the half that names the problem is at the end of it.")
+
+
+def test_a_step_shows_its_whole_error():
+    """It was cut at 140 characters — which removed the half naming the problem
+    and kept the half saying there was one. History is read *because* something
+    went wrong, so that is the worst possible place to save space."""
+    steps = [{"kind": "plan", "name": "agent turn", "state": "failed",
+              "result": {}, "error": LONG}]
+    out = _run(steps=steps)
+
+    assert LONG[-40:] in out["runHtml"], "the end of the error was cut off"
+    assert "…" not in out["runHtml"].replace("&hellip;", "")
+
+
+def test_what_the_agent_said_is_there_to_open():
+    """A run that failed inside the model showed a tidy list of stages and none
+    of the words explaining why nothing came out."""
+    steps = [{"kind": "plan", "name": "agent turn", "state": "done",
+              "result": {"reply": LONG, "actions": 0}, "error": ""}]
+    out = _run(steps=steps)
+
+    assert "What it said" in out["runHtml"]
+    assert LONG[-40:] in out["runHtml"]
+
+
+def test_a_run_with_nothing_to_say_does_not_offer_an_empty_panel():
+    steps = [{"kind": "plan", "name": "agent turn", "state": "done",
+              "result": {"reply": "", "actions": 0}, "error": ""}]
+    assert "What it said" not in _run(steps=steps)["runHtml"]
+
+
+def test_a_runs_outcome_is_not_cut_in_the_list():
+    long_outcome = "x" * 300
+    automation = {**AUTOMATION, "history": [
+        {"id": "r9", "state": "completed", "created_at": "2026-09-26T09:00:00+00:00",
+         "outcome": long_outcome, "reason": ""}]}
+    out = _run(automation=automation)
+    assert long_outcome in out["historyHtml"]

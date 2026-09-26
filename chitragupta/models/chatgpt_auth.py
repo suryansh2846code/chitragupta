@@ -859,6 +859,8 @@ def chat_with_chatgpt_subscription(
     if tools_payload:
         payload["tools"] = tools_payload
 
+    from .streaming import raise_for_status
+
     full_text = ""
     calls = []
     try:
@@ -872,7 +874,7 @@ def chat_with_chatgpt_subscription(
             json=payload,
             timeout=timeout,
         ) as resp:
-            resp.raise_for_status()
+            raise_for_status(resp)
             for line in resp.iter_lines():
                 if not line.startswith("data: "):
                     continue

@@ -189,7 +189,7 @@ class AnthropicProvider(LLMProvider):
         its own streaming — delegating keeps that one code path rather than
         reimplementing it here.
         """
-        from .streaming import anthropic_events, from_result, sse_payloads
+        from .streaming import anthropic_events, from_result, raise_for_status, sse_payloads
 
         if not self.api_key:
             backend = self._subscription_backend()
@@ -213,7 +213,7 @@ class AnthropicProvider(LLMProvider):
                          "content-type": "application/json"},
                 json=payload, timeout=300,
             ) as resp:
-                resp.raise_for_status()
+                raise_for_status(resp)
                 yield from anthropic_events(sse_payloads(resp.iter_lines()))
             return
         except Exception as exc:

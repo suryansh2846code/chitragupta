@@ -104,6 +104,40 @@ class Deps:
     now: Callable[[], datetime] = field(default=lambda: datetime.now(UTC))
 
 
+#: How a turn says it failed rather than *answered*.
+#:
+#: Matched on the two markers this app writes itself — `models/errors.py` puts
+#: "⚠️ " in front of every classified failure and wraps a rate limit in a
+#: `<limit>` card — and on nothing else. Not on words like "rate limit", which
+#: a model uses perfectly well when summarising somebody else's email: the
+#: first version of this matched that phrase and turned a good run into a retry.
+#:
+#: A tool refusal the model paraphrases in its own words ("Gmail access hasn't
+#: been granted") is deliberately NOT here. There is no reliable shape to match,
+#: and guessing at prose is what the line above says not to do — that case is
+#: caught before the run instead, by `readiness.py`.
+FAILURE_MARKERS = ("⚠️", "<limit ")
+
+
+def _looks_like_a_failure(reply: str) -> str:
+    """The reason this reply is a failure rather than an answer, or "".
+
+    Anchored to the START of the reply, because that is where this app puts its
+    error text and a mention further down is a model quoting something.
+
+    A false positive turns a good run into a retry and spends a model call the
+    user pays for; a false negative reports success for an automation that did
+    nothing. The second is what we had — seven runs in a row saying "Done" over
+    a provider that refused every one of them.
+    """
+    text = (reply or "").strip()
+    if not text:
+        return ""
+    if text.startswith(FAILURE_MARKERS):
+        return text[:200]
+    return ""
+
+
 class Executor:
     """Drives runs. Holds no per-run state — everything is in the store."""
 
@@ -311,6 +345,15 @@ class Executor:
                                params=params,
                                event_key=event.dedup_key, seq=seq))
         if not plan:
+            # **Unless the reply IS the failure.** A provider that refuses
+            # returns its error as the turn's text, and a turn that returns
+            # text and proposes nothing looks exactly like one that correctly
+            # decided there was nothing to do. Seven runs in a row reported
+            # "Done" over "The openai model failed", and the history screen
+            # said the automation was working while it delivered nothing.
+            trouble = _looks_like_a_failure(reply)
+            if trouble:
+                return self._fail_or_retry(run, automation, trouble)
             # A run that reached the world through no action still did its job:
             # "tell me if there is a conflict" is answered by the reply.
             return self._complete(run, automation, reply[:400] or "ran, no action needed")

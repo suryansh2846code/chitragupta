@@ -3114,3 +3114,26 @@ button.tiny.running:hover { background: linear-gradient(to right,
 .am-ready li { margin-top: 3px; }
 .am-ready li span { color: var(--text); }
 .am-ready li em { display: block; font-style: normal; color: var(--faint); }
+
+/* A run's history is read when something went wrong, which is exactly when
+   cutting the text at 140 characters removes the half that names the problem
+   and keeps the half that says there was one. Nothing here truncates; long
+   lines wrap, and the panel scrolls. */
+.auto-run-why, .auto-step-why {
+  display: block;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+}
+.auto-step { align-items: flex-start; }
+
+/* What the agent actually said. Folded, because on a run that worked it is the
+   least interesting thing on the screen, and on one that did not it is the
+   only interesting thing. */
+.auto-reply { margin-top: 10px; }
+.auto-reply > summary { cursor: pointer; font-size: 11px; color: var(--muted);
+  font-family: var(--mono); text-transform: uppercase; letter-spacing: .12em; }
+.auto-reply pre { margin: 8px 0 0; padding: 10px 12px; border-radius: 8px;
+  background: var(--panel-2); font-family: var(--mono); font-size: 11.5px;
+  line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere;
+  max-height: 340px; overflow-y: auto; }

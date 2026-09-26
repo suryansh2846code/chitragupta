@@ -469,3 +469,78 @@ def test_a_run_survives_a_crash_an_approval_and_a_failed_verification():
     assert claims(run["id"]) == []
     fakes["approvals"].approve(run["approval_id"])
     assert fakes["world"].count("send_email") == 1, "a second tap sent it again"
+
+
+# ── a failure is not a quiet success ───────────────────────────────────────
+
+def test_a_turn_that_returned_a_provider_error_is_not_done():
+    """The screenshot that started this: seven runs, all marked "Done", all of
+    them the OpenAI model refusing.
+
+    A turn whose reply IS the failure looks exactly like one that correctly
+    decided there was nothing to do — both return text and propose no actions.
+    The history screen said the automation was working while it delivered
+    nothing, seven times.
+    """
+    deps, _ = build_deps(agent=FakeAgent(default=(
+        "⚠️ The **openai** model failed: Attempted to access streaming "
+        "response content, without having called read() first.")))
+
+    run = drive(automation(), deps)
+
+    assert run["state"] != RunState.COMPLETED
+    assert "model failed" in (run["reason"] or run["outcome"] or "")
+
+
+def test_a_rate_limit_card_is_a_failure_too():
+    """The other shape this app writes. A limit is rendered as a countdown card
+    rather than a warning sign, and it is no more an answer than the other."""
+    deps, _ = build_deps(agent=FakeAgent(
+        default='<limit until="2026-09-26T18:00:00Z">You have hit your usage '
+                'limit.</limit>'))
+
+    run = drive(automation(), deps)
+    assert run["state"] != RunState.COMPLETED
+
+
+def test_a_tool_refusal_the_model_paraphrased_is_left_alone():
+    """Deliberate, and a real limitation.
+
+    "Gmail read access hasn't been granted to me" is the *model's* wording for
+    a tool that said no, and there is no reliable shape to match in it — the
+    first attempt matched phrases like "rate limit" and turned a summary of
+    somebody else's email into a retry.
+
+    That case is caught before the run instead: `readiness.py` says "Gmail is
+    connected, but this agent has to ask before using it" while the user is
+    still on the screen. Pinned here so that the day somebody makes the engine
+    guess at prose, this says why it was not doing that.
+    """
+    deps, _ = build_deps(agent=FakeAgent(default=(
+        "I can't pull those emails right now — Gmail read access hasn't been "
+        "granted to me for this automation.")))
+
+    run = drive(automation(), deps)
+    assert run["state"] == RunState.COMPLETED
+
+
+def test_deciding_there_is_nothing_to_do_is_still_done():
+    """The case the check must not eat. "Tell me if there is a conflict" on a
+    day with no conflict is a successful run that did nothing, and turning that
+    into a retry would spend a model call every time."""
+    deps, _ = build_deps(agent=FakeAgent(default="No conflicts today."))
+
+    run = drive(automation(), deps)
+    assert run["state"] == RunState.COMPLETED
+    assert "No conflicts" in run["outcome"]
+
+
+def test_a_reply_that_merely_mentions_a_failure_is_not_one():
+    """A summary of somebody else's email about a rate limit is an answer, not
+    an error. Only the shapes this app's own layers write count."""
+    deps, _ = build_deps(agent=FakeAgent(default=(
+        "Ana wrote to say their deploy hit a rate limit yesterday and they "
+        "have raised it with support. Nothing needed from you.")))
+
+    run = drive(automation(), deps)
+    assert run["state"] == RunState.COMPLETED
