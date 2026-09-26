@@ -635,8 +635,17 @@ let _editingRoutine = null;      // null = creating
 async function routineForm(existing) {
   _editingRoutine = existing || null;
   const { agents } = await api("/api/agents");
-  $("#rmAgent").innerHTML = agents.map((a) =>
-    `<option value="${esc(a.id)}"${existing && a.id === existing.agent_id ? " selected" : ""}>${esc(a.name)}</option>`).join("");
+  // An agent the automation names but the roster does not have is kept and
+  // labelled, never quietly swapped for whichever agent happens to be first.
+  // A model once wrote `agent="inbox"`, which is nobody; the row showed
+  // "inbox" and this form showed the first agent in the list, so the one
+  // screen that could have explained why it never ran said it was fine.
+  const owner = existing ? String(existing.agent_id || "") : "";
+  const known = agents.some((a) => a.id === owner);
+  const options = (known || !owner) ? agents
+    : [...agents, { id: owner, name: `${owner} — missing` }];
+  $("#rmAgent").innerHTML = options.map((a) =>
+    `<option value="${esc(a.id)}"${a.id === owner ? " selected" : ""}>${esc(a.name)}</option>`).join("");
   $("#rmName").value = existing ? existing.name : "";
   $("#rmInstruction").value = existing ? existing.instruction : "";
   $("#rmInterval").value = existing ? String(existing.interval_min) : "60";
@@ -667,15 +676,44 @@ function routineTriggerFields() {
   $("#rmDailyWrap").hidden = kind !== "schedule";
   const events = $("#rmEventWrap");
   if (events) events.hidden = kind !== "event";
+  const zone = $("#rmZoneWrap");
+  if (zone) zone.hidden = kind !== "schedule";
+  if (typeof renderTriggerHint === "function") renderTriggerHint();
 }
 
 $("#newRoutineBtn").onclick = () => routineForm(null);
 $("#rmTrigger").onchange = routineTriggerFields;
+// The model list belongs to the provider beside it.
+if ($("#rmProvider")) {
+  $("#rmProvider").onchange = () => {
+    if (typeof renderModelChoices === "function") renderModelChoices("");
+  };
+}
+// The app list depends on the kind of event chosen beside it, so it is redrawn
+// when that changes — otherwise Gmail stays selected under "a calendar event
+// changes", which is an automation that can never fire.
+if ($("#rmEventKind")) {
+  $("#rmEventKind").onchange = () => {
+    if (typeof renderSourceChoices === "function") renderSourceChoices();
+  };
+}
 if ($("#rmAddCond")) {
   $("#rmAddCond").onclick = () => {
     if (typeof addCondition === "function") addCondition();
   };
 }
+// The sentence at the top follows every box that feeds it, or it describes an
+// automation the user has already changed.
+["#rmInstruction", "#rmOnce", "#rmAtTime", "#rmDays", "#rmInterval",
+ "#rmEventKind", "#rmEventSource", "#rmZone"].forEach((sel) => {
+  const node = $(sel);
+  if (!node) return;
+  const redraw = () => {
+    if (typeof renderReadback === "function") renderReadback();
+  };
+  node.addEventListener("input", redraw);
+  node.addEventListener("change", redraw);
+});
 $("#rmClose").onclick = () => $("#routineModal").hidden = true;
 $("#rmCreate").onclick = async () => {
   const name = $("#rmName").value.trim(), instruction = $("#rmInstruction").value.trim();

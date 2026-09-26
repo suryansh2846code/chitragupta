@@ -59,6 +59,33 @@ and neither may import the other.
   during the agent turn leaves a run with no action steps; sending that to
   `EXECUTING` found nothing pending and **completed**, reporting success for an
   automation that did nothing.
+- **What an automation says about itself only ever narrows.** `Execution` holds
+  the model it runs on, the apps it may reach, whether it may read pages or send
+  anything, and how often to check. Every field substitutes or takes capability
+  away — none of them widen, because an automation may never be able to do
+  something an interactive agent may not. The connector ceiling
+  (`connector_grants.only_these`) is checked **first** in `may_use` and beats a
+  stored grant and an unrestricted agent both; the page ban sits on top of
+  `NEVER_UNATTENDED_TOOLS`, which it cannot lift; the sending switch refuses
+  before the gate is asked, and the gate is still asked after.
+- **A watch may ask for its source to be checked sooner**, and the scheduler
+  honours the tightest request across every enabled automation —
+  `engine.wanted_sooner` collects it, `Scheduler.fast_check` spends it. Only
+  faster, never slower: an automation cannot slow a sync the rest of the app
+  depends on. It costs the user API calls, so it is off unless asked.
+- **Readiness is a report, never a decision.** `readiness.py` answers whether an
+  automation can run *before* it is left alone for a month — the agent exists, a
+  model is connected, the trigger says enough to match, the apps are set up. It
+  grants nothing and stops nothing, and `asks` is not a fault: "draft it and let
+  me look" is a good automation, and a screen that called it broken would teach
+  the user to ignore the screen. It may not import `connectors/`, so the app
+  state is injected by the route that has both.
+- **A quiet run is not news.** `worth_delivering` decides what reaches the
+  Inbox: by default a run that acted or stopped, never one that looked and found
+  nothing — a watch polling every two minutes would otherwise bury the one
+  result that mattered under its own reports. `never` means never, including
+  the bad ones, because a setting that is quietly overridden stops being
+  believed.
 - Every new capability gets a case in `evaluation.py`, graded on **what reached
   the world**, not on what the agent said.
 

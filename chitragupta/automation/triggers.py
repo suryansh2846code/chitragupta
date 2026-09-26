@@ -33,6 +33,10 @@ log = get_logger(__name__)
 #: emits it; nothing else should.
 TICK = "schedule.tick"
 
+#: The trigger type that waits for something to happen, named so that the two
+#: other modules which ask "is this one of those" do not spell it themselves.
+EVENT = "event"
+
 WEEKDAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 
 
@@ -84,22 +88,37 @@ def known() -> list[str]:
     return sorted(_REGISTRY)
 
 
-#: `type -> (the sentence a person reads, the spec keys it asks for)`.
+#: `type -> (the sentence a person reads, what it is for, the spec keys)`.
 #:
 #: Here rather than in the frontend for the same reason as the condition
 #: labels: the builder has to ask for exactly the keys `matches` reads, and a
 #: form that asks for a key no trigger reads is a setting the user chose that
 #: does nothing.
-_TRIGGER_FORM: dict[str, tuple[str, tuple[str, ...]]] = {
-    "event": ("Something happens in an app", ("kind", "source")),
-    "schedule": ("At a time of day", ("at_time", "days", "timezone")),
-    "interval": ("Every so often", ("interval_min",)),
-    "manual": ("Only when I ask for it", ()),
+#:
+#: The second entry is the line under the menu, and it exists because a list of
+#: four names does not say which one to pick. Somebody wanting "run when the
+#: mail arrives" chose **At a time of day** and then asked for an "any time"
+#: option — which cannot exist, because for that trigger the time *is* the
+#: rule. The answer was the first entry, and nothing on screen said so.
+_TRIGGER_FORM: dict[str, tuple[str, str, tuple[str, ...]]] = {
+    "event": ("Something happens in an app",
+              "Runs the moment it happens — use this when you do not know when "
+              "it is coming.",
+              ("kind", "source")),
+    "schedule": ("At a time of day",
+                 "Runs on the clock, at a time you pick.",
+                 ("at_time", "days", "timezone")),
+    "interval": ("Every so often",
+                 "Runs on a repeat, whatever else is going on.",
+                 ("interval_min",)),
+    "manual": ("Only when I ask for it",
+               "Never runs on its own. You start it from this screen.",
+               ()),
 }
 
 
 def describe() -> list[dict[str, Any]]:
-    """Every trigger, with the questions it needs answered.
+    """Every trigger, with what it is for and the questions it needs answered.
 
     An unlisted trigger still appears — with no fields — rather than being
     hidden: a build that has a trigger the form does not describe should say so,
@@ -107,8 +126,9 @@ def describe() -> list[dict[str, Any]]:
     """
     out = []
     for name in known():
-        label, fields = _TRIGGER_FORM.get(name, (name, ()))
-        out.append({"type": name, "label": label, "fields": list(fields)})
+        label, hint, fields = _TRIGGER_FORM.get(name, (name, "", ()))
+        out.append({"type": name, "label": label, "hint": hint,
+                    "fields": list(fields)})
     return out
 
 

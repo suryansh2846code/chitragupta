@@ -99,6 +99,9 @@ class Scheduler:
         self.last_result: dict[str, Any] = {}
         self.running = False
         self.syncing = False
+        #: When each source an automation is waiting on was last checked early.
+        #: In memory on purpose — see `fast_check`.
+        self._last_fast: dict[str, float] = {}
 
     def cancel_sync(self) -> bool:
         """Ask an in-flight sync to stop. Cooperative: the sweep checks between
@@ -122,13 +125,23 @@ class Scheduler:
             self._cancel.clear()
             self._sync_lock.release()
 
-    def _sync_all(self, interactive: bool) -> dict[str, Any]:
+    def _sync_all(self, interactive: bool,
+                  only: set[str] | None = None) -> dict[str, Any]:
+        """Every source, or just the ones named.
+
+        `only` is what a fast check uses: an automation waiting on Gmail should
+        not make the app re-read Notion, Drive and the calendar every two
+        minutes to find out. Everything after the loop — dedupe, enrichment,
+        the automation events — is the same work on a smaller summary.
+        """
         from .core.store import get_store
         store = get_store()
         summary: dict[str, Any] = {}
 
         # app-based connectors
         for name in _auto_connectors():
+            if only is not None and name not in only:
+                continue
             if self._cancel.is_set():
                 summary["_cancelled"] = True
                 break
@@ -151,6 +164,12 @@ class Scheduler:
                     summary["_cancelled"] = True
             except Exception as exc:
                 summary[name] = {"added": 0, "errors": [str(exc)[:120]]}
+
+        # A targeted check is for one app somebody is waiting on. The folders,
+        # the MCP servers and the custom apps are not it, and walking them
+        # every two minutes is the cost this is meant to avoid.
+        if only is not None:
+            return self._finish_sync(summary, store)
 
         # local files: re-index remembered folders. Driven by what the user
         # actually pointed at rather than by the class, which is why
@@ -209,6 +228,16 @@ class Scheduler:
                 summary[f"custom:{app['id']}"] = {"added": 0,
                                                   "errors": [str(exc)[:120]]}
 
+        return self._finish_sync(summary, store)
+
+    def _finish_sync(self, summary: dict[str, Any], store: Any) -> dict[str, Any]:
+        """Everything a sync does after the sources: tidy, enrich, and let the
+        automation engine see what arrived.
+
+        One method so a targeted check and a full sync cannot drift — the whole
+        point of a fast check is that it produces events the same way, and a
+        second copy of this is where that would stop being true.
+        """
         # self-heal: never leave duplicates behind (no manual dedup needed)
         removed = store.dedupe()
         if removed:
@@ -305,8 +334,61 @@ class Scheduler:
                 except Exception:
                     log.exception("background sync_all failed")
                 next_sync = time.time() + interval
+            else:
+                # Between full syncs, check just the sources an automation is
+                # waiting on. Half an hour is right for keeping a brain current
+                # and wrong for a watch somebody is sitting in front of.
+                with suppressed("checking a source an automation is waiting on"):
+                    self.fast_check()
             if stop.wait(60):
                 return
+
+    def fast_check(self, now: float | None = None) -> list[str]:
+        """Sync just the sources an automation asked to have checked sooner.
+
+        Returns what it checked, so a test can drive it without a clock and the
+        caller can log it. Nothing due means nothing happens and nothing is
+        spent — this runs once a minute, and on almost every one of them the
+        answer is an empty list.
+
+        The last check is kept in memory rather than on disk on purpose: after
+        a restart every watch is checked once, immediately, which is the
+        behaviour somebody restarting the app wants. Persisting it would buy a
+        skipped sync and cost a watch that looks stuck.
+        """
+        from .automation import engine
+
+        clock = now if now is not None else time.time()
+        wanted = engine.wanted_sooner()
+        if not wanted:
+            return []
+        due = [source for source, minutes in sorted(wanted.items())
+               if clock - self._last_fast.get(source, 0.0) >= minutes * 60]
+        if not due:
+            return []
+        for source in due:
+            self._last_fast[source] = clock
+        log.info("checking %s early — an automation is waiting on it",
+                 ", ".join(due))
+        with suppressed("a fast check of a source an automation waits on"):
+            self._sync_one_pass(set(due))
+        return due
+
+    def _sync_one_pass(self, only: set[str]) -> dict[str, Any]:
+        """A targeted sync, under the same lock a full one takes.
+
+        Without the lock this would run beside a full sync and both would ask
+        Gmail for the same pages at the same time.
+        """
+        if not self._sync_lock.acquire(blocking=False):
+            return {}
+        try:
+            self.syncing = True
+            return self._sync_all(interactive=False, only=only)
+        finally:
+            self.syncing = False
+            self._cancel.clear()
+            self._sync_lock.release()
 
     def _fire_reminders(self) -> None:
         """Everything whose time has come. **The scheduler runs nothing itself.**

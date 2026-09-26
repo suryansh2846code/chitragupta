@@ -67,18 +67,42 @@ def _mark_ran(automation: Automation, run: dict) -> None:
 
 # ── the real dependencies ──────────────────────────────────────────────────
 
-def _plan(agent_id: str, prompt: str) -> tuple[str, int]:
-    """One agent turn, unattended.
+def _plan(agent_id: str, prompt: str,
+          execution: dict[str, Any] | None = None) -> tuple[str, int]:
+    """One agent turn, unattended, inside this automation's ceilings.
 
     `as_unattended()` wraps the **whole turn**, not the actions it proposes.
     The point is that the tools are inside it too: a browser that can click is
     not like an action, because by the time an action would have been proposed
     the click has already happened.
+
+    The three ceilings go on for the same reason and come off on every path
+    out. Each one only ever takes capability away — an automation may not be
+    able to do something an interactive agent cannot, so there is no argument
+    here that widens anything. The permission gate is still asked afterwards.
     """
     from ..agents import run_turn
-    from ..agents.permissions import as_unattended
-    with as_unattended():
-        result = run_turn(agent_id, prompt)
+    from ..agents.connector_grants import only_these, release_only
+    from ..agents.permissions import (
+        allow_browsing,
+        as_unattended,
+        without_browsing,
+    )
+
+    spec = execution or {}
+    scope = only_these(list(spec.get("connectors") or []))
+    no_pages = without_browsing() if not spec.get("allow_browser", True) else None
+    try:
+        with as_unattended():
+            result = run_turn(
+                agent_id, prompt,
+                provider_name=str(spec.get("provider") or "") or None,
+                model_name=str(spec.get("model") or "") or None,
+                effort=str(spec.get("effort") or "") or None)
+    finally:
+        release_only(scope)
+        if no_pages is not None:
+            allow_browsing(no_pages)
     calls = len([s for s in getattr(result, "trace", []) if s.kind == "tool_call"])
     return (result.reply or ""), max(1, calls)
 
@@ -175,6 +199,33 @@ _MEMORABLE = {
     "blocked": ("", 0.0),          # correct declines are not news
     "completed": ("", 0.0),        # success is the expected case
 }
+
+
+def settle_watch(automation: Automation, run: dict[str, Any]) -> bool:
+    """Switch off an automation that has done the one thing it was for.
+
+    "Tell me when the next email from X arrives" is a **watch**, not a standing
+    rule: it is answered once, and every run after that is noise the user has
+    to go and stop by hand. `stop_after_success` says the user meant a watch.
+
+    Only on `COMPLETED`. A run that was blocked, escalated or cancelled has not
+    answered anything, and switching the watch off then would lose it on the
+    first bad day — which is the day it most needs to still be watching.
+
+    Paused, never deleted: the record stays, the user can see it did its job,
+    and turning it back on is one tap.
+    """
+    if not automation.policy.stop_after_success:
+        return False
+    if str(run.get("state") or "") != str(store.RunState.COMPLETED):
+        return False
+    with suppressed("switching off a watch that has done its job"):
+        from ..core.routine_store import get_routines
+        if get_routines().set_fields(automation.id, enabled=0):
+            log.info("automation %s watched for one thing and found it; paused",
+                     automation.id)
+            return True
+    return False
 
 
 def remember_outcome(automation: Automation, run: dict[str, Any]) -> bool:
@@ -288,6 +339,7 @@ def ingest(event: Event, *, deps: Deps | None = None,
             with suppressed("advancing an automation run"):
                 settled = executor.advance(run_id, automation)
                 remember_outcome(automation, settled or {})
+                settle_watch(automation, settled or {})
     return routed.as_dict()
 
 
@@ -333,6 +385,39 @@ def tick(*, deps: Deps | None = None,
     return {"resumed": resumed, "fired": fired}
 
 
+def wanted_sooner() -> dict[str, int]:
+    """Connectors an automation wants checked faster, and how often, in minutes.
+
+    "Tell me when the next email from X arrives" is answered by a sync, so how
+    quickly it is answered is how often that source is checked. The normal
+    cadence is half an hour, which is right for keeping a brain current and
+    wrong for a watch somebody is sitting waiting on.
+
+    The tightest request wins per connector: two automations asking different
+    numbers of the same app is one question with one answer. Only ever faster —
+    an automation cannot slow down a sync the rest of the app depends on.
+    """
+    from . import triggers
+
+    wanted: dict[str, int] = {}
+    with suppressed("reading which sources an automation wants checked sooner"):
+        for automation in list_automations():
+            minutes = int(automation.execution.check_minutes or 0)
+            if not automation.enabled or minutes <= 0:
+                continue
+            spec = automation.trigger or {}
+            if str(spec.get("type") or "") != triggers.EVENT:
+                continue
+            # No source named means "any app that makes this kind of event",
+            # and there is no honest way to poll "any" — the user has to say
+            # which one before we spend their quota on it.
+            source = str(spec.get("source") or "").strip().lower()
+            if not source:
+                continue
+            wanted[source] = min(wanted.get(source, minutes), minutes)
+    return wanted
+
+
 def after_sync(summary: dict[str, Any], *, deps: Deps | None = None,
                ) -> dict[str, Any]:
     """Turn what a sync produced into events, and let them start automations.
@@ -341,6 +426,21 @@ def after_sync(summary: dict[str, Any], *, deps: Deps | None = None,
     count became a list: it is that **the engine no longer knows what a Gmail
     is**. `sources.py` maps a connector to an event kind from a dictionary, and
     everything downstream sees an `Event`.
+
+    **Every connector that ran is looked at, not only the ones that reported
+    adding something.** `added` counts what *this* sync wrote; the watermark
+    counts what the automation layer has already turned into events, and the two
+    drift apart for ordinary reasons — a row stored by a manual sync from the
+    UI, by an agent's own tool call, or by an import that ran before the
+    automation existed. Every one of those left mail sitting in the brain that
+    no automation would ever see, because the next sync to report `added > 0`
+    was the only thing that would look, and on a quiet mailbox that is never.
+
+    It cost a user their first automation: two emails arrived, were stored, and
+    the automation watching for them read "Not run yet" with nothing anywhere
+    saying why. The lookup it was avoiding is one indexed query per connector
+    per sync, bounded by the watermark, and returns nothing at all on the pass
+    after it caught up.
     """
     from . import sources
 
@@ -349,13 +449,16 @@ def after_sync(summary: dict[str, Any], *, deps: Deps | None = None,
     for connector, result in (summary or {}).items():
         if connector.startswith("_") or not isinstance(result, dict):
             continue
-        added = int(result.get("added") or 0)
-        if added <= 0:
+        # An error with no count is a connector that failed before it could
+        # store anything — there is nothing new to read back.
+        if result.get("errors") and not result.get("added"):
             continue
         rows: list[dict[str, Any]] = []
         with suppressed("reading rows a sync added, for automation events"):
             rows = sources.recent_rows(connector, _since(connector))
-        for event in sources.events_from_sync(connector, added, rows=rows):
+        if not rows:
+            continue
+        for event in sources.events_from_sync(connector, len(rows), rows=rows):
             outcome = ingest(event, deps=deps)
             started.extend(outcome.get("started") or [])
             seen[connector] = seen.get(connector, 0) + 1

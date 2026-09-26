@@ -268,8 +268,12 @@ def test_a_time_of_day_is_stored_both_ways_and_they_agree(vocabulary):
         {"op": "set", "sel": "#rmAtTime", "value": "07:30"},
         {"op": "set", "sel": "#rmDays", "value": "mon,tue,wed,thu,fri"},
     ])
-    assert out["trigger"] == {"type": "schedule", "at_time": "07:30",
-                              "days": "mon,tue,wed,thu,fri"}
+    # The timezone rides along on every schedule now, rather than the spec
+    # silently meaning whichever machine happened to save it.
+    assert out["trigger"]["type"] == "schedule"
+    assert out["trigger"]["at_time"] == "07:30"
+    assert out["trigger"]["days"] == "mon,tue,wed,thu,fri"
+    assert out["trigger"]["timezone"]
     assert out["legacy"] == {"trigger": "daily", "at_time": "07:30",
                              "days": "mon,tue,wed,thu,fri", "interval_min": 60}
     assert out["words"] == "Weekdays at 7:30 AM"
@@ -283,7 +287,8 @@ def test_an_interval_is_stored_both_ways(vocabulary):
     assert out["trigger"] == {"type": "interval", "interval_min": 15}
     assert out["legacy"]["trigger"] == "schedule"
     assert out["legacy"]["interval_min"] == 15
-    assert out["words"] == "Every 15 min"
+    assert out["words"] == "Every 15 minutes", (
+        "the row and the menu describe the same repeat differently")
 
 
 # ── editing one that already exists ────────────────────────────────────────
@@ -295,8 +300,8 @@ def test_editing_loads_what_the_automation_already_says(vocabulary):
                                 "value": "urgent"}]}
     out = drive(vocabulary, [{"op": "open", "existing": {"id": "a1"}}],
                 automation=existing)
-    assert out["trigger"] == {"type": "schedule", "at_time": "09:15",
-                              "days": "sat,sun"}
+    assert out["trigger"]["at_time"] == "09:15"
+    assert out["trigger"]["days"] == "sat,sun"
     assert out["conditions"] == [{"type": "contains", "field": "event.body",
                                   "value": "urgent"}]
 
@@ -380,8 +385,9 @@ def test_creating_one_writes_the_routine_row_and_then_the_spec(vocabulary):
 
     patched = writes[1]
     assert patched["url"] == "/api/automations/new-1"
-    assert patched["body"]["trigger"] == {"type": "schedule", "at_time": "06:45",
-                                          "days": "sat,sun"}
+    assert patched["body"]["trigger"]["at_time"] == "06:45"
+    assert patched["body"]["trigger"]["days"] == "sat,sun"
+    assert patched["body"]["trigger"]["timezone"]
     assert patched["body"]["conditions"] == [
         {"type": "domain_is", "field": "event.from", "value": "acme.com"}]
 
@@ -407,12 +413,67 @@ def test_a_spec_that_could_not_be_stored_is_not_reported_as_success(vocabulary):
 
 # ── the shape of the form itself ───────────────────────────────────────────
 
-def test_the_app_box_suggests_apps_that_exist(vocabulary):
-    """"In which app" is a free-text box because a new connector should work
-    without a frontend change. Free text with no suggestions is a box people
-    type "Gmail " into."""
+def test_the_app_is_picked_from_a_list_by_its_real_name(vocabulary):
+    """It was a text box you typed an app's id into.
+
+    That asked people to remember that Google Calendar is spelled `gcal`, and a
+    typo in it is an automation that never fires with nothing on screen saying
+    why.
+    """
+    out = drive(vocabulary, [
+        {"op": "open"}, {"op": "trigger", "value": "event"},
+        {"op": "set", "sel": "#rmEventKind", "value": "email.received"},
+    ])
+    assert "Any connected app" in out["sourceHtml"]
+    assert 'value="gmail"' in out["sourceHtml"]
+    assert ">Gmail<" in out["sourceHtml"], "it shows the id instead of the name"
+
+
+def test_only_the_apps_that_can_cause_that_event_are_offered(vocabulary):
+    """A menu of fifteen apps where two are possible is a menu somebody picks
+    wrongly from — and "a calendar event changes, in Gmail" is an automation
+    that can never fire."""
+    out = drive(vocabulary, [
+        {"op": "open"}, {"op": "trigger", "value": "event"},
+        {"op": "set", "sel": "#rmEventKind", "value": "calendar.changed"},
+    ])
+    assert ">Google Calendar<" in out["sourceHtml"]
+    assert ">Apple Calendar<" in out["sourceHtml"]
+    assert ">Gmail<" not in out["sourceHtml"]
+
+
+def test_changing_the_event_drops_an_app_that_no_longer_fits(vocabulary):
+    """Pick Gmail, then change your mind to calendars. Leaving Gmail selected
+    would save an automation that silently never runs."""
+    out = drive(vocabulary, [
+        {"op": "open"}, {"op": "trigger", "value": "event"},
+        {"op": "set", "sel": "#rmEventKind", "value": "email.received"},
+        {"op": "set", "sel": "#rmEventSource", "value": "gmail"},
+        {"op": "set", "sel": "#rmEventKind", "value": "calendar.changed"},
+    ])
+    assert out["trigger"] == {"type": "event", "kind": "calendar.changed"}, (
+        "it kept an app that cannot produce this event")
+
+
+def test_how_often_is_a_list_of_spans_not_a_number_box(vocabulary):
+    """"Every (minutes): 1440" is a unit conversion the user should not be
+    doing, and it sat beside an empty cell where every other step has a second
+    field."""
     out = drive(vocabulary, [{"op": "open"}])
-    assert 'value="gmail"' in out["sourceListHtml"]
+    assert "Every hour" in out["everyHtml"]
+    assert "Once a day" in out["everyHtml"]
+    assert 'value="1440"' in out["everyHtml"]
+
+
+def test_an_interval_the_list_does_not_offer_is_kept(vocabulary):
+    """An automation set to 45 minutes must not become 15 because somebody
+    opened it to read the name."""
+    existing = {"id": "a4", "trigger": {"type": "interval", "interval_min": 45},
+                "conditions": []}
+    out = drive(vocabulary, [{"op": "open", "existing": {"id": "a4"}}],
+                automation=existing)
+    assert out["trigger"] == {"type": "interval", "interval_min": 45}
+    assert "Every 45 minutes" in out["everyHtml"]
 
 
 def test_the_form_is_three_numbered_steps():
@@ -465,3 +526,308 @@ def test_a_check_can_always_be_removed_on_a_narrow_window():
     assert "@media (max-width: 560px)" in css
     narrow = css.split("@media (max-width: 560px)")[1]
     assert ".cond-row { grid-template-columns: 1fr 1fr; }" in narrow
+
+
+def test_a_value_with_known_answers_is_a_list(vocabulary):
+    """"Which app it came from" is a choice between the apps this build has,
+    not a sentence — and a text box there is a box somebody types "Gmail" into
+    while the engine compares against "gmail"."""
+    out = drive(vocabulary, [
+        {"op": "open"}, {"op": "add"},
+        {"op": "type", "row": 0, "what": "field", "value": "event.source"},
+        {"op": "type", "row": 0, "what": "type", "value": "equals"},
+        {"op": "type", "row": 0, "what": "value", "value": "gmail"},
+    ])
+    assert "<select class=\"cond-value\"" in out["conditionsHtml"]
+    assert ">Gmail<" in out["conditionsHtml"]
+    assert out["conditions"] == [
+        {"type": "equals", "field": "event.source", "value": "gmail"}]
+
+
+def test_a_value_with_no_known_answers_is_still_a_box(vocabulary):
+    """Most of them. "Contains the word invoice" cannot be a menu."""
+    out = drive(vocabulary, [
+        {"op": "open"}, {"op": "add"},
+        {"op": "type", "row": 0, "what": "field", "value": "event.title"},
+        {"op": "type", "row": 0, "what": "type", "value": "contains"},
+        {"op": "type", "row": 0, "what": "value", "value": "invoice"},
+    ])
+    assert "<input class=\"cond-value\"" in out["conditionsHtml"]
+    assert out["conditions"] == [
+        {"type": "contains", "field": "event.title", "value": "invoice"}]
+
+
+def test_changing_the_field_clears_a_value_that_no_longer_means_anything(
+        vocabulary):
+    """`gmail` picked for "which app" is not an answer to "subject contains".
+    Carried across, it would read as a check the user never wrote."""
+    out = drive(vocabulary, [
+        {"op": "open"}, {"op": "add"},
+        {"op": "type", "row": 0, "what": "field", "value": "event.source"},
+        {"op": "type", "row": 0, "what": "value", "value": "gmail"},
+        {"op": "type", "row": 0, "what": "field", "value": "event.title"},
+    ])
+    assert out["conditions"] == [], "the old value survived into a new question"
+    assert "gmail" not in out["conditionsHtml"]
+
+
+# ── the menu says what each choice is for ──────────────────────────────────
+
+def test_the_when_menu_explains_the_choice(vocabulary):
+    """Four names do not say which one to pick.
+
+    A user wanting "run when the mail arrives" chose **At a time of day**, then
+    asked for an "any time" option — which cannot exist, because for that
+    trigger the time *is* the rule. The answer was the first item in the same
+    menu, and nothing on screen said so.
+    """
+    out = drive(vocabulary, [
+        {"op": "open"}, {"op": "trigger", "value": "event"}])
+    assert "do not know when" in out["triggerHint"], (
+        "the option for 'I don't know when it is coming' does not say so")
+
+
+def test_the_explanation_follows_the_choice(vocabulary):
+    """A line that stays put while the menu moves is worse than none — it
+    describes the wrong thing with the authority of being on screen."""
+    clock = drive(vocabulary, [
+        {"op": "open"}, {"op": "trigger", "value": "schedule"}])
+    asked = drive(vocabulary, [
+        {"op": "open"}, {"op": "trigger", "value": "manual"}])
+
+    assert "at a time you pick" in clock["triggerHint"].lower()
+    assert "never runs on its own" in asked["triggerHint"].lower()
+    assert clock["triggerHint"] != asked["triggerHint"]
+
+
+def test_every_trigger_says_what_it_is_for(vocabulary):
+    """A trigger added with no explanation shows an empty line where every
+    other one explains itself."""
+    assert all(t["hint"] for t in vocabulary["triggers"])
+
+
+@pytest.mark.parametrize("trigger,shown", [
+    ("event", "event"), ("schedule", "schedule"), ("interval", "interval"),
+])
+def test_only_the_questions_that_trigger_asks_are_shown(vocabulary, trigger,
+                                                        shown):
+    """A time box under "something happens in an app" is a setting the user
+    filled in that does nothing."""
+    out = drive(vocabulary, [{"op": "open"}, {"op": "trigger", "value": trigger}])
+    assert out["showing"] == {"event": shown == "event",
+                              "schedule": shown == "schedule",
+                              "interval": shown == "interval"}
+
+
+def test_asking_for_it_yourself_shows_no_questions_at_all(vocabulary):
+    out = drive(vocabulary, [{"op": "open"}, {"op": "trigger", "value": "manual"}])
+    assert out["showing"] == {"event": False, "schedule": False,
+                              "interval": False}
+
+
+# ── how soon "when it happens" actually is ─────────────────────────────────
+
+def test_an_event_automation_says_how_soon_it_will_notice(vocabulary):
+    """"When the mail arrives" reads as "the second it arrives". It is really
+    "on the next sync", and a user expecting the first thinks it is broken.
+
+    Asked often enough that an agent, with nothing on screen to go on, offered
+    the user a choice of checking frequency — which is neither its setting nor
+    the automation's.
+    """
+    out = drive(vocabulary, [
+        {"op": "open"}, {"op": "trigger", "value": "event"}])
+
+    assert str(vocabulary["sync_minutes"]) in out["syncNote"]
+    assert "minutes" in out["syncNote"]
+    assert "Sync now" in out["syncNote"], (
+        "it says you must wait without saying how not to")
+
+
+def test_the_note_is_only_there_when_it_is_true(vocabulary):
+    """A clock-triggered automation runs at the time you set. Telling that user
+    about sync intervals is telling them something irrelevant with the
+    authority of being on screen."""
+    for trigger in ("schedule", "interval", "manual"):
+        out = drive(vocabulary, [
+            {"op": "open"}, {"op": "trigger", "value": trigger}])
+        assert out["syncNote"] == "", f"{trigger} was told about syncing"
+
+
+def test_the_note_is_absent_rather_than_guessed_at(vocabulary):
+    """A build that cannot say how often it syncs says nothing, instead of
+    naming a number it made up."""
+    quiet = {**vocabulary, "sync_minutes": 0}
+    out = drive(quiet, [{"op": "open"}, {"op": "trigger", "value": "event"}])
+    assert out["syncNote"] == ""
+
+
+# ── the automation said back as one sentence ───────────────────────────────
+
+def test_the_form_reads_the_whole_automation_back(vocabulary):
+    """Three steps in three boxes are legible one box at a time and never as a
+    whole, and the whole is what a person checks before pressing Create."""
+    out = drive(vocabulary, [
+        {"op": "open"}, {"op": "trigger", "value": "event"},
+        {"op": "set", "sel": "#rmEventKind", "value": "email.received"},
+        {"op": "set", "sel": "#rmEventSource", "value": "gmail"},
+        {"op": "add"},
+        {"op": "type", "row": 0, "what": "field", "value": "event.from"},
+        {"op": "type", "row": 0, "what": "type", "value": "domain_is"},
+        {"op": "type", "row": 0, "what": "value", "value": "acme.com"},
+        {"op": "set", "sel": "#rmInstruction", "value": "summarise it for me"},
+    ])
+    said = out["readback"]
+    assert "An email arrives in gmail" in said
+    assert "only if" in said
+    assert "Who it is from" in said and "is from" in said and "acme.com" in said
+    assert "summarise it for me" in said
+
+
+def test_the_sentence_cannot_describe_something_other_than_what_is_saved(
+        vocabulary):
+    """It is built from the same functions that build what gets stored. A
+    readback assembled separately is a second description, and the two disagree
+    the first time one of them changes."""
+    out = drive(vocabulary, [
+        {"op": "open"}, {"op": "trigger", "value": "interval"},
+        {"op": "set", "sel": "#rmInterval", "value": "360"},
+        {"op": "set", "sel": "#rmInstruction", "value": "check the deploys"},
+    ])
+    assert out["trigger"] == {"type": "interval", "interval_min": 360}
+    assert "Every 6 hours" in out["readback"]
+
+
+def test_the_sentence_says_when_the_instruction_is_still_missing(vocabulary):
+    """Silence there reads as "nothing happens", which is also what an empty
+    step 3 produces — so it has to say which one it is."""
+    out = drive(vocabulary, [
+        {"op": "open"}, {"op": "trigger", "value": "manual"}])
+    assert "step 3" in out["readback"]
+
+
+# ── a watch that stops when it has answered ────────────────────────────────
+
+def test_a_one_off_watch_says_it_will_stop(vocabulary):
+    out = drive(vocabulary, [
+        {"op": "open"}, {"op": "trigger", "value": "event"},
+        {"op": "set", "sel": "#rmInstruction", "value": "tell me"},
+        {"op": "check", "sel": "#rmOnce", "value": True},
+        {"op": "save", "id": "a7"},
+    ])
+    assert "one-off watch" in out["readback"]
+    patch = next(c for c in out["calls"] if c["method"] == "PATCH")
+    assert patch["body"]["policy"]["stop_after_success"] is True
+
+
+def test_saving_one_policy_field_does_not_reset_the_others(vocabulary):
+    """The policy also holds retries, limits and the approval rule, and this
+    form asks about one of them. Sending a fresh object would quietly put the
+    rest back to their defaults."""
+    existing = {"id": "a8", "trigger": {"type": "manual"}, "conditions": [],
+                "policy": {"verify": False, "on_blocked_action": "escalate",
+                           "stop_after_success": False}}
+    out = drive(vocabulary, [
+        {"op": "open", "existing": {"id": "a8"}},
+        {"op": "check", "sel": "#rmOnce", "value": True},
+        {"op": "save", "id": "a8"},
+    ], automation=existing)
+
+    sent = next(c for c in out["calls"]
+                if c["method"] == "PATCH")["body"]["policy"]
+    assert sent["stop_after_success"] is True
+    assert sent["verify"] is False, "it reset verification"
+    assert sent["on_blocked_action"] == "escalate", "it reset the approval rule"
+
+
+# ── whose eight in the morning ─────────────────────────────────────────────
+
+def test_a_time_of_day_carries_a_timezone(vocabulary):
+    """The trigger has read one since it was written and the form never asked,
+    so it silently meant the machine's — right until the user travels."""
+    out = drive(vocabulary, [
+        {"op": "open"}, {"op": "trigger", "value": "schedule"},
+        {"op": "set", "sel": "#rmAtTime", "value": "08:00"},
+        {"op": "set", "sel": "#rmZone", "value": "Asia/Kolkata"},
+    ])
+    assert out["trigger"]["timezone"] == "Asia/Kolkata"
+
+
+def test_the_timezone_list_offers_where_you_are(vocabulary):
+    out = drive(vocabulary, [{"op": "open"}])
+    assert "where you are" in out["zoneHtml"]
+
+
+# ── how it runs ────────────────────────────────────────────────────────────
+
+def test_only_providers_this_install_has_are_offered(vocabulary):
+    """A menu of models the account cannot reach is a menu that 404s when
+    picked, and that reads as the app being broken."""
+    out = drive(vocabulary, [{"op": "open"}])
+    assert "Your usual model" in out["providerHtml"]
+    for entry in vocabulary["providers"]:
+        assert f'value="{entry["id"]}"' in out["providerHtml"]
+
+
+def test_the_model_list_follows_the_provider(vocabulary):
+    """Models belong to one provider. Offering all of them together is offering
+    a pairing that cannot run."""
+    entry = next((p for p in vocabulary["providers"] if p["models"]), None)
+    if entry is None:
+        pytest.skip("no connected provider with models in this environment")
+    out = drive(vocabulary, [
+        {"op": "open"}, {"op": "set", "sel": "#rmProvider", "value": entry["id"]}])
+    assert f'value="{entry["models"][0]["id"]}"' in out["modelHtml"]
+
+
+def test_nothing_chosen_means_the_users_own_settings(vocabulary):
+    """The default, and what every automation made before this has."""
+    out = drive(vocabulary, [{"op": "open"}])
+    assert out["execution"]["provider"] == ""
+    assert out["execution"]["model"] == ""
+    assert out["execution"]["effort"] == ""
+    assert out["execution"]["connectors"] == []
+    assert out["execution"]["check_minutes"] == 0
+
+
+def test_the_two_switches_start_on(vocabulary):
+    """They take capability away. Starting them off would quietly make every
+    new automation less able than the agent running it."""
+    out = drive(vocabulary, [{"op": "open"}])
+    assert out["execution"]["allow_browser"] is True
+    assert out["execution"]["allow_email"] is True
+
+
+def test_the_apps_are_offered_by_name(vocabulary):
+    out = drive(vocabulary, [{"op": "open"}])
+    assert 'data-app="gmail"' in out["appsHtml"]
+    assert ">Gmail<" in out["appsHtml"]
+
+
+def test_a_saved_scope_comes_back_ticked(vocabulary):
+    existing = {"id": "aX", "trigger": {"type": "manual"}, "conditions": [],
+                "execution": {"connectors": ["gmail"], "allow_email": False,
+                              "check_minutes": 2}}
+    out = drive(vocabulary, [{"op": "open", "existing": {"id": "aX"}}],
+                automation=existing)
+    assert out["execution"]["connectors"] == ["gmail"]
+    assert out["execution"]["allow_email"] is False
+    assert out["execution"]["check_minutes"] == 2
+    assert "is-on" in out["appsHtml"]
+
+
+def test_how_it_runs_is_sent_with_everything_else(vocabulary):
+    out = drive(vocabulary, [
+        {"op": "open"}, {"op": "trigger", "value": "manual"},
+        {"op": "check", "sel": "#rmEmail", "value": False},
+        {"op": "save", "id": "aY"}])
+    sent = next(c for c in out["calls"] if c["method"] == "PATCH")["body"]
+    assert sent["execution"]["allow_email"] is False
+    assert sent["execution"]["allow_browser"] is True
+
+
+def test_checking_faster_is_off_unless_asked(vocabulary):
+    """It spends calls against the user own account."""
+    out = drive(vocabulary, [{"op": "open"}])
+    assert "At the normal time" in out["checkHtml"]
+    assert out["execution"]["check_minutes"] == 0

@@ -267,7 +267,26 @@ def test_an_old_database_gains_the_new_columns(tmp_path, monkeypatch):
 
 # ── the action, and the card the user approves ─────────────────────────────
 
-def test_a_time_wins_over_the_trigger_the_model_reached_for(store):
+@pytest.fixture
+def an_agent():
+    """One real agent, because an automation has to be run by somebody.
+
+    A fresh install has none — the Agent Library is the first screen and
+    nothing is pre-added — so a test that wants to create an automation has to
+    say who runs it.
+    """
+    from chitragupta.agents.custom import get_custom_store
+
+    store = get_custom_store()
+    agent = store.create("Desk", role="does the desk work")
+    # Removed again, because the roster outlives a test and a second "Desk"
+    # would be created as "desk-2" — at which point resolving the NAME finds
+    # the one a previous test left behind rather than this one.
+    yield agent
+    store.delete(agent.id)
+
+
+def test_a_time_wins_over_the_trigger_the_model_reached_for(store, an_agent):
     """Models reach for the trigger they were shown first and then attach
     at="8am" to it. Honouring the trigger over the time turns "every morning
     at 8" into "every 60 minutes" — not late, wrong all day."""
@@ -275,10 +294,60 @@ def test_a_time_wins_over_the_trigger_the_model_reached_for(store):
 
     out = actions.run_now("create_routine", {
         "name": "Morning brief", "trigger": "schedule", "at": "8am",
-        "days": "weekdays", "instruction": "clear my inbox", "agent": "inbox"})
-    assert out["ok"]
+        "days": "weekdays", "instruction": "clear my inbox",
+        "agent": an_agent.id})
+    assert out["ok"], out.get("error")
     assert store.get(out["id"])["trigger"] == "daily"
     assert "weekdays at 8:00 AM" in out["detail"]
+
+
+def test_an_automation_cannot_be_made_for_an_agent_that_does_not_exist(
+        store, an_agent):
+    """The bug this is here for, found in a real install.
+
+    Chief of Staff was asked to watch for mail and wrote `agent="inbox"`. There
+    is no inbox agent, so every turn would have been asked of somebody who is
+    not there — and the automation sat in the list saying "Not run yet"
+    forever, with nothing anywhere saying why.
+
+    Refused with the real names in it, so the next attempt can be right rather
+    than being told only "no".
+    """
+    from chitragupta import actions
+
+    out = actions.run_now("create_routine", {
+        "name": "Watch the mail", "trigger": "new_email",
+        "instruction": "tell me", "agent": "inbox"})
+
+    assert out["ok"] is False
+    assert "inbox" in out["error"]
+    assert "Desk" in out["error"], "it refused without saying what would work"
+
+
+def test_an_agent_can_be_named_the_way_it_reads_on_screen(store, an_agent):
+    """A model reads "Desk" in the roster and writes it back with the capital.
+    Refusing that would be refusing the right answer on a spelling."""
+    from chitragupta import actions
+
+    out = actions.run_now("create_routine", {
+        "name": "Morning brief", "trigger": "daily", "at": "8am",
+        "instruction": "clear my inbox", "agent": "Desk"})
+
+    assert out["ok"], out.get("error")
+    assert store.get(out["id"])["agent_id"] == an_agent.id
+
+
+def test_not_saying_which_agent_is_refused_rather_than_guessed(store, an_agent):
+    """Picking whichever agent happens to be first gives the user an automation
+    run by somebody they did not choose, and the only screen that shows it
+    displays that agent as if it had been chosen on purpose."""
+    from chitragupta import actions
+
+    out = actions.run_now("create_routine", {
+        "name": "Something", "trigger": "new_email", "instruction": "tell me"})
+
+    assert out["ok"] is False
+    assert "Desk" in out["error"]
 
 
 def test_the_card_promises_what_the_handler_will_build():
@@ -308,3 +377,35 @@ def test_the_prompt_tells_the_agent_which_one_to_reach_for():
     assert 'at="8am"' in block
     assert "every morning" in block
     assert "drifts" in block, "nothing said why an interval is not a time"
+
+
+def test_the_prompt_never_shows_an_agent_id_that_may_not_exist():
+    """Where `agent="inbox"` came from.
+
+    The example in the prompt had a hardcoded id, and a model copied it instead
+    of reading the roster it had been given three lines earlier. The automation
+    it made could never run: every turn would have been asked of somebody who
+    is not there.
+
+    There is no agent every install has — not `inbox`, not `personal` — so the
+    example may not name one, and the block has to say where a real one comes
+    from.
+    """
+    from chitragupta.agents.prompt import _BLOCKS
+
+    block = _BLOCKS["create_routine"]
+    for invented in ('agent="inbox"', 'agent="personal"', 'agent="assistant"',
+                     'agent="mail"'):
+        assert invented not in block, f"the prompt still teaches {invented}"
+    assert "YOUR TEAM" in block, "it does not say where a real agent comes from"
+
+
+def test_the_prompt_does_not_offer_a_checking_frequency_for_mail():
+    """An agent asked the user "how often should I check Gmail — every 15
+    minutes, every hour?" That is the sync setting, which neither the agent nor
+    the automation can set, so the question had no answer it could honour."""
+    from chitragupta.agents.prompt import _BLOCKS
+
+    block = _BLOCKS["create_routine"]
+    mail = block.split("new_email —")[1].split("daily")[0]
+    assert "never offer" in mail.lower() or "not something this action" in mail
