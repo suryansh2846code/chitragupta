@@ -12,6 +12,8 @@ from typing import Any
 
 from . import permissions
 from .base import Connector, SyncResult
+from .capability import caps
+from .contract import AuthMethod, Limits, SyncStrategy
 
 
 def _epoch_or_none(stamp: str | None) -> float | None:
@@ -69,6 +71,12 @@ class AppleCalendarConnector(Connector):
     auto_sync = True
     incremental = True
     platforms = ("darwin",)
+    auth_method = AuthMethod.LOCAL
+    sync_strategy = SyncStrategy.TIMESTAMP
+    #: Reads the local `.ics` store. Writes go through `gcal`, which is the
+    #: account the invitations actually come from.
+    capabilities = caps("read:event", "read:calendar")
+    limits = Limits(concurrency=1, records_per_sync=500)
 
     def is_configured(self) -> tuple[bool, str]:
         if not CAL_ROOT.exists():

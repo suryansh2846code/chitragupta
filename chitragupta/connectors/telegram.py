@@ -18,6 +18,8 @@ from ..log import get_logger, suppressed
 from ..messaging import Chat, Message
 from . import telegram_auth
 from .base import Connector, SyncResult
+from .capability import caps
+from .contract import AuthMethod, Limits, SyncStrategy
 
 log = get_logger(__name__)
 
@@ -34,6 +36,15 @@ class TelegramConnector(Connector):
     label = "Telegram"
     auto_sync = True
     incremental = True
+    #: Not an API key: MTProto establishes a session with the user's own
+    #: account, and the thing stored is that session rather than a token the
+    #: user could have pasted. `AuthMethod` keeps them apart because the
+    #: disconnect and re-auth paths are genuinely different.
+    auth_method = AuthMethod.SESSION
+    sync_strategy = SyncStrategy.TIMESTAMP
+    capabilities = caps("read:message", "read:chat", "send:message")
+    limits = Limits(requests=30, per_seconds=60.0, concurrency=1,
+                    page_size=100, records_per_sync=400)
     #: No `secret_field`: this needs an API id, an API hash, a phone number and
     #: a code, which is a flow rather than a box. The endpoints that drive it
     #: are in `api/routes/connectors.py`.

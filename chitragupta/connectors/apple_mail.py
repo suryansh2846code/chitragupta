@@ -15,6 +15,8 @@ from typing import Any
 
 from . import permissions
 from .base import Connector, SyncResult
+from .capability import caps
+from .contract import AuthMethod, Limits, SyncStrategy
 from .gmail import html_to_text
 
 MAIL_ROOT = Path.home() / "Library" / "Mail"
@@ -92,6 +94,14 @@ class AppleMailConnector(Connector):
     auto_sync = True
     incremental = True
     platforms = ("darwin",)
+    auth_method = AuthMethod.LOCAL
+    sync_strategy = SyncStrategy.TIMESTAMP
+    #: Reads the local mail store. No send path: Apple Mail's is AppleScript
+    #: against a running app, and `send:email` already has a route through
+    #: Gmail. Declaring a capability we do not implement would put a control on
+    #: screen that cannot work.
+    capabilities = caps("read:email")
+    limits = Limits(concurrency=1, records_per_sync=800)
 
     def is_configured(self) -> tuple[bool, str]:
         dirs = _mail_dirs()

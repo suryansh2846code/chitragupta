@@ -6,6 +6,8 @@ from typing import Any
 
 from ..core.chunk import chunk_text
 from .base import Connector, SyncResult
+from .capability import caps
+from .contract import AuthMethod, Limits, PaginationStrategy, SyncStrategy
 from .google_auth import get_credentials, google_ready
 
 
@@ -32,8 +34,29 @@ GSLIDES = "application/vnd.google-apps.presentation"
 class GoogleDriveConnector(Connector):
     name = "gdrive"
     label = "Google Drive"
+    provider = "google"
     auto_sync = True
     incremental = True
+    auth_method = AuthMethod.OAUTH2
+    sync_strategy = SyncStrategy.TIMESTAMP
+    pagination = PaginationStrategy.NEXT_TOKEN
+    #: `drive.file`, not `drive` — writes reach only files this app created.
+    #: See the note in `google_auth.SCOPES`.
+    required_scopes = (
+        "https://www.googleapis.com/auth/drive.readonly",
+        "https://www.googleapis.com/auth/drive.file",
+    )
+    #: `trash_doc` is `archive:file`, not `delete:file`: Drive's bin is a place
+    #: things come back from, and `_undo_drive_doc` is that inverse. Calling it
+    #: destructive would make an action that IS reversible ask as though it
+    #: were not.
+    capabilities = caps(
+        "read:file", "search:file", "download:file",
+        "create:document", "archive:file",
+        "share:document", "unshare:document",
+    )
+    limits = Limits(requests=600, per_seconds=60.0, concurrency=3,
+                    page_size=100, records_per_sync=300)
 
     def is_configured(self) -> tuple[bool, str]:
         return google_ready()

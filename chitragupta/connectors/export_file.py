@@ -27,6 +27,8 @@ from typing import Any
 from ..log import get_logger
 from ..metrics import log_many
 from .base import Connector, SyncResult
+from .capability import caps
+from .contract import AuthMethod, SyncStrategy
 
 log = get_logger(__name__)
 
@@ -45,6 +47,15 @@ class ExportConnector(Connector):
     #: background loop is for.
     auto_sync = False
     incremental = False
+    #: A file the user exported and handed us. No account, nothing leaves.
+    auth_method = AuthMethod.LOCAL
+    sync_strategy = SyncStrategy.MANUAL
+    #: **`measurement`, not `record`.** These write to `../metrics.py` and never
+    #: to the brain — tens of thousands of readings as memories would cost every
+    #: agent a second of recall per turn, forever (`/CLAUDE.md`, Measurements).
+    #: The resource being its own word is what keeps that boundary legible from
+    #: the manifest rather than only from the code.
+    capabilities = caps("read:measurement")
 
     def is_configured(self) -> tuple[bool, str]:
         return (True, "") if self._remembered() else (False, self.SETUP_HINT)

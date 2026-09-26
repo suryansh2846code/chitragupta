@@ -6,6 +6,8 @@ from typing import Any
 from ..config import get_settings
 from ..core.chunk import chunk_text
 from .base import Connector, SyncResult
+from .capability import caps
+from .contract import AuthMethod, Limits, PaginationStrategy
 
 
 def _rich_text(items: list[dict]) -> str:
@@ -37,6 +39,15 @@ class NotionConnector(Connector):
     # Notion search has no "changed since" filter we can rely on; paging the
     # whole result set is the only honest option.
     incremental = False
+    auth_method = AuthMethod.API_KEY
+    #: Notion pages the whole result set within one sync (`start_cursor`), and
+    #: carries no watermark across runs — which is why `incremental` is False
+    #: and the pagination strategy is still declared.
+    pagination = PaginationStrategy.CURSOR
+    #: Reads only — the writes stood down with `prefer_mcp`. See `github.py`.
+    capabilities = caps("read:page", "search:page")
+    limits = Limits(requests=180, per_seconds=60.0, concurrency=2,
+                    page_size=50, records_per_sync=300)
     secret_field = {
         "key": "NOTION_TOKEN",
         "label": "Notion integration secret",

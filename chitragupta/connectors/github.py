@@ -20,6 +20,8 @@ from typing import Any
 
 from ..config import get_settings
 from .base import Connector, SyncResult
+from .capability import caps
+from .contract import AuthMethod, Limits, SyncStrategy
 
 API = "https://api.github.com"
 
@@ -38,6 +40,18 @@ class GitHubConnector(Connector):
     # token-backed source the user connected that then never refreshed.
     auto_sync = True
     incremental = True
+    auth_method = AuthMethod.API_KEY
+    sync_strategy = SyncStrategy.TIMESTAMP
+    required_scopes = ("repo",)
+    #: **Reads only, and the declaration is what makes that enforceable.** The
+    #: writes stood down when the vendor's MCP server became the route
+    #: (`prefer_mcp`); `github_comment` and `github_create_issue` left
+    #: `actions.py` in the same landing. Before this list existed, "it can no
+    #: longer write" was a property of which methods happened to remain on the
+    #: class — true, and invisible to anything that wanted to check.
+    capabilities = caps("read:repository", "read:issue", "read:pull_request")
+    limits = Limits(requests=60, per_seconds=60.0, concurrency=2,
+                    page_size=100, records_per_sync=150)
     secret_field = {
         "key": "GITHUB_TOKEN",
         "label": "GitHub personal access token",

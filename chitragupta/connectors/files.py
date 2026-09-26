@@ -7,6 +7,8 @@ from pathlib import Path
 from typing import Any
 
 from .base import Connector, SyncResult
+from .capability import caps
+from .contract import AuthMethod, Limits, SyncStrategy
 
 TEXT_EXT = {
     ".md", ".markdown", ".txt", ".rst", ".org",
@@ -64,6 +66,15 @@ class FilesConnector(Connector):
     auto_sync = False
     incremental = True
     always_available = True
+    #: Nothing to sign in to — the folder is already on this Mac. `LOCAL`
+    #: rather than `NONE` because the two are different facts: this needs no
+    #: credential *and* needs the user to have pointed at a folder.
+    auth_method = AuthMethod.LOCAL
+    sync_strategy = SyncStrategy.TIMESTAMP
+    #: Read-only, and the whole product promise rests on it: nothing here can
+    #: change a file on the user's disk.
+    capabilities = caps("read:file", "read:folder")
+    limits = Limits(concurrency=1, page_size=0, records_per_sync=5000)
 
     def sync(self, *, path: str = "", recursive: bool = True,
              exts: list[str] | None = None, since: str | None = None,

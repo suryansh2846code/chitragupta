@@ -12,6 +12,8 @@ from typing import Any
 
 from ..config import get_settings
 from .base import Connector, SyncResult
+from .capability import caps
+from .contract import AuthMethod, Limits, SyncStrategy
 
 API = "https://api.linear.app/graphql"
 QUERY = """
@@ -30,6 +32,12 @@ class LinearConnector(Connector):
     prefer_mcp = "linear"
     auto_sync = True          # see GitHub — same silent omission
     incremental = True
+    auth_method = AuthMethod.API_KEY
+    sync_strategy = SyncStrategy.TIMESTAMP
+    #: Reads only — the writes stood down with `prefer_mcp`. See `github.py`.
+    capabilities = caps("read:issue")
+    limits = Limits(requests=60, per_seconds=60.0, concurrency=2,
+                    page_size=50, records_per_sync=200)
     secret_field = {
         "key": "LINEAR_API_KEY",
         "label": "Linear personal API key",

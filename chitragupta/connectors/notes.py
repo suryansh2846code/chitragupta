@@ -4,6 +4,8 @@ from __future__ import annotations
 from typing import Any
 
 from .base import Connector, SyncResult
+from .capability import caps
+from .contract import AuthMethod, SyncStrategy
 
 
 class NotesConnector(Connector):
@@ -12,6 +14,12 @@ class NotesConnector(Connector):
     label = "Manual Notes"
     auto_sync = False         # written by hand; there is nothing to poll
     always_available = True
+    auth_method = AuthMethod.LOCAL
+    sync_strategy = SyncStrategy.MANUAL
+    #: The note is the user's own text arriving in their own brain. There is no
+    #: external system here at all, which is why there is no write capability:
+    #: nothing this connector does changes anything outside this Mac.
+    capabilities = caps("read:note")
 
     def sync(self, *, text: str = "", title: str | None = None,
              kind: str = "note", tags: list[str] | None = None,

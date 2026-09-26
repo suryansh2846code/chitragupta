@@ -29,6 +29,16 @@ from typing import Any, Protocol
 
 from ..core.store import MemoryStore, get_store
 from ..log import get_logger
+from .capability import Capability
+from .contract import (
+    AuthMethod,
+    ConnectorManifest,
+    EventSource,
+    Limits,
+    PaginationStrategy,
+    SyncStrategy,
+    manifest_of,
+)
 
 log = get_logger(__name__)
 
@@ -139,6 +149,115 @@ class Connector:
     #: and widening it would have meant touching all of them to express
     #: something three of them know.
     fix: str | None = None
+
+    # ── the declaration ─────────────────────────────────────────────────────
+    #
+    # Everything below is read by `contract.manifest_of()` and by nothing else
+    # directly. They are attributes on the class rather than a manifest written
+    # beside it, because a description maintained in a second place is one that
+    # will disagree with the connector — and the copy that drifts is always the
+    # one being read. `docs/CONNECTOR-PLATFORM.md` §2.
+
+    #: The vendor, where it differs from our id for it. `gcal` is Google.
+    provider: str = ""
+    #: Bumped when this connector's ingest shape changes incompatibly. Recorded
+    #: on every checkpoint, so a bump invalidates watermarks written by the old
+    #: shape instead of silently resuming into data that means something else.
+    version: int = 1
+
+    auth_method: AuthMethod = AuthMethod.NONE
+    #: Scopes/permissions this connector cannot work without. Lets a health
+    #: check say "signed in, but not allowed to write" rather than letting the
+    #: first write fail at the vendor, in front of the user.
+    required_scopes: tuple[str, ...] = ()
+
+    #: **What this connector can do**, as verbs on resources. The security
+    #: surface: `capability.parse()` refuses anything it does not recognise,
+    #: and an action may not be registered at a weaker tier than its capability
+    #: implies (`tests/connectors/test_capability_floor.py`).
+    #:
+    #: Empty means "has not been taught to describe itself", which
+    #: `ConnectorManifest.declares_nothing` reports out loud — an empty set is
+    #: otherwise indistinguishable from a read-only connector.
+    capabilities: frozenset[Capability] = frozenset()
+
+    sync_strategy: SyncStrategy = SyncStrategy.FULL
+    #: Can a crashed pass continue from its last checkpoint rather than zero?
+    #: False is the honest default: `_finish` stores a watermark only for a
+    #: clean pass, which is safe and means a 2,000-item sync that fails at
+    #: 1,900 starts again at 0. `engine.py` is what makes this True.
+    resumable: bool = False
+    pagination: PaginationStrategy = PaginationStrategy.NONE
+
+    event_source: EventSource = EventSource.NONE
+    #: Which field on a provider payload identifies an event, for dedup.
+    event_id_field: str = ""
+    #: Which field orders them. Empty means arrival order is all there is.
+    event_ordering_field: str = ""
+
+    #: How hard we will push this vendor. Ours, and `Limits.as_dict()` says so.
+    limits: Limits = Limits()
+
+    def connection(self, *, account: str = "") -> Any:
+        """This connector's account row, with its auth state brought up to date.
+
+        **The row mirrors the credential; it never holds one.** For every
+        connector shipped today the credential lives somewhere else — the
+        Keychain, `google_token.json`, a Telegram session — and
+        `is_configured()` is the authoritative answer about whether it works.
+        A second copy of that answer would be a second thing to keep current,
+        and the copy that drifts is always the one being read.
+
+        So this reconciles rather than decides, and it is careful in the two
+        directions that matter:
+
+        * **A user's pause is never undone.** `paused` is a separate column
+          for exactly that reason: it is a decision about scheduling, not
+          about the credential.
+        * **`REVOKED` is never quietly re-authenticated.** The user (or an
+          admin) took access away at the vendor; a local file still being
+          present does not mean that was reversed.
+        """
+        from .connections import AuthState, ensure, transition
+
+        found = ensure(self.name, provider=self.provider or self.name,
+                       account=account, version=self.version)
+        ready, reason = self.is_configured()
+
+        if ready and found.auth_state not in (AuthState.AUTHENTICATED,
+                                              AuthState.EXPIRED,
+                                              AuthState.REVOKED):
+            return transition(found.id, AuthState.AUTHENTICATED) or found
+        if not ready and found.auth_state in (AuthState.AUTHENTICATED,
+                                              AuthState.EXPIRED):
+            # No credential at all is DISCONNECTED, not REAUTH_REQUIRED: the
+            # second means *a sign-in expired and only you can renew it*, and
+            # saying that about a connector nobody has set up yet sends the
+            # user looking for a session that never existed.
+            return transition(found.id, AuthState.DISCONNECTED,
+                              detail=reason) or found
+        return found
+
+    def manifest(self) -> ConnectorManifest:
+        """This connector, described. Derived — see the note above.
+
+        An instance method rather than a classmethod because two connectors are
+        one class per *configuration* rather than one class per source:
+        `MCPConnector` and `CustomAPIConnector` are constructed from a spec the
+        user wrote, and their id, label and limits are properties of that spec.
+        `manifest_of()` reads attributes, so it works on either — and
+        `tests/connectors/` calls it on the classes.
+        """
+        return manifest_of(self)
+
+    def can(self, capability: Capability) -> bool:
+        """May this connector do that at all?
+
+        The floor under every gate, and it fails closed: a capability the
+        connector never declared is refused here, before a risk tier or an
+        allow-list is consulted.
+        """
+        return capability in self.capabilities
 
     @classmethod
     def supported_here(cls) -> bool:

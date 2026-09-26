@@ -31,6 +31,8 @@ from enum import Enum
 from typing import Any
 
 from .connectors import get_connector
+from .connectors.capability import Access, UnknownCapabilityError
+from .connectors.capability import parse as parse_capability
 from .log import suppressed
 
 _ACTION_RE = re.compile(r"<action\s+([^>]*?)>(.*?)</action>", re.I | re.S)
@@ -147,6 +149,29 @@ class ActionSpec:
     #: the card reads is `result["reversible"]`, decided here.
     undo_when: Callable[[dict, dict], str] | None = None
 
+    #: Which connector this action reaches, and what it does there — as
+    #: `"gmail"` and `"send:email"`. Empty for the actions that reach no
+    #: external system at all (a task, a reminder, a training log): those live
+    #: entirely in the user's own brain and have no connector to ask.
+    #:
+    #: **This does not create a second gate.** `agents/permissions.check()` is
+    #: still the gate and still reads `risk`. What the pair adds is a *floor*
+    #: underneath the tier, checked once by
+    #: `tests/connectors/test_capability_floor.py`:
+    #:
+    #: * the named connector must **declare** the capability, so an action
+    #:   cannot reach a verb the connector never said it had;
+    #: * `risk` may not be **weaker** than the capability's access tier, so a
+    #:   destructive verb cannot be registered as GREEN.
+    #:
+    #: The direction matters: an action may always be *stricter* than its
+    #: capability implies, and several are. `update_event` is an ordinary write
+    #: and is RED, because the people a move reaches are on the event and not
+    #: in the params — a fact about that action, which the capability
+    #: vocabulary has no way to know and should not pretend to.
+    connector: str = ""
+    capability: str = ""
+
     def public(self) -> dict[str, Any]:
         """What the card needs to render itself, without the callables."""
         return {
@@ -156,6 +181,13 @@ class ActionSpec:
             "reversible": self.undo is not None,
             "undo_label": self.undo_label,
             "always_ask_because": self.always_ask_because,
+            # Published so a card can say *what this reaches* in the connector's
+            # own vocabulary — "Gmail · send:email" — rather than only naming
+            # the action. The frontend read `EDITABLE` from a list of its own
+            # before `fields` was published; this is the same mistake not made
+            # twice.
+            "connector": self.connector,
+            "capability": self.capability,
         }
 
 
@@ -1430,6 +1462,7 @@ def _public_share_asks(params: dict) -> str:
 REGISTRY: dict[str, ActionSpec] = {
     "send_email": ActionSpec(
         handler=_send_email, label="Send email", schedulable=True,
+        connector="gmail", capability="send:email",
         fields=["to", "cc", "subject", "body", "attach"],
         risk=Risk.AMBER, recipient_kind=EMAIL_RECIPIENT,
         verify=_verify_email, remember=_remember_email,
@@ -1437,6 +1470,7 @@ REGISTRY: dict[str, ActionSpec] = {
     ),
     "create_draft": ActionSpec(
         handler=_create_draft, label="Save a draft",
+        connector="gmail", capability="create:draft",
         fields=["to", "cc", "subject", "body", "attach"],
         # **Green, and this is the rung the product skipped.** A draft reaches
         # nobody: it sits in the user's own Drafts folder until *they* press
@@ -1467,6 +1501,7 @@ REGISTRY: dict[str, ActionSpec] = {
     ),
     "create_event": ActionSpec(
         handler=_create_event, label="Create calendar event",
+        connector="gcal", capability="create:event",
         schedulable=True,
         fields=["title", "start", "end", "description", "attendees"],
         risk=Risk.AMBER, recipient_kind=EMAIL_RECIPIENT,
@@ -1475,6 +1510,7 @@ REGISTRY: dict[str, ActionSpec] = {
     ),
     "update_event": ActionSpec(
         handler=_update_event, label="Change a calendar event",
+        connector="gcal", capability="update:event",
         fields=["event_id", "title", "start", "end", "location",
                 "description", "attendees"],
         # **Red, not amber**, and the reason is the one `mcp_action` gives:
@@ -1492,6 +1528,7 @@ REGISTRY: dict[str, ActionSpec] = {
     ),
     "cancel_event": ActionSpec(
         handler=_cancel_event, label="Cancel a calendar event",
+        connector="gcal", capability="cancel:event",
         fields=["event_id"],
         risk=Risk.RED,
         always_ask_because="Cancelling a meeting tells everybody in it, so it "
@@ -1514,6 +1551,7 @@ REGISTRY: dict[str, ActionSpec] = {
     # as a retraction, because GitHub's server publishes no way to delete one.
     "create_followup": ActionSpec(
         handler=_create_followup, label="Track a follow-up",
+        # Reaches no external system — one row in the user's own brain.
         fields=["about", "who", "due", "thread_id"],
         # Green: one row in the user's own brain, reaching nobody.
         risk=Risk.GREEN,
@@ -1521,6 +1559,7 @@ REGISTRY: dict[str, ActionSpec] = {
     ),
     "create_task": ActionSpec(
         handler=_create_task, label="Add task",
+        # Reaches no external system — one row in the user's own brain.
         fields=["title", "due", "thread_id"],
         # Green: one row in the user's own task list, reaching nobody.
         risk=Risk.GREEN,
@@ -1529,6 +1568,7 @@ REGISTRY: dict[str, ActionSpec] = {
     ),
     "set_reminder": ActionSpec(
         handler=_set_reminder, label="Set reminder",
+        # Reaches no external system — one row in the user's own brain.
         fields=["message", "at"],
         # Green: a notification on the user's own laptop reaches nobody else.
         risk=Risk.GREEN,
@@ -1536,6 +1576,7 @@ REGISTRY: dict[str, ActionSpec] = {
     ),
     "create_routine": ActionSpec(
         handler=_create_routine, label="Create automation",
+        # Reaches no external system — one row in the user's own brain.
         fields=["name", "trigger", "agent", "at", "days", "interval_min",
                 "instruction"],
         risk=Risk.RED,
@@ -1544,6 +1585,7 @@ REGISTRY: dict[str, ActionSpec] = {
     ),
     "mcp_action": ActionSpec(
         handler=_mcp_action, label="Connector action",
+        connector="mcp", capability="update:record",
         fields=["server_id", "tool", "arguments"],
         # **Amber now, and the argument that kept it red is answered rather
         # than dropped.** The old reasoning was that an allow-list needs
@@ -1570,6 +1612,7 @@ REGISTRY: dict[str, ActionSpec] = {
     ),
     "mail_triage": ActionSpec(
         handler=_mail_triage, label="Inbox changes",
+        connector="gmail", capability="archive:email",
         fields=["items"],
         risk=Risk.RED,
         always_ask_because="Changing your inbox always needs your approval.",
@@ -1577,6 +1620,7 @@ REGISTRY: dict[str, ActionSpec] = {
     ),
     "message_send": ActionSpec(
         handler=_message_send, label="Send a message",
+        connector="", capability="send:message",
         # `at` is on the card because "tell Rahul at six" is a thing people
         # say, and a field the user cannot see is a decision they cannot
         # correct before it fires.
@@ -1588,6 +1632,7 @@ REGISTRY: dict[str, ActionSpec] = {
     ),
     "log_workout": ActionSpec(
         handler=_log_workout, label="Training session",
+        # Reaches no external system — one row in the user's own brain.
         fields=["blocks", "at", "note"],
         # Green: it writes one row in the user's own training log.
         risk=Risk.GREEN,
@@ -1614,6 +1659,7 @@ REGISTRY: dict[str, ActionSpec] = {
 
     "drive_create_doc": ActionSpec(
         handler=_drive_create_doc, label="Create a document",
+        connector="gdrive", capability="create:document",
         fields=["title", "text"],
         # Green, and for exactly `create_draft`'s reason: it lands in the
         # user's own Drive and nobody else can see it until they share it.
@@ -1624,6 +1670,7 @@ REGISTRY: dict[str, ActionSpec] = {
     ),
     "drive_share": ActionSpec(
         handler=_drive_share, label="Share a document",
+        connector="gdrive", capability="share:document",
         fields=["file_id", "email", "role"],
         # Amber against the EMAIL list, because that is genuinely who it
         # reaches and the address is on the card. Sharing a document with
@@ -1636,6 +1683,105 @@ REGISTRY: dict[str, ActionSpec] = {
         undo=_undo_drive_share, undo_label="Take access back",
     ),
 }
+
+
+#: The weakest risk tier an action carrying a given capability may be
+#: registered at.
+#:
+#: **A floor, never a ceiling.** An action may always be stricter than its
+#: capability implies and several deliberately are: `update_event` is an
+#: ordinary write and is RED, because the people a move reaches are on the
+#: event rather than in the params. That is a fact about *that action*, which
+#: the capability vocabulary cannot know and must not overrule.
+#:
+#: What it stops is the other direction — a destructive verb registered as
+#: something harmless, which is the failure `/CLAUDE.md` names first: *"a
+#: connector must never be able to silently expose an arbitrary write
+#: operation as a harmless read operation"*.
+_CAPABILITY_FLOOR: dict[Access, Risk] = {
+    Access.READ: Risk.GREEN,
+    Access.WRITE: Risk.GREEN,
+    Access.OUTBOUND: Risk.AMBER,
+    Access.DESTRUCTIVE: Risk.RED,
+}
+
+_RISK_STRENGTH = {Risk.GREEN: 0, Risk.AMBER: 1, Risk.RED: 2}
+
+
+def _connectors_declaring(capability: Any) -> list[str]:
+    """Every registered connector that declares `capability`.
+
+    Imported here rather than at module scope because `REGISTRY` in
+    `connectors/__init__.py` instantiates nothing and this walks it — the
+    import is real either way, and `get_connector` above already establishes
+    the edge. (A lazy import that *hid* an edge would be the thing
+    `/CLAUDE.md` forbids; this hides nothing.)
+    """
+    from .connectors import REGISTRY
+    from .connectors.mcp_source import MCPConnector
+
+    found = [name for name, cls in REGISTRY.items()
+             if capability in cls.capabilities]
+    if capability in MCPConnector.capabilities:
+        found.append("mcp")
+    return sorted(found)
+
+
+def capability_problems() -> list[str]:
+    """Every way the action registry disagrees with what connectors declare.
+
+    Returned as sentences rather than raised, so one caller can assert the list
+    is empty (`tests/connectors/test_capability_floor.py`) and another can show
+    it on the diagnostics screen. A registry that has drifted is a fact worth
+    seeing, not a reason to refuse to start.
+    """
+    # Aliased: `REGISTRY` in this module is the *action* registry, and shadowing
+    # it here made `capability_problems` walk the connectors instead.
+    from .connectors import REGISTRY as CONNECTORS
+    from .connectors.mcp_source import MCPConnector
+
+    problems: list[str] = []
+    for name, spec in sorted(REGISTRY.items()):
+        if not spec.capability:
+            if spec.connector:
+                problems.append(
+                    f"{name} names connector {spec.connector!r} but no "
+                    f"capability — say what it does there, or neither")
+            continue
+        try:
+            capability = parse_capability(spec.capability)
+        except UnknownCapabilityError as exc:
+            problems.append(f"{name}: {exc}")
+            continue
+
+        floor = _CAPABILITY_FLOOR[capability.access]
+        if _RISK_STRENGTH[spec.risk] < _RISK_STRENGTH[floor]:
+            problems.append(
+                f"{name} is {spec.risk.value} but {capability} is "
+                f"{capability.access.value} — it may not be registered below "
+                f"{floor.value}")
+
+        if spec.connector == "mcp":
+            declared = capability in MCPConnector.capabilities
+        elif spec.connector:
+            cls = CONNECTORS.get(spec.connector)
+            if cls is None:
+                problems.append(
+                    f"{name} names connector {spec.connector!r}, which is not "
+                    f"in REGISTRY")
+                continue
+            declared = capability in cls.capabilities
+        else:
+            # No single connector: `message_send` picks one per run from `app`.
+            # At least one must be able to do it, or the action is a control
+            # that cannot work.
+            declared = bool(_connectors_declaring(capability))
+
+        if not declared:
+            where = spec.connector or "any connector"
+            problems.append(
+                f"{name} needs {capability} and {where} does not declare it")
+    return problems
 
 
 def catalog() -> dict[str, dict[str, Any]]:

@@ -21,6 +21,8 @@ from ..config import get_settings
 from ..log import get_logger, suppressed
 from ..messaging import Chat, Message
 from .base import Connector, SyncResult
+from .capability import caps
+from .contract import AuthMethod, Limits, SyncStrategy
 
 log = get_logger(__name__)
 
@@ -47,6 +49,20 @@ class SlackConnector(Connector):
     label = "Slack"
     auto_sync = True
     incremental = True
+    auth_method = AuthMethod.API_KEY
+    sync_strategy = SyncStrategy.TIMESTAMP
+    #: Slack's own token scopes, which the pasted token either carries or does
+    #: not. A health check reads them back rather than discovering a missing
+    #: one when a read fails.
+    required_scopes = ("channels:history", "channels:read", "users:read",
+                       "chat:write")
+    #: `send:message` is the only write, and it is outbound: a Slack message
+    #: reaches a person. It is judged against `CHAT_RECIPIENT`, never the email
+    #: list — a chat id means nothing outside the app it came from.
+    capabilities = caps("read:message", "read:chat", "read:contact",
+                        "send:message")
+    limits = Limits(requests=50, per_seconds=60.0, concurrency=2,
+                    page_size=200, records_per_sync=400)
     secret_field = {
         "key": "SLACK_USER_TOKEN",
         "label": "Slack user token",

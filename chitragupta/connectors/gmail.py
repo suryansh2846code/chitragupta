@@ -8,6 +8,8 @@ from typing import Any
 
 from ..log import get_logger
 from .base import Connector, SyncResult
+from .capability import caps
+from .contract import AuthMethod, Limits, PaginationStrategy, SyncStrategy
 from .google_auth import get_credentials, google_ready
 
 log = get_logger(__name__)
@@ -112,8 +114,32 @@ def _to_epoch(stamp: str) -> int:
 class GmailConnector(Connector):
     name = "gmail"
     label = "Gmail"
+    provider = "google"
     auto_sync = True
     incremental = True
+    auth_method = AuthMethod.OAUTH2
+    sync_strategy = SyncStrategy.TIMESTAMP
+    pagination = PaginationStrategy.NEXT_TOKEN
+    #: The scopes in `google_auth.SCOPES` this connector actually spends. Named
+    #: so a health check can say *"signed in, but not allowed to send"* rather
+    #: than letting the first send fail at the vendor, in front of the user.
+    required_scopes = (
+        "https://www.googleapis.com/auth/gmail.readonly",
+        "https://www.googleapis.com/auth/gmail.send",
+        "https://www.googleapis.com/auth/gmail.modify",
+    )
+    #: Every write here is a method on this class, reachable only through a
+    #: confirmed action in `actions.py::REGISTRY`. `delete:draft` is the one
+    #: destructive verb, and it is destructive about something nobody has seen
+    #: — which is why `create_draft` can be GREEN while this cannot.
+    capabilities = caps(
+        "read:email", "search:email", "read:thread",
+        "create:draft", "delete:draft",
+        "archive:email", "create:label",
+        "send:email",
+    )
+    limits = Limits(requests=240, per_seconds=60.0, concurrency=3,
+                    page_size=100, records_per_sync=600)
 
     def is_configured(self) -> tuple[bool, str]:
         return google_ready()

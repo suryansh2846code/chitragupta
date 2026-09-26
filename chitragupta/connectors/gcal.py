@@ -6,6 +6,8 @@ from typing import Any
 
 from ..log import get_logger, suppressed
 from .base import Connector, SyncResult
+from .capability import caps
+from .contract import AuthMethod, Limits, PaginationStrategy
 from .google_auth import get_credentials, google_ready
 
 log = get_logger(__name__)
@@ -41,7 +43,28 @@ def _parsable(stamp: str) -> bool:
 class GoogleCalendarConnector(Connector):
     name = "gcal"
     label = "Google Calendar"
+    provider = "google"
     auto_sync = True
+    auth_method = AuthMethod.OAUTH2
+    pagination = PaginationStrategy.NEXT_TOKEN
+    required_scopes = (
+        "https://www.googleapis.com/auth/calendar.readonly",
+        "https://www.googleapis.com/auth/calendar.events",
+    )
+    #: `cancel` and `delete` are both here and are not the same verb. Cancelling
+    #: tells everybody on the event; deleting removes our copy. Both are
+    #: destructive — neither has an inverse that is the same event — and
+    #: `actions.py` makes the same distinction in its two RED entries.
+    #:
+    #: `read:calendar` is `free_busy`: it reads other people's availability,
+    #: which is a reach into Google beyond the user's own events.
+    capabilities = caps(
+        "read:event", "read:calendar",
+        "create:event", "update:event",
+        "cancel:event", "delete:event",
+    )
+    limits = Limits(requests=300, per_seconds=60.0, concurrency=3,
+                    page_size=250, records_per_sync=500)
     # The window is already bounded around today, so a watermark would only
     # hide edits to events that have not moved in time.
     incremental = False

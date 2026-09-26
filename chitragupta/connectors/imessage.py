@@ -12,6 +12,8 @@ from typing import Any
 
 from . import permissions
 from .base import Connector, SyncResult
+from .capability import caps
+from .contract import AuthMethod, Limits
 
 CHAT_DB = Path.home() / "Library" / "Messages" / "chat.db"
 # Apple stores message dates as ns since 2001-01-01; convert to epoch seconds.
@@ -29,6 +31,12 @@ class IMessageConnector(Connector):
     # local SQLite file, which is cheap. The 90-day window is the bound.
     incremental = False
     platforms = ("darwin",)
+    auth_method = AuthMethod.LOCAL
+    #: Reads the local chat database. It cannot send — iMessage has no
+    #: supported way to, which `docs/MESSAGING.md` records — so `send:message`
+    #: is deliberately absent rather than declared and refused at runtime.
+    capabilities = caps("read:message", "read:chat")
+    limits = Limits(concurrency=1, records_per_sync=1500)
 
     def is_configured(self) -> tuple[bool, str]:
         if not CHAT_DB.exists():
