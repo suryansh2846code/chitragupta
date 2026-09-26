@@ -130,6 +130,7 @@ globalThis.fetch = async (url, options = {}) => {
 const src = appSource(path.dirname(APP_JS));
 new Function(src + `
   globalThis.__row = _cnRowHtml;
+  globalThis.__when = _cnWhen;
   globalThis.__sync = syncConn;
   // Replaced by assignment, not via globalThis: these are top-level function
   // declarations, so the caller resolves the binding and not a global of the
@@ -143,6 +144,11 @@ const result = { ok: true, error: null, calls };
 try {
   const html = globalThis.__row(scenario.connector, 1440, scenario.health || []);
   result.html = html;
+  // The row's own wording for a moment, asked directly as well as read out of
+  // the markup — a date-only format is the bug, and it is easiest to see here.
+  result.when = Object.fromEntries(
+    Object.entries(scenario.when || {}).map(([k, iso]) =>
+      [k, globalThis.__when(new Date(iso))]));
   theRow = rowFrom(html, scenario.connector.name);
   result.rowFound = theRow !== null;
 

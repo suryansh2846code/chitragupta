@@ -305,11 +305,54 @@ const CN_HEALTH = {
   disconnected: { dot: "off", badge: "", cls: "" },
 };
 
+/**
+ * When something last happened, said the way a person would say it.
+ *
+ * The row showed a **date** — "synced 26 Sep" — which cannot tell five minutes
+ * ago from twenty hours ago. On a source that syncs every half hour that is the
+ * only thing the reader actually wants to know, and it was the one part the
+ * date threw away.
+ *
+ * So: a clock time for today, "yesterday" spelled out, and a date with a time
+ * for anything older. Relative wording only for the first hour — "3 days ago"
+ * is less useful than the date, because by then the question has changed from
+ * *is it current* to *when was it*.
+ *
+ * `toLocaleTimeString` without seconds: a row is a glance, and 14:32:07 is a
+ * precision nobody reads.
+ */
+function _cnWhen(when) {
+  if (!when || Number.isNaN(when.getTime())) return "";
+  const clock = when.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const mins = Math.floor((Date.now() - when.getTime()) / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins} min ago`;
+
+  const midnight = new Date();
+  midnight.setHours(0, 0, 0, 0);
+  if (when >= midnight) return clock;
+  const yesterday = new Date(midnight.getTime() - 86400000);
+  if (when >= yesterday) return `yesterday ${clock}`;
+  // A future timestamp means a clock that moved, not a sync that has not
+  // happened. Shown as a plain date rather than "in 3 hours", which would read
+  // as a schedule.
+  const day = when.toLocaleDateString([], { day: "numeric", month: "short" });
+  return `${day} ${clock}`;
+}
+
 function _cnRowHtml(c, staleAfterMin, health) {
   const meta = connectorMeta(c.name);
   const ls = c.state?.last_sync ? new Date(c.state.last_sync) : null;
   const ageMin = ls ? (Date.now() - ls.getTime()) / 60000 : null;
-  const last = ls ? ls.toLocaleDateString() : "";
+  // Resolved before the wording below reads it — `h` carries both the state and
+  // the last pass that succeeded.
+  const h = (health || []).find((row) => row.connector === c.name) || null;
+  // A time, not just a date. The server's own `last_success` is preferred
+  // where there is one: it is the last pass that actually *worked*, where
+  // `last_sync` moves whenever one was attempted — and "synced" about a
+  // failed attempt is the kind of reassurance nobody asked for.
+  const worked = h && h.last_success ? new Date(h.last_success) : ls;
+  const last = _cnWhen(worked);
 
   // **The server's answer wins where there is one.** `health` is keyed by
   // connector and is absent for a source nobody has connected yet — which is
@@ -317,7 +360,6 @@ function _cnRowHtml(c, staleAfterMin, health) {
   // fallback rather than being deleted. A paused source is the clearest case
   // for why the server has to be asked: nothing about a timestamp says "you
   // switched this off".
-  const h = (health || []).find((row) => row.connector === c.name) || null;
   const stale = h ? !h.ok : (c.ready && ageMin !== null && ageMin > staleAfterMin);
   const state = h ? (CN_HEALTH[h.state] || CN_HEALTH.error).dot
                   : (!c.ready ? "off" : stale ? "stale" : "ok");

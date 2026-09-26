@@ -26,6 +26,7 @@ import json
 import pathlib
 import shutil
 import subprocess
+from datetime import UTC
 
 import pytest
 
@@ -196,3 +197,96 @@ def test_an_unknown_state_from_a_newer_server_is_not_a_blank_row():
     found = run(health=health("something_new", "Something we do not know."))
 
     assert "Not working" in found["html"]
+
+
+# ── when it last worked, not just what day ────────────────────────────────
+
+
+def _iso(**delta):
+    from datetime import datetime, timedelta
+    return (datetime.now(UTC) - timedelta(**delta)).isoformat()
+
+
+def test_a_recent_sync_is_said_in_minutes():
+    """A source on a 30-minute timer is asked "is it current", and a date cannot
+    answer that — "synced 26 Sep" is the same sentence five minutes and twenty
+    hours after a pass."""
+    found = run(when={"fresh": _iso(minutes=5)})
+
+    assert found["when"]["fresh"] == "5 min ago"
+
+
+def test_a_sync_moments_ago_says_just_now():
+    found = run(when={"now": _iso(seconds=10)})
+
+    assert found["when"]["now"] == "just now"
+
+
+def test_a_sync_earlier_today_shows_the_clock_time():
+    """Past an hour a count of minutes stops being readable, and the clock is
+    what a person actually wants."""
+    found = run(when={"earlier": _iso(hours=5)})
+
+    said = found["when"]["earlier"]
+    assert ":" in said, said
+    assert "ago" not in said
+
+
+def test_yesterday_is_spelled_out():
+    found = run(when={"y": _iso(days=1, hours=2)})
+
+    assert found["when"]["y"].startswith("yesterday "), found["when"]["y"]
+
+
+def test_something_older_shows_a_date_and_a_time():
+    """By then the question has changed from "is it current" to "when was
+    it" — so a date, but still with the time on it."""
+    found = run(when={"old": _iso(days=9)})
+
+    said = found["when"]["old"]
+    assert ":" in said
+    assert "ago" not in said and "yesterday" not in said
+
+
+def test_no_timestamp_says_nothing_rather_than_inventing_one():
+    found = run(when={"never": "not a date"})
+
+    assert found["when"]["never"] == ""
+
+
+def test_the_row_shows_a_time_not_only_a_date():
+    """The whole point, asserted through the rendered row rather than through
+    the helper: a date-only format has no clock in it in any locale we ship."""
+    found = run(connector={**GMAIL, "state": {"last_sync": _iso(minutes=4),
+                                              "status": "ok"}},
+                health=[{**health("healthy", "Up to date.", ok=True)[0],
+                         "last_success": _iso(minutes=4)}])
+
+    assert "4 min ago" in found["html"], found["html"]
+
+
+def test_an_mcp_row_gets_the_same_wording():
+    """One renderer serves built-in, custom and MCP rows, so the time arrives
+    everywhere rather than only where somebody remembered to add it."""
+    mcp = {"name": "mcp:linear", "label": "Linear", "ready": True, "kind": "mcp",
+           "mcp": True, "can_sync": True, "on_device": False,
+           "state": {"last_sync": _iso(minutes=3), "status": "ok"}}
+
+    found = run(connector=mcp,
+                health=[{**health("healthy", "Up to date.", ok=True)[0],
+                         "connector": "mcp:linear",
+                         "last_success": _iso(minutes=3)}])
+
+    assert "3 min ago" in found["html"], found["html"]
+
+
+def test_the_time_shown_is_the_last_pass_that_worked():
+    """`last_sync` moves whenever a pass was *attempted*. Calling a failed
+    attempt "synced" is reassurance nobody asked for."""
+    found = run(connector={**GMAIL, "state": {"last_sync": _iso(minutes=2),
+                                             "status": "error"}},
+                health=[{**health("degraded", "Last updated 3 days ago.")[0],
+                         "last_success": _iso(days=3)}])
+
+    assert "2 min ago" not in found["html"], (
+        "an attempt that failed was reported as a successful sync")
