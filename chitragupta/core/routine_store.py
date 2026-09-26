@@ -50,7 +50,35 @@ CREATE TABLE IF NOT EXISTS routines (
 _ADDED_COLUMNS = {
     "at_time": "TEXT NOT NULL DEFAULT ''",
     "days": "TEXT NOT NULL DEFAULT ''",
+    # ── what makes a routine an automation ──────────────────────────────
+    #
+    # Added here rather than in a new table, because an automation *is* a
+    # routine with more to say. A second table would have meant two things to
+    # list, two things to enable, two screens, and a migration that moves a
+    # user's routines — which is a migration that can lose them.
+    #
+    # Everything below defaults to empty, and an automation with all of them
+    # empty behaves exactly as the routine it was. `model.Automation.from_row`
+    # reads the legacy `trigger` / `at_time` / `days` / `interval_min` columns
+    # whenever `trigger_json` is empty, so nothing is rewritten to keep working.
+    "goal": "TEXT NOT NULL DEFAULT ''",
+    "trigger_json": "TEXT NOT NULL DEFAULT ''",
+    "conditions_json": "TEXT NOT NULL DEFAULT ''",
+    "policy_json": "TEXT NOT NULL DEFAULT ''",
+    "owner": "TEXT NOT NULL DEFAULT ''",
+    "updated_at": "TEXT NOT NULL DEFAULT ''",
+    "next_run": "TEXT NOT NULL DEFAULT ''",
 }
+
+#: Columns `set_fields` will write. An allow-list rather than trusting the
+#: caller: a column name cannot be parameterised in SQL, so it is interpolated
+#: — and the one place that must never take a name from outside is the place
+#: that builds the statement.
+_WRITABLE = frozenset({
+    "name", "agent_id", "instruction", "enabled", "at_time", "days",
+    "interval_min", "trigger", "goal", "trigger_json", "conditions_json",
+    "policy_json", "owner", "next_run", "last_result",
+})
 
 
 class RoutineStore:
@@ -156,6 +184,24 @@ class RoutineStore:
         self._c.execute("UPDATE routines SET last_run=?, last_result=? WHERE id=?",
                         (datetime.now(UTC).isoformat(), result[:400], rid))
         self._c.commit()
+
+    def set_fields(self, rid, **fields) -> bool:
+        """Update named columns on one routine.
+
+        Only names in `_WRITABLE` reach the statement — see the note there.
+        Returns whether a row changed, so a caller can tell "no such routine"
+        from "nothing to change".
+        """
+        clean = {k: v for k, v in fields.items() if k in _WRITABLE}
+        if not clean:
+            return False
+        clean["updated_at"] = datetime.now(UTC).isoformat()
+        assignments = ", ".join(f"{k}=?" for k in clean)
+        cur = self._c.execute(
+            f"UPDATE routines SET {assignments} WHERE id=?",
+            (*clean.values(), rid))
+        self._c.commit()
+        return cur.rowcount > 0
 
     def delete(self, rid) -> bool:
         cur = self._c.execute("DELETE FROM routines WHERE id=?", (rid,))

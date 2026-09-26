@@ -236,12 +236,24 @@ class Scheduler:
         except Exception:
             log.exception("graph enrichment after sync failed")
 
-        # fire routines: new-email ones if mail arrived, plus any due schedule ones
+        # What the sync produced becomes events; the engine decides what they
+        # start. This used to be `sweep(new_email_count=…)`, which could only
+        # say "some mail arrived" — no identity, so a redelivered message was
+        # indistinguishable from a new one, and no payload, so a condition had
+        # nothing to read. See `docs/AUTOMATION.md`.
         try:
-            from .routines import sweep
-            sweep(new_email_count=summary.get("gmail", {}).get("added", 0))
+            from .automation import engine
+            engine.after_sync(summary)
         except Exception:
-            log.exception("routine sweep after sync failed")
+            log.exception("turning a sync into automation events failed")
+
+        # Then the clock, for schedule- and interval-triggered automations, and
+        # to pick up anything a previous process left mid-flight.
+        try:
+            from .automation import engine
+            engine.tick()
+        except Exception:
+            log.exception("the automation tick after sync failed")
 
         self.last_run = datetime.now(UTC).isoformat()
         self.last_result = summary
@@ -278,6 +290,15 @@ class Scheduler:
         while not stop.is_set():
             # fire due reminders often (every minute); sync on the longer interval
             self._fire_reminders()
+            # Every minute, not every sync. A schedule set for 08:00 should
+            # fire at 08:00 rather than whenever the next connector sync
+            # happens to land, and a run left waiting on an approval that was
+            # answered five minutes ago should carry on now.
+            try:
+                from .automation import engine
+                engine.tick()
+            except Exception:
+                log.exception("the automation tick failed")
             if time.time() >= next_sync:
                 try:
                     self.sync_all(interactive=False)
@@ -288,42 +309,30 @@ class Scheduler:
                 return
 
     def _fire_reminders(self) -> None:
-        from .notify import desktop_notify
-        # 1) reminder notifications
-        try:
-            from .reminders import get_reminders
-            store = get_reminders()
-            for r in store.due():
-                title = "◆ Chitragupta" + (f" · {r['agent_id'].title()}"
-                                          if r.get("agent_id") else "")
-                desktop_notify(title, r["message"])
-                store.mark_fired(r["id"])
-        except Exception:
-            log.exception("firing reminders failed")
-        # 2) scheduled actions (auto-send email / create event) — fire + notify
-        try:
-            import json
+        """Everything whose time has come. **The scheduler runs nothing itself.**
 
-            from .actions import run_now
-            from .scheduled import get_scheduled
-            sched = get_scheduled()
-            for a in sched.due():
-                params = json.loads(a["params"] or "{}")
-                res = run_now(a["type"], params)
-                if res.get("ok"):
-                    desktop_notify("◆ Chitragupta ✓", res.get("detail", "Action done"))
-                else:
-                    desktop_notify("◆ Chitragupta ⚠️",
-                                   f"Scheduled action failed: {res.get('error', '')}")
-                sched.mark_done(a["id"], json.dumps(res)[:400])
-        except Exception:
-            log.exception("firing scheduled actions failed")
-        # 3) schedule-triggered routines (checked every cycle, interval-gated)
+        It used to. A due reminder was a `desktop_notify` call from here and a
+        due scheduled action was a bare `actions.run_now` — so the one code path
+        that executed with nobody present was also the one with no record, no
+        idempotency and nowhere for a failure to go. A scheduled email that
+        failed showed a notification and vanished.
+
+        Now this decides *when* and the automation engine decides *what*:
+        `fire_due` turns each due row into a run, and `tick` fires
+        schedule-triggered automations and resumes anything left in flight.
+        Both go through the same executor, the same permission gate and the
+        same history as every other automation.
+        """
         try:
-            from .routines import sweep
-            sweep(new_email_count=0)
+            from .automation import engine
+            engine.fire_due()
         except Exception:
-            log.exception("schedule-triggered routine sweep failed")
+            log.exception("firing due reminders and scheduled actions failed")
+        try:
+            from .automation import engine
+            engine.tick()
+        except Exception:
+            log.exception("the automation tick failed")
 
     def start(self) -> None:
         settings = get_settings()

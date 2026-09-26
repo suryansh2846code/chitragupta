@@ -120,6 +120,17 @@ class ReminderStore:
         self._c.execute("UPDATE reminders SET fired=1 WHERE id=?", (rid,))
         self._c.commit()
 
+    def get(self, rid: str) -> dict | None:
+        """One reminder by id, or None.
+
+        Exists so `set_reminder` can be *verified* rather than assumed: the
+        handler returning an id proves it built a row object, not that the row
+        is in the database. Reading it back is the difference.
+        """
+        row = self._c.execute(
+            "SELECT * FROM reminders WHERE id=?", (rid,)).fetchone()
+        return dict(row) if row else None
+
     def upcoming(self, limit: int = 20) -> list[dict]:
         rows = self._c.execute(
             "SELECT * FROM reminders WHERE fired=0 ORDER BY fire_at LIMIT ?",

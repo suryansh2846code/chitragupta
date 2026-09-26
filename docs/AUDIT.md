@@ -37,7 +37,7 @@ which caught three real defects in the process; each is recorded in its entry.
 
 ---
 
-## A13 — Two tests pass or fail depending on what ran before them · **OPEN**
+## A13 — Two tests pass or fail depending on what ran before them · **CLOSED**
 
 > Found 2026-09-25 while breaking the `models/` import cycle. **Pre-existing** —
 > reproduced on an untouched worktree at `HEAD` before any of that landed, so it
@@ -69,13 +69,41 @@ stubbed the CLI away, got *the developer's own account* back. `conftest.py`'s
 `test_10_claude_detection_does_not_expose_oauth_token` — a test that had been
 asserting against a real email address. The remaining failure is not that cache.
 
-**To close it:** find what leaves `claude` connected. The likely shapes are a
-`ProviderConnection` written by another file with no teardown, or a detection
-path reached through `connect_local_account("claude-code")`. Then give the
-connections store the same per-test reset the CLI auth caches now have — the
-session-scoped `CHITRAGUPTA_HOME` means every connection written by any test
-persists for the whole run, which is the underlying cause and is worth fixing
-once rather than per file.
+**Closed 2026-09-26.** It was neither of the shapes guessed at above. What
+leaves `claude` connected is a **stored API key**: an earlier test in that
+selection calls `settings.set_secret("ANTHROPIC_API_KEY", "sk-test-key")`, which
+writes `secrets.json` inside the session-scoped `CHITRAGUPTA_HOME`, and
+`_stored_api_key` returns it for any provider whose row does not say
+`DISCONNECTED`. The row in this case says `NOT_CONNECTED` — never connected, not
+disconnected-by-the-user — so the key counts, and `claude` reads as connected.
+
+The file's own `_disconnected_claude` fixture could never have caught this: it
+resets `provider_connections` rows, and the credential that mattered was in a
+different store entirely.
+
+Nothing in `chitragupta/` was wrong. A key in the store *is* a credential, and
+`_stored_api_key` ignoring only an explicit disconnect is the behaviour a user
+expects. The defect was the test environment: one temporary home for the whole
+run means every credential any test writes outlives it.
+
+Fixed once, centrally, as this entry prescribed —
+`conftest.py::_no_leaked_credentials` snapshots `secrets.json` and the
+`provider_connections` table before each test and restores them after. Snapshot
+and restore rather than wipe, so a session-scoped fixture that set something up
+deliberately keeps it and a test still reads its own write. Only those two are
+touched: `agents.db` also holds permissions, approvals, avatars and agent rows,
+and resetting the file would break fixtures that have nothing to do with
+credentials.
+
+`tests/test_credentials_do_not_leak_between_tests.py` pins it as an ordered
+pair — one test writes a credential, the next finds it gone — and
+`test_3` pins the mechanism, so a later reader cannot mistake the symptom for
+the cause.
+
+```bash
+pytest -q -k "docs or claude"     # 91 passed
+pytest -q                          # 3980 passed, 31 skipped
+```
 
 ---
 

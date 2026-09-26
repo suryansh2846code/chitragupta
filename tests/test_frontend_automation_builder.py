@@ -1,0 +1,360 @@
+"""The WHEN / ONLY IF / THEN builder, executed.
+
+Two claims, and neither can be read off the source.
+
+* **What the form sends is the schema the engine already reads.** A flat list of
+  conditions, a number where a number is meant, a list where a list is meant,
+  and a question where the condition takes a prompt. A form that invented its
+  own shape would be a second description of the automation schema, and the two
+  would disagree within a release.
+* **The options came from the server.** The vocabulary endpoint reads the
+  trigger and condition registries, so a condition added in Python appears in
+  the form. The test proves it by inventing one the frontend has never heard of
+  and finding it in the rendered select.
+
+The vocabulary below is not hand-written: it is the real endpoint's answer,
+taken from the app in the same test session, so a change to the registry that
+breaks the form fails here rather than in a browser.
+"""
+from __future__ import annotations
+
+import json
+import shutil
+import subprocess
+from pathlib import Path
+
+import pytest
+from fastapi.testclient import TestClient
+
+ROOT = Path(__file__).resolve().parents[1]
+WEB = ROOT / "chitragupta" / "web"
+
+pytestmark = pytest.mark.skipif(shutil.which("node") is None,
+                                reason="node is not installed")
+
+
+@pytest.fixture(scope="module")
+def vocabulary() -> dict:
+    """The real published vocabulary, so the form is tested against the engine."""
+    from chitragupta.api.app import app
+
+    with TestClient(app) as client:
+        return client.get("/api/automations/vocabulary").json()
+
+
+def drive(vocabulary, script, automation=None, fail_patch=False) -> dict:
+    proc = subprocess.run(
+        ["node", str(ROOT / "tests/js/automation_builder.mjs"), str(WEB / "app.js")],
+        input=json.dumps({"vocabulary": vocabulary, "script": script,
+                          "automation": automation or {},
+                          "failPatch": fail_patch}),
+        capture_output=True, text=True, timeout=60)
+    assert proc.returncode == 0, proc.stderr[-2000:]
+    out = json.loads(proc.stdout)
+    assert out["error"] is None, out["error"]
+    return out
+
+
+# ── the options are the engine's, not a copy ────────────────────────────────
+
+def test_the_trigger_choices_come_from_the_engine(vocabulary):
+    out = drive(vocabulary, [{"op": "open"}])
+    for spec in vocabulary["triggers"]:
+        assert f'value="{spec["type"]}"' in out["triggerHtml"]
+        assert spec["label"] in out["triggerHtml"]
+
+
+def test_a_condition_the_frontend_has_never_heard_of_still_appears(vocabulary):
+    """The drift test. A condition registered in Python reaches the form without
+    a frontend change, which is the only reason the two can stay in step."""
+    invented = dict(vocabulary)
+    invented["conditions"] = [*vocabulary["conditions"],
+                              {"type": "smells_wrong", "label": "smells wrong",
+                               "field": True, "value": "text"}]
+    out = drive(invented, [{"op": "open"}, {"op": "add"}])
+    assert "smells wrong" in out["conditionsHtml"]
+    assert 'value="smells_wrong"' in out["conditionsHtml"]
+
+
+def test_a_group_is_not_offered_as_a_row(vocabulary):
+    """`all` / `any` / `not` are real and this form cannot express them. Offering
+    one as a row would make a condition that holds other conditions look like a
+    condition about a field."""
+    out = drive(vocabulary, [{"op": "open"}, {"op": "add"}])
+    assert "all of these" not in out["conditionsHtml"]
+
+
+def test_the_field_names_offered_are_the_ones_events_carry(vocabulary):
+    out = drive(vocabulary, [{"op": "open"}])
+    assert 'value="event.from"' in out["fieldListHtml"]
+    assert 'value="event.subject"' not in out["fieldListHtml"], (
+        "an event does not carry `subject` — offering it is offering a "
+        "condition that can never be true")
+
+
+# ── what it sends ──────────────────────────────────────────────────────────
+
+def test_two_conditions_become_the_flat_list_the_engine_evaluates(vocabulary):
+    out = drive(vocabulary, [
+        {"op": "open"},
+        {"op": "add"},
+        {"op": "type", "row": 0, "what": "type", "value": "domain_is"},
+        {"op": "type", "row": 0, "what": "field", "value": "event.from"},
+        {"op": "type", "row": 0, "what": "value", "value": "acme.com"},
+        {"op": "add"},
+        {"op": "type", "row": 1, "what": "type", "value": "contains"},
+        {"op": "type", "row": 1, "what": "field", "value": "event.title"},
+        {"op": "type", "row": 1, "what": "value", "value": "invoice"},
+    ])
+    assert out["conditions"] == [
+        {"type": "domain_is", "field": "event.from", "value": "acme.com"},
+        {"type": "contains", "field": "event.title", "value": "invoice"},
+    ]
+
+
+def test_a_number_is_sent_as_a_number(vocabulary):
+    """`older_than_days` does `float(spec["value"])`. A string works today and
+    is one refactor from not working, and the registry already says which
+    conditions take a number."""
+    out = drive(vocabulary, [
+        {"op": "open"}, {"op": "add"},
+        {"op": "type", "row": 0, "what": "type", "value": "older_than_days"},
+        {"op": "type", "row": 0, "what": "field", "value": "event.uri"},
+        {"op": "type", "row": 0, "what": "value", "value": "7"},
+    ])
+    assert out["conditions"] == [
+        {"type": "older_than_days", "field": "event.uri", "value": 7}]
+
+
+def test_a_list_condition_is_sent_as_a_list(vocabulary):
+    out = drive(vocabulary, [
+        {"op": "open"}, {"op": "add"},
+        {"op": "type", "row": 0, "what": "type", "value": "in"},
+        {"op": "type", "row": 0, "what": "field", "value": "event.state"},
+        {"op": "type", "row": 0, "what": "value", "value": "open, closed , "},
+    ])
+    assert out["conditions"] == [
+        {"type": "in", "field": "event.state", "value": ["open", "closed"]}]
+
+
+def test_a_condition_about_the_field_alone_sends_no_value(vocabulary):
+    out = drive(vocabulary, [
+        {"op": "open"}, {"op": "add"},
+        {"op": "type", "row": 0, "what": "type", "value": "exists"},
+        {"op": "type", "row": 0, "what": "field", "value": "event.from"},
+    ])
+    assert out["conditions"] == [{"type": "exists", "field": "event.from"}]
+    assert "cond-value" not in out["conditionsHtml"], (
+        "it asked for a value it will not send")
+
+
+def test_a_model_judgement_is_sent_as_a_question(vocabulary):
+    out = drive(vocabulary, [
+        {"op": "open"}, {"op": "add"},
+        {"op": "type", "row": 0, "what": "type", "value": "semantic"},
+        {"op": "type", "row": 0, "what": "value", "value": "is this from a client?"},
+    ])
+    assert out["conditions"] == [
+        {"type": "semantic", "question": "is this from a client?"}]
+    assert "cond-field" not in out["conditionsHtml"], (
+        "a model judgement is about the whole event, not one field")
+
+
+def test_a_half_written_condition_is_not_saved(vocabulary):
+    """A condition with no field reads an empty path, which never matches — so
+    the automation silently never runs, for a reason nothing on screen says."""
+    out = drive(vocabulary, [
+        {"op": "open"}, {"op": "add"},
+        {"op": "type", "row": 0, "what": "type", "value": "contains"},
+        {"op": "type", "row": 0, "what": "value", "value": "invoice"},
+    ])
+    assert out["conditions"] == []
+
+
+def test_typing_in_one_row_survives_adding_another(vocabulary):
+    """The bug this shape avoids: re-rendering from the DOM instead of from
+    state loses whatever was typed but not yet saved."""
+    out = drive(vocabulary, [
+        {"op": "open"}, {"op": "add"},
+        {"op": "type", "row": 0, "what": "field", "value": "event.from"},
+        {"op": "type", "row": 0, "what": "value", "value": "keep me"},
+        {"op": "add"},
+    ])
+    assert 'value="keep me"' in out["conditionsHtml"]
+    assert 'value="event.from"' in out["conditionsHtml"]
+
+
+# ── the trigger, and the legacy columns written from it ─────────────────────
+
+def test_an_event_trigger_names_the_kind_and_the_source(vocabulary):
+    out = drive(vocabulary, [
+        {"op": "open"}, {"op": "trigger", "value": "event"},
+        {"op": "set", "sel": "#rmEventKind", "value": "issue.changed"},
+        {"op": "set", "sel": "#rmEventSource", "value": "linear"},
+    ])
+    assert out["trigger"] == {"type": "event", "kind": "issue.changed",
+                              "source": "linear"}
+    assert out["words"] == "An issue changes in linear"
+
+
+def test_an_event_with_no_legacy_equivalent_falls_back_to_never_firing(vocabulary):
+    """The legacy `trigger` column is the fallback for a row whose spec is
+    missing. "A GitHub issue changed" has no legacy word, and guessing
+    `new_email` would make the fallback fire on mail instead — so it becomes
+    `manual`, which fires on nothing, the same choice `_legacy_trigger` makes."""
+    out = drive(vocabulary, [
+        {"op": "open"}, {"op": "trigger", "value": "event"},
+        {"op": "set", "sel": "#rmEventKind", "value": "issue.changed"},
+    ])
+    assert out["legacy"]["trigger"] == "manual"
+
+
+def test_an_email_trigger_keeps_the_legacy_word_it_always_had(vocabulary):
+    out = drive(vocabulary, [
+        {"op": "open"}, {"op": "trigger", "value": "event"},
+        {"op": "set", "sel": "#rmEventKind", "value": "email.received"},
+    ])
+    assert out["legacy"]["trigger"] == "new_email"
+
+
+def test_a_time_of_day_is_stored_both_ways_and_they_agree(vocabulary):
+    out = drive(vocabulary, [
+        {"op": "open"}, {"op": "trigger", "value": "schedule"},
+        {"op": "set", "sel": "#rmAtTime", "value": "07:30"},
+        {"op": "set", "sel": "#rmDays", "value": "mon,tue,wed,thu,fri"},
+    ])
+    assert out["trigger"] == {"type": "schedule", "at_time": "07:30",
+                              "days": "mon,tue,wed,thu,fri"}
+    assert out["legacy"] == {"trigger": "daily", "at_time": "07:30",
+                             "days": "mon,tue,wed,thu,fri", "interval_min": 60}
+    assert out["words"] == "Weekdays at 7:30 AM"
+
+
+def test_an_interval_is_stored_both_ways(vocabulary):
+    out = drive(vocabulary, [
+        {"op": "open"}, {"op": "trigger", "value": "interval"},
+        {"op": "set", "sel": "#rmInterval", "value": "15"},
+    ])
+    assert out["trigger"] == {"type": "interval", "interval_min": 15}
+    assert out["legacy"]["trigger"] == "schedule"
+    assert out["legacy"]["interval_min"] == 15
+    assert out["words"] == "Every 15 min"
+
+
+# ── editing one that already exists ────────────────────────────────────────
+
+def test_editing_loads_what_the_automation_already_says(vocabulary):
+    existing = {"id": "a1", "trigger": {"type": "schedule", "at_time": "09:15",
+                                        "days": "sat,sun"},
+                "conditions": [{"type": "contains", "field": "event.body",
+                                "value": "urgent"}]}
+    out = drive(vocabulary, [{"op": "open", "existing": {"id": "a1"}}],
+                automation=existing)
+    assert out["trigger"] == {"type": "schedule", "at_time": "09:15",
+                              "days": "sat,sun"}
+    assert out["conditions"] == [{"type": "contains", "field": "event.body",
+                                  "value": "urgent"}]
+
+
+def test_a_nested_rule_is_locked_rather_than_flattened(vocabulary):
+    """The state-loss case. An automation set up with `any of these` cannot be
+    shown as a flat list, and flattening it on open would change what it does
+    without the user touching anything. So the form says so and sends nothing
+    for conditions."""
+    existing = {"id": "a2", "trigger": {"type": "manual"},
+                "conditions": [{"type": "any", "conditions": [
+                    {"type": "contains", "field": "event.body", "value": "a"},
+                    {"type": "contains", "field": "event.body", "value": "b"}]}]}
+    out = drive(vocabulary, [{"op": "open", "existing": {"id": "a2"}},
+                             {"op": "save", "id": "a2"}],
+                automation=existing)
+    assert out["conditions"] is None
+    assert out["addHidden"] is True
+    assert "nested rule" in out["hint"]
+    patch = [c for c in out["calls"] if c["method"] == "PATCH"]
+    assert patch and "conditions" not in patch[0]["body"], (
+        "it sent conditions over a rule it could not read")
+
+
+def test_saving_sends_the_trigger_and_the_conditions_together(vocabulary):
+    out = drive(vocabulary, [
+        {"op": "open"}, {"op": "trigger", "value": "interval"},
+        {"op": "set", "sel": "#rmInterval", "value": "30"},
+        {"op": "add"},
+        {"op": "type", "row": 0, "what": "type", "value": "is_true"},
+        {"op": "type", "row": 0, "what": "field", "value": "event.labels"},
+        {"op": "save", "id": "a9"},
+    ])
+    assert out["saved"] == ""
+    patch = [c for c in out["calls"] if c["method"] == "PATCH"]
+    assert len(patch) == 1
+    assert patch[0]["url"].endswith("/api/automations/a9")
+    assert patch[0]["body"]["trigger"] == {"type": "interval", "interval_min": 30}
+    assert patch[0]["body"]["conditions"] == [
+        {"type": "is_true", "field": "event.labels"}]
+
+
+def test_the_form_still_opens_when_the_vocabulary_cannot_be_fetched(vocabulary):
+    """First launch on a machine where that call failed. An empty select is a
+    screen the user cannot create an automation on."""
+    out = drive({}, [{"op": "open"}])
+    assert 'value="schedule"' in out["triggerHtml"]
+    assert 'value="event"' in out["triggerHtml"]
+
+
+# ── pressing Create, through the button the page wired ──────────────────────
+
+def test_creating_one_writes_the_routine_row_and_then_the_spec(vocabulary):
+    """The real click handler, not a reimplementation of it.
+
+    Two requests, in this order: the routine row exists first, and the trigger
+    spec is written against the id it came back with. The legacy columns on the
+    first request are derived from the same answer as the spec on the second, so
+    a row whose `trigger_json` is ever lost still falls back to something that
+    means the same thing.
+    """
+    out = drive(vocabulary, [
+        {"op": "open"}, {"op": "trigger", "value": "schedule"},
+        {"op": "set", "sel": "#rmAtTime", "value": "06:45"},
+        {"op": "set", "sel": "#rmDays", "value": "sat,sun"},
+        {"op": "add"},
+        {"op": "type", "row": 0, "what": "type", "value": "domain_is"},
+        {"op": "type", "row": 0, "what": "field", "value": "event.from"},
+        {"op": "type", "row": 0, "what": "value", "value": "acme.com"},
+        {"op": "create", "name": "Weekend digest"},
+    ])
+    writes = [c for c in out["calls"] if c["method"] in ("POST", "PATCH")]
+    assert [c["method"] for c in writes] == ["POST", "PATCH"]
+
+    posted = writes[0]
+    assert posted["url"] == "/api/routines"
+    assert posted["body"]["name"] == "Weekend digest"
+    assert posted["body"]["trigger"] == "daily"
+    assert posted["body"]["at_time"] == "06:45"
+    assert posted["body"]["days"] == "sat,sun"
+
+    patched = writes[1]
+    assert patched["url"] == "/api/automations/new-1"
+    assert patched["body"]["trigger"] == {"type": "schedule", "at_time": "06:45",
+                                          "days": "sat,sun"}
+    assert patched["body"]["conditions"] == [
+        {"type": "domain_is", "field": "event.from", "value": "acme.com"}]
+
+    assert out["modalHidden"] is True
+    assert out["toasts"] == ["Automation created"]
+
+
+def test_a_spec_that_could_not_be_stored_is_not_reported_as_success(vocabulary):
+    """The honest failure. The routine row exists — so "Could not save" would be
+    wrong — but what it checks did not land, and a green toast over that is the
+    app lying about the user's own automation."""
+    out = drive(vocabulary, [
+        {"op": "open"}, {"op": "trigger", "value": "interval"},
+        {"op": "create"},
+    ], fail_patch=True)
+
+    assert [c["method"] for c in out["calls"] if c["method"] == "POST"] == ["POST"]
+    assert out["toasts"], "it said nothing at all"
+    told = out["toasts"][-1]
+    assert "could not be stored" in told
+    assert told != "Automation created"

@@ -600,6 +600,36 @@ class GmailConnector(Connector):
         except Exception as exc:
             return self._maybe_scope_error(exc, {})
 
+    def message_labels(self, ids: list[str],
+                       interactive: bool = False) -> dict:
+        """Which labels each message carries now (READ).
+
+        For verifying `mail_triage`. `batchModify` returning 200 says Gmail
+        accepted the batch; it does not say the twelve emails left the inbox —
+        and "archived twelve" is a claim about the user's mailbox, which they
+        will notice is wrong before we do.
+
+        `format="minimal"` fetches label ids and nothing else: a verification
+        pass must not re-download the bodies it just archived.
+        """
+        wanted = [str(i).strip() for i in (ids or []) if str(i).strip()]
+        if not wanted:
+            return {"ok": False, "error": "No messages to read."}
+        service = self._service(None, interactive)
+        if service is None:
+            return {"ok": False, "error": "Gmail not connected"}
+        out: dict[str, list[str]] = {}
+        for message_id in wanted[:BATCH_LIMIT]:
+            try:
+                got = service.users().messages().get(
+                    userId="me", id=message_id, format="minimal").execute()
+            except Exception:
+                # One unreadable message is not a failed verification of the
+                # rest. It is recorded as unknown, and the caller decides.
+                continue
+            out[message_id] = list((got or {}).get("labelIds") or [])
+        return {"ok": True, "labels": out}
+
     def ensure_label(self, name: str, interactive: bool = False) -> dict:
         """The id of a user label, creating it if the user has none by that name."""
         wanted = (name or "").strip()

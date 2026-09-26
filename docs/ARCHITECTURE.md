@@ -84,6 +84,11 @@ Allowed direction, top to bottom. **An arrow may never be reversed.**
        agents/      models/      brain/    connectors/   workspace features
           │            │           │           │          (actions, routines,
           │            │           │           │           tasks, scheduler…)
+          │            │           │           │                 ▲
+          │            │           │           │          automation/ — above
+          │            │           │           │          agents/, below api/;
+          │            │           │           │          its durable state is
+          │            │           │           │          in core/
           └────────────┴─────┬─────┴───────────┘
                              ▼
                           core/                            storage

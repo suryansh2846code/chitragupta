@@ -131,3 +131,75 @@ def _no_stale_cli_auth_cache():
     yield
     _flush()
 
+
+@pytest.fixture(autouse=True)
+def _no_leaked_credentials():
+    """A credential one test writes must not still be there for the next one.
+
+    `CHITRAGUPTA_HOME` is session-scoped — one temporary directory for the whole
+    run — so an API key saved through `settings.set_secret` and a row written to
+    `provider_connections` both outlive the test that made them. That is what
+    made **A13** in `docs/AUDIT.md`: `pytest -k "docs or claude"` failed on
+    `test_connecting_claude_code_does_not_connect_the_api_provider` while the
+    full run passed, because an earlier test in that selection had saved
+    `ANTHROPIC_API_KEY=sk-test-key`, and `claude` reads as connected whenever a
+    key is stored and its row does not say DISCONNECTED. The file's own fixture
+    resets the rows and cannot know about the key.
+
+    The failure was in the **unsafe** direction — a provider reading as
+    connected when nobody connected it — over an assertion that is a stated
+    invariant, and it only appeared under an unusual invocation, so CI would
+    never have shown it.
+
+    Snapshot and restore rather than wipe: a session-scoped fixture that
+    deliberately set something up keeps it, and a test that writes a credential
+    still sees its own write. Only `secrets.json` and the one table are touched
+    — `agents.db` also holds permissions, approvals, avatars and agent rows,
+    and resetting the whole file would break fixtures that have nothing to do
+    with credentials.
+    """
+    from chitragupta.config import forget_cached_secrets, get_settings
+
+    def _connections():
+        from chitragupta.models import connections
+        db = connections._get_db()
+        try:
+            return [tuple(r) for r in db.execute(
+                "SELECT * FROM provider_connections")], [
+                d[0] for d in db.execute(
+                    "SELECT * FROM provider_connections").description]
+        finally:
+            db.close()
+
+    def _restore(rows, columns):
+        from chitragupta.models import connections
+        db = connections._get_db()
+        try:
+            db.execute("DELETE FROM provider_connections")
+            if rows:
+                marks = ",".join("?" * len(columns))
+                db.executemany(
+                    f"INSERT INTO provider_connections VALUES ({marks})", rows)
+            db.commit()
+        finally:
+            db.close()
+
+    secrets = get_settings()._secrets_path()
+    before = secrets.read_bytes() if secrets.exists() else None
+    rows, columns = _connections()
+
+    yield
+
+    after = secrets.read_bytes() if secrets.exists() else None
+    if after != before:
+        if before is None:
+            secrets.unlink(missing_ok=True)
+        else:
+            secrets.write_bytes(before)
+        forget_cached_secrets()
+    now, _ = _connections()
+    if now != rows:
+        _restore(rows, columns)
+    if after != before or now != rows:
+        from chitragupta.models.registry import clear_provider_cache
+        clear_provider_cache()

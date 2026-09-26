@@ -17,6 +17,7 @@ from fastapi import APIRouter
 
 from . import (
     agents,
+    automations,
     brain,
     browser,
     connector_health,
@@ -42,6 +43,10 @@ ALL_ROUTERS: tuple[APIRouter, ...] = (
     connector_health.router,
     connectors.router,
     workspace.router,
+    # After `workspace`, which owns `/api/routines`. The two surfaces read the
+    # same rows; nothing in either path collides, and keeping the older one
+    # first means a request that both could serve keeps its existing answer.
+    automations.router,
     diagnostics.router,
     browser.router,
 )

@@ -36,10 +36,10 @@ downstream has to know fifteen spellings.
 
 `trust` is a string on purpose. The trust *ladder* — what the levels are, which
 of them get fenced before a model sees them, and how a fence is made
-uncloseable from the inside — belongs to one module for the whole app, next to
-`browser/page.py`'s quarantine fence which established the rule. This carries
-the label; it does not define the vocabulary, and it must not grow a second
-copy of one. See `docs/CONNECTOR-PLATFORM.md` §5.
+uncloseable from the inside — belongs to `core/provenance.py`, which owns it for the
+whole app and generalises the quarantine fence `browser/page.py` established.
+This carries the label; it does not define the vocabulary, and it must not grow
+a second copy of one. See `docs/CONNECTOR-PLATFORM.md` §5.
 
 What is safe to say here, because it is a fact about connectors rather than a
 policy about models: **a connected source describes itself trustworthily and

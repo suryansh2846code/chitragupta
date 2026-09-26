@@ -256,12 +256,19 @@
         <input id="rmName" placeholder="e.g. Forward new emails" />
         <label class="am-label">Agent</label>
         <select id="rmAgent"></select>
-        <label class="am-label">Trigger</label>
-        <select id="rmTrigger">
-          <option value="new_email">When a new email arrives</option>
-          <option value="daily">At a time of day</option>
-          <option value="schedule">On a schedule (every N minutes)</option>
-        </select>
+        <!-- WHEN. Filled from /api/automations/vocabulary, so the options are
+             the triggers the engine actually has. A select with the list typed
+             into it here is a list that drifts, and the copy that drifts is
+             the one the user picks from. -->
+        <label class="am-label">When</label>
+        <select id="rmTrigger"></select>
+        <div id="rmEventWrap" hidden>
+          <label class="am-label">Something happens</label>
+          <select id="rmEventKind"></select>
+          <label class="am-label">In</label>
+          <input id="rmEventSource" list="rmSourceList" placeholder="any connected app" />
+          <datalist id="rmSourceList"></datalist>
+        </div>
         <!-- Its own group, not a variant of the interval one. "Every morning
              at 8" and "every 60 minutes" are different questions, and one box
              that means different things depending on a dropdown above it is
@@ -280,7 +287,15 @@
           <label class="am-label">Every (minutes)</label>
           <input id="rmInterval" type="number" value="60" />
         </div>
-        <label class="am-label">Instruction (what the agent should do)</label>
+        <!-- ONLY IF. Empty means every time, which is what a routine has
+             always done — so an automation created before this existed reads
+             the same here as it did before. -->
+        <label class="am-label">Only if</label>
+        <div id="rmConditions"></div>
+        <datalist id="rmFieldList"></datalist>
+        <p class="t" style="font-size:11px" id="rmCondHint"></p>
+        <button id="rmAddCond" class="tiny ghost">Add a condition</button>
+        <label class="am-label">Then — what the agent should do</label>
         <textarea id="rmInstruction" rows="3" placeholder="e.g. Summarize the new email and send the summary to me@gmail.com"></textarea>
         <p class="t" style="font-size:11px;margin-top:6px">Automations run without a per-time confirm — actions fire automatically. Disable or delete anytime.</p>
       </div>
@@ -396,6 +411,10 @@
           <button id="newRoutineBtn" class="tiny">+ New automation</button>
         </div>
         <div id="routineList" class="tasks"></div>
+        <!-- Filled by `automations.js` when a history button is
+             pressed. Hidden rather than absent so the routine list
+             still renders if that script fails to load. -->
+        <div id="automationDetail" class="auto-detail-panel" hidden></div>
       </section>
 
       <section class="ib-sec">
@@ -886,6 +905,7 @@
   <script src="/static/diagnostics.js"></script>
   <script src="/static/browser.js"></script>
   <script src="/static/webscreen.js"></script>
+  <script src="/static/automations.js"></script>
   <script src="/static/appearance.js"></script>
   <script src="/static/app.js"></script>
 </body>

@@ -1,13 +1,13 @@
 # `tests/`
 
-`pytest` from the repo root. Baseline, measured 2026-09-26: **4371 passed,
-31 skipped in ~2min15**. Locally you will see a slightly different split — a handful of tests
+`pytest` from the repo root. Baseline, measured 2026-09-26: **4702 passed,
+30 skipped in ~2min10**. Locally you will see a slightly different split — a handful of tests
 skip when a provider is genuinely connected on the machine — so compare against
 your own last run, not this number. Python venv at `.venv`; use
 `./.venv/bin/python`.
 
 `pytest --cov --cov-report=term-missing` prints which code the tests reach; CI
-runs it on every push. **81%** at 2026-09-26. There is no threshold and
+runs it on every push. **82%** at 2026-09-26. There is no threshold and
 should not be one — the per-module table is the point, not the percentage. It
 has already earned itself: it is how `grok_cli.cancel_cli_login` was found to
 have no test while its byte-identical twin in `cursor.py` did.
@@ -22,6 +22,12 @@ Four standing rules, each bought the hard way:
   bound the fixed OAuth port 1455.
 - **Never delete, skip or weaken a test to get green.** If a test exposes an
   inconvenient architecture problem, that is the test doing its job.
+- **A shuffled run is part of finishing.** `pytest` takes files in the order you
+  pass them, so `pytest $(ls tests/test_*.py | shuf)` is an order test with no
+  plugin. It is how **A13** was finally closed and how a second order-dependent
+  test was found the same afternoon: `test_browse_record` asserted "nothing has
+  been looked at" against a brain the whole session shares, and passed only
+  because of where it happened to sit in the alphabet.
 - **A bug fix ships with a regression test, and you must watch it fail.**
   Reintroduce the bug, confirm red, restore. A test written after the fix and
   never seen red is a guess about what it covers.

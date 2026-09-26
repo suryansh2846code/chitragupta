@@ -164,3 +164,47 @@ def test_provenance_is_frozen():
 
     with pytest.raises(dataclasses.FrozenInstanceError):
         ref().external_id = "something else"      # type: ignore[misc]
+
+
+# ── the seam with the app-wide trust ladder ───────────────────────────────
+
+
+def test_the_trust_labels_are_rungs_on_the_one_ladder():
+    """**Two modules, one vocabulary, and this is what keeps it one.**
+
+    `core/provenance.py` owns the trust *ladder* — what the levels are, which
+    get fenced before a model sees them, and how a fence resists being closed
+    from inside. `connectors/provenance.py` only carries a *label*, so that a
+    connector never has to decide policy about a model.
+
+    The risk in splitting it that way is drift: a label here that names no rung
+    there is a memory whose trust nothing can evaluate, and it would fail
+    silently — the string would travel, and every reader would find nothing
+    when it looked the level up. So the two are compared.
+    """
+    from chitragupta.connectors.provenance import (
+        CONNECTED_SOURCE,
+        UNTRUSTED_CONTENT,
+    )
+    from chitragupta.core.provenance import Trust
+
+    rungs = {level.name.lower() for level in Trust}
+
+    assert CONNECTED_SOURCE in rungs
+    assert UNTRUSTED_CONTENT in rungs
+
+
+def test_a_connected_source_is_trusted_about_its_shape_and_not_its_prose():
+    """The one judgement `connectors/` is entitled to make: the user connected
+    this, so a calendar event's start time is structure the service produced —
+    while the body of the invitation is something a person typed, and that
+    person is not always the user."""
+    from chitragupta.connectors.provenance import (
+        CONNECTED_SOURCE,
+        UNTRUSTED_CONTENT,
+    )
+    from chitragupta.core.provenance import Trust
+
+    assert Trust[CONNECTED_SOURCE.upper()] > Trust[UNTRUSTED_CONTENT.upper()]
+    # And neither may ever express intent — only what the user typed can.
+    assert Trust[CONNECTED_SOURCE.upper()] < Trust.USER_AUTHORED

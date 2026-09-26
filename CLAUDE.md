@@ -42,6 +42,7 @@ and that document is the one to update when the rule changes.
 |---|---|
 | `api/` | the HTTP surface. `app.py` composes; routes live in `routes/` |
 | `agents/` | the turn loop, tools, effort, delegation, approvals, permissions |
+| `automation/` | the automation engine — triggers, conditions, durable runs |
 | `models/` | providers, auth flows, entitlements, discovery, CLI manager, errors |
 | `brain/` | memories, graph, enrichment; `canonical/` is the curated layer |
 | `connectors/` | one class per source, registered in `__init__.py::REGISTRY` |
@@ -213,6 +214,27 @@ even when every test is green. Reasoning and measurements:
   narrows at all.
 - Graph enrichment is content-based. **Never gate it on a connector allowlist.**
 
+**Automation — `automation/`** · [`docs/AUTOMATION.md`](docs/AUTOMATION.md)
+- **There is one permission system and it is not in `automation/`.** Every side
+  effect goes through `approvals.run_or_queue` → `permissions.check`. An
+  automation may never widen what an interactive agent may do, and a semantic
+  condition's verdict is **data, never authorization** — it is a bool and a
+  float, and the gate never reads either.
+- **State is written before it is acted on**, and the idempotency claim is taken
+  **before** the side effect. A claim written afterwards proves nothing about a
+  process that died in between, which is the case it exists for. A handler that
+  raised leaves the claim open — "we tried and do not know" — and the retry
+  verifies instead of repeating.
+- **No connector is named in the engine core.** A Gmail message, a webhook and
+  one automation finishing are all `Event`s; `automation/sources.py` holds the
+  mapping as a dict. Adding a connector event must never mean editing the
+  engine, and an AST test enforces it.
+- **`BLOCKED` is not `FAILED`.** Blocked is the system correctly declining.
+  Collapsing them turns "it correctly did nothing today" into a red badge, and a
+  user who sees enough of those stops reading them.
+- **The run deadline bounds active work, not waiting.** An approval takes hours;
+  checking wall-clock through a wait killed every run that waited.
+
 **Agents — `agents/`** · [`docs/AGENTS.md`](docs/AGENTS.md)
 - **A routine pre-authorises the routine, not the stranger who wrote the email it
   read.** Outbound actions need a recipient on the explicit allow-list; a derived
@@ -357,8 +379,8 @@ In order: **the focused test → the subsystem's suite → `pytest` →
 `ruff check chitragupta tests` → `mypy chitragupta` → the `tests/js/` harnesses if
 the frontend changed → `chitragupta app` opens and renders.**
 
-Baseline, measured 2026-09-26: **4371 passed, 31 skipped in ~2min15**, ruff
-clean, mypy clean over 196 files, coverage 81%. Locally the split differs — some
+Baseline, measured 2026-09-26: **4702 passed, 30 skipped in ~2min10**, ruff
+clean, mypy clean over 211 files, coverage 82%. Locally the split differs — some
 tests skip when a provider is genuinely connected on the machine. Run tests when
 stuck or finishing, not after every edit. Details:
 [`tests/CLAUDE.md`](tests/CLAUDE.md).
@@ -445,6 +467,7 @@ The boundaries and what each must name:
 | connectors | [`docs/CONNECTORS.md`](docs/CONNECTORS.md) |
 | the connector platform: contract, capabilities, sync, health | [`docs/CONNECTOR-PLATFORM.md`](docs/CONNECTOR-PLATFORM.md) |
 | adding a connector | [`docs/development/writing-a-connector.md`](docs/development/writing-a-connector.md) |
+| automations, and how a run survives a crash | [`docs/AUTOMATION.md`](docs/AUTOMATION.md) |
 | connecting Telegram | [`docs/development/telegram.md`](docs/development/telegram.md) |
 | measurements, and the health boundary | [`docs/development/health.md`](docs/development/health.md) |
 | what the Health agent still needs | [`docs/development/health-roadmap.md`](docs/development/health-roadmap.md) |

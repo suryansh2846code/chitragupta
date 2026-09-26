@@ -24,9 +24,8 @@ outbound actions, and their runs are logged + notified.
 """
 from __future__ import annotations
 
-import json
 import logging
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 
 from .core.routine_store import (  # noqa: F401  (re-exported)
     RoutineStore,
@@ -39,6 +38,7 @@ from .core.schedule import (  # noqa: F401  (re-exported)
     parse_days,
     parse_time,
 )
+from .log import suppressed
 
 log = logging.getLogger("chitragupta.routines")
 
@@ -141,33 +141,22 @@ def daily_due(routine: dict, now: datetime) -> bool:
 
 
 def sweep(new_email_count: int = 0) -> None:
-    """Called by the scheduler each cycle: fire due routines."""
-    store = get_routines()
-    now = datetime.now(UTC)
-    for r in store.enabled():
-        try:
-            if r["trigger"] == "daily":
-                if not daily_due(r, now):
-                    continue
-                res = run_routine(r)
-                store.mark_run(r["id"], json.dumps(res)[:400])
-            elif r["trigger"] == "schedule":
-                last = r["last_run"]
-                due = (last is None or
-                       datetime.fromisoformat(last) +
-                       timedelta(minutes=r["interval_min"]) <= now)
-                if not due:
-                    continue
-                res = run_routine(r)
-                store.mark_run(r["id"], json.dumps(res)[:400])
-            elif r["trigger"] == "new_email" and new_email_count > 0:
-                rows = _new_emails_since(r["last_run"])
-                if not rows:
-                    continue
-                ctx = "NEW EMAIL(S) that just arrived:\n" + "\n".join(
-                    f"- {row['title']}: {' '.join(row['text'].split())[:200]}"
-                    for row in rows)
-                res = run_routine(r, ctx)
-                store.mark_run(r["id"], json.dumps(res)[:400])
-        except Exception:
-            log.exception("routine %s failed", r.get("id"))
+    """Fire whatever is due. Kept as the name the scheduler already calls.
+
+    **The `if/elif` chain that used to be here is gone.** It matched three
+    hardcoded trigger names, which meant every new connector event was another
+    branch in the thing that is supposed to be generic — and `new_email_count`
+    is a count, so a redelivered message could not be recognised as one already
+    handled.
+
+    Now the clock is an event like any other: `automation.engine.tick()` emits
+    `schedule.tick`, the router asks each automation's registered trigger
+    whether it matches, and a run is created with durable state. The
+    parameter survives because callers pass it; it is no longer read, because
+    "how many emails arrived" is answered by the events themselves.
+
+    See [`docs/AUTOMATION.md`](../docs/AUTOMATION.md).
+    """
+    from .automation import engine
+    with suppressed("firing due automations"):
+        engine.tick()

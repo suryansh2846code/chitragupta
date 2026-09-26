@@ -84,9 +84,26 @@ def test_it_reads_back(monkeypatch):
     assert "Docs" in out
 
 
-def test_nothing_looked_at_says_so_and_says_why():
+def test_nothing_looked_at_says_so_and_says_why(monkeypatch):
     """Never a bare empty. Agents can only read sites the user allowed, and
-    that is the likely reason there is nothing here."""
+    that is the likely reason there is nothing here.
+
+    Against a brain of its own, not the session's. The session brain is shared,
+    and anything else that browsed — the automation scorecard does — leaves a
+    record in it: this asserted "there is nothing here" and passed only because
+    of the order tests happened to run in. It failed the moment the files were
+    shuffled, which is the point of shuffling them.
+    """
+    import tempfile
+    from pathlib import Path
+
+    from chitragupta.brain import Brain
+    from chitragupta.core.store import MemoryStore
+
+    empty = Brain(store=MemoryStore(
+        db_path=str(Path(tempfile.mkdtemp()) / "brain.db")))
+    monkeypatch.setattr("chitragupta.brain.get_brain", lambda: empty)
+
     out = browse_record.what_i_looked_at(days=7)
 
     assert "No websites" in out
