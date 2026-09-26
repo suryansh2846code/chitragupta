@@ -1,6 +1,6 @@
 # `tests/`
 
-`pytest` from the repo root. Baseline, measured 2026-09-26: **4702 passed,
+`pytest` from the repo root. Baseline, measured 2026-09-26: **4704 passed,
 30 skipped in ~2min10**. Locally you will see a slightly different split — a handful of tests
 skip when a provider is genuinely connected on the machine — so compare against
 your own last run, not this number. Python venv at `.venv`; use
