@@ -341,6 +341,21 @@ def after_sync(summary: dict[str, Any], *, deps: Deps | None = None,
     count became a list: it is that **the engine no longer knows what a Gmail
     is**. `sources.py` maps a connector to an event kind from a dictionary, and
     everything downstream sees an `Event`.
+
+    **Every connector that ran is looked at, not only the ones that reported
+    adding something.** `added` counts what *this* sync wrote; the watermark
+    counts what the automation layer has already turned into events, and the two
+    drift apart for ordinary reasons — a row stored by a manual sync from the
+    UI, by an agent's own tool call, or by an import that ran before the
+    automation existed. Every one of those left mail sitting in the brain that
+    no automation would ever see, because the next sync to report `added > 0`
+    was the only thing that would look, and on a quiet mailbox that is never.
+
+    It cost a user their first automation: two emails arrived, were stored, and
+    the automation watching for them read "Not run yet" with nothing anywhere
+    saying why. The lookup it was avoiding is one indexed query per connector
+    per sync, bounded by the watermark, and returns nothing at all on the pass
+    after it caught up.
     """
     from . import sources
 
@@ -349,13 +364,16 @@ def after_sync(summary: dict[str, Any], *, deps: Deps | None = None,
     for connector, result in (summary or {}).items():
         if connector.startswith("_") or not isinstance(result, dict):
             continue
-        added = int(result.get("added") or 0)
-        if added <= 0:
+        # An error with no count is a connector that failed before it could
+        # store anything — there is nothing new to read back.
+        if result.get("errors") and not result.get("added"):
             continue
         rows: list[dict[str, Any]] = []
         with suppressed("reading rows a sync added, for automation events"):
             rows = sources.recent_rows(connector, _since(connector))
-        for event in sources.events_from_sync(connector, added, rows=rows):
+        if not rows:
+            continue
+        for event in sources.events_from_sync(connector, len(rows), rows=rows):
             outcome = ingest(event, deps=deps)
             started.extend(outcome.get("started") or [])
             seen[connector] = seen.get(connector, 0) + 1

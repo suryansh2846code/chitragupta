@@ -252,10 +252,51 @@ def test_a_sync_summary_becomes_events_without_naming_a_connector(monkeypatch):
     assert {e.kind for e in seen} == {"email.received", "calendar.changed"}
 
 
-def test_a_connector_that_added_nothing_produces_nothing(monkeypatch):
+def test_mail_already_in_the_brain_still_starts_an_automation(monkeypatch):
+    """The bug that cost a real user their first automation.
+
+    Two emails arrived and were stored. The sync that stored them did not report
+    them as *added* — a manual sync from the UI, an agent's own tool call and an
+    import that ran earlier all end this way — so nothing looked, no event was
+    made, and the automation watching for mail read "Not run yet" for the rest
+    of the day with nothing anywhere saying why.
+
+    What decides whether there is work is the watermark, which says what the
+    automation layer has already seen. Not `added`, which says what this
+    particular pass happened to write.
+    """
+    seen = []
+    monkeypatch.setattr(engine, "ingest",
+                        lambda event, deps=None: seen.append(event) or
+                        {"started": ["run-1"]})
+    monkeypatch.setattr(sources, "recent_rows", lambda connector, since: [
+        {"id": "m1", "title": "Re: the thing", "uri": "u1"}])
+
+    out = engine.after_sync({"gmail": {"added": 0}})
+
+    assert len(seen) == 1, "mail sitting in the brain was never looked at"
+    assert out["events"] == {"gmail": 1}
+
+
+def test_a_connector_with_nothing_new_is_not_looked_at_twice(monkeypatch):
+    """The pass after it catches up. The watermark has moved, so the query
+    returns nothing and no event is made — which is what keeps this cheap
+    enough to do on every sync."""
     monkeypatch.setattr(engine, "ingest",
                         lambda event, deps=None: pytest.fail("it ingested"))
+    monkeypatch.setattr(sources, "recent_rows", lambda connector, since: [])
+
     assert engine.after_sync({"gmail": {"added": 0}})["events"] == {}
+
+
+def test_a_connector_that_failed_is_not_read_back(monkeypatch):
+    """It fell over before storing anything. Asking the brain what it added is
+    a query with a known answer."""
+    monkeypatch.setattr(sources, "recent_rows",
+                        lambda connector, since: pytest.fail("it looked"))
+
+    assert engine.after_sync(
+        {"gmail": {"added": 0, "errors": ["not signed in"]}})["events"] == {}
 
 
 def test_the_summarys_own_bookkeeping_keys_are_skipped(monkeypatch):

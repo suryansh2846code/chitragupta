@@ -959,6 +959,34 @@ def _set_reminder(params: dict) -> dict:
     return {"ok": True, "id": r["id"], "detail": f"Reminder set for {nice}"}
 
 
+def _resolve_agent(named: str) -> tuple[str, str]:
+    """Which agent will run this, or a sentence saying why none will.
+
+    Accepts an id or the name on screen, because a model reads "Chief of Staff"
+    in the roster and writes it back with the capitals. Anything else is
+    refused with the real names in it, so the next attempt can be right rather
+    than being told "no".
+    """
+    from .agents import list_agents
+
+    roster = list(list_agents())
+    if not roster:
+        return "", "there are no agents yet — make one first"
+
+    wanted = str(named or "").strip().casefold()
+    if not wanted:
+        # Nothing named. The first agent is a guess, and a guess is what this
+        # function exists to avoid.
+        return "", ("say which agent should run it — "
+                    + ", ".join(a.name for a in roster))
+    for agent in roster:
+        if wanted in (str(agent.id).casefold(), str(agent.name).casefold()):
+            return str(agent.id), ""
+    return "", (f"there is no agent called “{named}”. "
+                "The agents you have are: "
+                + ", ".join(a.name for a in roster))
+
+
 def _create_routine(params: dict) -> dict:
     # The leaves, not the feature module: `routines` drives an agent turn
     # and passes its proposals through the approval gate, which reads the
@@ -969,7 +997,21 @@ def _create_routine(params: dict) -> dict:
     if not instruction:
         return {"ok": False, "error": "an instruction is required"}
     name = (params.get("name") or "Automation").strip()
-    agent = params.get("agent") or params.get("agent_id") or "personal"
+
+    # **The agent has to exist.** A model naming one it invented — "inbox",
+    # "mail", "assistant" — produced an automation that could never run: every
+    # turn would be asked of an agent that is not there, and nothing said so.
+    # The default was worse, because `personal` is not a roster entry either on
+    # an install where the user never made one.
+    #
+    # Refused rather than guessed at. Falling back to whichever agent happens to
+    # be first gives the user an automation run by somebody they did not choose,
+    # and the one place that is visible — the edit form — showed that first agent
+    # as if it had been picked on purpose.
+    agent, trouble = _resolve_agent(
+        params.get("agent") or params.get("agent_id") or "")
+    if trouble:
+        return {"ok": False, "error": trouble}
     interval = int(params.get("interval_min") or 60)
     at_time = parse_time(params.get("at") or params.get("at_time"))
     days = params.get("days") or ""
@@ -988,7 +1030,8 @@ def _create_routine(params: dict) -> dict:
                                 at_time=at_time, days=days) or {}
     return {"ok": True, "id": row.get("id", ""),
             "detail": f"Automation '{name}' created — runs "
-                      f"{describe_schedule(row or {'trigger': trigger})}"}
+                      f"{describe_schedule(row or {'trigger': trigger})}, "
+                      f"as {agent}"}
 
 
 def _create_event(params: dict) -> dict:

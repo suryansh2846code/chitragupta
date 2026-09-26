@@ -80,6 +80,11 @@ async function loadAutomationState() {
       if (a.next_run) bits.push(`Next ${esc(autoWhen(a.next_run))}`);
       if (a.waiting) {
         bits.push(`${a.waiting} waiting for you`);
+      } else if (a.agent_missing) {
+        // It can never run: every turn would be asked of somebody who is not
+        // there. Said on the row, because "Not run yet" is what it looked like
+        // and that reads as "nothing has happened yet".
+        bits.push("cannot run — its agent is gone");
       } else if (a.last_state) {
         // What happened last time, in the same words the history screen uses.
         // A row that only said when it would next run gave no way to tell

@@ -74,7 +74,20 @@ def _summary(automation: Any, runs: list[dict]) -> dict[str, Any]:
         "last_state": (recent or {}).get("state", ""),
         "runs": len(runs),
         "waiting": len(waiting),
+        # An automation whose agent is not in the roster can never run, and the
+        # list is the only place a user would find out. It used to read "Not run
+        # yet" forever, which reads as "nothing has happened" rather than "this
+        # is broken".
+        "agent_missing": _agent_is_gone(automation.agent_id),
     }
+
+
+def _agent_is_gone(agent_id: str) -> bool:
+    from ...agents import list_agents
+
+    with suppressed("checking whether an automation's agent still exists"):
+        return not any(a.id == agent_id for a in list_agents())
+    return False
 
 
 @router.get("/api/automations")

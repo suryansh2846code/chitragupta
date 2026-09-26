@@ -635,8 +635,17 @@ let _editingRoutine = null;      // null = creating
 async function routineForm(existing) {
   _editingRoutine = existing || null;
   const { agents } = await api("/api/agents");
-  $("#rmAgent").innerHTML = agents.map((a) =>
-    `<option value="${esc(a.id)}"${existing && a.id === existing.agent_id ? " selected" : ""}>${esc(a.name)}</option>`).join("");
+  // An agent the automation names but the roster does not have is kept and
+  // labelled, never quietly swapped for whichever agent happens to be first.
+  // A model once wrote `agent="inbox"`, which is nobody; the row showed
+  // "inbox" and this form showed the first agent in the list, so the one
+  // screen that could have explained why it never ran said it was fine.
+  const owner = existing ? String(existing.agent_id || "") : "";
+  const known = agents.some((a) => a.id === owner);
+  const options = (known || !owner) ? agents
+    : [...agents, { id: owner, name: `${owner} — missing` }];
+  $("#rmAgent").innerHTML = options.map((a) =>
+    `<option value="${esc(a.id)}"${a.id === owner ? " selected" : ""}>${esc(a.name)}</option>`).join("");
   $("#rmName").value = existing ? existing.name : "";
   $("#rmInstruction").value = existing ? existing.instruction : "";
   $("#rmInterval").value = existing ? String(existing.interval_min) : "60";
