@@ -98,7 +98,17 @@ def _plan(agent_id: str, prompt: str,
                 agent_id, prompt,
                 provider_name=str(spec.get("provider") or "") or None,
                 model_name=str(spec.get("model") or "") or None,
-                effort=str(spec.get("effort") or "") or None)
+                effort=str(spec.get("effort") or "") or None,
+                # **Isolated.** Persisting put the automation's whole prompt —
+                # goal, fenced context, the lot — into the agent's chat as a
+                # message attributed to the USER, who did not type 1,590
+                # characters about running an automation unattended. Every run
+                # added another one, and the reply landed beside it whether or
+                # not there was anything to say.
+                #
+                # `deliver_result` puts the answer there instead: one message,
+                # the agent's own, and only when there is something to report.
+                persist=False)
     finally:
         release_only(scope)
         if no_pages is not None:

@@ -191,3 +191,29 @@ def test_delivering_never_breaks_a_run(an_agent, monkeypatch):
         automation(agent_id=an_agent.id),
         {"state": str(RunState.COMPLETED), "actions_used": 1,
          "outcome": "did it"}) is False
+
+
+def test_the_turn_itself_leaves_nothing_in_the_chat():
+    """An automation's prompt is not something the user said.
+
+    Persisting the turn put the whole thing — goal, fenced context, the lot —
+    into the agent's conversation as a message attributed to the USER, who did
+    not type 1,590 characters about running an automation unattended. Every run
+    added another, and the raw reply landed beside it whether or not there was
+    anything worth saying.
+
+    The delivered result is the one message that belongs there.
+    """
+    from types import SimpleNamespace
+    from unittest.mock import patch
+
+    seen = {}
+
+    def fake_turn(agent_id, text, **kw):
+        seen.update(kw)
+        return SimpleNamespace(reply="ok", trace=[])
+
+    with patch("chitragupta.agents.run_turn", fake_turn):
+        engine._plan("someone", "the prompt", {})
+
+    assert seen.get("persist") is False
