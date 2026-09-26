@@ -3153,3 +3153,19 @@ button.tiny.running:hover { background: linear-gradient(to right,
 }
 .msg-row.is-unread .msg-body { opacity: 1; }
 .msg-row .msg-when { display: block; margin-top: 3px; color: var(--faint); font-size: 11.5px; }
+
+/* How many messages are waiting. On the rail, because a list you have to open
+   to find out whether anything is in it is a list you stop opening. */
+.snav-count {
+  margin-left: auto;
+  min-width: 18px;
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: var(--north);
+  color: var(--north-ink);
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+}

@@ -194,6 +194,8 @@ async function loadMessages() {
     return;
   }
 
+  paintUnread(unread);
+
   const all = $("#msgReadAll");
   if (all) {
     all.hidden = unread === 0;
@@ -239,6 +241,31 @@ async function loadMessages() {
   host.querySelectorAll("[data-msg-open]").forEach((button) => {
     button.onclick = () => openRunFromMessage(button.dataset.msgOpen);
   });
+}
+
+/* How many are waiting, on the rail.
+ *
+ * A list you have to open to find out whether anything is in it is a list you
+ * stop opening. The count is the whole reason the Inbox is worth being its own
+ * screen rather than a section on a longer one. */
+function paintUnread(count) {
+  const badge = $("#navUnread");
+  if (!badge) return;
+  const n = Number(count) || 0;
+  badge.hidden = n === 0;
+  badge.textContent = n > 9 ? "9+" : String(n);
+}
+
+/* Ask how many are unread without drawing the list.
+ *
+ * Called on boot and after anything that might have produced one, so the rail
+ * is right on a screen the user has not visited — which is every screen, the
+ * first time something arrives. */
+async function refreshUnread() {
+  try {
+    const { unread = 0 } = await api("/api/messages");
+    paintUnread(unread);
+  } catch (_) { /* a rail with no number is better than a wrong one */ }
 }
 
 /* Open the run a message came from. A result you cannot trace back is one you

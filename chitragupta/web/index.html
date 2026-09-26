@@ -38,7 +38,8 @@
            disagreed about which one you were on. The rail is for the work now;
            everything you configure is behind Settings. -->
       <div class="side-nav">
-        <button class="snav" data-nav="inbox"><span class="snav-ic"></span><span class="snav-tx">Inbox</span></button>
+        <button class="snav" data-nav="inbox"><span class="snav-ic"></span><span class="snav-tx">Inbox</span><span class="snav-count" id="navUnread" hidden></span></button>
+        <button class="snav" data-nav="actions"><span class="snav-ic"></span><span class="snav-tx">Actions</span></button>
         <button class="snav" data-nav="brain"><span class="snav-ic"></span><span class="snav-tx">Brain</span></button>
         <button class="snav" data-nav="web"><span class="snav-ic"></span><span class="snav-tx">Browser</span></button>
       </div>
@@ -448,6 +449,7 @@
       <div class="ms-nav-label">Workspace</div>
       <nav class="ms-nav-list">
         <button class="ms-nav-item" data-msnav="inbox"><span class="ms-nav-ic" aria-hidden="true"></span><span>Inbox</span></button>
+        <button class="ms-nav-item" data-msnav="actions"><span class="ms-nav-ic" aria-hidden="true"></span><span>Actions</span></button>
         <button class="ms-nav-item" data-msnav="brain"><span class="ms-nav-ic" aria-hidden="true"></span><span>Brain</span></button>
         <button class="ms-nav-item" data-msnav="tools"><span class="ms-nav-ic" aria-hidden="true"></span><span>Agents &amp; tools</span></button>
         <button class="ms-nav-item" data-msnav="library"><span class="ms-nav-ic" aria-hidden="true"></span><span>Agent Library</span></button>
@@ -471,9 +473,32 @@
          things due, and anything an agent stopped to ask about. The ids are
          the ones the existing loaders already write into — the markup moved,
          the renderers did not have to. -->
+    <!-- ── panel: inbox ────────────────────────────────────────────────
+         Messages, and nothing else. What an agent said to you is a different
+         kind of thing from the machinery that produced it: one is news, the
+         other is furniture — and a screen holding both makes you scroll past
+         five sections of furniture to find the news. -->
     <div class="ms-body sp" data-sp="inbox" hidden>
       <h1 class="ms-h1">Inbox</h1>
+      <p class="ms-sub" style="margin-bottom:26px">What your agents told you.</p>
+
+      <section class="ib-sec">
+        <div class="ib-head">
+          <div><h2 class="ib-title">Messages</h2>
+            <p class="ib-sub">What your agents told you while you were away.</p></div>
+          <button id="msgReadAll" class="tiny ghost" hidden>Mark all read</button>
+        </div>
+        <div id="messageList" class="tasks"></div>
+      </section>
+    </div>
+
+    <!-- ── panel: actions ──────────────────────────────────────────────
+         The machinery: what is waiting on you, what you asked for, what runs
+         on its own, and what has already happened. -->
+    <div class="ms-body sp" data-sp="actions" hidden>
+      <h1 class="ms-h1">Actions</h1>
       <p class="ms-sub" style="margin-bottom:26px">What your agents are running on their own, what is coming up, and anything waiting on you.</p>
+
 
       <section class="ib-sec">
         <div class="ib-head">
@@ -500,14 +525,7 @@
       <!-- Anything an agent wanted to tell you. First, because it is the
            thing that arrived while you were not looking — everything below it
            is something you already know about. -->
-      <section class="ib-sec">
-        <div class="ib-head">
-          <div><h2 class="ib-title">Messages</h2>
-            <p class="ib-sub">What your agents told you while you were away.</p></div>
-          <button id="msgReadAll" class="tiny ghost" hidden>Mark all read</button>
-        </div>
-        <div id="messageList" class="tasks"></div>
-      </section>
+      
 
       <section class="ib-sec">
         <div class="ib-head">

@@ -935,10 +935,23 @@ async function openInboxScreen() {
   const m = $("#modelScreen"); if (!m) return;
   m.hidden = false;
   showSettingsPanel("inbox");
+  try { await loadMessages(); } catch (_) {}
+}
+
+/* The machinery: what is waiting, what is queued, what runs on its own, and
+ * what has already happened.
+ *
+ * Split from the Inbox, which is now only what an agent said to you. Those are
+ * different kinds of thing — one is news and the other is furniture — and a
+ * screen holding both made you scroll past five sections of furniture to find
+ * the news. */
+async function openActionsScreen() {
+  const m = $("#modelScreen"); if (!m) return;
+  m.hidden = false;
+  showSettingsPanel("actions");
   // Each section loads itself; one failing must not blank the others, which is
   // what a single await chain would do.
   try { await loadApprovals(); } catch (_) {}
-  try { await loadMessages(); } catch (_) {}
   try { await loadRoutines(); } catch (_) {}
   try { await loadReminders(); } catch (_) {}
   try { await loadActionLog(); } catch (_) {}
@@ -999,6 +1012,7 @@ document.querySelectorAll(".ms-nav-item").forEach((b) => {
     if (to === "account") return openAccountScreen();
     if (to === "connectors") return openConnectorsScreen();
     if (to === "inbox") return openInboxScreen();
+    if (to === "actions") return openActionsScreen();
     if (to === "tools") return openToolsScreen();
     if (to === "appearance") return openAppearanceScreen();
     // Leaves the app entirely, so nothing after it runs and the screen does not

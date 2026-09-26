@@ -174,3 +174,42 @@ def test_nothing_calls_it_a_drawer_any_more():
     assert "Models drawer" not in app_source(), (
         "user-facing copy still calls the model screen a drawer"
     )
+
+
+# ── the Inbox is messages, and nothing else ───────────────────────────────
+
+def test_the_rail_offers_both_inbox_and_actions(clicked):
+    """They are different kinds of thing. What an agent *said* to you is news;
+    what it is running is furniture — and one screen holding both made you
+    scroll past five sections of furniture to find the news."""
+    assert "inbox" in clicked["opened"], sorted(clicked["opened"])
+    assert "actions" in clicked["opened"], sorted(clicked["opened"])
+
+
+def test_each_one_opens_its_own_panel(clicked):
+    assert clicked["opened"]["inbox"]["panel"] == "inbox"
+    assert clicked["opened"]["actions"]["panel"] == "actions"
+
+
+def test_the_inbox_panel_holds_only_messages():
+    """Read off the markup: the split is structural, and a fake DOM has no
+    layout to measure."""
+    page = (WEB / "index.html").read_text()
+    panel = page.split('data-sp="inbox"')[1].split('data-sp="actions"')[0]
+
+    assert 'id="messageList"' in panel
+    for elsewhere in ('id="approvals"', 'id="taskList"', 'id="routineList"',
+                      'id="reminderList"', 'id="actionLog"'):
+        assert elsewhere not in panel, f"{elsewhere} is still on the Inbox"
+
+
+def test_everything_else_moved_rather_than_being_dropped():
+    """A split that loses a section is worse than no split: the thing it held
+    is gone with no screen saying where."""
+    page = (WEB / "index.html").read_text()
+    panel = page.split('data-sp="actions"')[1].split('panel: agents')[0]
+
+    for moved in ('id="approvals"', 'id="taskList"', 'id="routineList"',
+                  'id="reminderList"'):
+        assert moved in panel, f"{moved} was lost in the split"
+    assert 'id="messageList"' not in panel, "messages are in both places"
