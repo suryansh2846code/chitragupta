@@ -91,10 +91,10 @@ def known() -> list[str]:
 #: form that asks for a key no trigger reads is a setting the user chose that
 #: does nothing.
 _TRIGGER_FORM: dict[str, tuple[str, tuple[str, ...]]] = {
-    "event": ("When something happens", ("kind", "source")),
+    "event": ("Something happens in an app", ("kind", "source")),
     "schedule": ("At a time of day", ("at_time", "days", "timezone")),
     "interval": ("Every so often", ("interval_min",)),
-    "manual": ("Only when I ask", ()),
+    "manual": ("Only when I ask for it", ()),
 }
 
 

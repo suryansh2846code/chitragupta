@@ -111,6 +111,9 @@ def vocabulary():
         "conditions": conditions.describe(),
         "fields": sources.condition_fields(),
         "event_kinds": sorted({kind for kind, _ in sources.EVENT_KINDS.values()}),
+        # The apps that produce events at all, so "in which app" suggests names
+        # that exist rather than asking the user to remember our spelling.
+        "sources": sorted(sources.EVENT_KINDS),
         "concurrency": list(Concurrency.ALL),
         "names": {"triggers": triggers.known(),
                   "conditions": conditions.known()},

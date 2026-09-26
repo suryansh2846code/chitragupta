@@ -85,11 +85,39 @@ def test_a_group_is_not_offered_as_a_row(vocabulary):
 
 
 def test_the_field_names_offered_are_the_ones_events_carry(vocabulary):
-    out = drive(vocabulary, [{"op": "open"}])
-    assert 'value="event.from"' in out["fieldListHtml"]
-    assert 'value="event.subject"' not in out["fieldListHtml"], (
+    """And they are offered by name, not typed.
+
+    The first version of this form had a text box you typed `event.from` into,
+    with the paths as autocomplete hints. That is a dotted path in front of
+    somebody who wants "who it is from", and a typo in it is a condition that
+    silently never matches.
+    """
+    out = drive(vocabulary, [{"op": "open"}, {"op": "add"}])
+
+    assert 'value="event.from"' in out["conditionsHtml"]
+    assert "Who it is from" in out["conditionsHtml"], (
+        "the path is shown where the name should be")
+    assert 'value="event.subject"' not in out["conditionsHtml"], (
         "an event does not carry `subject` — offering it is offering a "
         "condition that can never be true")
+    assert "cond-field" in out["conditionsHtml"]
+    assert 'list="rmFieldList"' not in out["conditionsHtml"], (
+        "it is still a typed box")
+
+
+def test_a_field_the_automation_uses_is_kept_even_if_it_is_not_offered(
+        vocabulary):
+    """A dropdown that silently swaps an unrecognised value for its first item
+    rewrites the user's automation the moment they open it to look."""
+    existing = {"id": "a3", "trigger": {"type": "manual"},
+                "conditions": [{"type": "contains", "field": "event.custom",
+                                "value": "x"}]}
+    out = drive(vocabulary, [{"op": "open", "existing": {"id": "a3"}}],
+                automation=existing)
+
+    assert 'value="event.custom"' in out["conditionsHtml"]
+    assert out["conditions"] == [
+        {"type": "contains", "field": "event.custom", "value": "x"}]
 
 
 # ── what it sends ──────────────────────────────────────────────────────────
@@ -160,12 +188,29 @@ def test_a_model_judgement_is_sent_as_a_question(vocabulary):
         "a model judgement is about the whole event, not one field")
 
 
-def test_a_half_written_condition_is_not_saved(vocabulary):
-    """A condition with no field reads an empty path, which never matches — so
-    the automation silently never runs, for a reason nothing on screen says."""
+def test_a_new_check_opens_on_a_real_field(vocabulary):
+    """It reads as a sentence before anything is typed.
+
+    The row used to start with an empty field, which `builderConditions` then
+    correctly dropped — so adding a check, filling in the value and saving gave
+    you an automation with no check and nothing on screen saying why.
+    """
+    out = drive(vocabulary, [
+        {"op": "open"}, {"op": "add"},
+        {"op": "type", "row": 0, "what": "value", "value": "invoice"},
+    ])
+    assert len(out["conditions"]) == 1
+    assert out["conditions"][0]["field"], "the row opened with no field"
+
+
+def test_a_condition_with_its_field_cleared_is_still_not_saved(vocabulary):
+    """The guard underneath. A condition reading an empty path never matches,
+    so the automation silently never runs — dropping it is the honest answer,
+    and it must survive the field becoming a dropdown."""
     out = drive(vocabulary, [
         {"op": "open"}, {"op": "add"},
         {"op": "type", "row": 0, "what": "type", "value": "contains"},
+        {"op": "type", "row": 0, "what": "field", "value": ""},
         {"op": "type", "row": 0, "what": "value", "value": "invoice"},
     ])
     assert out["conditions"] == []
@@ -270,7 +315,7 @@ def test_a_nested_rule_is_locked_rather_than_flattened(vocabulary):
                 automation=existing)
     assert out["conditions"] is None
     assert out["addHidden"] is True
-    assert "nested rule" in out["hint"]
+    assert "grouped rule" in out["hint"]
     patch = [c for c in out["calls"] if c["method"] == "PATCH"]
     assert patch and "conditions" not in patch[0]["body"], (
         "it sent conditions over a rule it could not read")
@@ -358,3 +403,65 @@ def test_a_spec_that_could_not_be_stored_is_not_reported_as_success(vocabulary):
     told = out["toasts"][-1]
     assert "could not be stored" in told
     assert told != "Automation created"
+
+
+# ── the shape of the form itself ───────────────────────────────────────────
+
+def test_the_app_box_suggests_apps_that_exist(vocabulary):
+    """"In which app" is a free-text box because a new connector should work
+    without a frontend change. Free text with no suggestions is a box people
+    type "Gmail " into."""
+    out = drive(vocabulary, [{"op": "open"}])
+    assert 'value="gmail"' in out["sourceListHtml"]
+
+
+def test_the_form_is_three_numbered_steps():
+    """It was ten labels in one column: the same information, with nothing
+    showing which box belonged to which idea.
+
+    Read off the markup, because this is the one claim about the form that is
+    structural rather than behavioural — and the harness renders into a fake
+    DOM that has no layout to measure.
+    """
+    html = (WEB / "index.html").read_text()
+    modal = html.split('id="routineModal"')[1].split("</div>\n\n")[0]
+
+    steps = modal.count('class="am-step"')
+    assert steps == 3, f"the builder has {steps} steps, not three"
+    for number in ("1", "2", "3"):
+        assert f'class="am-step-n">{number}<' in modal
+    for heading in ("When", "Only if", "Do this"):
+        assert heading in modal
+
+    # The three questions a person actually asks, in the order they ask them.
+    when = modal.index('class="am-step-n">1<')
+    only_if = modal.index('class="am-step-n">2<')
+    do_this = modal.index('class="am-step-n">3<')
+    assert when < only_if < do_this
+
+
+def test_every_check_lays_out_on_the_same_grid():
+    """The symmetry claim, checked where it is decided.
+
+    With `flex: 1 1 28%` a check that takes no value spread two boxes across
+    the width its neighbours used for three, so nothing in the list lined up
+    with anything below it. A grid with fixed columns is what fixes that, and
+    the placeholders are why an empty column still holds its place.
+    """
+    css = (WEB / "styles.css").read_text()
+    row = css.split(".cond-row {")[1].split("}")[0]
+
+    assert "display: grid" in row
+    assert "grid-template-columns" in row
+    assert "flex:" not in row
+    assert ".cond-whole, .cond-none" in css, (
+        "a row with no field or no value would collapse its column")
+
+
+def test_a_check_can_always_be_removed_on_a_narrow_window():
+    """The remove button used to be pushed off-screen by a row that overflowed,
+    which made a check impossible to delete."""
+    css = (WEB / "styles.css").read_text()
+    assert "@media (max-width: 560px)" in css
+    narrow = css.split("@media (max-width: 560px)")[1]
+    assert ".cond-row { grid-template-columns: 1fr 1fr; }" in narrow

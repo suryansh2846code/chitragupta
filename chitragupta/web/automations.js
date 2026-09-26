@@ -78,7 +78,14 @@ async function loadAutomationState() {
     if (meta) {
       const bits = [];
       if (a.next_run) bits.push(`Next ${esc(autoWhen(a.next_run))}`);
-      if (a.waiting) bits.push(`${a.waiting} waiting for you`);
+      if (a.waiting) {
+        bits.push(`${a.waiting} waiting for you`);
+      } else if (a.last_state) {
+        // What happened last time, in the same words the history screen uses.
+        // A row that only said when it would next run gave no way to tell
+        // "ran fine" from "correctly did nothing" without opening it.
+        bits.push(esc(RUN_WORDS[a.last_state] || a.last_state));
+      }
       if (bits.length) meta.innerHTML += ` · ${bits.join(" · ")}`;
     }
     const name = line.querySelector(".ib-name");
@@ -88,9 +95,13 @@ async function loadAutomationState() {
     const actions = line.querySelector(".ib-actions");
     if (actions && !actions.querySelector("[data-history-r]")) {
       const button = document.createElement("button");
-      button.className = "tiny ghost";
+      // One word, and the count goes in a fixed-width slot beside it. It read
+      // "History (12)" on one row and "History" on the next, so Pause, Edit
+      // and the delete cross sat at a different x on every line.
+      button.className = "tiny ghost ib-hist";
       button.dataset.historyR = a.id;
-      button.textContent = a.runs ? `History (${a.runs})` : "History";
+      button.textContent = "History";
+      button.title = a.runs ? `${a.runs} run(s) so far` : "It has not run yet";
       button.onclick = () => automationHistory(a.id);
       actions.insertBefore(button, actions.firstChild);
     }
@@ -204,7 +215,8 @@ async function runDetail(automationId, runId) {
 //: Filled once per session from the vocabulary. Empty until then, and every
 //: reader copes with empty — the modal must open on a machine where that call
 //: failed, holding the automation's real values, rather than not opening.
-let VOCAB = { triggers: [], conditions: [], fields: [], event_kinds: [] };
+let VOCAB = { triggers: [], conditions: [], fields: [], event_kinds: [],
+              sources: [] };
 
 //: The condition rows on screen. The user's edits live here between renders,
 //: so adding a fourth row cannot discard what was typed into the third.
@@ -221,6 +233,7 @@ async function loadVocabulary() {
     VOCAB = {
       triggers: body.triggers || [], conditions: body.conditions || [],
       fields: body.fields || [], event_kinds: body.event_kinds || [],
+      sources: body.sources || [],
     };
   } catch (_) { /* the form still opens, with what the automation already has */ }
   return VOCAB;
@@ -266,11 +279,29 @@ function renderTriggerChoices(selected) {
       `<option value="${esc(k)}"${k === current ? " selected" : ""}>${
         esc(eventKindWords(k))}</option>`).join("");
   }
-  const fields = $("#rmFieldList");
-  if (fields) {
-    fields.innerHTML = VOCAB.fields.map((f) =>
-      `<option value="${esc(f)}"></option>`).join("");
+  const sources = $("#rmSourceList");
+  if (sources) {
+    // The apps that actually produce the chosen kind of event. A free-text box
+    // with no suggestions is a box people type "gmail " into.
+    sources.innerHTML = (VOCAB.sources || []).map((name) =>
+      `<option value="${esc(name)}"></option>`).join("");
   }
+}
+
+/* The "what to check" menu, as options. Named by the server, so the words a
+ * person picks and the path the engine reads stay attached — a form holding
+ * its own half of that pairing offers fields no event carries. */
+function fieldOptions(selected) {
+  const fields = VOCAB.fields.length ? VOCAB.fields
+    : [{ path: "event.title", label: "Subject or title" },
+       { path: "event.body", label: "The text of it" }];
+  const known = fields.some((f) => f.path === selected);
+  // A field the automation already uses that this build does not offer is kept
+  // and shown as itself, never silently swapped for the first item in the list.
+  const all = known || !selected ? fields
+    : [...fields, { path: selected, label: selected }];
+  return all.map((f) => `<option value="${esc(f.path)}"${
+    f.path === selected ? " selected" : ""}>${esc(f.label)}</option>`).join("");
 }
 
 //: An event kind in a person's words. Falls back to the kind itself, so a new
@@ -298,9 +329,8 @@ function renderConditions() {
   if (COND_LOCKED) {
     host.innerHTML = "";
     if (hint) {
-      hint.textContent = "This automation's conditions use a nested rule, which"
-        + " this form cannot show without flattening it. They are left exactly"
-        + " as they are.";
+      hint.textContent = "This one has a grouped rule that is too complex to"
+        + " show here. It still works — it is left exactly as it is.";
     }
     if (add) add.hidden = true;
     return;
@@ -308,21 +338,25 @@ function renderConditions() {
   if (add) add.hidden = false;
   if (hint) {
     hint.textContent = COND_ROWS.length
-      ? "All of these have to be true."
-      : "Nothing here means it runs every time.";
+      ? "All of these have to be true for it to run."
+      : "Leave this empty and it runs every time.";
   }
+  // Three columns and a remove button, the same three on every row whether or
+  // not this condition takes a value. Laying them out with `flex: 1 1 28%`
+  // meant a row for `is not empty` had two wide boxes where its neighbours had
+  // three narrow ones, so nothing in the list lined up with anything.
   host.innerHTML = COND_ROWS.map((row, i) => {
     const spec = conditionSpec(row.type);
     const wantsField = !spec || spec.field !== false;
     const valueKind = spec ? spec.value : "text";
-    const placeholder = valueKind === "list" ? "one, or, several"
+    const placeholder = valueKind === "list" ? "one, another, a third"
       : valueKind === "number" ? "a number"
-      : valueKind === "prompt" ? "e.g. is this actually from a client?"
+      : valueKind === "prompt" ? "e.g. is this from a client?"
       : "what to compare it to";
     return `<div class="cond-row">
-      ${wantsField ? `<input class="cond-field" list="rmFieldList"
-        data-cond-field="${i}" value="${esc(row.field || "")}"
-        placeholder="event.from" />` : ""}
+      ${wantsField ? `<select class="cond-field" data-cond-field="${i}"
+        >${fieldOptions(row.field)}</select>`
+        : `<span class="cond-whole">The whole thing</span>`}
       <select class="cond-type" data-cond-type="${i}">${
         conditionChoices().map((c) => `<option value="${esc(c.type)}"${
           c.type === row.type ? " selected" : ""}>${esc(c.label)}</option>`)
@@ -330,18 +364,23 @@ function renderConditions() {
       ${valueKind ? `<input class="cond-value" data-cond-value="${i}"
         value="${esc(row.value || "")}"
         ${valueKind === "number" ? 'type="number"' : ""}
-        placeholder="${esc(placeholder)}" />` : ""}
+        placeholder="${esc(placeholder)}" />`
+        : `<span class="cond-none"></span>`}
       <button class="tiny ghost ib-x" data-cond-del="${i}"
-        aria-label="Remove this condition">${IC.close}</button>
+        aria-label="Remove this check">${IC.close}</button>
     </div>`;
   }).join("");
 
   // Every edit is written back to COND_ROWS as it is typed. Reading the DOM
   // only at save time loses whatever a re-render happened to wipe.
-  host.querySelectorAll("[data-cond-field]").forEach((input) => {
-    input.oninput = () => {
-      COND_ROWS[Number(input.dataset.condField)].field = input.value;
+  host.querySelectorAll("[data-cond-field]").forEach((select) => {
+    const write = () => {
+      COND_ROWS[Number(select.dataset.condField)].field = select.value;
     };
+    // Both, because it is a `select` now and the harness drives whichever the
+    // app bound — and because a browser fires `change`, not `input`, on one.
+    select.onchange = write;
+    select.oninput = write;
   });
   host.querySelectorAll("[data-cond-value]").forEach((input) => {
     input.oninput = () => {
@@ -363,8 +402,14 @@ function renderConditions() {
 }
 
 function addCondition() {
+  // Opens on a field and a check that already make sense together, so the row
+  // reads as a sentence before anything is typed. An empty field is a row that
+  // silently never matches, which `builderConditions` then drops — correct, and
+  // invisible, so it is better not to offer it in the first place.
   const first = conditionChoices()[0];
-  COND_ROWS.push({ type: first ? first.type : "contains", field: "", value: "" });
+  const fields = VOCAB.fields.length ? VOCAB.fields : [{ path: "event.title" }];
+  COND_ROWS.push({ type: first ? first.type : "contains",
+                   field: fields[0].path, value: "" });
   renderConditions();
 }
 

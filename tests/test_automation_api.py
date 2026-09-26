@@ -144,8 +144,24 @@ def test_the_vocabulary_says_what_each_entry_asks_for(client):
     assert conditions["all"]["group"] is True
     assert all(c["label"] for c in body["conditions"])
 
-    # And the field names come from the events themselves.
-    assert "event.from" in body["fields"]
+    # And the field names come from the events themselves, each with the words
+    # a person picks it by — the path and the label travel together, so a form
+    # cannot offer a field no event carries.
+    paths = [f["path"] for f in body["fields"]]
+    labels = {f["path"]: f["label"] for f in body["fields"]}
+    assert "event.from" in paths
+    assert labels["event.from"] == "Who it is from"
+    assert all(f["label"] for f in body["fields"])
+    assert "gmail" in body["sources"], "the apps that produce events are named"
+
+
+def test_no_field_is_offered_twice_under_the_same_name(client):
+    """`event.repo` and `event.repository` are the same question asked of two
+    connectors. Two rows reading "Repository" is a menu that makes the user
+    wonder what the difference is."""
+    body = client.get("/api/automations/vocabulary").json()
+    labels = [f["label"] for f in body["fields"]]
+    assert len(labels) == len(set(labels))
 
 
 def test_every_condition_the_engine_knows_is_described(client):

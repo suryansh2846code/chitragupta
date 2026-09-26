@@ -193,6 +193,6 @@ process.stdout.write(JSON.stringify({
   conditionsHtml: el("#rmConditions").innerHTML,
   hint: el("#rmCondHint").textContent,
   addHidden: el("#rmAddCond").hidden,
-  fieldListHtml: el("#rmFieldList").innerHTML,
+  sourceListHtml: el("#rmSourceList").innerHTML,
   eventKindHtml: el("#rmEventKind").innerHTML,
 }));
