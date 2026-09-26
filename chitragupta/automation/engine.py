@@ -214,16 +214,13 @@ _MEMORABLE = {
 def deliver_result(automation: Automation, run: dict[str, Any]) -> bool:
     """Put what a run found where the user will actually read it.
 
-    In the chat of the agent that ran it. That is the answer to "where did it
-    go": a result filed only under Automations → History is a result somebody
-    has to go looking for, and nobody goes looking for something they do not
-    know happened. The agent's own conversation is where they already are, and
-    it is the right place for a second reason — they can reply to it, and the
-    agent has the run in its history when they do.
-
-    Written as the **agent's** message, because the agent is who said it. Not
-    the user's, who said nothing, and not a system notice, which is a thing to
-    dismiss rather than a thing to answer.
+    In **Messages**, the one list of things an agent wants to tell the user.
+    Not a desktop notification, which is gone if they looked away. Not the
+    agent's chat, which was tried and undone: a result is not part of a
+    conversation somebody was having, and a chat is a thing you are in the
+    middle of while a notification is a thing that arrives. Not the run
+    history, which is complete, correct, and somewhere nobody looks — you have
+    to already know something happened to go and read that it did.
 
     Quiet runs are left out. The agent decides that, by saying so — see
     `model.NOTHING_TO_REPORT`.
@@ -234,15 +231,18 @@ def deliver_result(automation: Automation, run: dict[str, Any]) -> bool:
     if not detail:
         return False
 
-    state = str(run.get("state") or "")
-    head = (f"◆ {automation.name}" if state == str(store.RunState.COMPLETED)
-            else f"◆ {automation.name} — stopped and needs you")
-    with suppressed("putting an automation's result in its agent's chat"):
-        from ..agents.agent import AgentMemory
+    settled = str(run.get("state") or "")
+    needs_them = settled != str(store.RunState.COMPLETED)
+    with suppressed("sending an automation's result to the user"):
+        from .. import messages
 
-        AgentMemory().append(automation.agent_id, "assistant",
-                             f"{head}\n\n{detail}")
-        return True
+        sent = messages.send(
+            automation.agent_id, detail,
+            title=(f"{automation.name} — stopped and needs you" if needs_them
+                   else automation.name),
+            kind=messages.NEEDS_YOU if needs_them else messages.RESULT,
+            source="automation", source_id=str(run.get("id") or ""))
+        return bool(sent)
     return False
 
 

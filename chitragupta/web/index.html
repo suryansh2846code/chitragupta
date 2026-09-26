@@ -497,14 +497,16 @@
         <div id="taskList" class="tasks"></div>
       </section>
 
-      <!-- What the automations produced. Above the list that makes them,
-           because a result is news and a list of automations is furniture. -->
+      <!-- Anything an agent wanted to tell you. First, because it is the
+           thing that arrived while you were not looking — everything below it
+           is something you already know about. -->
       <section class="ib-sec">
         <div class="ib-head">
-          <div><h2 class="ib-title">Results</h2>
-            <p class="ib-sub">What your automations found while you were away.</p></div>
+          <div><h2 class="ib-title">Messages</h2>
+            <p class="ib-sub">What your agents told you while you were away.</p></div>
+          <button id="msgReadAll" class="tiny ghost" hidden>Mark all read</button>
         </div>
-        <div id="resultList" class="tasks"></div>
+        <div id="messageList" class="tasks"></div>
       </section>
 
       <section class="ib-sec">

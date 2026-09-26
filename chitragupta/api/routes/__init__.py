@@ -23,6 +23,7 @@ from . import (
     connector_health,
     connectors,
     diagnostics,
+    messages,
     providers,
     sync,
     workspace,
@@ -47,6 +48,7 @@ ALL_ROUTERS: tuple[APIRouter, ...] = (
     # same rows; nothing in either path collides, and keeping the older one
     # first means a request that both could serve keeps its existing answer.
     automations.router,
+    messages.router,
     diagnostics.router,
     browser.router,
 )

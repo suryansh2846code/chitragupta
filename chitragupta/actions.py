@@ -954,6 +954,14 @@ def _notify(params: dict) -> dict:
     title = (params.get("title") or "◆ Chitragupta").strip()
     from .notify import desktop_notify
     shown = desktop_notify(title, message)
+    # **And kept.** A desktop notification is gone if the machine was asleep or
+    # the user looked away, with no record it existed — which is the whole
+    # failure mode of telling somebody something at a moment they were not
+    # there for. The same words go to Messages, where they can be read later.
+    from . import messages
+    messages.send(str(params.get("agent_id") or ""), message,
+                  title=title.replace("◆ Chitragupta", "").strip(" ·"),
+                  kind=messages.REMINDER)
     # `False` means no notifier on this machine — not a failure of the action.
     # Reporting it as one would make every headless run escalate.
     return {"ok": True, "shown": bool(shown), "detail": message[:200]}

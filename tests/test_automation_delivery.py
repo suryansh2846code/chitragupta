@@ -13,9 +13,11 @@ that looked. Counting actions instead — the first attempt — gets a watch exa
 backwards: "tell me what arrived" is *answered by the reply* and uses no actions
 at all, so the one run that found something was filed as the quiet one.
 
-**The result lands in the chat of the agent that ran it.** Where the user
-already is, as the agent's own message, so it can be replied to — and the agent
-has the run in its history when they do.
+**The result lands in Messages**, the one list of things an agent wants to tell
+the user. Not a desktop notification, which is gone if they looked away. Not the
+agent's chat — that was tried and undone: a result is not part of a conversation
+somebody was having, and putting it there also put the automation's whole prompt
+in beside it, attributed to a user who typed none of it.
 """
 from __future__ import annotations
 
@@ -33,8 +35,25 @@ from chitragupta.core.automation_store import RunState
 
 
 @pytest.fixture(autouse=True)
-def _own_database():
+def _own_database(tmp_path, monkeypatch):
+    """A message store of this test's own.
+
+    They are read newest-first across every agent, so one test's message is the
+    next test's "there is already something here".
+    """
+    from chitragupta import messages
+    from chitragupta.config import get_settings
+
     fresh_store()
+    # Through the environment and the cache, because `home` is resolved once
+    # and held — setting it on the class looks like it works and does nothing.
+    monkeypatch.setenv("CHITRAGUPTA_HOME", str(tmp_path))
+    get_settings.cache_clear()
+    messages.reset_for_tests()
+    assert get_settings().home == tmp_path, "the home did not take"
+    yield
+    messages.reset_for_tests()
+    get_settings.cache_clear()
 
 
 @pytest.fixture
@@ -55,10 +74,11 @@ def an_agent(request):
     store.delete(agent.id)
 
 
-def chat(agent_id: str) -> list[str]:
-    from chitragupta.agents.agent import AgentMemory
+def sent(agent_id: str = "") -> list[dict]:
+    from chitragupta import messages
 
-    return [m["content"] for m in AgentMemory().history(agent_id, limit=20)]
+    rows = messages.get_messages().recent(limit=50)
+    return [r for r in rows if not agent_id or r["agent_id"] == agent_id]
 
 
 # ── who decides there is a result ──────────────────────────────────────────
@@ -122,54 +142,58 @@ def test_the_agent_is_told_the_convention():
 
 # ── where it goes ──────────────────────────────────────────────────────────
 
-def test_a_result_lands_in_the_chat_of_the_agent_that_ran_it(an_agent):
-    """Where the user already is. The Automations screen is where you go to ask
-    why something happened, not to find out that it did."""
+def test_a_result_arrives_as_a_message_from_the_agent(an_agent):
+    """Named, because a list of messages with no sender is a list of things
+    that happened to somebody."""
     auto = automation(agent_id=an_agent.id, name="Watch the mail")
-    run = {"state": str(RunState.COMPLETED), "actions_used": 0,
+    run = {"id": "r1", "state": str(RunState.COMPLETED), "actions_used": 0,
            "outcome": "3 unread replies in the Chitragupta thread."}
 
     assert engine.deliver_result(auto, run) is True
 
-    said = chat(an_agent.id)
-    assert any("Watch the mail" in m for m in said)
-    assert any("3 unread replies" in m for m in said)
+    posted = sent(an_agent.id)
+    assert len(posted) == 1
+    assert posted[0]["title"] == "Watch the mail"
+    assert "3 unread replies" in posted[0]["body"]
+    assert posted[0]["agent_id"] == an_agent.id
 
 
-def test_it_is_the_agents_own_message(an_agent):
-    """Not the user's, who said nothing, and not a system notice — which is a
-    thing to dismiss rather than a thing to answer."""
-    from chitragupta.agents.agent import AgentMemory
-
+def test_it_can_be_opened_back_to_the_run_it_came_from(an_agent):
+    """A result you cannot trace is a result you have to take on faith."""
     engine.deliver_result(
         automation(agent_id=an_agent.id, name="Watch"),
-        {"state": str(RunState.COMPLETED), "actions_used": 1,
+        {"id": "run-77", "state": str(RunState.COMPLETED), "actions_used": 1,
          "outcome": "Sent the summary."})
 
-    roles = [m["role"] for m in AgentMemory().history(an_agent.id, limit=5)]
-    assert roles and roles[-1] == "assistant"
+    posted = sent(an_agent.id)[0]
+    assert posted["source"] == "automation"
+    assert posted["source_id"] == "run-77"
 
 
-def test_a_quiet_run_leaves_no_message(an_agent):
+def test_a_quiet_run_says_nothing(an_agent):
     delivered = engine.deliver_result(
         automation(agent_id=an_agent.id),
         {"state": str(RunState.COMPLETED), "actions_used": 0,
          "outcome": NOTHING_TO_REPORT})
 
     assert delivered is False
-    assert chat(an_agent.id) == []
+    assert sent() == []
 
 
-def test_a_run_that_stopped_says_so_in_the_chat(an_agent):
-    """A failure the user has to act on is exactly what must not be silent."""
+def test_a_run_that_stopped_is_marked_as_needing_them(an_agent):
+    """A failure the user has to act on is exactly what must not be quiet, and
+    it is a different kind of thing from a result they can read later."""
+    from chitragupta import messages
+
     engine.deliver_result(
         automation(agent_id=an_agent.id, name="Watch"),
         {"state": str(RunState.ESCALATED), "actions_used": 0,
          "reason": "no recipient on your allowed list"})
 
-    said = " ".join(chat(an_agent.id))
-    assert "needs you" in said
-    assert "no recipient" in said
+    posted = sent(an_agent.id)[0]
+    assert posted["kind"] == messages.NEEDS_YOU
+    assert "needs you" in posted["title"]
+    assert "no recipient" in posted["body"]
 
 
 def test_never_means_never_here_too(an_agent):
@@ -177,16 +201,16 @@ def test_never_means_never_here_too(an_agent):
         automation(agent_id=an_agent.id, execution=Execution(deliver="never")),
         {"state": str(RunState.COMPLETED), "actions_used": 1,
          "outcome": "Sent the summary."})
-    assert chat(an_agent.id) == []
+    assert sent() == []
 
 
 def test_delivering_never_breaks_a_run(an_agent, monkeypatch):
-    """The chat is a nicety; the run is the work. A conversation store that
-    cannot be written must not turn a completed automation into a failed one."""
-    def broken():
-        raise RuntimeError("the conversation store is gone")
+    """The message is a nicety; the run is the work. A store that cannot be
+    written is a result that did not arrive, not an automation that failed."""
+    def broken(*a, **kw):
+        raise RuntimeError("the message store is gone")
 
-    monkeypatch.setattr("chitragupta.agents.agent.AgentMemory", broken)
+    monkeypatch.setattr("chitragupta.messages.get_messages", broken)
     assert engine.deliver_result(
         automation(agent_id=an_agent.id),
         {"state": str(RunState.COMPLETED), "actions_used": 1,

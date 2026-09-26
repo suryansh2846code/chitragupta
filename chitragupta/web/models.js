@@ -938,7 +938,7 @@ async function openInboxScreen() {
   // Each section loads itself; one failing must not blank the others, which is
   // what a single await chain would do.
   try { await loadApprovals(); } catch (_) {}
-  try { await loadAutomationResults(); } catch (_) {}
+  try { await loadMessages(); } catch (_) {}
   try { await loadRoutines(); } catch (_) {}
   try { await loadReminders(); } catch (_) {}
   try { await loadActionLog(); } catch (_) {}

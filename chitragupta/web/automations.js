@@ -172,45 +172,86 @@ async function runAutomationNow(id, button) {
   loadRoutines();
 }
 
-/* What the automations produced, in the place a person already looks.
+/* Everything the agents have told you, in the place you already look.
  *
- * The history screen answers "why did it do that" and you have to go and open
- * it. This answers "what did they get me", which is the difference between an
- * automation somebody trusts and one they forget they made. */
-async function loadAutomationResults() {
-  const host = $("#resultList");
+ * This replaced two things that did not work. A desktop notification is gone if
+ * the machine was asleep or you glanced away, with no record it existed. The
+ * agent's own chat was tried and undone: a result is not part of a conversation
+ * you were having, and putting it there also put the automation's whole prompt
+ * in beside it, attributed to a user who typed none of it.
+ *
+ * Read and unread together, because a list that hid what you had read would be
+ * impossible to find anything in a second time. */
+async function loadMessages() {
+  const host = $("#messageList");
   if (!host) return;
-  let results = [];
+  let messages = [];
+  let unread = 0;
   try {
-    ({ results } = await api("/api/automations/results"));
+    ({ messages = [], unread = 0 } = await api("/api/messages"));
   } catch (_) {
     host.innerHTML = "";
     return;
   }
-  if (!results.length) {
-    host.innerHTML = `<div class="ib-empty">Nothing yet. Results from your
-      automations show up here.</div>`;
+
+  const all = $("#msgReadAll");
+  if (all) {
+    all.hidden = unread === 0;
+    all.onclick = async () => {
+      await api("/api/messages/read-all", { method: "POST" });
+      loadMessages();
+    };
+  }
+
+  if (!messages.length) {
+    host.innerHTML = `<div class="ib-empty">Nothing yet. When an agent has
+      something to tell you, it shows up here.</div>`;
     return;
   }
-  host.innerHTML = results.map((r) => `<div class="ib-row${
-    r.needs_you ? " is-bad" : ""}">
-      <span class="ib-state" data-on="1" aria-hidden="true"></span>
+
+  host.innerHTML = messages.map((m) => `<div class="ib-row msg-row${
+    m.unread ? " is-unread" : ""}${m.kind === "needs_you" ? " is-bad" : ""}">
+      <span class="ib-state" data-on="${m.unread ? 1 : 0}" aria-hidden="true"></span>
       <span class="ib-text">
-        <span class="ib-name">${esc(r.name)}${r.needs_you
-          ? ` <span class="ib-badge">Needs you</span>` : ""}</span>
-        <span class="ib-meta">${esc(autoWhen(r.at))} · ${esc(
-          String(r.detail || RUN_WORDS[r.state] || r.state).slice(0, 160))}</span>
+        <span class="ib-name">${esc(m.agent_name)}${m.title
+          ? ` <span class="msg-title">${esc(m.title)}</span>` : ""}${
+          m.kind === "needs_you" ? ` <span class="ib-badge">Needs you</span>` : ""}</span>
+        <span class="ib-meta msg-body">${esc(m.body)}</span>
+        <span class="ib-meta msg-when">${esc(autoWhen(m.created_at))}</span>
       </span>
       <span class="ib-actions">
-        <button class="tiny ghost" data-open-run="${esc(r.automation_id)}"
-          data-run-id="${esc(r.run_id)}">Open</button>
+        ${m.source === "automation" && m.source_id
+          ? `<button class="tiny ghost" data-msg-open="${esc(m.source_id)}"
+              >Open run</button>` : ""}
+        <button class="tiny ghost ib-x" data-msg-del="${esc(m.id)}"
+          aria-label="Remove this message">${IC.close}</button>
       </span></div>`).join("");
-  host.querySelectorAll("[data-open-run]").forEach((button) => {
+
+  // Reading one is what marks it read — there is no separate tick to press,
+  // because a list where you have to say "yes I read that" is a list with a
+  // chore in it.
+  host.querySelectorAll("[data-msg-del]").forEach((button) => {
     button.onclick = async () => {
-      await automationHistory(button.dataset.openRun);
-      runDetail(button.dataset.openRun, button.dataset.runId);
+      await api(`/api/messages/${button.dataset.msgDel}`, { method: "DELETE" });
+      loadMessages();
     };
   });
+  host.querySelectorAll("[data-msg-open]").forEach((button) => {
+    button.onclick = () => openRunFromMessage(button.dataset.msgOpen);
+  });
+}
+
+/* Open the run a message came from. A result you cannot trace back is one you
+ * have to take on faith. */
+async function openRunFromMessage(runId) {
+  let runs = [];
+  try {
+    ({ runs = [] } = await api("/api/automations/runs"));
+  } catch (_) { return; }
+  const run = runs.find((r) => r.id === runId);
+  if (!run) { toast("That run is no longer in the history"); return; }
+  await automationHistory(run.automation_id);
+  runDetail(run.automation_id, runId);
 }
 
 /* One automation's runs, newest first. */

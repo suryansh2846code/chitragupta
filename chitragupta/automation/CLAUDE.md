@@ -80,11 +80,13 @@ and neither may import the other.
   me look" is a good automation, and a screen that called it broken would teach
   the user to ignore the screen. It may not import `connectors/`, so the app
   state is injected by the route that has both.
-- **A result goes to the chat of the agent that ran it**, as that agent's own
-  message. A result filed only under Automations → History is one somebody has
-  to go looking for, and nobody looks for something they do not know happened.
-  The agent's conversation is where the user already is, and it is answerable —
-  they can reply, and the agent has the run in its history when they do.
+- **A result goes to Messages** (`chitragupta/messages.py`), the one list of
+  things an agent wants to tell the user. Not a desktop notification, which is
+  gone if they looked away. Not the agent's chat — tried and undone: a result is
+  not part of a conversation somebody was having, and persisting the turn put
+  the automation's whole prompt in beside it, attributed to a user who typed
+  none of it. Not the run history, which is complete and somewhere you only go
+  once you already know something happened.
 - **A quiet run is not news.** `worth_delivering` decides what reaches the
   Inbox: by default a run that acted or stopped, never one that looked and found
   nothing — a watch polling every two minutes would otherwise bury the one

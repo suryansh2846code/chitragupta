@@ -3137,3 +3137,19 @@ button.tiny.running:hover { background: linear-gradient(to right,
   background: var(--panel-2); font-family: var(--mono); font-size: 11.5px;
   line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere;
   max-height: 340px; overflow-y: auto; }
+
+/* A message from an agent: who said it, what they said, and when. Unread is a
+   weight change rather than a colour, so a list of them stays readable — a
+   column of coloured rows is a column nobody scans. */
+.msg-row .msg-title { font-weight: 400; color: var(--muted); }
+.msg-row.is-unread .ib-name { color: var(--north); }
+.msg-row .msg-body {
+  display: block;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin-top: 2px;
+  color: var(--text);
+  opacity: .85;
+}
+.msg-row.is-unread .msg-body { opacity: 1; }
+.msg-row .msg-when { display: block; margin-top: 3px; color: var(--faint); font-size: 11.5px; }
