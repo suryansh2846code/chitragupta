@@ -121,7 +121,12 @@ class OpenAICompatProvider(LLMProvider):
         The ChatGPT-subscription path (no API key) has its own transport, so it
         falls through to the single-piece default rather than being reimplemented.
         """
-        from .streaming import from_result, openai_events, sse_payloads
+        from .streaming import (
+            from_result,
+            openai_events,
+            raise_for_status,
+            sse_payloads,
+        )
 
         if self.name == "openai" and not self.api_key:
             yield from from_result(self.chat(messages, tools=tools,
@@ -144,7 +149,7 @@ class OpenAICompatProvider(LLMProvider):
         try:
             with httpx.stream("POST", f"{self.base_url}/chat/completions",
                               headers=headers, json=payload, timeout=300) as resp:
-                resp.raise_for_status()
+                raise_for_status(resp)
                 yield from openai_events(sse_payloads(resp.iter_lines()))
             return
         except Exception as exc:

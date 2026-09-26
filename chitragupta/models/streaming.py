@@ -26,7 +26,9 @@ from __future__ import annotations
 import json
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, field
+from typing import Any
 
+from ..log import suppressed
 from .base import ChatResult, StreamEvent, ToolCall
 
 #: Re-exported: `StreamEvent` moved down to `base` with the other protocol
@@ -252,3 +254,27 @@ def stream_cli(cmd: list[str], *, env: dict, stdin: str | None = None,
         except Exception:
             proc.kill()
             log.debug("%s streaming CLI did not exit; killed", provider or cmd[0])
+
+
+def raise_for_status(resp: Any) -> None:
+    """`resp.raise_for_status()`, but for a response that is being streamed.
+
+    httpx builds its error message *from the body*, and a streamed response has
+    not read one — so calling `raise_for_status()` inside `httpx.stream(...)` on
+    a 400 raises `ResponseNotRead: Attempted to access streaming response
+    content, without having called read()`.
+
+    That is not a description of anything the user did. It replaced every
+    streaming failure in the app with an httpx internal: a wrong model id, an
+    expired sign-in and a rate limit all arrived as the same sentence about
+    `read()`, and the one thing none of them said was what had actually gone
+    wrong. A user whose automation ran seven times saw it seven times.
+
+    Reading first costs one buffered body on the error path only — the success
+    path never reaches it, and an error body is small by construction.
+    """
+    if resp.status_code < 400:
+        return
+    with suppressed("reading an error body from a streamed response"):
+        resp.read()
+    resp.raise_for_status()
