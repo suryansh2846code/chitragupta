@@ -66,11 +66,23 @@ class FakeCalendarService:
 
 
 class FakeHTTPResponse:
-    def __init__(self, payload: Any) -> None:
+    def __init__(self, payload: Any, url: str = "https://api.example.com/items"
+                 ) -> None:
         self._body = json.dumps(payload).encode()
+        self._url = url
 
     def read(self) -> bytes:
         return self._body
+
+    def geturl(self) -> str:
+        """Where the request actually landed.
+
+        Modelled because the real object has it and a caller now reads it:
+        `outbound.check_landing` re-checks the final URL, since `urlopen`
+        follows redirects and a `302 → http://127.0.0.1` lands somewhere the
+        destination check refused.
+        """
+        return self._url
 
     def __enter__(self):
         return self
@@ -92,8 +104,14 @@ def install_urlopen(monkeypatch, payload) -> None:
     """Answer every `urllib.request.urlopen` with one JSON body."""
     import urllib.request
 
-    monkeypatch.setattr(urllib.request, "urlopen",
-                        lambda *a, **k: FakeHTTPResponse(payload))
+    def _urlopen(request, *a, **k):
+        # The landing URL is the one that was asked for: these fakes never
+        # redirect, and inventing one would make `check_landing` pass against
+        # an address no test chose.
+        asked = getattr(request, "full_url", None) or str(request)
+        return FakeHTTPResponse(payload, url=asked)
+
+    monkeypatch.setattr(urllib.request, "urlopen", _urlopen)
 
 
 # ── per-connector builders ───────────────────────────────────────────────────

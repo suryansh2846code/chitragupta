@@ -140,7 +140,12 @@ def test_custom_api_fieldless_records_stay_distinct(tmp_path, monkeypatch):
            "auth_type": "none", "items_path": "d", "title_field": "name",
            "body_field": "desc"}
     conn = CustomAPIConnector(dict(app))
-    conn._request = lambda: {"d": [{"other": 1}, {"other": 2}, {"other": 3}]}
+    # `_request` takes a page cursor now — the connector pages through
+    # `engine.run` rather than reading one response and calling that the
+    # dataset. The stub answers every cursor with the same single page, which
+    # is what a source with no pagination does.
+    conn._request = lambda cursor="": {
+        "d": [{"other": 1}, {"other": 2}, {"other": 3}]}
     res = conn.sync()
     assert res.added == 3 and res.skipped == 0
     get_settings.cache_clear()
