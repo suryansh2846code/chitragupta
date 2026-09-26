@@ -36,12 +36,26 @@ def isolated_home(tmp_path, monkeypatch):
     silent and misleading — the second connector to ingest the same fixture sees
     every record as an already-stored duplicate and reports zero added, which
     reads as "this connector is broken".
+
+    **`connectors.db` is a fourth handle and behaves identically.** It holds the
+    resource-identity table, so a stale one makes every fixture record read as
+    UNCHANGED — the same silent zero-added, arriving by a different route. It is
+    a module global rather than an `lru_cache`, which is why it is reset
+    separately rather than added to the tuple.
     """
     from chitragupta.brain.brain import get_brain
     from chitragupta.config import get_settings
+    from chitragupta.connectors import db as connector_db
+    from chitragupta.connectors import limits
     from chitragupta.core.store import get_store
 
     caches = (get_settings, get_store, get_brain)
+    connector_db.reset_for_tests()
+    # Gates are per connector and live for the process, which is correct at
+    # runtime and wrong here: a budget spent by one test would throttle the
+    # next, and a 429 injected by a failure-injection test would hold every
+    # later test back for a window.
+    limits.reset()
 
     home = tmp_path / "home"
     home.mkdir()
@@ -53,6 +67,8 @@ def isolated_home(tmp_path, monkeypatch):
     assert get_settings().home == home, "CHITRAGUPTA_HOME did not take"
     assert get_store().db_path.parent == home, "the store is on the wrong brain"
     yield home
+    connector_db.reset_for_tests()
+    limits.reset()
     for cache in caches:
         cache.cache_clear()
 
