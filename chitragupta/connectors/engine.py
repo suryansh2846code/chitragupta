@@ -77,6 +77,15 @@ class Record:
     #: connector knows — Drive's `modifiedTime` is authoritative, a Slack
     #: message's `edited.ts` is, and there is no general rule.
     fingerprint: str = ""
+    #: The source says this is **gone** — not missing from a listing, but
+    #: explicitly cancelled, trashed or archived.
+    #:
+    #: The difference from `sweeps_deletions` is the whole point. Sweeping
+    #: infers deletion from absence, which is only safe over a complete
+    #: enumeration and is why almost nothing may do it. This is the provider
+    #: *saying so*: a Google Calendar event with `status: "cancelled"`, a Notion
+    #: page with `archived: true`. No inference, so no window to get wrong.
+    deleted: bool = False
     #: Provider-specific metadata, preserved rather than flattened away.
     extra: dict[str, Any] = field(default_factory=dict)
     raw: Any = None
@@ -361,6 +370,28 @@ def _ingest_one(plan: Plan, connection: Any, run_id: str, record: Record,
         connection.id, plan.resource_type, record.external_id,
         fingerprint_=record.fingerprint,
         source_updated_at=record.source_updated_at)
+
+    if record.deleted:
+        # **The provider said so**, which needs no window and no inference — see
+        # `Record.deleted`. Marked, never erased: a cancelled meeting is still
+        # something the user may ask about, and *"that was cancelled"* is more
+        # use to an agent than the meeting quietly disappearing.
+        if held is None:
+            # Gone, and we never had it. Recording a tombstone for something
+            # that was never ingested is noise — a row describing nothing.
+            result.skipped += 1
+            return
+        resources.mark(connection.id, plan.resource_type, record.external_id,
+                       ResourceState.DELETED, detail="the source says so")
+        result.skipped += 1
+        with suppressed("recording an external deletion"):
+            events.accept(events.ExternalEvent(
+                connection_id=connection.id,
+                event_type=events.EventType.DELETED,
+                resource_type=plan.resource_type,
+                resource_id=record.external_id,
+                occurred_at=record.source_updated_at, correlation_id=run_id))
+        return
 
     if verdict is Verdict.UNCHANGED:
         # **Before `hydrate`, which is the whole point.** This is the branch

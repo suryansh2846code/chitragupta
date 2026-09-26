@@ -55,14 +55,37 @@ class FakeGmailService:
 
 
 class FakeCalendarService:
-    def __init__(self, events: list[dict]) -> None:
+    """A Calendar that pages, and that can report a cancellation.
+
+    It used to answer every request with the whole list, which meant the
+    connector's own one-page read looked complete — so the bug where a calendar
+    with more than 250 events silently lost the rest was invisible here too. A
+    fake that cannot page cannot catch a connector that does not.
+    """
+
+    def __init__(self, events: list[dict], *, page_size: int = 2500) -> None:
         self._events = events
+        self._page_size = page_size
+        self.listed = 0
 
     def events(self):
         return self
 
-    def list(self, **_):
-        return _Exec({"items": self._events})
+    def list(self, **kw):
+        self.listed += 1
+        token = kw.get("pageToken")
+        start = int(token) if token else 0
+        size = min(self._page_size, kw.get("maxResults") or self._page_size)
+        page = self._events[start:start + size]
+        # `showDeleted` is honoured, because the connector passing it is the
+        # whole mechanism by which a cancellation becomes visible: a fake that
+        # ignored it would let a connector that forgot it still pass.
+        if not kw.get("showDeleted"):
+            page = [ev for ev in page if ev.get("status") != "cancelled"]
+        payload: dict = {"items": page}
+        if start + size < len(self._events):
+            payload["nextPageToken"] = str(start + size)
+        return _Exec(payload)
 
 
 class FakeHTTPResponse:

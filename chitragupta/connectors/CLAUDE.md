@@ -156,6 +156,20 @@ One class per source, registered in `__init__.py::REGISTRY`.
   `sync()` at all and its coverage sat at 15% while looking tested. Registering
   a fake is what hands a connector the contract, crash-isolation, idempotency
   and redaction tests.
+- **A deletion the provider *states* is not the same as one a sweep infers.**
+  `Record.deleted` is the provider saying so — a Calendar event with
+  `status: "cancelled"`, a Notion page with `archived: true` — and it needs no
+  window and no enumeration, so it is safe where `sweeps_deletions` is not. It
+  marks, never erases: a cancelled meeting is still something the user may ask
+  about, and *"that was cancelled"* beats the meeting quietly vanishing.
+- **Calendar needs no `hydrate`, and that is worth knowing.** `events.list`
+  answers with whole events, so the listing *is* the content. Gmail and Drive
+  each pay a second request per record; a stage added here would re-fetch what
+  we already had, and nothing would report it.
+- **A fake that cannot page cannot catch a connector that does not.** The
+  Calendar fake answered every request with the whole list, so the connector
+  reading only its first page looked complete — a calendar with more than 250
+  events silently lost the rest, in the product *and* in the suite.
 - Never read another product's app-support directory for credentials or models.
 
 Rules: [`/CLAUDE.md`](../../CLAUDE.md) · [`docs/CONNECTORS.md`](../../docs/CONNECTORS.md)

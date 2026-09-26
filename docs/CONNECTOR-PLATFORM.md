@@ -294,6 +294,16 @@ Drive memory in the table** on every pass to rebuild what it already knew, and i
 compared modified *dates*, so a document edited twice in one day was read as
 unchanged the second time and the edit never reached the brain.
 
+Calendar is the **third shape**: `events.list` answers with whole events, so it
+needs no `hydrate` at all — worth recording, because a stage added there would
+re-fetch what the listing already carried and nothing would report it. Its two
+bugs were not about cost either. It read **one page** (`maxResults=250`), so a
+calendar with more than 250 events across the ±360-day window silently lost the
+rest; and a **cancelled meeting stayed in the brain forever**, because
+cancellations were never asked for. It is also the first connector to record an
+external deletion, through `Record.deleted` — the provider *saying* a thing is
+gone, which needs none of the inference a sweep would.
+
 The 13.4× is the N+1 the audit found in `gdrive`, removed for every connector
 that moves onto the engine: an unchanged record is recognised from the listing
 rather than downloaded to find out.
@@ -333,16 +343,18 @@ Written here so it is not claimed anywhere else.
   marker on launch so the next pass resumes from the last committed page. A job
   is the *view* of a pass, not the record of one.
 
-- **Three connectors are migrated onto the engine, not fifteen.**
-  `custom_api`, `gmail` and `gdrive` are on it; every connector declares its
-  manifest, uses the capability floor and reports health. Calendar, Slack,
-  Telegram and the on-device sources still run their own hand-written `sync()`,
-  so they do not yet get per-page checkpoints or identity-based dedup. That is
-  the migration order §4 sets out — shared infrastructure first — and it is
-  deliberately unfinished rather than rushed.
+- **Four connectors are migrated onto the engine, not fifteen.**
+  `custom_api`, `gmail`, `gdrive` and `gcal` are on it — all three Google
+  sources now. Every connector declares its manifest, uses the capability floor
+  and reports health. Slack, Telegram, the MCP family and the on-device sources
+  still run their own hand-written `sync()`, so they do not yet get per-page
+  checkpoints or identity-based dedup. That is the migration order §4 sets out
+  — shared infrastructure first — and it is deliberately unfinished rather than
+  rushed.
 
-  **Calendar is next.** Its window is `±180 days`, so the same "never sweep a
-  window" rule applies, and it is the last of the three Google connectors.
+  **Slack and Telegram are next**, and they are the first that are not Google.
+  Both have tight rate limits, so they gain most from the gate; both carry
+  conversations, so `SupportsMessaging` applies as well as the sync path.
 
 - **A name that does not resolve is allowed through.** `outbound.py` refuses
   loopback and link-local by literal, by name and by resolution, and re-checks

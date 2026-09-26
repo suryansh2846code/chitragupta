@@ -5,10 +5,14 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from ..log import get_logger, suppressed
+from . import engine
 from .base import Connector, SyncResult
 from .capability import caps
 from .contract import AuthMethod, Limits, PaginationStrategy
+from .engine import Record
 from .google_auth import get_credentials, google_ready
+from .pagination import Page, cursor_of
+from .provenance import SourceRef
 
 log = get_logger(__name__)
 
@@ -47,6 +51,11 @@ class GoogleCalendarConnector(Connector):
     auto_sync = True
     auth_method = AuthMethod.OAUTH2
     pagination = PaginationStrategy.NEXT_TOKEN
+    #: Per-page checkpoints. The window slides with today, so a resumed
+    #: pass may find its stored page token stale — which the engine
+    #: recovers from by reading the window again rather than failing
+    #: forever.
+    resumable = True
     required_scopes = (
         "https://www.googleapis.com/auth/calendar.readonly",
         "https://www.googleapis.com/auth/calendar.events",
@@ -350,6 +359,100 @@ class GoogleCalendarConnector(Connector):
         return {"verified": True, "at": (ev.get("start") or {}).get("dateTime", ""),
                 "link": ev.get("htmlLink", "")}
 
+    # ── the pass ─────────────────────────────────────────────────────────
+    #
+    # Calendar is the **third** shape on the shared engine, and the one that
+    # needs no `hydrate`: `events.list` answers with whole events — title,
+    # start, end, location, attendees, description — so the listing *is* the
+    # content. Gmail and Drive both pay a second request per record; this one
+    # does not, and saying so is worth more than adding a stage that would only
+    # copy.
+    #
+    # Two things it gets that it did not have:
+    #
+    # * **More than one page.** It asked for `maxResults=250` and read whatever
+    #   came back, so a calendar with more than 250 events across the ±360-day
+    #   window silently lost the rest — no error, no mention, just fewer events
+    #   than the user has.
+    # * **A cancelled meeting stops being current.** Cancellations were
+    #   invisible: the event simply stayed in the brain and agents kept citing
+    #   it. Google says so explicitly with `status: "cancelled"` once
+    #   `showDeleted` is on, which is a fact rather than the inference a sweep
+    #   would need.
+    #
+    # And what it deliberately keeps: `incremental = False`. The window is
+    # already bounded around today, so a watermark would only hide edits to
+    # events that have not moved in time — which is most edits.
+
+    def _window(self, *, days_back: int, days_ahead: int) -> tuple[str, str]:
+        now = datetime.now(UTC)
+        return ((now - timedelta(days=days_back)).isoformat(),
+                (now + timedelta(days=days_ahead)).isoformat())
+
+    def _page(self, service: Any, time_min: str, time_max: str, size: int,
+              cursor: str) -> Page:
+        """One page of events, complete enough to store as they are."""
+        listing = (service.events().list(
+            calendarId="primary", timeMin=time_min, timeMax=time_max,
+            maxResults=min(2500, max(1, size)), pageToken=cursor or None,
+            # Recurring series expanded into instances, so each instance has its
+            # own id and its own time — which is what a person means by "my
+            # events", and what makes the identity stable per occurrence.
+            singleEvents=True, orderBy="startTime",
+            # Cancellations arrive as events with `status: "cancelled"` rather
+            # than as absences. Without this a cancelled meeting is simply
+            # missing, and absence is not something a bounded window may read as
+            # deletion.
+            showDeleted=True,
+        ).execute())
+        return Page(
+            records=[self._record(ev) for ev in listing.get("items", []) or []
+                     if ev.get("id")],
+            next_cursor=cursor_of(listing, "nextPageToken"))
+
+    def _record(self, ev: dict) -> Record:
+        summary = ev.get("summary", "(no title)")
+        start = (ev.get("start", {}).get("dateTime")
+                 or ev.get("start", {}).get("date", ""))
+        end = (ev.get("end", {}).get("dateTime")
+               or ev.get("end", {}).get("date", ""))
+        where = ev.get("location", "")
+        attendees = ", ".join(a.get("email", "")
+                              for a in ev.get("attendees", []) or [])
+        description = (ev.get("description", "") or "")[:1000]
+        text = (f"Event: {summary}\nWhen: {start} → {end}"
+                + (f"\nWhere: {where}" if where else "")
+                + (f"\nWith: {attendees}" if attendees else "")
+                + (f"\n\n{description}" if description else ""))
+        return Record(
+            external_id=str(ev["id"]),
+            text=text, title=summary,
+            url=ev.get("htmlLink") or "",
+            # An event is mutable — moved, renamed, re-invited — so the change
+            # detector is Google's own `updated`, not the id.
+            source_updated_at=ev.get("updated") or "",
+            fingerprint=ev.get("updated") or "",
+            deleted=(ev.get("status") == "cancelled"),
+            extra={"start": start, "end": end,
+                   "attendees": attendees, "location": where},
+            raw=ev)
+
+    def _ingest(self, record: Record, source: SourceRef) -> str:
+        from ..brain import get_brain
+
+        kwargs = source.ingest_kwargs()
+        start = str(record.extra.get("start") or "")
+        # The date of an event is when it *happens*, which is not when it was
+        # last edited — so the start overrides what provenance derived from
+        # `updated`. Getting this wrong files next month's meeting under today.
+        if start:
+            kwargs["event_date"] = start[:10]
+            kwargs["event_time"] = start
+        out = get_brain().ingest(record.text, kind="event", title=record.title,
+                                 fast=True, **kwargs)
+        ids = out.get("memory_ids") or []
+        return str(ids[0]) if ids else ""
+
     def sync(self, *, days_back: int = 180, days_ahead: int = 180,
              max_results: int = 250, since: str | None = None,
              limit: int | None = None, full_history: bool = False,
@@ -359,49 +462,45 @@ class GoogleCalendarConnector(Connector):
         try:
             from googleapiclient.discovery import build  # lazy
         except ImportError:
-            result.errors.append("pip install .[gdrive] to use the Calendar connector")
+            result.errors.append(
+                "pip install .[gdrive] to use the Calendar connector")
             return self._finish(result)
 
         try:
             creds = get_credentials(interactive=interactive)
-            service = build("calendar", "v3", credentials=creds, cache_discovery=False)
-            now = datetime.now(UTC)
-            time_min = (now - timedelta(days=days_back)).isoformat()
-            time_max = (now + timedelta(days=days_ahead)).isoformat()
-            events = (
-                service.events().list(
-                    calendarId="primary", timeMin=time_min, timeMax=time_max,
-                    maxResults=max_results, singleEvents=True, orderBy="startTime",
-                ).execute()
-            ).get("items", [])
-            from ..brain import get_brain
-            brain = get_brain()
-
-            def ingest(ev) -> int:
-                summary = ev.get("summary", "(no title)")
-                start = ev.get("start", {}).get("dateTime") or ev.get("start", {}).get("date", "")
-                end = ev.get("end", {}).get("dateTime") or ev.get("end", {}).get("date", "")
-                where = ev.get("location", "")
-                attendees = ", ".join(
-                    a.get("email", "") for a in ev.get("attendees", []) or [])
-                desc = (ev.get("description", "") or "")[:1000]
-                text = (f"Event: {summary}\nWhen: {start} → {end}"
-                        + (f"\nWhere: {where}" if where else "")
-                        + (f"\nWith: {attendees}" if attendees else "")
-                        + (f"\n\n{desc}" if desc else ""))
-                out = brain.ingest(
-                    text, source=self.name, kind="event", title=summary,
-                    uri=ev.get("htmlLink"), fast=True,
-                    event_date=(start[:10] if start else None),
-                    metadata={"start": start, "event_id": ev.get("id")},
-                )
-                return out["memories"]
-
-            self.each_guarded(events[:limit] if limit else events, result, ingest,
-                              cancel=cancel, progress=progress)
-            result.detail = result.detail or (
-                f"{len(events)} events ({days_back}d back, {days_ahead}d ahead)")
+            service = build("calendar", "v3", credentials=creds,
+                            cache_discovery=False)
         except Exception as exc:
-            result.errors.append(str(exc))
-            result.detail = "sync failed"
-        return self._finish(result)
+            # Signing in is something the user does; a failed sync is something
+            # the app retries. Reporting one as the other sends them nowhere
+            # useful.
+            from .errors import classify_exception
+            problem = classify_exception(self.name, exc, label=self.label)
+            result.errors.append(problem.message)
+            result.detail = "not signed in"
+            return self._finish(result)
+
+        time_min, time_max = self._window(days_back=days_back,
+                                          days_ahead=days_ahead)
+        budget = limit or max_results
+        outcome = engine.run(
+            engine.Plan(
+                connector=self.name, manifest=self.manifest(),
+                resource_type="event",
+                fetch=lambda cursor: self._page(service, time_min, time_max,
+                                                budget, cursor),
+                # **No hydrate.** The listing carries whole events; a stage here
+                # would fetch what we already have.
+                ingest=self._ingest,
+                connection_id=self.connection().id,
+                budget=budget,
+                # **Never sweeps**, and it has no need to: cancellations arrive
+                # as `status: "cancelled"` above. Sweeping a ±180-day window
+                # would tombstone every event that merely aged out of it, which
+                # is every event, eventually.
+                sweeps_deletions=False),
+            cancel=cancel, progress=progress, full_history=full_history)
+
+        outcome.detail = (f"{outcome.detail} "
+                          f"({days_back}d back, {days_ahead}d ahead)")
+        return self._finish(outcome)
