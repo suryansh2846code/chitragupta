@@ -85,6 +85,45 @@ One class per source, registered in `__init__.py::REGISTRY`.
   reports as impossible. It told a user its GitHub access was read-only. The
   budget is now round-robin across servers and names what it left out, which
   turns "it cannot" into "I cannot see it".
+- **A connector says what it can do, in verbs on resources.** `capabilities =
+  caps("read:email", "send:email")` — `capability.py`. Not app names: the gate
+  has to reason about `send:email` without knowing whether Gmail, Apple Mail or
+  somebody else's server is behind it. **Unknown fails closed**, because the
+  tempting default reads an unrecognised write as a harmless read. An action
+  may be *stricter* than its capability implies and never weaker, which
+  `tests/connectors/test_capability_floor.py` is the whole of.
+- **The shared machinery is not optional and not per connector.** Rate limits
+  and lanes (`limits.py`), bounded retries that only retry what could work
+  (`retry.py`), one error taxonomy with secrets scrubbed on construction
+  (`errors.py`), paging with loop guards (`pagination.py`), per-page
+  checkpoints (`sync_state.py`), stable external identity and tombstones
+  (`resources.py`), provenance into ingest (`provenance.py`). `engine.py`
+  composes them; a connector writes `fetch(cursor) -> Page` and an `ingest`.
+  The reference is `custom_api.py`; the guide is
+  [`docs/development/writing-a-connector.md`](../../docs/development/writing-a-connector.md).
+- **Checkpoint AFTER the page is committed, never before.** The other order
+  loses a page on a crash *and reports success for it* — the records are gone
+  and nothing goes back. `base._finish` writes a watermark only for a clean
+  pass, which is safe and is why a 2,000-item sync failing at 1,900 used to
+  restart at zero; the fix was to make the unit a page, not to relax the rule.
+- **A truncated listing never tombstones.** `sweeps_deletions` requires
+  `Walk.complete`, or a sync that hit its own budget deletes the tail of a
+  mailbox.
+- **One account is not one connector.** `connections.py` is one row per
+  account, and every checkpoint, identity and provenance record references it.
+  `Connector.connection()` mirrors `is_configured()` into that row — the
+  credential itself stays in the Keychain, the token file or the vendor
+  session, and nothing here holds one.
+- **A 401 is a re-auth; a 403 is not.** Signing in again produces the same
+  credential with the same permissions, so sending the user round OAuth for a
+  scope problem teaches them the app is broken. `ConnectorError.needs_reauth`
+  is authentication only, and that is why it is a separate property.
+- **A user-described connector cannot be pointed at this Mac.** `outbound.py`
+  refuses loopback and link-local, by literal and by resolution, and re-checks
+  where a request landed — `urlopen` follows redirects. The rest of the LAN is
+  allowed on purpose: a NAS in the user's house is what a local-first app is
+  for. The one residual gap is named in
+  [`docs/CONNECTOR-PLATFORM.md`](../../docs/CONNECTOR-PLATFORM.md) §7.
 - Never read another product's app-support directory for credentials or models.
 
 Rules: [`/CLAUDE.md`](../../CLAUDE.md) · [`docs/CONNECTORS.md`](../../docs/CONNECTORS.md)

@@ -188,6 +188,29 @@ Each of these is real today. None is urgent on its own; they are written down so
 the next change does not deepen them. Evidence and cost:
 [`COMPLEXITY_AUDIT.md`](../COMPLEXITY_AUDIT.md).
 
+### 6.9 The connector sweep is serial · **OPEN**
+
+`scheduler.py::_sync_all` walks connectors in one `for` loop, so a connector
+that blocks for its timeout blocks every connector behind it. The *bound* now
+exists — `connectors/limits.py` gives each connector a rate budget and a
+concurrency lane, and `engine.run` holds one per request — but nothing yet runs
+two connectors at once.
+
+**Deliberately not changed in the landing that built the lanes.** Making the
+sweep parallel means concurrent writers on the one `MemoryStore` connection
+(`check_same_thread=False`, one handle, WAL). That is a change to the brain's
+write path, not to the connector layer, and it needs its own landing with its
+own measurements — shipping it inside a connector change would be exactly the
+kind of entangled edit `/CLAUDE.md` tells an AUDIT not to make.
+
+What holds in the meantime: every connector is bounded per request, a wedged
+one is bounded by `CALL_TIMEOUT_SECONDS`, and a credential that is dead is
+skipped rather than retried every thirty minutes.
+
+**The fix**: give the sweep a bounded worker pool sized from
+`Limits.concurrency`, after `core/store.py` can take concurrent writers — a
+connection per thread, or a write queue.
+
 ### 6.1 ~~`api/` imports `desktop`~~ · **CLOSED 2026-09-25**
 
 > Closed as prescribed: `api/desktop_bridge.py` is a three-function seam the

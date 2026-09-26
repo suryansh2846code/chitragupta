@@ -170,6 +170,31 @@ even when every test is green. Reasoning and measurements:
   what was proposed. Opt-in per action type (`EDITABLE` in `web/chat.js`), for
   exactly the cases where a misread is easy and surfaces weeks later.
 
+**Connectors — `connectors/`** · [`docs/CONNECTOR-PLATFORM.md`](docs/CONNECTOR-PLATFORM.md)
+- **A connector declares what it can do, as verbs on resources.**
+  `caps("read:email", "send:email")`, never an app name — the gate has to reason
+  about `send:email` without knowing which app is behind it. **Unknown fails
+  closed**: the tempting default reads an unrecognised write as a harmless read.
+  An action may be stricter than its capability implies and never weaker, and
+  that is one test rather than a convention.
+- **The checkpoint moves after the page is committed, never before.** The other
+  order loses a page on a crash *and reports success for it*. `base._finish`
+  only stores a watermark for a clean pass — correct, and the reason a
+  2,000-item sync failing at 1,900 restarted at zero. The unit became a page;
+  the rule did not move.
+- **A truncated listing never tombstones.** Sweeping one deletes the tail of a
+  mailbox because a sync hit its own budget.
+- **One account is not one connector.** `connector_state` was
+  `PRIMARY KEY (connector)`, which baked `provider == account` into storage.
+  Connections, checkpoints, identity and provenance are all per account now.
+- **A 401 is a re-auth and a 403 is not.** A scope problem survives signing in
+  again, so offering the OAuth loop for one teaches the user the app is broken.
+- **Retry only what retrying could fix.** 403, 400, 401 and 404 are each a
+  reason *not* to try again, and the bounded loop is what stops a rate-limit
+  becoming a ban.
+- **A user-described connector cannot be pointed at this Mac.** `outbound.py`,
+  and it re-checks where the request landed because `urlopen` follows redirects.
+
 **Brain and storage — `brain/`, `core/`**
 - **`"key" in row` on a `sqlite3.Row` tests the VALUES, not the keys.** Use
   `row.keys()`. `SIM118`/`SIM401` are disabled in `pyproject.toml` for exactly
@@ -332,8 +357,8 @@ In order: **the focused test → the subsystem's suite → `pytest` →
 `ruff check chitragupta tests` → `mypy chitragupta` → the `tests/js/` harnesses if
 the frontend changed → `chitragupta app` opens and renders.**
 
-Baseline, measured 2026-09-25: **3725 passed, 30 skipped in ~2min**, ruff
-clean, mypy clean over 178 files, coverage 80%. Locally the split differs — some
+Baseline, measured 2026-09-26: **4371 passed, 31 skipped in ~2min15**, ruff
+clean, mypy clean over 196 files, coverage 81%. Locally the split differs — some
 tests skip when a provider is genuinely connected on the machine. Run tests when
 stuck or finishing, not after every edit. Details:
 [`tests/CLAUDE.md`](tests/CLAUDE.md).
@@ -418,6 +443,8 @@ The boundaries and what each must name:
 | the brain's data model | [`docs/BRAIN-V1.5.md`](docs/BRAIN-V1.5.md) |
 | which way to reach an app at all | [`docs/REACHING-AN-APP.md`](docs/REACHING-AN-APP.md) |
 | connectors | [`docs/CONNECTORS.md`](docs/CONNECTORS.md) |
+| the connector platform: contract, capabilities, sync, health | [`docs/CONNECTOR-PLATFORM.md`](docs/CONNECTOR-PLATFORM.md) |
+| adding a connector | [`docs/development/writing-a-connector.md`](docs/development/writing-a-connector.md) |
 | connecting Telegram | [`docs/development/telegram.md`](docs/development/telegram.md) |
 | measurements, and the health boundary | [`docs/development/health.md`](docs/development/health.md) |
 | what the Health agent still needs | [`docs/development/health-roadmap.md`](docs/development/health-roadmap.md) |
