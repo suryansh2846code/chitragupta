@@ -345,8 +345,21 @@ def said_nothing(outcome: str) -> bool:
     The agent is asked for exactly this phrase and nothing else, so a reply
     that wanders is a reply with something in it.
     """
-    head = (outcome or "").strip().upper().rstrip(".!… ")
-    return head in ("", NOTHING_TO_REPORT, "RAN, NO ACTION NEEDED")
+    text = (outcome or "").strip()
+    if not text:
+        return True
+    # Any line that is only the phrase. An agent that explains itself and then
+    # signals — "No new mail since the last check.\n\nNOTHING TO REPORT" — is
+    # saying there is nothing, and reporting that as news puts a line in the
+    # user's Inbox every two minutes saying nothing happened.
+    #
+    # Still not a prefix match: "Nothing to report from Ana, but Rahul replied"
+    # keeps the phrase inside a sentence that goes on, and that is a report.
+    for line in text.upper().splitlines():
+        if line.strip().rstrip(".!… ") in (NOTHING_TO_REPORT,
+                                           "RAN, NO ACTION NEEDED"):
+            return True
+    return False
 
 
 #: A run that ended in one of these has something the user needs to see,

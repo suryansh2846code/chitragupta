@@ -172,6 +172,11 @@ async function runAutomationNow(id, button) {
   loadRoutines();
 }
 
+//: Which messages the user has opened. Here rather than on the row, because
+//: the list is redrawn wholesale — marking one read repaints everything, and a
+//: state kept in the DOM would close every message the moment one was touched.
+const OPEN_MESSAGES = new Set();
+
 /* Everything the agents have told you, in the place you already look.
  *
  * This replaced two things that did not work. A desktop notification is gone if
@@ -212,7 +217,8 @@ async function loadMessages() {
   }
 
   host.innerHTML = messages.map((m) => `<div class="ib-row msg-row${
-    m.unread ? " is-unread" : ""}${m.kind === "needs_you" ? " is-bad" : ""}">
+    m.unread ? " is-unread" : ""}${m.kind === "needs_you" ? " is-bad" : ""}${
+    OPEN_MESSAGES.has(m.id) ? " is-open" : ""}" data-msg="${esc(m.id)}">
       <span class="ib-state" data-on="${m.unread ? 1 : 0}" aria-hidden="true"></span>
       <span class="ib-text">
         <span class="ib-name">${esc(m.agent_name)}${m.title
@@ -229,12 +235,35 @@ async function loadMessages() {
           aria-label="Remove this message">${IC.close}</button>
       </span></div>`).join("");
 
-  // Reading one is what marks it read — there is no separate tick to press,
-  // because a list where you have to say "yes I read that" is a list with a
-  // chore in it.
+  // Pressing the message opens it. A long report is clamped to four lines so a
+  // list of them is a list rather than a wall — and clamped is not the same as
+  // lost, which is what it was: the text simply ran out mid-word with nothing
+  // to press and nowhere else to read it.
+  //
+  // Reading one is also what marks it read. A list where you have to say "yes
+  // I read that" is a list with a chore in it.
+  host.querySelectorAll("[data-msg]").forEach((row) => {
+    row.onclick = async (event) => {
+      // Not when the press was meant for a button inside it.
+      if (event && event.target && event.target.closest
+          && event.target.closest("button")) return;
+      const id = row.dataset.msg;
+      if (OPEN_MESSAGES.has(id)) OPEN_MESSAGES.delete(id);
+      else OPEN_MESSAGES.add(id);
+      row.classList.toggle("is-open", OPEN_MESSAGES.has(id));
+      if (row.classList.contains("is-unread")) {
+        row.classList.remove("is-unread");
+        await api(`/api/messages/${id}/read`, { method: "POST" });
+        refreshUnread();
+        const all = $("#msgReadAll");
+        if (all) all.hidden = false;
+      }
+    };
+  });
   host.querySelectorAll("[data-msg-del]").forEach((button) => {
     button.onclick = async () => {
       await api(`/api/messages/${button.dataset.msgDel}`, { method: "DELETE" });
+      OPEN_MESSAGES.delete(button.dataset.msgDel);
       loadMessages();
     };
   });

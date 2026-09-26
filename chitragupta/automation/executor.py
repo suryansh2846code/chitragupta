@@ -104,6 +104,19 @@ class Deps:
     now: Callable[[], datetime] = field(default=lambda: datetime.now(UTC))
 
 
+#: How much of what an agent said is kept on the run.
+#:
+#: It was 400, which is a sentence and a half. A watch that reported "WhatsApp
+#: Web is rejecting the browser Chitragupta drives it with — it just shows
+#: … so I can't see whether Dev has a new messa" is a report cut off before the
+#: part that says what to do, and the user cannot get the rest from anywhere:
+#: this is the stored copy, not a preview of one.
+#:
+#: Four thousand because that is a long answer rather than a transcript — the
+#: agent is told to write the answer itself, and an answer longer than this is
+#: one that should have been an attachment.
+MAX_OUTCOME = 4000
+
 #: How a turn says it failed rather than *answered*.
 #:
 #: Matched on the two markers this app writes itself — `models/errors.py` puts
@@ -334,7 +347,7 @@ class Executor:
                           result={"reply": reply[:2000], "actions": len(plan)})
         store.update_run(run["id"],
                          plan=[{"type": t, "params": p} for t, p in plan],
-                         outcome=reply[:400])
+                         outcome=reply[:MAX_OUTCOME])
 
         for seq, (action_type, params) in enumerate(plan):
             store.add_step(run["id"], kind="action", name=action_type,
@@ -356,7 +369,8 @@ class Executor:
                 return self._fail_or_retry(run, automation, trouble)
             # A run that reached the world through no action still did its job:
             # "tell me if there is a conflict" is answered by the reply.
-            return self._complete(run, automation, reply[:400] or "ran, no action needed")
+            return self._complete(run, automation,
+                                  reply[:MAX_OUTCOME] or "ran, no action needed")
         return store.transition(run["id"], RunState.EXECUTING)
 
     def _prompt(self, automation: Automation, snapshot: context.Snapshot) -> str:
@@ -814,7 +828,7 @@ class Executor:
         # is the row contradicting itself. The failed step is still there,
         # which is where that belongs.
         result = store.transition(run["id"], RunState.COMPLETED,
-                                  outcome=outcome[:400], reason="")
+                                  outcome=outcome[:MAX_OUTCOME], reason="")
         self._announce(run, automation, "automation.completed", outcome)
         return result
 
