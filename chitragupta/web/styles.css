@@ -106,13 +106,19 @@ select:focus, input:focus, textarea:focus { outline: none; border-color: var(--a
    rail and the 10px square on a Library card without knowing about either.
    The gradient below is the empty state — visible for the instant before the
    character mounts, and permanently if the renderer failed to load. */
-.orb { width: 34px; height: 34px; border-radius: 50%; flex: none; position: relative;
+/* 40px, not 34. A generated character has eyes, a nose and a mouth inside the
+   disc, and at 34 the whole face was about 22px of drawn detail — enough to
+   register as "a face" and not enough to tell two agents apart at a glance,
+   which is the entire job of giving them one. The rail is the surface you look
+   at most, so it is the one that has to earn the renderer. */
+.orb { width: 40px; height: 40px; border-radius: 50%; flex: none; position: relative;
   overflow: hidden; isolation: isolate;
   background: radial-gradient(circle at 32% 26%, #7b8aa5, #2b3242 72%);
   box-shadow: inset 0 2px 5px rgba(255,255,255,.22), inset 0 -7px 12px rgba(0,0,0,.5),
     0 2px 8px rgba(0,0,0,.4); }
 /* No inset shadow over a drawn face — it reads as a smudge across the eyes,
-   which at 34px is most of the face. The outer shadow lifts the slot and stays. */
+   which at this size is most of the face. The outer shadow lifts the slot and
+   stays. */
 .orb:has(svg) { box-shadow: 0 2px 8px rgba(0,0,0,.4); }
 .orb svg, .lib-orb svg { display: block; width: 100%; height: 100%; }
 .orb-lg { width: 44px; height: 44px; }
@@ -175,7 +181,11 @@ select:focus, input:focus, textarea:focus { outline: none; border-color: var(--a
    otherwise the rule overshoots the edges by 4px a side. */
 .app.collapsed .side-foot { flex-direction: column; gap: 4px;
   margin-left: -8px; margin-right: -8px; padding-left: 8px; padding-right: 8px; }
-.app.collapsed .orb { width: 28px; height: 28px; }
+/* Scoped to the rail. Unqualified, this matched EVERY .orb inside .app — so
+   collapsing the sidebar also shrank the chat header's avatar, which is not in
+   the sidebar and did not get narrower. It was a 34→28 nudge before and would
+   be 46→28 now, which is what made it visible. */
+.app.collapsed .sidebar .orb { width: 28px; height: 28px; }
 .app.collapsed .na-plus { width: 24px; height: 24px; }
 .app.collapsed .user-av { width: 26px; height: 26px; }
 .brand { display: flex; align-items: center; gap: 11px; padding: 2px 6px 16px;
@@ -305,6 +315,10 @@ select:focus, input:focus, textarea:focus { outline: none; border-color: var(--a
 .chat-head { display: flex; align-items: center; justify-content: space-between;
   padding: 16px 26px; border-bottom: 1px solid var(--line); }
 .ch-agent { display: flex; align-items: center; gap: 12px; }
+/* The one avatar with room around it, and the only one the eye rests on for a
+   whole conversation rather than a glance — it is worth more than the rail's.
+   46px is what the header's own 16px padding allows without growing it. */
+.ch-agent .orb { width: 46px; height: 46px; }
 .ch-name { font-weight: 600; font-size: 15px; }
 .ch-role { font-size: 12px; color: var(--muted); }
 .ch-right { display: flex; align-items: center; gap: 12px; }
