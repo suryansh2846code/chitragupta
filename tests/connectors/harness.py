@@ -423,6 +423,101 @@ class _NoDownloads:
         raise NotImplementedError("no fixture here downloads bytes")
 
 
+def _slack(monkeypatch, fake_module, tmp_path, n):
+    """Slack, faked at its one HTTP wrapper.
+
+    Neither Slack nor Telegram had a fake, so nothing had ever run their sync —
+    the same gap Drive had. Faked at `_call` rather than at `httpx`, because
+    `_call` is where Slack's `ok: false` convention, the rate-limit retry and the
+    gate all live: stubbing the transport would replace those too, and they are
+    exactly what is worth testing.
+    """
+    from chitragupta.connectors.slack import SlackConnector
+
+    rooms = [{"id": f"C{i}", "name": f"team-{i}", "is_channel": True}
+             for i in range(max(1, min(3, n or 1)))]
+    #: `n` messages spread across the conversations, so a page really is one
+    #: conversation and the record count is the message count.
+    per_room = max(1, (n + len(rooms) - 1) // len(rooms)) if n else 0
+    # **Recent timestamps, not fixed ones.** A fixed 2023 `ts` made every message
+    # older than the watermark a first pass leaves behind, so the second pass
+    # correctly filtered all of them out and the fixture looked like a connector
+    # that had stopped working. Real messages are recent; the fake's have to be.
+    now = time.time()
+    history = {
+        room["id"]: [{"ts": f"{now - (per_room - i):.6f}", "user": "U1",
+                      "text": f"Message {i} in {room['name']} about the launch."}
+                     for i in range(per_room)]
+        for room in rooms
+    }
+
+    calls: list[tuple[str, dict]] = []
+
+    def call(self, method, **params):
+        calls.append((method, params))
+        if method == "users.conversations":
+            # `users.conversations`, not `conversations.list`: the connector asks
+            # for the conversations *this user* is in, which is the whole reason
+            # it wants a user token rather than a bot one.
+            return {"ok": True, "channels": rooms}
+        if method == "users.list":
+            return {"ok": True, "members": [{"id": "U1", "profile": {},
+                                             "real_name": "Someone"}]}
+        if method == "auth.test":
+            return {"ok": True, "user_id": "UME"}
+        if method == "conversations.history":
+            messages = history.get(params.get("channel"), [])
+            oldest = params.get("oldest")
+            if oldest:
+                # Slack filters server-side, and the fake has to as well — or a
+                # connector that forgot to pass `oldest` would still pass.
+                messages = [m for m in messages if float(m["ts"]) > float(oldest)]
+            return {"ok": True, "messages": list(reversed(messages))}
+        return {"ok": False, "error": "unknown_method"}
+
+    monkeypatch.setattr(SlackConnector, "_call", call)
+    _set_secret("SLACK_USER_TOKEN", "xoxp-EXAMPLE-NOT-A-REAL-TOKEN")
+    connector = SlackConnector()
+    connector.fake_calls = calls
+    connector.fake_history = history
+    return connector
+
+
+def _telegram(monkeypatch, fake_module, tmp_path, n):
+    """Telegram, faked at the two reads its sync uses.
+
+    Faked at `chats`/`history` rather than at MTProto: the protocol client lives
+    in `telegram_auth`, is an async session, and standing one up would be a test
+    of the stand-in. What this exercises is the sync — identity, checkpointing,
+    provenance — which is all above that line.
+    """
+    from chitragupta.connectors.telegram import TelegramConnector
+    from chitragupta.messaging import Chat, Message
+
+    chats = [Chat(id=str(100 + i), name=f"Group {i}", kind="group")
+             for i in range(max(1, min(3, n or 1)))]
+    per_chat = max(1, (n + len(chats) - 1) // len(chats)) if n else 0
+    history = {
+        chat.id: [Message(id=str(i), sender="Someone",
+                          at=f"2026-09-2{i % 9}T10:00:00+00:00",
+                          text=f"Message {i} in {chat.name} about the launch.")
+                  for i in range(per_chat)]
+        for chat in chats
+    }
+
+    monkeypatch.setattr(TelegramConnector, "is_configured",
+                        lambda self: (True, ""))
+    monkeypatch.setattr(TelegramConnector, "chats",
+                        lambda self, limit=30: chats[:limit])
+    monkeypatch.setattr(TelegramConnector, "history",
+                        lambda self, chat_id, limit=50: history.get(chat_id,
+                                                                   [])[:limit])
+    connector = TelegramConnector()
+    connector.fake_chats = chats
+    connector.fake_history = history
+    return connector
+
+
 def _set_secret(key: str, value: str) -> None:
     from chitragupta.config import get_settings
 
@@ -459,6 +554,10 @@ FAKES: tuple[ConnectorFake, ...] = (
     # ran against it. Registering it is what gives it the contract,
     # crash-isolation, idempotency and redaction tests.
     ConnectorFake("gdrive", _gdrive),
+    # Neither had a fake, so nothing had ever run their sync — the same
+    # gap Drive had. Registering them earns both every generic suite.
+    ConnectorFake("slack", _slack),
+    ConnectorFake("telegram", _telegram),
     ConnectorFake("custom:testapp", _custom_api),
 )
 

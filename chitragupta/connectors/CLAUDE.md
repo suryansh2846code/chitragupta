@@ -170,6 +170,28 @@ One class per source, registered in `__init__.py::REGISTRY`.
   Calendar fake answered every request with the whole list, so the connector
   reading only its first page looked complete — a calendar with more than 250
   events silently lost the rest, in the product *and* in the suite.
+- **A messaging sync is two levels: conversations, then messages.** A page is
+  one conversation and a record is one message, so a checkpoint lands per
+  conversation and a pass stopped at the twentieth channel resumes there. The
+  conversation list is resolved **once** for the pass and walked by index —
+  re-listing per page is another round trip per chat against the tightest rate
+  limit in the app.
+- **A message id is unique inside a conversation, not across them.** The identity
+  is `chat_id:message_id`. Unscoped, two channels collide.
+- **Where the text arrives with the listing, fingerprint the text.** It catches
+  an edit for free. Gmail cannot — the body is a request per message — so it
+  fingerprints the id and accepts that an edited mail is not re-read.
+- **A connector that accepts `since` and ignores it must not declare
+  `incremental = True`.** Slack and Telegram both did, so the manifest promised a
+  filtered second pass that never happened. Slack now passes the watermark as
+  `conversations.history(oldest=…)`; Telegram's declaration is False, because
+  Telethon filters by walking backwards from an offset and that is a different
+  traversal rather than a parameter to add.
+- **An error a connector classifies itself survives `with_retries` untouched.**
+  Slack answers `ratelimited` with a **200**, so nothing in the HTTP layer sees
+  it — the connector raises a pre-classified `ConnectorError`. Re-classifying
+  that turned a retryable rate limit into `UNKNOWN`, which is not retryable, so
+  the one case that most needed a second attempt got none.
 - Never read another product's app-support directory for credentials or models.
 
 Rules: [`/CLAUDE.md`](../../CLAUDE.md) · [`docs/CONNECTORS.md`](../../docs/CONNECTORS.md)

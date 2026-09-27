@@ -16,10 +16,14 @@ from typing import Any
 
 from ..log import get_logger, suppressed
 from ..messaging import Chat, Message
-from . import telegram_auth
+from . import engine, telegram_auth
 from .base import Connector, SyncResult
 from .capability import caps
 from .contract import AuthMethod, Limits, SyncStrategy
+from .engine import Record
+from .pagination import Page
+from .provenance import SourceRef
+from .resources import fingerprint
 
 log = get_logger(__name__)
 
@@ -35,13 +39,21 @@ class TelegramConnector(Connector):
     name = "telegram"
     label = "Telegram"
     auto_sync = True
-    incremental = True
+    #: **False, and now honestly so.** `sync()` accepted `since` and never
+    #: used it, so this said True while every pass re-read every message in
+    #: every conversation. Telethon does filter by date, but by walking
+    #: backwards from an offset — a different traversal, not a parameter to
+    #: add. Identity dedup covers the repeat pass instead.
+    incremental = False
     #: Not an API key: MTProto establishes a session with the user's own
     #: account, and the thing stored is that session rather than a token the
     #: user could have pasted. `AuthMethod` keeps them apart because the
     #: disconnect and re-auth paths are genuinely different.
     auth_method = AuthMethod.SESSION
-    sync_strategy = SyncStrategy.TIMESTAMP
+    sync_strategy = SyncStrategy.FULL
+    #: Per-conversation checkpoints: a pass stopped at the twentieth chat
+    #: resumes there rather than at the first.
+    resumable = True
     capabilities = caps("read:message", "read:chat", "send:message")
     limits = Limits(requests=30, per_seconds=60.0, concurrency=1,
                     page_size=100, records_per_sync=400)
@@ -120,9 +132,75 @@ class TelegramConnector(Connector):
             return {"ok": False, "error": f"Telegram refused: {exc}"[:200]}
 
     # ── ingest ───────────────────────────────────────────────────────────
+    #
+    # The same two-level shape as Slack: conversations, then messages inside
+    # each. A *page* is one conversation and a *record* is one message, so a
+    # checkpoint lands per conversation and a pass interrupted at the twentieth
+    # chat resumes there.
+    #
+    # No `hydrate`: `history` already answers with whole messages. The
+    # fingerprint is a digest of the text, so a message edited after we read it
+    # is read again — free here, because the text arrives with the listing.
+
+    def _record(self, chat: Chat, message: Message) -> Record:
+        return Record(
+            # Scoped to the conversation: a Telegram message id is unique within
+            # a chat, not across them.
+            external_id=f"{chat.id}:{message.id}",
+            text=(f"Telegram {chat.kind} {chat.name}\n"
+                  f"{message.sender} on {message.at}:\n{message.text}"),
+            title=f"{chat.name} — {message.sender}",
+            source_updated_at=message.at,
+            fingerprint=fingerprint(message.text),
+            extra={"chat": chat.name, "chat_id": chat.id, "chat_kind": chat.kind,
+                   "sender": message.sender, "outgoing": message.outgoing},
+            raw=message)
+
+    def _page(self, chats: list[Chat], cursor: str) -> Page:
+        """One conversation's worth of messages.
+
+        The conversation list is resolved once for the pass and walked by index.
+        Re-listing per page would mean another round trip through MTProto for
+        every chat, and the session is one connection shared with everything
+        else this connector does.
+        """
+        index = int(cursor or 0)
+        if index >= len(chats):
+            return Page(records=[], next_cursor="")
+        chat = chats[index]
+        records: list[Record] = []
+        try:
+            for message in self.history(chat.id, limit=SYNC_PER_CHAT):
+                if message.text.strip():
+                    records.append(self._record(chat, message))
+        except Exception as exc:
+            # One unreadable conversation is not the pass failing. Logged rather
+            # than silently dropped, so it is findable afterwards.
+            log.debug("telegram: could not read %s: %s", chat.name, exc)
+        nxt = str(index + 1) if index + 1 < len(chats) else ""
+        return Page(records=records, next_cursor=nxt)
+
+    def _ingest(self, record: Record, source: SourceRef) -> str:
+        from ..brain import get_brain
+
+        out = get_brain().ingest(record.text, kind="message", fast=True,
+                                 title=record.title, **source.ingest_kwargs())
+        ids = out.get("memory_ids") or []
+        return str(ids[0]) if ids else ""
+
     def sync(self, *, since: str | None = None, limit: int | None = None,
              full_history: bool = False, cancel=None, progress=None,
              **_: Any) -> SyncResult:
+        """One pass: every conversation, recent messages in each.
+
+        **No watermark, and that is now what the connector says.** `since` was
+        accepted and ignored while `incremental` claimed True — so the manifest
+        promised a filtered second pass that never happened. Telethon does filter
+        by date, but through `offset_date` walking *backwards*, which is a
+        different traversal rather than a parameter to add here. Identity dedup
+        carries the repeat pass instead: an unchanged message costs one index
+        lookup, which is the thing the watermark was wanted for.
+        """
         result = SyncResult(connector=self.name)
         ready, reason = self.is_configured()
         if not ready:
@@ -131,33 +209,30 @@ class TelegramConnector(Connector):
 
         started = self.now()
         try:
-            dialogs = self.chats(limit=limit or 30)
+            chats = self.chats(limit=limit or CHAT_LIMIT)
         except Exception as exc:
-            result.errors.append(str(exc)[:200])
+            from .errors import classify_exception
+            problem = classify_exception(self.name, exc, label=self.label)
+            result.errors.append(problem.message)
             result.detail = "sync failed"
             return self._finish(result)
 
-        from ..brain import get_brain
-        brain = get_brain()
+        outcome = engine.run(
+            engine.Plan(
+                connector=self.name, manifest=self.manifest(),
+                resource_type="message",
+                fetch=lambda cursor: self._page(chats, cursor),
+                ingest=self._ingest,
+                connection_id=self.connection().id,
+                # **Never sweeps.** A pass reads the recent end of each
+                # conversation, which is a window — sweeping it would tombstone
+                # every message older than `SYNC_PER_CHAT`.
+                sweeps_deletions=False),
+            cancel=cancel, progress=progress, full_history=full_history)
 
-        def ingest(chat: Chat) -> int:
-            stored = 0
-            with suppressed("reading one Telegram conversation"):
-                for message in self.history(chat.id, limit=SYNC_PER_CHAT):
-                    if not message.text.strip():
-                        continue
-                    out = brain.ingest(
-                        f"Telegram {chat.kind} {chat.name}\n"
-                        f"{message.sender} on {message.at}:\n{message.text}",
-                        source=self.name, kind="message", fast=True,
-                        title=f"{chat.name} — {message.sender}")
-                    stored += out["memories"]
-            return stored
-
-        self.each_guarded(dialogs, result, ingest, cancel=cancel, progress=progress)
-        result.detail = result.detail or f"{len(dialogs)} conversations"
-        result.cursor = started
-        return self._finish(result)
+        outcome.detail = f"{len(chats)} conversations — {outcome.detail}"
+        outcome.cursor = started
+        return self._finish(outcome)
 
 
 def _as_peer(chat_id: str) -> Any:
