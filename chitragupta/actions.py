@@ -228,6 +228,21 @@ class ActionSpec:
     #: a card, never settle the wrong one.
     identity: tuple[str, ...] = ()
 
+    #: The fields this action's handler refuses to run without.
+    #:
+    #: The handlers already refused; nothing wrote down *what* they refuse
+    #: without, so the screen could not know. A card therefore offered
+    #: "Confirm & create" over an automation with an empty Agent box — a
+    #: control that could only ever fail — and the readback filled the gap with
+    #: a word ("personal") that is not an agent anybody has.
+    #:
+    #: Declared beside the handler rather than in the card, because the card is
+    #: not the only caller and a rule kept in one of two places is one the other
+    #: half guesses at. `test_action_required_fields.py` blanks each of these in
+    #: turn and fails if the handler runs anyway — a list that has drifted is
+    #: worse than none, because the card would refuse something that works.
+    required: tuple[str, ...] = ()
+
     def public(self) -> dict[str, Any]:
         """What the card needs to render itself, without the callables."""
         return {
@@ -247,6 +262,7 @@ class ActionSpec:
             "connector": self.connector,
             "capability": self.capability,
             "identity": list(self.identity),
+            "required": list(self.required),
         }
 
 
@@ -1774,6 +1790,7 @@ REGISTRY: dict[str, ActionSpec] = {
         # tells the user a thing was sent that is still sitting unsent.
     ),
     "create_event": ActionSpec(
+        required=("title", "start"),
         identity=("title", "start"),
         handler=_create_event, label="Create calendar event",
         connector="gcal", capability="create:event",
@@ -1784,6 +1801,7 @@ REGISTRY: dict[str, ActionSpec] = {
         undo=_undo_event, undo_label="Remove the event",
     ),
     "update_event": ActionSpec(
+        required=("event_id",),
         identity=("event_id",),
         handler=_update_event, label="Change a calendar event",
         connector="gcal", capability="update:event",
@@ -1803,6 +1821,7 @@ REGISTRY: dict[str, ActionSpec] = {
         undo=_undo_update, undo_label="Put it back",
     ),
     "cancel_event": ActionSpec(
+        required=("event_id",),
         identity=("event_id",),
         handler=_cancel_event, label="Cancel a calendar event",
         connector="gcal", capability="cancel:event",
@@ -1829,6 +1848,7 @@ REGISTRY: dict[str, ActionSpec] = {
     # the repo including merging a pull request. The comment's Undo survived
     # as a retraction, because GitHub's server publishes no way to delete one.
     "create_followup": ActionSpec(
+        required=("about",),
         identity=("about",),
         handler=_create_followup, label="Track a follow-up",
         # Reaches no external system — one row in the user's own brain.
@@ -1839,6 +1859,7 @@ REGISTRY: dict[str, ActionSpec] = {
         undo=_undo_followup, undo_label="Stop tracking it",
     ),
     "notify": ActionSpec(
+        required=("message",),
         identity=("message",),
         handler=_notify, label="Tell me",
         fields=["message", "title"],
@@ -1854,6 +1875,7 @@ REGISTRY: dict[str, ActionSpec] = {
             "operating system does not report whether it was seen"),
     ),
     "create_task": ActionSpec(
+        required=("title",),
         identity=("title",),
         handler=_create_task, label="Add task",
         # Reaches no external system — one row in the user's own brain.
@@ -1864,6 +1886,7 @@ REGISTRY: dict[str, ActionSpec] = {
         undo=_undo_task, undo_label="Remove it",
     ),
     "set_reminder": ActionSpec(
+        required=("message",),
         identity=("message",),
         handler=_set_reminder, label="Set reminder",
         # Reaches no external system — one row in the user's own brain.
@@ -1874,6 +1897,7 @@ REGISTRY: dict[str, ActionSpec] = {
         undo=_undo_row("reminder", "reminder"), undo_label="Cancel it",
     ),
     "create_routine": ActionSpec(
+        required=("agent", "instruction"),
         identity=("name",),
         # Three of these are about a clock and one trigger is not a clock. See
         # `depends_on` — this is the case it was written for.
@@ -1941,6 +1965,7 @@ REGISTRY: dict[str, ActionSpec] = {
         undo=_undo_triage, undo_label="Put them back",
     ),
     "message_send": ActionSpec(
+        required=("app", "chat", "text"),
         identity=("app", "chat"),
         handler=_message_send, label="Send a message",
         connector="", capability="send:message",

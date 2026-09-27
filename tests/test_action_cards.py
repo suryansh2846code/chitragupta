@@ -35,9 +35,22 @@ def client():
     whole session shares passes only where it happens to sit."""
     for agent in AGENTS:
         cards.forget_agent(agent)
+    _wipe_log()
     yield TestClient(app)
     for agent in AGENTS:
         cards.forget_agent(agent)
+    _wipe_log()
+
+
+def _wipe_log():
+    """The endpoint also answers with what this agent ran, and an action logged
+    without an agent belongs to every conversation — so a shared log makes the
+    exact assertions below depend on what ran before them."""
+    from chitragupta import action_log
+
+    conn = action_log._conn()
+    conn.execute("DELETE FROM action_log")
+    conn.commit()
 
 
 # ── the store ──────────────────────────────────────────────────────────────

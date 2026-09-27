@@ -99,6 +99,14 @@ script out of eleven does not fail; it passes.
   on is never a proposal again — trying again means asking the agent, which
   produces a fresh card instead of replaying an old one. `markAnswered` is the
   same decision for the card already on screen, so live and reloaded agree.
+- **A card never offers a button that cannot work.** `ActionSpec.required` is
+  the handler's own list of what it refuses to run without, published in the
+  catalog; `missingFields` reads it, so a message with no chat and an
+  automation with no agent are one rule rather than a check bolted onto one
+  branch. It asks rather than blocks — the boxes are on the same card, and the
+  button returns on the keystroke that fills the gap. And **nothing invents a
+  value for an empty field**: the automation readback used to print
+  "· personal" over a blank Agent box, naming an agent nobody has.
 - **Every card says what kind it is.** `CARD_KIND` in `chat.js` — "Automation",
   "Email", "Calendar" — beside the status. A conversation fills with cards that
   look alike, and a settled one has lost its buttons, so there is *less* left to

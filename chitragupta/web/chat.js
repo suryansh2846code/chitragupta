@@ -743,6 +743,10 @@ function actionFields(type, p) {
     row.appendChild(tag); row.appendChild(box);
     wrap.appendChild(row);
   }
+  //: The boxes themselves, so a caller can watch them without re-finding them
+  //: by class — a selector in a handler is a claim about markup and it goes
+  //: stale.
+  wrap.boxes = Object.values(inputs);
   //: Read at click time, never copied back — an edit the user made and a
   //: confirm that ignored it would be the worst possible version of this.
   wrap.readFields = () => {
@@ -953,6 +957,27 @@ function shapeOf(params) {
 //: it did not work, not what the enum is called.
 const SETTLED_WORD = { done: "done", cancelled: "cancelled",
                        failed: "didn\u2019t work" };
+
+/** The fields this action cannot run without that the card has not got.
+ *
+ * `ActionSpec.required` is the handler's own list, published in the catalog —
+ * so this is one rule for every action rather than a check about `agent`
+ * bolted onto the automation branch. A message with no chat and a reminder
+ * with no text are the same fault.
+ */
+/** The input elements of a generic editor, or none. */
+function findFields(editor) {
+  return Array.isArray(editor && editor.boxes) ? editor.boxes : [];
+}
+
+function missingFields(type, values) {
+  const need = (ACTION_CATALOG[type] || {}).required;
+  if (!Array.isArray(need)) return [];
+  return need.filter((f) => {
+    const v = values[f];
+    return v === undefined || v === null || String(v).trim() === "";
+  });
+}
 
 /** Draw a card that has already been acted on: what it was, and what happened.
  *
@@ -1180,7 +1205,8 @@ function actionCard(a) {
   } else if (a.type === "create_routine") {
     title = "Create automation"; verb = "create";
     rows = `<div class="ac-row"><b>Name</b> ${esc(p.name || "Automation")}</div>
-       <div class="ac-row"><b>Runs</b> ${esc(proposedWhen(p))} · ${esc(p.agent || p.agent_id || "personal")}</div>
+       <div class="ac-row"><b>Runs</b> ${esc(proposedWhen(p))}${
+         p.agent || p.agent_id ? ` · ${esc(p.agent || p.agent_id)}` : ""}</div>
        <div class="ac-body">${esc(p.instruction || "")}</div>`;
   } else if (a.type === "mcp_action") {
     // Previously this fell through to the calendar branch, so a connector
@@ -1296,6 +1322,7 @@ function actionCard(a) {
     <span class="ac-tag">needs your confirmation</span>
     ${rows}
     ${note ? `<div class="ac-row muted ac-risk">${esc(note)}</div>` : ""}
+    <div class="ac-row ac-missing" hidden></div>
     <div class="ac-actions"><button class="ac-confirm">Confirm & ${verb}</button>
     <button class="ac-cancel ghost">Cancel</button></div>
     <div class="ac-result"></div>`;
@@ -1325,6 +1352,40 @@ function actionCard(a) {
   }
   const fields = actionFields(a.type, p);
   if (fields) el.appendChild(fields);
+
+  //: A card missing something the action cannot run without does not offer to
+  //: act — an automation with an empty Agent box showed "Confirm & create"
+  //: over a press that could only ever return "say which agent".
+  //:
+  //: It asks rather than blocks: the boxes are on the same card, so the button
+  //: comes back the moment the gap is filled. Re-checked on every keystroke
+  //: against what is on the card NOW, which is the same thing the confirm
+  //: reads — never what was proposed.
+  const watchGaps = () => {
+    const now = fields && fields.readFields
+      ? { ...p, ...fields.readFields() } : p;
+    const gaps = missingFields(a.type, now);
+    el.dataset.blocked = gaps.length ? "1" : "";
+    const say = el.querySelector(".ac-missing");
+    if (say) {
+      say.textContent = gaps.length
+        ? `Needs ${gaps.map(humanKey).join(" and ")} before this can run.`
+        : "";
+      say.hidden = !gaps.length;
+    }
+    const go = el.querySelector(".ac-confirm");
+    if (go) {
+      go.disabled = gaps.length > 0;
+      go.hidden = gaps.length > 0;
+    }
+  };
+  if (fields) {
+    for (const box of findFields(fields)) {
+      box.addEventListener("input", watchGaps);
+    }
+  }
+  watchGaps();
+
   el.querySelector(".ac-cancel").onclick = () => {
     markAnswered(el, "cancelled");
     rememberCard(key, "cancelled");

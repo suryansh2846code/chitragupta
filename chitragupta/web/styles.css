@@ -3196,3 +3196,7 @@ button.tiny.running:hover { background: linear-gradient(to right,
 .ac-kind { display: inline-block; font-size: 10px; text-transform: uppercase;
   letter-spacing: .5px; padding: 2px 7px; margin-right: 6px; border-radius: 5px;
   border: 1px solid var(--line2); color: var(--muted); vertical-align: middle; }
+
+/* What a card still needs before it can run. Amber rather than red: nothing
+   has gone wrong, there is just a box to fill in on this same card. */
+.ac-missing { color: var(--accent); margin: 6px 0 2px; }

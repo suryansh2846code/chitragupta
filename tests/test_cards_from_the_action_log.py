@@ -91,6 +91,21 @@ def test_another_agent_s_actions_are_not_reported(client):
     assert fetch(client, "health")["ran"] == []
 
 
+def test_an_action_logged_without_an_agent_is_not_orphaned(client):
+    """29 of 113 rows on a real machine carried no agent id — every
+    `create_event` and three `create_task`. A strict match hid all of them, so
+    those cards could never settle no matter what the user did.
+
+    A row belonging to nobody is not *another agent's* work, which is the only
+    thing the filter exists to prevent. The parameters still have to match, and
+    that is what identifies it."""
+    ran(action_type="create_task", params={"title": "Send the figures"},
+        agent_id="")
+    entries = fetch(client)["ran"]
+    assert entries, "a row with no agent is invisible to every conversation"
+    assert entries[0]["params"]["title"] == "Send the figures"
+
+
 def test_a_failed_action_is_reported_as_failed(client):
     """It keeps its buttons, so the card has to be able to tell the
     difference — a failure drawn as done is worse than one drawn pending."""

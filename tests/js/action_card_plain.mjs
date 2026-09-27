@@ -314,6 +314,9 @@ console.log(JSON.stringify({
     ? findAll(card, "ac-field ac-field-wide").map((b) => (b.attrs || {})["aria-label"])
     : [],
   risk: card ? card.dataset.risk : null,
+  //: The card is missing something it cannot run without, so it is not
+  //: offering to act. See `ActionSpec.required`.
+  blocked: card ? card.dataset.blocked === "1" : false,
   //: What the card was drawn as — before any click. See `settledAtDraw`.
   settled: settledAtDraw,
   //: And what it became after the harness answered it.

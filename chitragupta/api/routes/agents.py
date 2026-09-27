@@ -738,7 +738,14 @@ def agent_cards(agent_id: str):
     out = []
     with suppressed("reading what this agent has already done"):
         for row in action_log.recent(RAN_LOOKBACK):
-            if row.get("agent_id") != agent_id:
+            whose = row.get("agent_id") or ""
+            # A row belonging to NOBODY is not another agent's work, which is
+            # the only thing this filter exists to prevent. 29 of 113 rows on a
+            # real machine carried no agent id — every `create_event` and three
+            # `create_task` — and a strict match hid all of them, so those cards
+            # could never settle whatever the user did. The parameters still
+            # have to match, and that is what identifies the action.
+            if whose and whose != agent_id:
                 continue
             # Taken back by the user. A card drawn "done" over something they
             # undid is the app disagreeing with them about their own machine.
