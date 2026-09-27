@@ -19,6 +19,16 @@
  * so the user can stop it. Anything the user starts, they can stop.
  */
 
+//: What every card in this conversation already settled as, by key. Filled
+//: before the history is drawn, so a card that was answered comes back answered
+//: rather than offering its buttons again.
+let CARD_STATE = {};
+
+//: How many cards with each key have been drawn so far in this render. Two
+//: identical proposals in one conversation are told apart by their position,
+//: which is the only thing that distinguishes them for a person reading it too.
+let CARD_SEEN = {};
+
 async function selectAgent(id) {
   if (busy) { toast("finishing current reply…"); return; }
   current = id;
@@ -50,6 +60,13 @@ async function selectAgent(id) {
   renderConnectorChips();
   loadConnectorNames();
   const { history } = await api(`/api/agents/${id}/history`);
+  // Before the history, not after: a card reads its own state as it is built,
+  // and fetching this second would draw every card as pending and then have to
+  // repaint them.
+  try {
+    const { cards } = await api(`/api/agents/${id}/cards`);
+    CARD_STATE = cards || {};
+  } catch (_) { CARD_STATE = {}; }
   renderHistory(history);
 }
 
@@ -107,6 +124,10 @@ function renderHistory(history) {
   const box = $("#messages");
   box.innerHTML = "";              // also takes the boot skeleton with it
   box.removeAttribute("aria-busy");
+  // A fresh count for a fresh render: the keys depend on how many cards with
+  // the same shape have been drawn, and carrying the tally over would give the
+  // same card a different key the second time the chat was opened.
+  CARD_SEEN = {};
   const msgs = history.filter((m) => m.role === "user" || m.role === "assistant");
   if (!msgs.length) { box.appendChild(heroEmpty()); return; }
   for (const m of msgs) addMsg(m.role, m.content);   // so history shows action cards too
@@ -821,8 +842,42 @@ function resultLine(detail) {
   return String(detail);
 }
 
+/** The id this card will have on every render, including the next reload.
+ *
+ * Built from what the card *is* rather than from where it is stored, because a
+ * message has no id the frontend can see — the history is role, content and a
+ * timestamp. The action and its parameters are in the message text, so the same
+ * message produces the same key every time it is drawn.
+ */
+function cardKey(a) {
+  const p = a.params || {};
+  const shape = Object.keys(p).sort()
+    .map((k) => `${k}=${typeof p[k] === "object" ? JSON.stringify(p[k]) : p[k]}`)
+    .join("&");
+  const base = `${a.type}|${shape}`;
+  const n = (CARD_SEEN[base] = (CARD_SEEN[base] || 0) + 1);
+  return `${base}#${n}`;
+}
+
+/** Tell the server what a card settled as, so a reload agrees with the screen.
+ *
+ * Failures are swallowed on purpose: the action already happened, and a card
+ * that will look pending again tomorrow is a smaller problem than an error box
+ * over something that worked. */
+async function rememberCard(key, state, extra) {
+  if (!key || !current) return;
+  try {
+    await api(`/api/agents/${current}/cards/${encodeURIComponent(key)}`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ state, ...(extra || {}) }),
+    });
+  } catch (_) { /* see above */ }
+}
+
 function actionCard(a) {
   const p = a.params;
+  // Before the editors and the handlers, all of which close over it.
+  const key = cardKey(a);
   let title, rows, verb = "send";
   const at = p.at || p.when;
   if (a.type === "send_email" || a.type === "create_draft") {
@@ -965,6 +1020,8 @@ function actionCard(a) {
   const note = spec.always_ask_because || RISK_NOTE[spec.risk] || "";
   const el = document.createElement("div");
   el.className = "action-card";
+  // The key it will have on every render, including the next reload.
+  el.dataset.card = key;
   // The tier as an attribute, so the card can be styled and tested by what it
   // actually is rather than by reading its prose.
   el.dataset.risk = spec.risk || "";
@@ -981,6 +1038,43 @@ function actionCard(a) {
     <div class="ac-actions"><button class="ac-confirm">Confirm & ${verb}</button>
     <button class="ac-cancel ghost">Cancel</button></div>
     <div class="ac-result"></div>`;
+  // Already answered, on a previous visit — so the card is drawn as what it
+  // became, not as a question. Before the editors, because a settled card has
+  // nothing to edit: the values are history, and a box around a historical
+  // value invites a correction that goes nowhere.
+  //
+  // Rebuilt wholesale rather than by patching `.ac-tag` and `.ac-actions`,
+  // because a settled card is a different card — it has no buttons at all, and
+  // reaching in to empty them leaves the confirm handler's markup behind.
+  const settled = CARD_STATE[key];
+  if (settled && settled.state !== "failed") {
+    const done = settled.state === "done";
+    el.dataset.settled = settled.state;
+    el.innerHTML = `<div class="ac-chrome" aria-hidden="true">
+        <span class="ac-dot red"></span><span class="ac-dot yellow"></span><span class="ac-dot green"></span>
+      </div>
+      <div class="ac-head">${title}</div>
+      <span class="ac-tag">${done ? "done" : "cancelled"}</span>
+      ${rows}
+      <div class="ac-result">${done
+        ? `<span class="ac-ok">${IC.check} ${esc(resultLine(settled.detail))}`
+          + (settled.verified_at
+            ? `<span class="ac-verified"> · confirmed ${
+                esc(clockTime(settled.verified_at))}</span>` : "")
+          + `</span>`
+        : `<span class="muted">Cancelled</span>`}</div>`;
+    return el;
+  }
+  // A failure is deliberately NOT settled: the second attempt is the one that
+  // counts, so the card keeps every button and only says what went wrong.
+  if (settled) {
+    el.dataset.settled = "failed";
+    el.innerHTML = el.innerHTML.replace(
+      '<div class="ac-result"></div>',
+      `<div class="ac-result"><span class="ac-err">${
+        esc(settled.detail || "It did not work")}</span></div>`);
+  }
+
   // Editable types grow real inputs. Held here, not looked up again later:
   // the values that execute are read off these elements at click time.
   //
@@ -994,7 +1088,10 @@ function actionCard(a) {
   }
   const fields = actionFields(a.type, p);
   if (fields) el.appendChild(fields);
-  el.querySelector(".ac-cancel").onclick = () => { el.querySelector(".ac-actions").innerHTML = "<span class='muted'>Cancelled</span>"; };
+  el.querySelector(".ac-cancel").onclick = () => {
+    el.querySelector(".ac-actions").innerHTML = "<span class='muted'>Cancelled</span>";
+    rememberCard(key, "cancelled");
+  };
   // What is on the card now, not what was proposed. An edit the user made and
   // a confirm that ignored it would be the worst possible version of this.
   const editedParams = () => {
@@ -1024,10 +1121,18 @@ function actionCard(a) {
           + (stamp ? `<span class="ac-verified"> · confirmed ${esc(stamp)}</span>` : "")
           + `</span>`;
         if (r.reversible && r.log_id) rr.appendChild(undoButton(r));
+        rememberCard(key, "done", {
+          detail: r.detail || "", log_id: r.log_id || "",
+          verified_at: r.verified ? (r.verified_at || "") : "",
+          reversible: !!r.reversible });
         loadReminders(); loadRoutines(); loadActionLog(); return;
       }
       rr.innerHTML = `<span class="ac-err">${esc(r.error || "Failed")}</span>`
         + (note ? `<div class="ac-note">${md(note)}</div>` : "");
+      // Recorded too, so a failure does not come back as an untouched
+      // proposal — but the buttons stay, because the second attempt is the one
+      // that counts and `remember` replaces rather than refuses.
+      rememberCard(key, "failed", { detail: r.error || "Failed" });
       if (r.reauth) {
         const b = document.createElement("button");
         b.className = "tiny"; b.textContent = "Reconnect Google"; b.style.marginTop = "8px";

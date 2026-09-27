@@ -3181,3 +3181,12 @@ button.tiny.running:hover { background: linear-gradient(to right,
   line-height: 16px;
   text-align: center;
 }
+
+/* A card that has already been answered. It is history now, not a question —
+   so it stops looking like one: no accent border, and the tag says what it
+   became rather than "needs your confirmation". */
+.action-card[data-settled] { opacity: .82; }
+.action-card[data-settled] .ac-tag { background: transparent; color: var(--faint);
+  border: 1px solid var(--line); }
+.action-card[data-settled="cancelled"] .ac-head { text-decoration: line-through;
+  text-decoration-color: var(--faint); }

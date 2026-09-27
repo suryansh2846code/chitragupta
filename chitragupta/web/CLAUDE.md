@@ -46,6 +46,17 @@ script out of eleven does not fail; it passes.
   work lives in `automations.js` for now; the two panels are `data-sp="inbox"`
   and `data-sp="actions"`, and `test_frontend_model_screen.py` fails if a list
   ends up on both or on neither.
+- **What a card settled as is server state, not DOM state.** The outcome of an
+  action card only ever lived in the element that drew it, so reopening a chat
+  rebuilt every card pending — an automation created an hour ago came back
+  offering *Confirm & create*, and the obvious thing to do with that button is
+  press it. `cardKey()` in `chat.js` names a card from the action and its
+  position (a stored message has no id the frontend can see), `rememberCard()`
+  records the answer, and `/api/agents/{id}/cards` is fetched **before**
+  `renderHistory` so a card reads its own state as it is built. A failure is
+  deliberately not settled — the retry is the attempt that counts, so it keeps
+  its buttons. `CARD_SEEN` is reset per render, or the same card keys
+  differently the second time the chat is opened.
 - **Every left-nav item opens a screen.** The slide-over drawer is gone:
   `tasks` moved into Inbox and `tools` became the Agents & tools panel, and
   those were its only two occupants. `openDrawer()` kept its name — four call

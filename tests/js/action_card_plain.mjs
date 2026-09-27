@@ -15,7 +15,8 @@ import path from "node:path";
 import { appSource } from "./_app_source.mjs";
 
 const APP_JS = process.argv[2];
-const { action, plan, reply, result, edits, catalog, undoResult } =
+const { action, plan, reply, result, edits, catalog, undoResult, cardState,
+        press } =
   JSON.parse(fs.readFileSync(0, "utf8"));
 
 const makeEl = (tag = "div") => {
@@ -87,12 +88,20 @@ let sent = null;
 //: Undo POSTs to a different endpoint, and its body is not the thing the
 //: confirm claim is about — recorded separately so one does not hide the other.
 let undoSent = null;
+const remembered = [];
 globalThis.fetch = async (url, options) => {
   const body = options && options.body;
   const isUndo = String(url || "").includes("/api/actions/undo");
   if (body && isUndo) {
     try { undoSent = JSON.parse(body); } catch { undoSent = "unparseable"; }
     return { ok: true, json: async () => (undoResult || { ok: true, detail: "Undone" }) };
+  }
+  if (String(url || "").includes("/cards/")) {
+    // What the card told the server it settled as. Recorded separately so it
+    // cannot be mistaken for the action's own request.
+    try { remembered.push({ url: String(url), ...JSON.parse(body) }); }
+    catch { remembered.push({ url: String(url), body: "unparseable" }); }
+    return { ok: true, json: async () => ({ ok: true }) };
   }
   if (body && sent === null) {
     try { sent = JSON.parse(body); } catch { sent = "unparseable"; }
@@ -109,7 +118,21 @@ new Function(appSource(path.dirname(APP_JS)) +
   // `loadActionCatalog()` at boot. The harness does not boot, so a card would
   // render with no editable fields and no Undo — the two things most worth
   // testing — unless the test can seed it.
-  "\nglobalThis.__setCatalog = (c) => { ACTION_CATALOG = c; };")();
+  "\nglobalThis.__setCatalog = (c) => { ACTION_CATALOG = c; };" +
+  // `CARD_STATE` is what a card already settled as on a previous visit, which
+  // is normally fetched before the history is drawn. The harness does not boot,
+  // so without seeding it every card renders pending — which is the bug this
+  // is here to catch, and would pass.
+  "\nglobalThis.__setCardState = (c) => { CARD_STATE = c; CARD_SEEN = {}; };" +
+  "\nglobalThis.__cardKey = cardKey;" +
+  // `current` is the agent whose chat is open, normally set when one is
+  // selected. `rememberCard` refuses without it, so a harness that never sets
+  // it records nothing and every test about recording passes empty.
+  "\nglobalThis.__setCurrent = (id) => { current = id; };")();
+
+globalThis.__setCurrent("health");
+
+if (cardState) globalThis.__setCardState(cardState);
 
 if (catalog) globalThis.__setCatalog(catalog);
 
@@ -195,8 +218,20 @@ if (card && edits) {
   }
 }
 
+// Cancel is the other half of settling a card, and nothing reached it while the
+// harness only ever pressed Confirm.
+let cancelled = null;
+if (card && press === "cancel") {
+  try {
+    await card.querySelector(".ac-cancel").onclick();
+    cancelled = card.querySelector(".ac-actions").innerHTML;
+  } catch (e) {
+    cancelled = `THREW: ${e.constructor.name}: ${e.message}`;
+  }
+}
+
 let confirmed = null;
-if (card) {
+if (card && press !== "cancel") {
   try {
     await card.querySelector(".ac-confirm").onclick();
     confirmed = card.querySelector(".ac-result").innerHTML;
@@ -230,6 +265,7 @@ console.log(JSON.stringify({
   html: card ? card.innerHTML : "",
   text: card ? visibleText(card).replace(/\s+/g, " ").trim() : "",
   afterConfirm: confirmed,
+  afterCancel: cancelled,
   // What the confirm actually POSTed. The claim an editable card makes is
   // about this and nothing else.
   sent,
@@ -239,6 +275,10 @@ console.log(JSON.stringify({
     ? findAll(card, "ac-field ac-field-wide").map((b) => (b.attrs || {})["aria-label"])
     : [],
   risk: card ? card.dataset.risk : null,
+  //: What the card was drawn as, and what it told the server it became.
+  settled: card ? (card.dataset.settled || "") : "",
+  cardKey: card ? (card.dataset.card || "") : "",
+  remembered,
   hasUndo: Boolean(undoBtn),
   undoLabel,
   undoSent,

@@ -7,7 +7,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from ...agents import cancellation, list_agents, run_turn
+from ...agents import cancellation, cards, list_agents, run_turn
 from ...agents.agent import AgentMemory
 from ...config import get_settings
 from ...log import get_logger
@@ -695,8 +695,50 @@ async def chat_stream(agent_id: str, body: ChatIn):
 
 @router.post("/api/agents/{agent_id}/clear")
 def clear(agent_id: str):
+    """Forget the conversation, and what its cards settled as.
+
+    The cards belong to the messages. Leaving their answers behind would mean a
+    later proposal that happened to key the same inheriting one — a card that
+    opens already marked done, for something nobody did.
+    """
     AgentMemory().clear(agent_id)
+    cards.forget_agent(agent_id)
     return {"cleared": agent_id}
+
+
+@router.get("/api/agents/{agent_id}/cards")
+def agent_cards(agent_id: str):
+    """What the cards in this conversation already settled as.
+
+    A card is drawn from the `<action>` tag in a stored message, so reopening a
+    chat rebuilds it from scratch — and it came back offering to confirm
+    something already done. The obvious thing to do with that button is press
+    it, and the result is a second automation.
+    """
+    return {"cards": cards.for_agent(agent_id)}
+
+
+class CardIn(BaseModel):
+    """What a card settled as, as the screen that drew it saw it."""
+
+    state: str
+    detail: str = ""
+    log_id: str = ""
+    verified_at: str = ""
+    reversible: bool = False
+
+
+@router.post("/api/agents/{agent_id}/cards/{key}")
+def remember_card(agent_id: str, key: str, body: CardIn):
+    saved = cards.remember(
+        agent_id, key, state=body.state, detail=body.detail,
+        log_id=body.log_id, verified_at=body.verified_at,
+        reversible=body.reversible)
+    if not saved:
+        # An unknown state is a screen and a store disagreeing about the
+        # vocabulary, which is worth a 400 rather than a silent no-op.
+        raise HTTPException(400, f"not a card state: {body.state}")
+    return {"ok": True, "card": saved}
 
 
 
