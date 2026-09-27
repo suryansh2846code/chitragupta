@@ -278,3 +278,34 @@ def test_the_default_policy_is_small_on_purpose():
     inside one sync is five minutes the Stop button spends being ignored."""
     assert DEFAULT.attempts <= 3
     assert DEFAULT.total_seconds <= 60
+
+
+def test_an_already_classified_error_keeps_its_classification():
+    """**A connector may know more than the transport does.** Slack answers
+    `ratelimited` with a *200*, so nothing in the HTTP layer can see it — the
+    connector raises a pre-classified `ConnectorError` instead.
+
+    Re-classifying that turned a retryable rate limit into `UNKNOWN`, which is
+    not retryable, so the one case that most needed a second attempt got none.
+    """
+    clock = Clock()
+    rate_limited = classify_http("slack", 429)
+    operation = failing(rate_limited, then="landed")
+
+    got = with_retries(operation, connector="slack", policy=NO_JITTER,
+                       sleep=clock)
+
+    assert got == "landed"
+    assert clock.total > 0, "it gave up instead of waiting and trying again"
+
+
+def test_a_classified_error_that_is_not_retryable_is_still_not_retried():
+    """The pass-through must not become "trust whatever was raised" — a
+    classified 403 is still a reason to stop."""
+    clock = Clock()
+
+    with pytest.raises(ConnectorError):
+        with_retries(failing(classify_http("slack", 403)), connector="slack",
+                     policy=NO_JITTER, sleep=clock)
+
+    assert clock.slept == []

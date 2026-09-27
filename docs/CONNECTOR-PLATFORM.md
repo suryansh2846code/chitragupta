@@ -294,6 +294,17 @@ Drive memory in the table** on every pass to rebuild what it already knew, and i
 compared modified *dates*, so a document edited twice in one day was read as
 unchanged the second time and the edit never reached the brain.
 
+Slack and Telegram are the **fourth shape**: two levels deep, so a page is one
+conversation and a record is one message — a checkpoint per conversation rather
+than per pass. Neither needed `hydrate`, so neither saved requests; what they
+gained was different. Slack was **never paced**, against the tightest limit in
+the app: a pass makes one listing call plus one per conversation in a burst, and
+a `ratelimited` answer — which Slack sends with a **200** — became a sentence
+that `history` swallowed, so the pass reported *success with conversations
+quietly missing*. And **both accepted `since` and ignored it** while declaring
+`incremental = True`; Slack now filters at the service, and Telegram's
+declaration is False and honest.
+
 Calendar is the **third shape**: `events.list` answers with whole events, so it
 needs no `hydrate` at all — worth recording, because a stage added there would
 re-fetch what the listing already carried and nothing would report it. Its two
@@ -343,18 +354,18 @@ Written here so it is not claimed anywhere else.
   marker on launch so the next pass resumes from the last committed page. A job
   is the *view* of a pass, not the record of one.
 
-- **Four connectors are migrated onto the engine, not fifteen.**
-  `custom_api`, `gmail`, `gdrive` and `gcal` are on it — all three Google
-  sources now. Every connector declares its manifest, uses the capability floor
-  and reports health. Slack, Telegram, the MCP family and the on-device sources
-  still run their own hand-written `sync()`, so they do not yet get per-page
-  checkpoints or identity-based dedup. That is the migration order §4 sets out
-  — shared infrastructure first — and it is deliberately unfinished rather than
-  rushed.
+- **Six connectors are migrated onto the engine, not fifteen.**
+  `custom_api`, `gmail`, `gdrive`, `gcal`, `slack` and `telegram` are on it —
+  every account-backed source except the MCP family. Every connector declares
+  its manifest, uses the capability floor and reports health. What remains
+  hand-written is the **MCP family** and the **on-device sources**, and both are
+  different enough to be worth their own reasoning rather than a queue position:
 
-  **Slack and Telegram are next**, and they are the first that are not Google.
-  Both have tight rate limits, so they gain most from the gate; both carry
-  conversations, so `SupportsMessaging` applies as well as the sync path.
+  * **MCP** is one connector per configured server, and its sync already budgets
+    records across tools. Its `fetch` would be over *tools*, not pages.
+  * **On-device** sources read local files. They cannot be rate-limited, their
+    listing is cheap, and `files` already keeps a per-folder watermark — so the
+    engine buys them checkpointing and provenance, and little else.
 
 - **A name that does not resolve is allowed through.** `outbound.py` refuses
   loopback and link-local by literal, by name and by resolution, and re-checks

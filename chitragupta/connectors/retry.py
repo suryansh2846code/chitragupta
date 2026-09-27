@@ -175,8 +175,22 @@ def with_retries(
     exact delays, which is the only way to know a backoff is bounded.
     """
     clock = now or (lambda: datetime.now(UTC))
-    classifier = classify or (
-        lambda exc: classify_exception(connector, exc, label=label))
+
+    def classify_one(exc: BaseException) -> ConnectorError:
+        """The failure, classified — or kept, if it already was.
+
+        **An already-classified error passes through untouched.** A connector
+        that knows more than the transport does should say so by raising a
+        `ConnectorError`, and Slack has to: it answers `ratelimited` with a
+        **200**, so nothing in the HTTP layer can see it. Re-classifying that
+        turned a retryable rate limit into `UNKNOWN`, which is not retryable —
+        so the one case that most needed a second attempt got none.
+        """
+        if isinstance(exc, ConnectorError):
+            return exc
+        return classify_exception(connector, exc, label=label)
+
+    classifier = classify or classify_one
 
     spent = 0.0
     last: ConnectorError | None = None
