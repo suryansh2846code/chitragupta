@@ -3190,3 +3190,9 @@ button.tiny.running:hover { background: linear-gradient(to right,
   border: 1px solid var(--line); }
 .action-card[data-settled="cancelled"] .ac-head { text-decoration: line-through;
   text-decoration-color: var(--faint); }
+
+/* What kind of card this is. Beside the status, and quieter than it: the
+   status is what changed, the kind is what it has always been. */
+.ac-kind { display: inline-block; font-size: 10px; text-transform: uppercase;
+  letter-spacing: .5px; padding: 2px 7px; margin-right: 6px; border-radius: 5px;
+  border: 1px solid var(--line2); color: var(--muted); vertical-align: middle; }

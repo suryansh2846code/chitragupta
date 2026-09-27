@@ -36,6 +36,8 @@ CATALOG = {
         "fields": ["name", "trigger", "agent", "interval_min", "instruction"],
         "risk": "red", "reversible": True,
         "always_ask_because": "Creating automations always needs your approval.",
+        #: What names this action. Everything else on the card is correctable.
+        "identity": ["name"],
     },
 }
 
@@ -54,8 +56,9 @@ LOGGED = {"type": "create_routine",
           "at": "2026-09-26T16:10:05+00:00"}
 
 
-def drive(action=None, *, ran=None, card_state=None, plan=None):
-    payload = {"catalog": CATALOG, "result": {"ok": True, "detail": "made"}}
+def drive(action=None, *, ran=None, card_state=None, plan=None, catalog=None):
+    payload = {"catalog": catalog or CATALOG,
+               "result": {"ok": True, "detail": "made"}}
     if plan is not None:
         payload["plan"] = plan
     else:
@@ -110,11 +113,43 @@ def test_the_bookkeeping_the_confirm_added_does_not_stop_the_match():
 
 
 def test_a_card_proposing_more_than_the_action_did_is_not_a_match():
-    """Containment runs one way. A card naming a day filter the action never
-    carried is a different card, and drawing it done would claim the automation
-    has a schedule it does not."""
+    """Containment runs one way, and an action that declares no identity is
+    judged on every field."""
+    plain = dict(CATALOG["create_routine"])
+    plain.pop("identity")
     thin = {**LOGGED, "params": {"name": PARAMS["name"]}}
-    assert drive(ran=[thin])["settled"] == ""
+    out = drive(ran=[thin], catalog={"create_routine": plain})
+    assert out["settled"] == ""
+
+
+# ── a field the user corrected before confirming ───────────────────────────
+
+def test_a_card_whose_field_was_edited_still_finds_its_own_run():
+    """The failure on the user's own machine. The agent box was changed before
+    Confirm — which is what the boxes are FOR, and what executes is what is on
+    the card at that moment. The run was logged with the edited value, so the
+    card could never match itself and sat pending underneath the result of
+    itself."""
+    edited = {**LOGGED,
+              "params": {**PARAMS, "agent": "cheif of staff", "agent_id": "x"}}
+    assert drive(ran=[edited])["settled"] == "done"
+
+
+def test_a_different_automation_is_still_a_different_card():
+    """The identity has to stay specific enough that a correction and a
+    different thing do not look alike."""
+    other = {**LOGGED, "params": {**PARAMS, "name": "Something else"}}
+    assert drive(ran=[other])["settled"] == ""
+
+
+def test_without_an_identity_an_edit_still_blocks_the_match():
+    """The default is the strict rule, and it must stay the default: an action
+    that has not thought about this can only fail to settle a card, never
+    settle the wrong one."""
+    plain = dict(CATALOG["create_routine"])
+    plain.pop("identity")
+    edited = {**LOGGED, "params": {**PARAMS, "agent": "someone else"}}
+    assert drive(ran=[edited], catalog={"create_routine": plain})["settled"] == ""
 
 
 # ── one action settles one card ────────────────────────────────────────────
@@ -183,3 +218,60 @@ def test_a_plan_with_only_some_steps_run_keeps_its_buttons():
     out = drive(plan=PLAN, ran=plan_ran("A"))
     assert out["settled"] != "done", out["text"]
     assert "Approve &" in out["text"]
+
+
+# ── a whole conversation, drawn in order ───────────────────────────────────
+
+def sequence(items, ran):
+    payload = {"catalog": CATALOG, "sequence": items, "ran": ran,
+               "result": {"ok": True, "detail": "made"}}
+    proc = subprocess.run(
+        ["node", str(ROOT / "tests/js/action_card_plain.mjs"), str(WEB / "app.js")],
+        input=json.dumps(payload), capture_output=True, text=True, timeout=60)
+    assert proc.returncode == 0, proc.stderr[-2000:]
+    out = json.loads(proc.stdout)
+    for card in out["cards"]:
+        assert card["error"] is None, card["error"]
+    return out["cards"]
+
+
+def test_one_action_settles_one_card_and_the_next_still_asks():
+    """Claiming only exists ACROSS cards, so drawing one can never show it.
+    Three identical proposals and two runs: the first two settle, the third is
+    still a question."""
+    drawn = sequence([ACTION, ACTION, ACTION], [LOGGED, LOGGED])
+
+    assert [c["settled"] for c in drawn] == ["done", "done", ""]
+    assert [c["hasButtons"] for c in drawn] == [False, False, True]
+
+
+def test_the_real_conversation_that_reported_this():
+    """Four automation cards from one chat, three of which ran and one of
+    which failed after its agent box was corrected. Every one of them was
+    drawn pending."""
+    def routine(name, agent):
+        return {"type": "create_routine",
+                "params": {**PARAMS, "name": name, "agent": agent}}
+
+    def logged(name, agent, ok=True):
+        return {"type": "create_routine",
+                "params": {**PARAMS, "name": name, "agent": agent,
+                           "agent_id": "chief-of-staff"},
+                "ok": ok, "detail": "no agent called that" if not ok else "made",
+                "verified_at": "", "log_id": name + agent,
+                "reversible": True, "at": ""}
+
+    drawn = sequence(
+        [routine("Water", "chotu"),
+         routine("Notify", "inbox"),
+         routine("Notify", "chotu"),
+         routine("Notify", "Chief of Staff")],
+        # Oldest last, the way the endpoint answers.
+        [logged("Notify", "Chief of Staff"),
+         logged("Notify", "cheif of staff", ok=False),
+         logged("Notify", "inbox"),
+         logged("Water", "chotu")])
+
+    assert [c["settled"] for c in drawn] == ["done", "done", "failed", "done"]
+    # The failure keeps its buttons; the three that worked do not.
+    assert [c["hasButtons"] for c in drawn] == [False, False, True, False]

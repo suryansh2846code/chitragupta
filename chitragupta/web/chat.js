@@ -399,6 +399,34 @@ const NOT_TYPEABLE = new Set(["items", "blocks", "arguments", "agent_id",
 //: 5em box.
 const LONG_FIELDS = new Set(["body", "text", "description", "instruction", "note"]);
 
+//: What kind of thing a card is, in one word.
+//:
+//: A conversation fills up with cards that all look alike, and a settled one
+//: has lost its buttons — so there is *less* left to recognise it by, not more.
+//: The chip is the fast way to tell an automation from an email while
+//: scrolling. A word, never the action id: `create_routine` is ours.
+//:
+//: By family rather than per action, because "Email" is the useful answer for
+//: both sending one and drafting one. Anything not named here falls back to
+//: "Action", so a new action is plain rather than blank.
+const CARD_KIND = {
+  create_routine: "Automation",
+  send_email: "Email", create_draft: "Email",
+  mail_triage: "Inbox",
+  create_event: "Calendar", update_event: "Calendar", cancel_event: "Calendar",
+  set_reminder: "Reminder",
+  create_task: "Task", create_followup: "Task",
+  message_send: "Message",
+  notify: "Notification",
+  log_workout: "Training",
+  drive_create_doc: "Document", drive_share: "Document",
+  mcp_action: "Connector",
+};
+
+function cardKind(type) {
+  return CARD_KIND[type] || "Action";
+}
+
 //: What the three tiers say on a card. The words are the user's, not the
 //: enum's: "green" means nothing to a person, "this reaches nobody" does.
 const RISK_NOTE = {
@@ -453,6 +481,9 @@ function planCard(plan) {
   const el = document.createElement("div");
   el.className = "action-card";
   el.dataset.card = key;
+  // Its own kind, not the steps'. A plan is the card whose one button does the
+  // most, and that is the thing worth recognising at a glance.
+  el.dataset.kind = "Plan";
   el.dataset.risk = worst;
   // The middle of the card, held as a fragment because the settled version
   // rebuilds around exactly the same body. Not wrapped in an element of its
@@ -463,7 +494,7 @@ function planCard(plan) {
     <div class="pl-steps">${listed}${
       rest > 0 ? `<div class="pl-step muted">and ${rest} more</div>` : ""}</div>`;
   el.innerHTML = `<div class="ac-head">${
-      steps.length} action${steps.length === 1 ? "" : "s"} ready<span class="ac-tag">needs your confirmation</span></div>
+      steps.length} action${steps.length === 1 ? "" : "s"} ready<span class="ac-kind">Plan</span><span class="ac-tag">needs your confirmation</span></div>
     ${body}
     ${note ? `<div class="ac-row muted ac-risk">${esc(note)}</div>` : ""}
     <div class="ac-actions"><button class="ac-confirm">Approve &amp; do ${
@@ -479,7 +510,7 @@ function planCard(plan) {
     const done = settled.state === "done";
     el.dataset.settled = settled.state;
     el.innerHTML = `<div class="ac-head">${
-        steps.length} action${steps.length === 1 ? "" : "s"}<span class="ac-tag">${
+        steps.length} action${steps.length === 1 ? "" : "s"}<span class="ac-kind">Plan</span><span class="ac-tag">${
         done ? "done" : "cancelled"}</span></div>
       ${body}
       <div class="ac-result">${done
@@ -968,15 +999,32 @@ function settledState(key, steps) {
  *  Containment, not equality: the confirm adds `agent_id` on the way through,
  *  so what was logged is always a superset of what the card proposed. Oldest
  *  first, because cards are drawn in the order they were proposed.
+ *
+ *  **Compared on the fields that NAME the action**, when the registry says
+ *  which those are. The boxes on a card are editable on purpose — what runs is
+ *  what is on the card when Confirm is pressed, never what was proposed — so a
+ *  card whose agent box was corrected logged a run it could never match, and
+ *  sat pending forever underneath the result of itself. An action that declares
+ *  no identity is still judged on every field, which can only fail to settle a
+ *  card rather than settle the wrong one.
  */
 function claimRan(step) {
-  const want = step.params || {};
+  const spec = ACTION_CATALOG[step.type] || {};
+  const names = Array.isArray(spec.identity) ? spec.identity : [];
+  const all = step.params || {};
+  const want = names.length
+    ? Object.fromEntries(names.filter((k) => all[k] !== undefined)
+        .map((k) => [k, all[k]]))
+    : all;
+  // An identity naming nothing this card carries would match every action of
+  // the type. Fall back to the strict comparison rather than guess.
+  const compare = Object.keys(want).length ? want : all;
   for (let i = CARD_RAN.length - 1; i >= 0; i--) {
     const entry = CARD_RAN[i];
     if (entry.claimed || entry.type !== step.type) continue;
     const had = entry.params || {};
-    const same = Object.keys(want).every((k) =>
-      String(had[k] === undefined ? "\u0000" : had[k]) === String(want[k]));
+    const same = Object.keys(compare).every((k) =>
+      String(had[k] === undefined ? "\u0000" : had[k]) === String(compare[k]));
     if (!same) continue;
     entry.claimed = true;
     return entry;
@@ -1180,6 +1228,7 @@ function actionCard(a) {
   el.className = "action-card";
   // The key it will have on every render, including the next reload.
   el.dataset.card = key;
+  el.dataset.kind = cardKind(a.type);
   // The tier as an attribute, so the card can be styled and tested by what it
   // actually is rather than by reading its prose.
   el.dataset.risk = spec.risk || "";
@@ -1190,6 +1239,7 @@ function actionCard(a) {
       <span class="ac-dot red"></span><span class="ac-dot yellow"></span><span class="ac-dot green"></span>
     </div>
     <div class="ac-head">${title}</div>
+    <span class="ac-kind">${esc(el.dataset.kind)}</span>
     <span class="ac-tag">needs your confirmation</span>
     ${rows}
     ${note ? `<div class="ac-row muted ac-risk">${esc(note)}</div>` : ""}
@@ -1212,6 +1262,7 @@ function actionCard(a) {
         <span class="ac-dot red"></span><span class="ac-dot yellow"></span><span class="ac-dot green"></span>
       </div>
       <div class="ac-head">${title}</div>
+      <span class="ac-kind">${esc(el.dataset.kind)}</span>
       <span class="ac-tag">${done ? "done" : "cancelled"}</span>
       ${rows}
       <div class="ac-result">${done

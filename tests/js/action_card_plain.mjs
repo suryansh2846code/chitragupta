@@ -16,7 +16,7 @@ import { appSource } from "./_app_source.mjs";
 
 const APP_JS = process.argv[2];
 const { action, plan, reply, result, edits, catalog, undoResult, cardState,
-        press, ran } =
+        press, ran, sequence } =
   JSON.parse(fs.readFileSync(0, "utf8"));
 
 const makeEl = (tag = "div") => {
@@ -195,6 +195,34 @@ if (reply !== undefined) {
   };
 }
 
+// A whole conversation's worth of cards, drawn in order in one process.
+//
+// Claiming is the behaviour that only exists ACROSS cards: one logged action
+// settles one card, and which card gets it depends on the order they are drawn
+// in. A harness that draws a single card cannot see any of that.
+if (sequence) {
+  const drawn = [];
+  for (const item of sequence) {
+    let one = null, oops = null;
+    try {
+      one = item.steps ? globalThis.__plan(item) : globalThis.__card(item);
+    } catch (e) {
+      oops = `${e.constructor.name}: ${e.message}`;
+    }
+    drawn.push({
+      error: oops,
+      settled: one ? (one.dataset.settled || "") : "",
+      kind: one ? (one.dataset.kind || "") : "",
+      cardKey: one ? (one.dataset.card || "") : "",
+      hasButtons: one ? one.innerHTML.includes("ac-confirm") : false,
+      text: one ? visibleText(one).replace(/\s+/g, " ").trim() : "",
+    });
+  }
+  console.log(JSON.stringify({ error: null, cards: drawn,
+                               ranLeft: globalThis.__ranLeft() }, null, 2));
+  process.exit(0);
+}
+
 let error = null, card = null;
 try {
   if (plan) card = globalThis.__plan(plan);
@@ -285,6 +313,8 @@ console.log(JSON.stringify({
   //: What the card was drawn as, and what it told the server it became.
   settled: card ? (card.dataset.settled || "") : "",
   cardKey: card ? (card.dataset.card || "") : "",
+  //: What kind of thing the card says it is.
+  kind: card ? (card.dataset.kind || "") : "",
   //: Entries no card has claimed yet. One logged action settles one card.
   ranLeft: globalThis.__ranLeft(),
   remembered,

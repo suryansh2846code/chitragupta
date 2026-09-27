@@ -212,6 +212,22 @@ class ActionSpec:
     connector: str = ""
     capability: str = ""
 
+    #: The fields that **name** this action, rather than describe it.
+    #:
+    #: A card in a reopened conversation has to recognise its own run in the
+    #: action log, and a stored message and a log row share no id — only the
+    #: parameters. Matching on all of them is right until the user corrects a
+    #: field before pressing Confirm, which is exactly what the fields are for:
+    #: what executes is what is on the card at that moment, never what was
+    #: proposed. A card whose agent box was edited then logged a run it could
+    #: never match, and sat pending forever underneath the result of itself.
+    #:
+    #: So this is the subset that survives a correction. An automation is its
+    #: name; an email is who it goes to and what it is about. Empty means every
+    #: field must match — the safe default, because it can only fail to settle
+    #: a card, never settle the wrong one.
+    identity: tuple[str, ...] = ()
+
     def public(self) -> dict[str, Any]:
         """What the card needs to render itself, without the callables."""
         return {
@@ -230,6 +246,7 @@ class ActionSpec:
             # twice.
             "connector": self.connector,
             "capability": self.capability,
+            "identity": list(self.identity),
         }
 
 
@@ -1716,6 +1733,7 @@ def _public_share_asks(params: dict) -> str:
 
 REGISTRY: dict[str, ActionSpec] = {
     "send_email": ActionSpec(
+        identity=("to", "subject"),
         handler=_send_email, label="Send email", schedulable=True,
         connector="gmail", capability="send:email",
         fields=["to", "cc", "subject", "body", "attach"],
@@ -1724,6 +1742,7 @@ REGISTRY: dict[str, ActionSpec] = {
         # No undo: it has left the machine and no API takes it back.
     ),
     "create_draft": ActionSpec(
+        identity=("to", "subject"),
         handler=_create_draft, label="Save a draft",
         connector="gmail", capability="create:draft",
         fields=["to", "cc", "subject", "body", "attach"],
@@ -1755,6 +1774,7 @@ REGISTRY: dict[str, ActionSpec] = {
         # tells the user a thing was sent that is still sitting unsent.
     ),
     "create_event": ActionSpec(
+        identity=("title", "start"),
         handler=_create_event, label="Create calendar event",
         connector="gcal", capability="create:event",
         schedulable=True,
@@ -1764,6 +1784,7 @@ REGISTRY: dict[str, ActionSpec] = {
         undo=_undo_event, undo_label="Remove the event",
     ),
     "update_event": ActionSpec(
+        identity=("event_id",),
         handler=_update_event, label="Change a calendar event",
         connector="gcal", capability="update:event",
         fields=["event_id", "title", "start", "end", "location",
@@ -1782,6 +1803,7 @@ REGISTRY: dict[str, ActionSpec] = {
         undo=_undo_update, undo_label="Put it back",
     ),
     "cancel_event": ActionSpec(
+        identity=("event_id",),
         handler=_cancel_event, label="Cancel a calendar event",
         connector="gcal", capability="cancel:event",
         fields=["event_id"],
@@ -1807,6 +1829,7 @@ REGISTRY: dict[str, ActionSpec] = {
     # the repo including merging a pull request. The comment's Undo survived
     # as a retraction, because GitHub's server publishes no way to delete one.
     "create_followup": ActionSpec(
+        identity=("about",),
         handler=_create_followup, label="Track a follow-up",
         # Reaches no external system — one row in the user's own brain.
         fields=["about", "who", "due", "thread_id"],
@@ -1816,6 +1839,7 @@ REGISTRY: dict[str, ActionSpec] = {
         undo=_undo_followup, undo_label="Stop tracking it",
     ),
     "notify": ActionSpec(
+        identity=("message",),
         handler=_notify, label="Tell me",
         fields=["message", "title"],
         # The engine's own, for delivering a reminder. See `internal`.
@@ -1830,6 +1854,7 @@ REGISTRY: dict[str, ActionSpec] = {
             "operating system does not report whether it was seen"),
     ),
     "create_task": ActionSpec(
+        identity=("title",),
         handler=_create_task, label="Add task",
         # Reaches no external system — one row in the user's own brain.
         fields=["title", "due", "thread_id"],
@@ -1839,6 +1864,7 @@ REGISTRY: dict[str, ActionSpec] = {
         undo=_undo_task, undo_label="Remove it",
     ),
     "set_reminder": ActionSpec(
+        identity=("message",),
         handler=_set_reminder, label="Set reminder",
         # Reaches no external system — one row in the user's own brain.
         fields=["message", "at"],
@@ -1848,6 +1874,7 @@ REGISTRY: dict[str, ActionSpec] = {
         undo=_undo_row("reminder", "reminder"), undo_label="Cancel it",
     ),
     "create_routine": ActionSpec(
+        identity=("name",),
         # Three of these are about a clock and one trigger is not a clock. See
         # `depends_on` — this is the case it was written for.
         depends_on={"at": ("trigger", ("daily",)),
@@ -1914,6 +1941,7 @@ REGISTRY: dict[str, ActionSpec] = {
         undo=_undo_triage, undo_label="Put them back",
     ),
     "message_send": ActionSpec(
+        identity=("app", "chat"),
         handler=_message_send, label="Send a message",
         connector="", capability="send:message",
         # `at` is on the card because "tell Rahul at six" is a thing people
@@ -1954,6 +1982,7 @@ REGISTRY: dict[str, ActionSpec] = {
     # audit. One tap each, until there is a key worth showing.
 
     "drive_create_doc": ActionSpec(
+        identity=("title",),
         handler=_drive_create_doc, label="Create a document",
         connector="gdrive", capability="create:document",
         fields=["title", "text"],
@@ -1965,6 +1994,7 @@ REGISTRY: dict[str, ActionSpec] = {
         undo=_undo_drive_doc, undo_label="Move it to the bin",
     ),
     "drive_share": ActionSpec(
+        identity=("file_id", "email"),
         handler=_drive_share, label="Share a document",
         connector="gdrive", capability="share:document",
         fields=["file_id", "email", "role"],

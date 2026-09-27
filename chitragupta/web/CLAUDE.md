@@ -83,7 +83,17 @@ script out of eleven does not fail; it passes.
   on the way through, so the logged params are always a superset) and each entry
   is **claimed once** (two identical proposals are two cards). The recorded
   answer still wins, because a cancellation never runs and so exists nowhere
-  else. A plan settles only when every step is matched.
+  else. A plan settles only when every step is matched. Matched on the fields
+  that **name** the action (`ActionSpec.identity`, published in the catalog),
+  not on all of them: the boxes are editable on purpose, so a card whose agent
+  box was corrected before Confirm logged a run it could never match and sat
+  pending under the result of itself. An action declaring no identity keeps the
+  strict all-fields rule, which can only fail to settle a card rather than
+  settle the wrong one.
+- **Every card says what kind it is.** `CARD_KIND` in `chat.js` — "Automation",
+  "Email", "Calendar" — beside the status. A conversation fills with cards that
+  look alike, and a settled one has lost its buttons, so there is *less* left to
+  recognise it by. A word, never the action id.
 - **Every left-nav item opens a screen.** The slide-over drawer is gone:
   `tasks` moved into Inbox and `tools` became the Agents & tools panel, and
   those were its only two occupants. `openDrawer()` kept its name — four call
