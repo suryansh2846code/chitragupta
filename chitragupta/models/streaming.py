@@ -63,9 +63,37 @@ class _ToolAssembly:
                         arguments=args)
 
 
+#: What goes between two of the model's text blocks.
+#:
+#: Anthropic returns prose in blocks and a response can carry several — it
+#: writes a sentence, calls a tool, writes more; the Claude CLI backend runs a
+#: whole loop of its own and streams every message through this parser. Joined
+#: with "", the seam vanished and the user read "…automations first.Checked —
+#: write access…": two paragraphs run together into one word.
+#:
+#: Within a block the empty join is right, because those are fragments of one
+#: sentence. Between them it never was.
+BLOCK_BREAK = "\n\n"
+
+
+def paragraphs(blocks: list[list[str]]) -> str:
+    """The model's text blocks as one answer, one blank line between them.
+
+    A block that carried nothing is dropped rather than padded around: an empty
+    text block sits beside a tool call in most tool-using turns, and honouring
+    one would put a hole in the middle of the answer.
+    """
+    return BLOCK_BREAK.join(
+        joined for joined in ("".join(block) for block in blocks) if joined)
+
+
 @dataclass
 class _Accumulator:
-    text: list[str] = field(default_factory=list)
+    #: The deltas of each text block, kept per block. A flat list was the bug:
+    #: where one block ended and the next began is exactly what it threw away.
+    #: One open block to start with, because OpenAI's wire has no block events
+    #: and streams straight into it.
+    text: list[list[str]] = field(default_factory=lambda: [[]])
     tools: dict = field(default_factory=dict)
     input_tokens: int = 0
     output_tokens: int = 0
@@ -79,7 +107,7 @@ class _Accumulator:
     def result(self) -> ChatResult:
         calls = [a.finish() for _, a in sorted(self.tools.items())]
         return ChatResult(
-            text="".join(self.text),
+            text=paragraphs(self.text),
             tool_calls=[c for c in calls if c is not None],
             finish_reason=self.finish_reason,
             input_tokens=self.input_tokens,
@@ -132,6 +160,15 @@ def anthropic_events(payloads: Iterable[str]) -> Iterator[StreamEvent]:
             if block.get("type") == "tool_use":
                 acc.tools[event.get("index", len(acc.tools))] = _ToolAssembly(
                     id=block.get("id", ""), name=block.get("name", ""))
+            elif block.get("type") == "text":
+                # A second block of prose is a second paragraph, not the next
+                # word of the first. The separator is yielded as well as
+                # recorded: the live preview is assembled from these events, so
+                # fixing only the result would leave the user watching the two
+                # run together as they arrived.
+                if any(acc.text[-1]):
+                    acc.text.append([])
+                    yield StreamEvent("text", BLOCK_BREAK)
             elif block.get("type") in ("thinking", "redacted_thinking"):
                 # Collected but never yielded as text. Thinking is not the
                 # answer, and streaming it into the reply would put the model's
@@ -142,7 +179,7 @@ def anthropic_events(payloads: Iterable[str]) -> Iterator[StreamEvent]:
             if delta.get("type") == "text_delta":
                 chunk = delta.get("text") or ""
                 if chunk:
-                    acc.text.append(chunk)
+                    acc.text[-1].append(chunk)
                     yield StreamEvent("text", chunk)
             elif delta.get("type") == "input_json_delta":
                 slot = acc.tools.get(event.get("index"))
@@ -194,7 +231,7 @@ def openai_events(payloads: Iterable[str]) -> Iterator[StreamEvent]:
             delta = choice.get("delta") or {}
             text = delta.get("content")
             if text:
-                acc.text.append(text)
+                acc.text[-1].append(text)
                 yield StreamEvent("text", text)
             for call in delta.get("tool_calls") or []:
                 # `index` is what ties the fragments of one call together; a

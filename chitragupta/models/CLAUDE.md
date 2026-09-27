@@ -47,6 +47,16 @@ on every replayed assistant turn, or round two of a tool loop is a 400. A model
 we guessed wrong about costs one silent retry, never an error message about a
 feature the user never asked for and cannot see.
 
+**Two of the model's text blocks are two paragraphs, never one word.** A
+response carries several `text` blocks — prose, a tool call, more prose — and
+the Claude CLI backend streams a whole loop of them through one parser. Joined
+with `""`, the seam vanished and a user read "…automations first.Checked — write
+access…". `streaming.paragraphs` is the one rule; the empty join is right
+*within* a block and was never right *between* them, and the separator is
+yielded as a `text` event as well as recorded, or the live preview and the
+stored message disagree. `chat()` closes the same seam, because it is the
+fallback whenever a stream breaks.
+
 **This package is a DAG and must stay one.** It was one strongly-connected
 component of fourteen modules — every provider plus the catalog, entitlements,
 errors and the registry — and `ruff` was clean throughout, because every edge

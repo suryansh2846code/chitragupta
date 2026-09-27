@@ -23,6 +23,10 @@ from . import caching, reasoning
 from .base import DEFAULT_MAX_OUTPUT, ChatResult, LLMProvider, Message, ToolCall, _saved_key
 from .errors import ErrorKind, ProviderError, classify_exception, classify_http
 
+# Below this module in the package layering, so it is imported here rather
+# than inside a function: a lazy import is a real dependency either way.
+from .streaming import paragraphs
+
 log = get_logger(__name__)
 
 
@@ -301,7 +305,10 @@ class AnthropicProvider(LLMProvider):
         # counted; what it cost is the separate number beside it.
         read, written = caching.cache_stats(usage)
         return ChatResult(
-            text="".join(text_parts),
+            # One blank line between blocks, not nothing. `chat()` is the
+            # fallback whenever a stream breaks, so the seam had to be closed
+            # in both places or it would come back on the first failure.
+            text=paragraphs([[part] for part in text_parts]),
             tool_calls=calls,
             raw=data,
             finish_reason=data.get("stop_reason", "stop"),
