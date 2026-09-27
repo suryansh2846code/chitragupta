@@ -120,14 +120,16 @@ def test_an_unanswered_plan_still_asks():
     assert "Approve &" in out["text"]
 
 
-def test_a_failed_plan_keeps_its_buttons():
-    """Half a plan running is exactly when the second attempt matters, so a
-    failure is not settled the way the other two are."""
+def test_a_failed_plan_is_settled_like_the_other_two():
+    """This used to keep its buttons, on the argument that the second attempt
+    is the one that counts. It is the wrong trade for a PLAN in particular:
+    half its steps have already run, and the button runs all of them. Trying
+    again means asking the agent, which proposes only what is still missing."""
     out = drive(card_state={key_of(): {"state": "failed",
                                        "detail": "Google said no"}})
     assert out["settled"] == "failed"
     assert "Google said no" in out["text"]
-    assert "Approve &" in out["text"]
+    assert "Approve &" not in out["text"], out["text"]
 
 
 # ── answering one records it ───────────────────────────────────────────────

@@ -230,6 +230,10 @@ try {
 } catch (e) {
   error = `${e.constructor.name}: ${e.message}`;
 }
+// **Read before anything is clicked.** Answering a card marks it, so a single
+// `settled` read at the end cannot tell "it was drawn settled" from "it became
+// settled just now" — and every test about how a card is DRAWN means the first.
+const settledAtDraw = card ? (card.dataset.settled || "") : "";
 
 // Let the caller correct the card the way a person would, before confirming.
 // This is the whole feature: what executes must be what is on screen NOW.
@@ -310,8 +314,10 @@ console.log(JSON.stringify({
     ? findAll(card, "ac-field ac-field-wide").map((b) => (b.attrs || {})["aria-label"])
     : [],
   risk: card ? card.dataset.risk : null,
-  //: What the card was drawn as, and what it told the server it became.
-  settled: card ? (card.dataset.settled || "") : "",
+  //: What the card was drawn as — before any click. See `settledAtDraw`.
+  settled: settledAtDraw,
+  //: And what it became after the harness answered it.
+  settledAfter: card ? (card.dataset.settled || "") : "",
   cardKey: card ? (card.dataset.card || "") : "",
   //: What kind of thing the card says it is.
   kind: card ? (card.dataset.kind || "") : "",

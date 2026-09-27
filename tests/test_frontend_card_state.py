@@ -168,6 +168,21 @@ def test_a_failed_confirm_is_recorded_as_failed():
     assert "Gmail said no" in posted[0]["detail"]
 
 
+def test_the_card_on_screen_agrees_with_the_one_a_reload_would_draw():
+    """The element in front of the user is not redrawn until the next visit, so
+    it kept its original tag — "needs your confirmation" over the sentence
+    saying why it had already been attempted. The same contradiction the
+    reloaded card had, arriving by a different route."""
+    for result, expected in [({"ok": True, "detail": "Made"}, "done"),
+                             ({"ok": False, "error": "Gmail said no"}, "failed")]:
+        out = drive(result=result, confirm=True)
+        assert out["settledAfter"] == expected, (result, out["settledAfter"])
+
+
+def test_cancelling_marks_the_card_on_screen_too():
+    assert drive(press="cancel")["settledAfter"] == "cancelled"
+
+
 # ── the key is about the card, not about when it was drawn ────────────────
 
 def test_the_same_proposal_keys_the_same_every_time():

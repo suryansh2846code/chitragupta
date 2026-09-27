@@ -364,6 +364,48 @@ Many users, many machines. Do not bake in anything specific to one of either.
 
 ## Working in this repo
 
+### Fix the shape, not the instance
+
+**A bug reported about one case is a report about every case that shares its
+shape. Find the shape first, fix it once, and say which other cases you
+checked.** A fix that touches only the screen in the screenshot is a fix the
+user has to report again, in a different screenshot, and they are right to be
+annoyed by the second one.
+
+This is not a licence to widen the task. The scope stays what was asked; what
+changes is *where* you put the fix inside it.
+
+The question to ask before writing anything: **why was this possible at all?**
+Usually the answer is a rule living in two places, or a case handled by a path
+of its own.
+
+- Two paths for one decision. Action cards drew `done` and `cancelled` through
+  a settled renderer and patched `failed` into the pending one — so a failed
+  card kept its buttons, its form and a tag reading *needs your confirmation*
+  over the sentence explaining why it had already been attempted. One
+  `settledCard` now, used by every card and every state, so the next state
+  cannot be half-done.
+- A fix applied per case. `actionCard` learned to remember what it settled as
+  and `planCard` did not, because `planCard` was not in front of me. A plan
+  card's button runs *every* step, so it was the worse of the two to miss.
+- A rule inferred instead of read. The automation card wrote its own schedule
+  sentence and understood two triggers out of three; `routineWhen` already
+  existed, and its own comment claimed the card used it.
+
+Three checks before you call it done:
+
+1. **Who else does this?** `grep` for the pattern, not the symptom. Two
+   renderers built confirmable cards; every action type is a branch inside one
+   of them, which is what made the fix land once.
+2. **Does the test say the shape or the instance?** "A failed card has no
+   button" is worth more than "the automation card has no button", and
+   parametrising it over every type is usually two lines.
+3. **Verify against the real thing, not only the harness.** A fake DOM and a
+   fixture agree with whatever you wrote. The user's own database is what
+   showed that the card store held **0 rows** while the action log held every
+   approval they were complaining about — and that the whole design was
+   pointed at the wrong source of truth.
+
 ### Pick the narrowest mode that solves the problem
 
 **IMPLEMENT** · **REVIEW** · **DEBUG** · **TEST** · **AUDIT** · **PROFILE** ·

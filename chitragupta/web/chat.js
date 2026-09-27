@@ -506,30 +506,14 @@ function planCard(plan) {
   // coming back with its button intact is not one duplicate — it is a second
   // copy of the whole plan.
   const settled = settledState(key, steps);
-  if (settled && settled.state !== "failed") {
-    const done = settled.state === "done";
-    el.dataset.settled = settled.state;
-    el.innerHTML = `<div class="ac-head">${
-        steps.length} action${steps.length === 1 ? "" : "s"}<span class="ac-kind">Plan</span><span class="ac-tag">${
-        done ? "done" : "cancelled"}</span></div>
-      ${body}
-      <div class="ac-result">${done
-        ? `<div class="ac-ok">${IC.check} ${esc(resultLine(settled.detail))}</div>`
-        : `<span class="muted">Cancelled</span>`}</div>`;
-    return el;
-  }
-  // A failure keeps every button: half a plan running is exactly when the
-  // second attempt is the one that counts.
   if (settled) {
-    el.dataset.settled = "failed";
-    el.innerHTML = el.innerHTML.replace(
-      '<div class="ac-result"></div>',
-      `<div class="ac-result"><span class="ac-err">${
-        esc(settled.detail || "It did not work")}</span></div>`);
+    return settledCard(el, settled, {
+      title: `${steps.length} action${steps.length === 1 ? "" : "s"}`,
+      body });
   }
 
   el.querySelector(".ac-cancel").onclick = () => {
-    el.querySelector(".ac-actions").innerHTML = "<span class='muted'>Cancelled</span>";
+    markAnswered(el, "cancelled");
     rememberCard(key, "cancelled");
   };
   el.querySelector(".ac-confirm").onclick = async () => {
@@ -558,8 +542,9 @@ function planCard(plan) {
       const note2 = (r.agent_note || "").trim();
       if (note2) rr.innerHTML += `<div class="ac-note">${md(note2)}</div>`;
       if ((r.undoable || []).length) rr.appendChild(undoAllButton(r.undoable));
-      // Recorded whichever way it went. A plan that half-ran is recorded as
-      // failed on purpose — it keeps its buttons, and `remember` replaces.
+      // Answered whichever way it went. A plan that half-ran is answered as
+      // failed on purpose: the steps that did run must not be offered again.
+      markAnswered(el, r.ok ? "done" : "failed");
       rememberCard(key, r.ok ? "done" : "failed",
                    { detail: r.detail || "" });
       loadReminders(); loadRoutines(); loadActionLog();
@@ -963,6 +948,74 @@ function shapeOf(params) {
     .join("&");
 }
 
+//: What each settled state is called on the card. The words are the user's:
+//: "failed" is ours, and a person reading their own conversation wants to know
+//: it did not work, not what the enum is called.
+const SETTLED_WORD = { done: "done", cancelled: "cancelled",
+                       failed: "didn\u2019t work" };
+
+/** Draw a card that has already been acted on: what it was, and what happened.
+ *
+ * **One renderer for every settled state and every kind of card.** `done` and
+ * `cancelled` went through a settled path while `failed` was patched into the
+ * pending one — so a failure kept the amber Confirm button, the whole editable
+ * form and a tag reading "needs your confirmation", directly above the sentence
+ * saying why it had already been attempted. Two paths meant the third state was
+ * always going to drift from the other two.
+ *
+ * No buttons and no boxes, whatever happened. The boxes exist to correct a
+ * proposal, and over a card that has already run they invite an edit that goes
+ * nowhere; the button is the duplicate-action hazard this whole mechanism was
+ * built to remove. Trying again means asking the agent, which is the one path
+ * that produces a fresh proposal rather than replaying an old one.
+ */
+/** Mark a card answered *in this session*, so live and reloaded agree.
+ *
+ * A card is fully redrawn from `settledCard` on the next visit. Until then the
+ * element on screen is the one the user is looking at, and it kept its original
+ * tag: after a failed confirm it read "needs your confirmation" over the
+ * sentence saying why it had already been attempted — the same contradiction
+ * the reloaded card had, arriving by a different route.
+ *
+ * The buttons are already gone by this point (the confirm replaced them), so
+ * this is the tag and the attribute the styling hangs off.
+ */
+function markAnswered(el, state) {
+  el.dataset.settled = state;
+  const tag = el.querySelector(".ac-tag");
+  if (tag) tag.textContent = SETTLED_WORD[state] || state;
+  // The slot the buttons were in. It still holds "Working…" from the confirm,
+  // which is stale the moment the answer arrives. Owned entirely here so the
+  // three handlers cannot each write something slightly different into it.
+  const actions = el.querySelector(".ac-actions");
+  if (actions) {
+    actions.innerHTML = state === "cancelled"
+      ? "<span class='muted'>Cancelled</span>" : "";
+  }
+}
+
+function settledCard(el, settled, { chrome, title, body }) {
+  const state = settled.state;
+  el.dataset.settled = state;
+  const said = esc(resultLine(settled.detail) || "");
+  el.innerHTML = `${chrome || ""}
+    <div class="ac-head">${title}</div>
+    <span class="ac-kind">${esc(el.dataset.kind || "")}</span>
+    <span class="ac-tag">${SETTLED_WORD[state] || state}</span>
+    ${body}
+    <div class="ac-result">${
+      state === "done"
+        ? `<span class="ac-ok">${IC.check} ${said}`
+          + (settled.verified_at
+            ? `<span class="ac-verified"> \u00b7 confirmed ${
+                esc(clockTime(settled.verified_at))}</span>` : "")
+          + `</span>`
+        : state === "failed"
+          ? `<span class="ac-err">${IC.close} ${said || "It did not work"}</span>`
+          : `<span class="muted">Cancelled</span>`}</div>`;
+  return el;
+}
+
 /** What this card settled as, from either source — or null if it is still a
  *  question.
  *
@@ -1250,38 +1303,13 @@ function actionCard(a) {
   // became, not as a question. Before the editors, because a settled card has
   // nothing to edit: the values are history, and a box around a historical
   // value invites a correction that goes nowhere.
-  //
-  // Rebuilt wholesale rather than by patching `.ac-tag` and `.ac-actions`,
-  // because a settled card is a different card — it has no buttons at all, and
-  // reaching in to empty them leaves the confirm handler's markup behind.
   const settled = settledState(key, [a]);
-  if (settled && settled.state !== "failed") {
-    const done = settled.state === "done";
-    el.dataset.settled = settled.state;
-    el.innerHTML = `<div class="ac-chrome" aria-hidden="true">
-        <span class="ac-dot red"></span><span class="ac-dot yellow"></span><span class="ac-dot green"></span>
-      </div>
-      <div class="ac-head">${title}</div>
-      <span class="ac-kind">${esc(el.dataset.kind)}</span>
-      <span class="ac-tag">${done ? "done" : "cancelled"}</span>
-      ${rows}
-      <div class="ac-result">${done
-        ? `<span class="ac-ok">${IC.check} ${esc(resultLine(settled.detail))}`
-          + (settled.verified_at
-            ? `<span class="ac-verified"> · confirmed ${
-                esc(clockTime(settled.verified_at))}</span>` : "")
-          + `</span>`
-        : `<span class="muted">Cancelled</span>`}</div>`;
-    return el;
-  }
-  // A failure is deliberately NOT settled: the second attempt is the one that
-  // counts, so the card keeps every button and only says what went wrong.
   if (settled) {
-    el.dataset.settled = "failed";
-    el.innerHTML = el.innerHTML.replace(
-      '<div class="ac-result"></div>',
-      `<div class="ac-result"><span class="ac-err">${
-        esc(settled.detail || "It did not work")}</span></div>`);
+    return settledCard(el, settled, {
+      chrome: `<div class="ac-chrome" aria-hidden="true">
+        <span class="ac-dot red"></span><span class="ac-dot yellow"></span><span class="ac-dot green"></span>
+      </div>`,
+      title, body: rows });
   }
 
   // Editable types grow real inputs. Held here, not looked up again later:
@@ -1298,7 +1326,7 @@ function actionCard(a) {
   const fields = actionFields(a.type, p);
   if (fields) el.appendChild(fields);
   el.querySelector(".ac-cancel").onclick = () => {
-    el.querySelector(".ac-actions").innerHTML = "<span class='muted'>Cancelled</span>";
+    markAnswered(el, "cancelled");
     rememberCard(key, "cancelled");
   };
   // What is on the card now, not what was proposed. An edit the user made and
@@ -1330,6 +1358,7 @@ function actionCard(a) {
           + (stamp ? `<span class="ac-verified"> · confirmed ${esc(stamp)}</span>` : "")
           + `</span>`;
         if (r.reversible && r.log_id) rr.appendChild(undoButton(r));
+        markAnswered(el, "done");
         rememberCard(key, "done", {
           detail: r.detail || "", log_id: r.log_id || "",
           verified_at: r.verified ? (r.verified_at || "") : "",
@@ -1338,9 +1367,10 @@ function actionCard(a) {
       }
       rr.innerHTML = `<span class="ac-err">${esc(r.error || "Failed")}</span>`
         + (note ? `<div class="ac-note">${md(note)}</div>` : "");
-      // Recorded too, so a failure does not come back as an untouched
-      // proposal — but the buttons stay, because the second attempt is the one
-      // that counts and `remember` replaces rather than refuses.
+      // Answered, whichever way it went. It was attempted, so it never goes
+      // back to being a proposal — trying again means asking the agent, which
+      // produces a fresh card rather than replaying this one.
+      markAnswered(el, "failed");
       rememberCard(key, "failed", { detail: r.error || "Failed" });
       if (r.reauth) {
         const b = document.createElement("button");

@@ -90,6 +90,15 @@ script out of eleven does not fail; it passes.
   pending under the result of itself. An action declaring no identity keeps the
   strict all-fields rule, which can only fail to settle a card rather than
   settle the wrong one.
+- **One settled renderer, every state, every card.** `settledCard` draws
+  `done`, `cancelled` and `failed` alike — no buttons, no editable boxes,
+  whatever happened. `done` and `cancelled` used to go through a settled path
+  while `failed` was patched into the pending one, so a failure kept the amber
+  Confirm, the whole form, and a tag reading *needs your confirmation* over the
+  sentence explaining why it had already been attempted. A card that was acted
+  on is never a proposal again — trying again means asking the agent, which
+  produces a fresh card instead of replaying an old one. `markAnswered` is the
+  same decision for the card already on screen, so live and reloaded agree.
 - **Every card says what kind it is.** `CARD_KIND` in `chat.js` — "Automation",
   "Email", "Calendar" — beside the status. A conversation fills with cards that
   look alike, and a settled one has lost its buttons, so there is *less* left to

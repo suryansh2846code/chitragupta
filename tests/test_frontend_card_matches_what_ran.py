@@ -170,14 +170,15 @@ def test_two_actions_are_there_for_two_cards():
     assert out["ranLeft"] == 1, "the second card's entry must survive the first"
 
 
-# ── a failure is not settled ───────────────────────────────────────────────
+# ── a failure is settled too ───────────────────────────────────────────────
 
-def test_a_failed_action_leaves_the_card_pressable():
-    """The retry is the attempt that counts."""
+def test_a_failed_action_is_settled_and_says_why():
+    """It was attempted, so it is never a proposal again — see
+    `test_frontend_settled_states.py` for why all three states are uniform."""
     out = drive(ran=[{**LOGGED, "ok": False, "detail": "Google said no"}])
     assert out["settled"] == "failed"
     assert "Google said no" in out["text"]
-    assert "Confirm &" in out["text"]
+    assert "Confirm &" not in out["text"], out["text"]
 
 
 # ── the recorded answer still wins ─────────────────────────────────────────
@@ -273,5 +274,5 @@ def test_the_real_conversation_that_reported_this():
          logged("Water", "chotu")])
 
     assert [c["settled"] for c in drawn] == ["done", "done", "failed", "done"]
-    # The failure keeps its buttons; the three that worked do not.
-    assert [c["hasButtons"] for c in drawn] == [False, False, True, False]
+    # Every one of them was acted on, so not one is a proposal any more.
+    assert [c["hasButtons"] for c in drawn] == [False, False, False, False]
