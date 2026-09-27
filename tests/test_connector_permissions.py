@@ -66,6 +66,21 @@ def test_the_refusal_tells_the_model_what_to_do_with_it():
     assert "do not answer as though" in NEEDS_PERMISSION
 
 
+def test_the_refusal_says_where_the_user_turns_it_on():
+    """"Please grant Google Calendar read access" is not an instruction anybody
+    can follow. An error that names no control is a dead end, and the user is
+    left believing the app is broken rather than that a switch is off."""
+    assert "Agents & tools" in NEEDS_PERMISSION
+    assert "Settings" in NEEDS_PERMISSION
+
+
+def test_the_refusal_forbids_naming_the_tool():
+    """It shipped as "reading it (`calendar_lookup`) is still blocked". The
+    user has never seen a tool name; one in a sentence about their calendar
+    reads as a fault in the app, not as something they can fix."""
+    assert "Never name a tool" in NEEDS_PERMISSION
+
+
 def test_the_gate_is_at_execution_not_in_the_prompt():
     """A model told "ask first" will sometimes not."""
     ran = {"n": 0}

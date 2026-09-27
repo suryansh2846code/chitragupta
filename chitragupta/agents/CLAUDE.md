@@ -39,6 +39,13 @@ permissions — and `library.py`, which is what Chitragupta *offers*.
   (a turn, from `@` or *Allow once*), `always` (per agent+connector), `unrestricted` —
   declared by a template, and only Chief of Staff has it.
   [`connector-permissions.md`](../../docs/development/connector-permissions.md)
+  **The refusal names a screen and never a tool.** `NEEDS_PERMISSION` is the
+  whole of what the model knows about the problem, so what it omits the user
+  never hears. It shipped saying only "ask them for it", and an agent wrote
+  "reading it (`calendar_lookup`) is still blocked. Please grant Google
+  Calendar read access" — an internal name the user has never seen, and no
+  control to go and find. It now names Settings → Agents & tools and forbids
+  printing a tool name.
 - A routine pre-authorises the routine, not the stranger who wrote the email it
   read. Outbound actions need a recipient on the explicit allow-list; everything
   else queues for one tap. Interactive chat is deliberately not gated.

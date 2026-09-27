@@ -76,8 +76,11 @@ STOPPED_OUTPUT = ToolResult("Not run — the user stopped this turn.")
 NEEDS_PERMISSION = (
     "Needs the user's permission: reading {label}. You have not been allowed to "
     "use it yet. Ask them for it in your reply — say plainly what you wanted it "
-    "for. Do not try a different connector instead, and do not answer as though "
-    "you had read it."
+    "for, and tell them where to turn it on: Settings, then Agents & tools, "
+    "then this agent. Never name a tool: the user has never seen one and a "
+    "name like `calendar_lookup` reads as a fault in the app rather than a "
+    "switch they can flip. Do not try a different connector instead, and do "
+    "not answer as though you had read it."
 )
 
 
