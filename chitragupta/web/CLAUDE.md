@@ -69,6 +69,10 @@ script out of eleven does not fail; it passes.
   deliberately not settled — the retry is the attempt that counts, so it keeps
   its buttons. `CARD_SEEN` is reset per render, or the same card keys
   differently the second time the chat is opened.
+  **`planCard` is keyed the same way and it is the one that matters most** —
+  its button runs every step at once, so an unremembered plan card is not
+  one duplicate but a second copy of the whole plan. It was the card that
+  never remembered, because the state work landed on `actionCard` alone.
 - **Every left-nav item opens a screen.** The slide-over drawer is gone:
   `tasks` moved into Inbox and `tools` became the Agents & tools panel, and
   those were its only two occupants. `openDrawer()` kept its name — four call

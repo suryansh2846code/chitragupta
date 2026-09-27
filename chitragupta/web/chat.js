@@ -433,23 +433,57 @@ function planCard(plan) {
     `<div class="ac-row"><b>${esc(label)}</b> ${n === 1 ? "once" : `${n} times`}</div>`
   ).join("") : "";
 
+  const key = planKey(plan);
   const el = document.createElement("div");
   el.className = "action-card";
+  el.dataset.card = key;
   el.dataset.risk = worst;
-  el.innerHTML = `<div class="ac-head">${
-      steps.length} action${steps.length === 1 ? "" : "s"} ready<span class="ac-tag">needs your confirmation</span></div>
+  // The middle of the card, held as a fragment because the settled version
+  // rebuilds around exactly the same body. Not wrapped in an element of its
+  // own: an extra div here changes which margins collapse against which.
+  const body = `
     ${plan.rationale ? `<div class="ac-row muted pl-why">${esc(plan.rationale)}</div>` : ""}
     ${rows}
     <div class="pl-steps">${listed}${
-      rest > 0 ? `<div class="pl-step muted">and ${rest} more</div>` : ""}</div>
+      rest > 0 ? `<div class="pl-step muted">and ${rest} more</div>` : ""}</div>`;
+  el.innerHTML = `<div class="ac-head">${
+      steps.length} action${steps.length === 1 ? "" : "s"} ready<span class="ac-tag">needs your confirmation</span></div>
+    ${body}
     ${note ? `<div class="ac-row muted ac-risk">${esc(note)}</div>` : ""}
     <div class="ac-actions"><button class="ac-confirm">Approve &amp; do ${
       steps.length === 1 ? "it" : "all"}</button>
     <button class="ac-cancel ghost">Cancel</button></div>
     <div class="ac-result"></div>`;
 
+  // Already answered on a previous visit. This card ran every step at once, so
+  // coming back with its button intact is not one duplicate — it is a second
+  // copy of the whole plan.
+  const settled = CARD_STATE[key];
+  if (settled && settled.state !== "failed") {
+    const done = settled.state === "done";
+    el.dataset.settled = settled.state;
+    el.innerHTML = `<div class="ac-head">${
+        steps.length} action${steps.length === 1 ? "" : "s"}<span class="ac-tag">${
+        done ? "done" : "cancelled"}</span></div>
+      ${body}
+      <div class="ac-result">${done
+        ? `<div class="ac-ok">${IC.check} ${esc(resultLine(settled.detail))}</div>`
+        : `<span class="muted">Cancelled</span>`}</div>`;
+    return el;
+  }
+  // A failure keeps every button: half a plan running is exactly when the
+  // second attempt is the one that counts.
+  if (settled) {
+    el.dataset.settled = "failed";
+    el.innerHTML = el.innerHTML.replace(
+      '<div class="ac-result"></div>',
+      `<div class="ac-result"><span class="ac-err">${
+        esc(settled.detail || "It did not work")}</span></div>`);
+  }
+
   el.querySelector(".ac-cancel").onclick = () => {
     el.querySelector(".ac-actions").innerHTML = "<span class='muted'>Cancelled</span>";
+    rememberCard(key, "cancelled");
   };
   el.querySelector(".ac-confirm").onclick = async () => {
     const btns = el.querySelector(".ac-actions");
@@ -477,6 +511,10 @@ function planCard(plan) {
       const note2 = (r.agent_note || "").trim();
       if (note2) rr.innerHTML += `<div class="ac-note">${md(note2)}</div>`;
       if ((r.undoable || []).length) rr.appendChild(undoAllButton(r.undoable));
+      // Recorded whichever way it went. A plan that half-ran is recorded as
+      // failed on purpose — it keeps its buttons, and `remember` replaces.
+      rememberCard(key, r.ok ? "done" : "failed",
+                   { detail: r.detail || "" });
       loadReminders(); loadRoutines(); loadActionLog();
     } catch (e) {
       rr.innerHTML = `<span class="ac-err">${esc(resultLine(e) || "That did not go through.")}</span>`;
@@ -538,6 +576,8 @@ function actionSummary(step) {
     case "set_reminder": return `Reminder: ${p.message || ""}`;
     case "message_send": return `Message ${p.chat || p.to || "someone"} on ${
       MESSAGING_APPS[(p.app || "").toLowerCase()] || p.app || "an app"}`;
+    case "create_routine": return `Automation “${p.name || "untitled"}” — ${
+      proposedWhen(p)}`;
     case "mail_triage": return triageSummary(p.items);
     case "mcp_action": return humanAction(p.tool, p.connector || p.server_id);
     default: return String(step.type || "an action").replace(/_/g, " ");
@@ -850,11 +890,34 @@ function resultLine(detail) {
  * message produces the same key every time it is drawn.
  */
 function cardKey(a) {
-  const p = a.params || {};
-  const shape = Object.keys(p).sort()
+  return keyed(`${a.type}|${shapeOf(a.params)}`);
+}
+
+/** The same, for a plan — which is the card that most needed it.
+ *
+ * A single action card offering to do something twice is one duplicate. A plan
+ * card's button runs **every** step, so the same mistake is a duplicate of the
+ * whole plan: two more automations, or two more emails.
+ *
+ * Keyed off the steps rather than the rationale, because the rationale is prose
+ * the model rewrites and the steps are what the button actually runs.
+ */
+function planKey(plan) {
+  const steps = (Array.isArray(plan.steps) ? plan.steps : [])
+    .map((s) => `${s.type}|${shapeOf(s.params)}`).join(";");
+  return keyed(`plan|${steps}`);
+}
+
+/** An action's parameters, flattened to something stable and comparable. */
+function shapeOf(params) {
+  const p = params || {};
+  return Object.keys(p).sort()
     .map((k) => `${k}=${typeof p[k] === "object" ? JSON.stringify(p[k]) : p[k]}`)
     .join("&");
-  const base = `${a.type}|${shape}`;
+}
+
+/** `base` plus how many cards of that shape have been drawn in this render. */
+function keyed(base) {
   const n = (CARD_SEEN[base] = (CARD_SEEN[base] || 0) + 1);
   return `${base}#${n}`;
 }
