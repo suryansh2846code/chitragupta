@@ -28,3 +28,13 @@ Measure with `scripts/benchmark_recall.py` before and after touching the scoring
 Analysis: [`docs/SCALING.md`](../../docs/SCALING.md).
 
 `_migrate` is additive `ALTER TABLE` only, and idempotent.
+
+`naming.py` is where a name a **model** wrote is matched against what the app
+has — agents, apps, tools. Three rules in order: exact, then bar punctuation and
+case, then a single close-enough match. The third only applies to names of
+`LONG_ENOUGH` characters and only when one candidate is clearly ahead of the
+next: "wealth" is one letter from "health" and a different word, and picking
+between two near-identical names silently is a coin toss wearing a decision's
+clothes. A refusal always names the real options — "no" without them is an
+error the next attempt repeats.
+

@@ -188,7 +188,10 @@ function openDrawer(name) {
   if (name === "model" || name === "settings") return openModelScreen();
   if (name === "sources") return openConnectorsScreen();
   if (name === "tools") return openToolsScreen();
-  if (name === "inbox" || name === "tasks") return openInboxScreen();
+  if (name === "inbox") return openInboxScreen();
+  // `tasks` was the rail's old name for all of this, and it is the machinery
+  // rather than the messages — so an old link lands where its contents went.
+  if (name === "actions" || name === "tasks") return openActionsScreen();
   if (name === "brain") return openBrainScreen();
   if (name === "web") return openWebScreen();
   if (name === "library") return openLibrary();
@@ -317,3 +320,11 @@ window.addEventListener("keydown", (e) => {
     if (close) close.click(); else top.hidden = true;
   });
 }
+
+// How many messages are waiting, before any screen is opened. Without this the
+// rail is blank until the user happens to visit the Inbox — which is exactly
+// the visit the number exists to prompt.
+if (typeof refreshUnread === "function") {
+  setTimeout(() => { refreshUnread(); }, 400);
+}
+

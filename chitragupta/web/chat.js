@@ -602,13 +602,33 @@ function undoButton(result) {
   return b;
 }
 
+/** Does this field mean anything for the values in front of us?
+ *
+ * "Create automation" declares At, Days and Interval min, and a new-email
+ * trigger reads none of them — so the card drew three empty boxes on the one
+ * screen whose job is letting somebody check what is about to happen. An empty
+ * box is not neutral; it reads as something they forgot to fill in.
+ *
+ * The rule comes from the registry, because the handler is what decides which
+ * fields it reads and a copy kept here would drift from it. A field already
+ * carrying a value is always shown: whatever it says, hiding something that
+ * would be saved is worse than showing something that will not be. */
+function relevantField(spec, name, p) {
+  const rule = spec.depends_on && spec.depends_on[name];
+  if (!rule) return true;
+  const [decider, values] = rule;
+  if (p[name] !== undefined && p[name] !== null && p[name] !== "") return true;
+  return (values || []).includes(String(p[decider] === undefined ? "" : p[decider]));
+}
+
 /** Real inputs for every scalar field the registry declares, in its order. */
 function actionFields(type, p) {
   const spec = ACTION_CATALOG[type];
   if (!spec || !Array.isArray(spec.fields)) return null;
   const usable = spec.fields.filter(
-    (f) => !NOT_TYPEABLE.has(f) && (p[f] === undefined || p[f] === null
-      || typeof p[f] === "string" || typeof p[f] === "number"));
+    (f) => !NOT_TYPEABLE.has(f) && relevantField(spec, f, p)
+      && (p[f] === undefined || p[f] === null
+        || typeof p[f] === "string" || typeof p[f] === "number"));
   if (!usable.length) return null;
 
   const wrap = document.createElement("div");

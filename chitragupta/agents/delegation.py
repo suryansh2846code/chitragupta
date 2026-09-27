@@ -89,6 +89,16 @@ _CHAIN: contextvars.ContextVar[Chain | None] = contextvars.ContextVar(
 _EMPTY = Chain()
 
 
+def _named_agent(named: str):
+    """Which agent a model meant, through the one matcher."""
+    from ..core.naming import resolve
+    from . import roster
+
+    return resolve(named, roster.all_agents(),
+                   key=lambda a: (a.id, a.name), label=lambda a: a.name,
+                   what="agent")
+
+
 def current_chain() -> Chain:
     return _CHAIN.get() or _EMPTY
 
@@ -122,11 +132,19 @@ def refusal(agent_id: str) -> str | None:
     chain = current_chain()
     effort = chain.effort or get_effort()
 
+    # Exact first, which is the overwhelmingly common case and the one every
+    # caller already relied on. Only when that misses is the name matched the
+    # way every other place does it: `Research`, `research` and `reserach` are
+    # one agent asked for three ways, and refusing the third cost a turn and
+    # taught the user nothing. Still refused: a name matching nothing, and one
+    # matching two things equally.
     try:
         roster.get_agent(agent_id)
     except KeyError:
-        return (f"There is no agent called '{agent_id}'. "
-                f"Available: {', '.join(available_agents())}.")
+        found = _named_agent(agent_id)
+        if not found:
+            return found.problem[0].upper() + found.problem[1:] + "."
+        agent_id = str(found.value.id)
 
     if effort.max_delegation_depth <= 0:
         return ("Asking other agents is switched off at the current effort "

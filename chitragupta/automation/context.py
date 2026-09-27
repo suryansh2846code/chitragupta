@@ -217,13 +217,26 @@ def build(automation: Any, event: Event, *, recall: Any = None,
     last_good = next((str(r.get("finished_at") or "") for r in prior_runs or []
                       if str(r.get("state") or "") == "completed"
                       and r.get("finished_at")), "")
+    started = str(getattr(automation, "created_at", "") or "")
     snap.facts["last_completed_at"] = last_good
+    snap.facts["watching_since"] = started
+    # The **later** of the two is the line. The watch's start is a floor, so the
+    # first run reports what arrived after the user set it up rather than
+    # whatever happens to be at the top of a mailbox they have had for years;
+    # after that the cursor moves, so the second run does not report the first
+    # run's findings again.
+    since = max(last_good, started) if (last_good and started) else (
+        last_good or started)
     snap.add(
-        "When you last finished this successfully",
-        (f"{last_good} (UTC). Anything you are asked to find “since the last "
-         f"check” means since then." if last_good else
-         "Never — this is the first run. Treat everything you find as new, and "
-         "prefer the most recent rather than reporting a backlog."),
+        "The window you are looking at",
+        (f"You started watching at {started or 'an unrecorded time'} (UTC)"
+         + (f", and you last finished successfully at {last_good} (UTC)."
+            if last_good else ", and this is your first run.")
+         + (f"\n\nOnly something that happened AFTER {since} (UTC) is new. "
+            "Anything older than that has either been reported already or "
+            "predates the watch — say nothing about it." if since else
+            "\n\nTreat what you find as new, and prefer the most recent rather "
+            "than reporting a backlog.")),
         APP)
 
     if tasks:

@@ -40,6 +40,12 @@ read before its definition is a temporal dead-zone `ReferenceError` that
 — and grep for who reads the file you are moving out of. A test that greps one
 script out of eleven does not fail; it passes.
 
+- **Inbox is messages; Actions is the machinery.** What an agent *said* to you
+  is news, and what it is running is furniture — one screen holding both made a
+  user scroll past five sections of furniture to find the news. `messages.js`
+  work lives in `automations.js` for now; the two panels are `data-sp="inbox"`
+  and `data-sp="actions"`, and `test_frontend_model_screen.py` fails if a list
+  ends up on both or on neither.
 - **Every left-nav item opens a screen.** The slide-over drawer is gone:
   `tasks` moved into Inbox and `tools` became the Agents & tools panel, and
   those were its only two occupants. `openDrawer()` kept its name — four call

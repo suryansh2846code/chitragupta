@@ -44,7 +44,7 @@ const navButtons = NAVS.map((nav) => Object.assign(makeEl("button"), { dataset: 
 // Model and Connectors share one shell, so "did the screen open" is only half
 // the question — the other half is which panel it opened on. Both panels have
 // to exist for showSettingsPanel() to have anything to hide.
-const panels = ["inbox", "connectors", "model", "tools"].map((sp) =>
+const panels = ["inbox", "actions", "connectors", "model", "tools"].map((sp) =>
   Object.assign(makeEl("div"), { dataset: { sp }, hidden: true }));
 const railItems = ["inbox", "brain", "connectors", "model"].map((msnav) =>
   Object.assign(makeEl("button"), { dataset: { msnav } }));

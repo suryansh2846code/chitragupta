@@ -16,6 +16,42 @@ os.environ["CHITRAGUPTA_EMBEDDING_PROVIDER"] = "hash"
 os.environ.setdefault("CHITRAGUPTA_HOME", tempfile.mkdtemp(prefix="chitragupta-tests-"))
 
 
+# ── every directory a test makes, removed when the run ends ──────────────────
+#
+# Ten places call `tempfile.mkdtemp()` and none of them removed anything. Most
+# are once per session and harmless; `automation_harness.fresh_store()` is once
+# per test, and a Chitragupta home is ~560 MB by the time a brain, an agents
+# database and an action log are in it.
+#
+# That filled a developer's disk: **29,474 directories, 64 GB**, in one
+# afternoon of running the suite. The machine hit zero bytes free, which is the
+# kind of failure that stops the whole computer rather than the test run — and
+# nothing in the output said the suite had done it.
+#
+# Wrapped here rather than fixed at the ten call sites, because the eleventh is
+# the one that matters: a test written next month calls `mkdtemp` and is
+# cleaned up without its author knowing there was a rule.
+#
+# Set `CHITRAGUPTA_KEEP_TEST_DIRS=1` to keep them, for the afternoon you are
+# reading a database a failing test left behind.
+_MADE: list[str] = []
+_REAL_MKDTEMP = tempfile.mkdtemp
+
+
+def _tracked_mkdtemp(*args, **kwargs):
+    path = _REAL_MKDTEMP(*args, **kwargs)
+    # pytest's own `tmp_path` goes through here too, and pytest already keeps
+    # only the last three runs. Removing those would take away the artifacts a
+    # developer inspects after a failure, which is the one case this must not
+    # make worse.
+    if "pytest-of-" not in path:
+        _MADE.append(path)
+    return path
+
+
+tempfile.mkdtemp = _tracked_mkdtemp
+
+
 import pytest
 from starlette.testclient import TestClient
 
@@ -37,6 +73,33 @@ def _from_loopback(self, app, *args, **kwargs):
 
 
 TestClient.__init__ = _from_loopback
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _leave_no_directories_behind():
+    """Remove what the run created, however it ended.
+
+    At the end rather than per test: a directory is often handed to a store
+    that stays open for the session, and removing it while something still
+    holds a connection to a file inside it is a different bug.
+
+    Failures are ignored on purpose. A directory that cannot be removed is
+    disk somebody has to clear by hand later; a teardown that *raises* turns a
+    green run red for a reason that has nothing to do with the code.
+    """
+    yield
+    if os.environ.get("CHITRAGUPTA_KEEP_TEST_DIRS"):
+        print(f"\nkept {len(_MADE)} test directories "
+              "(CHITRAGUPTA_KEEP_TEST_DIRS is set)")
+        return
+    import shutil
+
+    for path in _MADE:
+        shutil.rmtree(path, ignore_errors=True)
+    # The session home, which was made before any fixture could record it.
+    home = os.environ.get("CHITRAGUPTA_HOME", "")
+    if "chitragupta-tests-" in home:
+        shutil.rmtree(home, ignore_errors=True)
 
 
 @pytest.fixture(autouse=True, scope="session")

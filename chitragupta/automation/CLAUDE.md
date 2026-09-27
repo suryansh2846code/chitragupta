@@ -80,12 +80,24 @@ and neither may import the other.
   me look" is a good automation, and a screen that called it broken would teach
   the user to ignore the screen. It may not import `connectors/`, so the app
   state is injected by the route that has both.
+- **A result goes to Messages** (`chitragupta/messages.py`), the one list of
+  things an agent wants to tell the user. Not a desktop notification, which is
+  gone if they looked away. Not the agent's chat — tried and undone: a result is
+  not part of a conversation somebody was having, and persisting the turn put
+  the automation's whole prompt in beside it, attributed to a user who typed
+  none of it. Not the run history, which is complete and somewhere you only go
+  once you already know something happened.
 - **A quiet run is not news.** `worth_delivering` decides what reaches the
   Inbox: by default a run that acted or stopped, never one that looked and found
   nothing — a watch polling every two minutes would otherwise bury the one
   result that mattered under its own reports. `never` means never, including
   the bad ones, because a setting that is quietly overridden stops being
-  believed.
+  believed. **The agent decides whether there is anything to report**, by
+  replying with `NOTHING_TO_REPORT` — counting actions instead gets a watch
+  exactly backwards, because "tell me what arrived" is answered by the reply and
+  uses no actions at all. The phrase must be the whole reply: ambiguity
+  resolves towards telling the user, since a wrong "nothing happened" loses the
+  thing the automation exists for.
 - Every new capability gets a case in `evaluation.py`, graded on **what reached
   the world**, not on what the agent said.
 

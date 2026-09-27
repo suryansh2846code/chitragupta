@@ -58,6 +58,37 @@ LAUNCH_ARGS = (
     "--disable-background-timer-throttling",
 )
 
+#: What the browser calls itself.
+#:
+#: Playwright's Chromium reports `HeadlessChrome/<version>` even when it is not
+#: headless, and it reports the Chromium build rather than a Chrome one. Sites
+#: that gate on the browser read that and refuse: WhatsApp Web answers with
+#: "WhatsApp works with Google Chrome 100+" and never renders the chat, so an
+#: automation watching for a message sees a compatibility notice forever and
+#: reports, correctly and uselessly, that it cannot tell.
+#:
+#: This is a **compatibility** string, not a disguise. The engine genuinely is
+#: Chromium of that version, and this says so in the spelling the web has
+#: standardised on — it does not hide that a browser is being driven, and
+#: nothing else about the session is altered. A site that asks *"are you
+#: automated"* still gets the true answer.
+#:
+#: Derived from the browser's own version rather than pinned, because a
+#: hardcoded `Chrome/120` becomes "your browser is too old" a year later, which
+#: is the same failure with a longer fuse.
+def chrome_user_agent(reported: str) -> str:
+    """`reported` with the marks that make a site refuse it removed, or "".
+
+    Returns "" when there is nothing to change, so the caller can tell "already
+    fine" from "fixed" and skip the override entirely on a browser that does
+    not need one.
+    """
+    fixed = (str(reported or "")
+             .replace("HeadlessChrome/", "Chrome/")
+             .replace("Chromium/", "Chrome/"))
+    return fixed if fixed != reported else ""
+
+
 #: The size the page is rendered at, and therefore the coordinate space every
 #: screenshot and every click shares. Fixed on purpose: the in-app view maps a
 #: click on an image back to a point on the page, and a viewport that changed
@@ -267,6 +298,28 @@ class PlaywrightDriver:
         if self._start_error:
             raise BrowserError(self._start_error)
 
+    def _present_as_chrome(self, page: Any) -> None:  # pragma: no cover - needs a browser
+        """Say `Chrome` where the engine says `Chromium` or `HeadlessChrome`.
+
+        Over the CDP session that is already open, rather than by launching a
+        second browser to read a string off it.
+
+        See `chrome_user_agent` for why this is compatibility rather than
+        disguise. Best-effort by design: a browser that refuses the override is
+        a browser that works slightly worse on three sites, not one that fails
+        to start.
+        """
+        if self._cdp is None:
+            return
+        with suppressed("presenting the browser as Chrome"):
+            reported = page.evaluate("navigator.userAgent")
+            wanted = chrome_user_agent(reported)
+            if not wanted:
+                return
+            self._cdp.send("Network.setUserAgentOverride",
+                           {"userAgent": wanted})
+            log.info("browser presents as %s", wanted.split(") ")[-1])
+
     def _run(self) -> None:                       # pragma: no cover - needs a browser
         from playwright.sync_api import sync_playwright
 
@@ -293,6 +346,7 @@ class PlaywrightDriver:
                 # Playwright has no API for.
                 with suppressed("opening a CDP session for the window"):
                     self._cdp = context.new_cdp_session(page)
+                self._present_as_chrome(page)
                 self._set_window(HIDDEN)
                 self._ready.set()
                 self._serve(page)

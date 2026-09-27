@@ -20,7 +20,7 @@ from ..core.events import Event
 from ..log import get_logger, suppressed
 from . import router, triggers
 from .executor import Deps, Executor, Verdict
-from .model import Automation, Policy
+from .model import Automation, Policy, worth_delivering
 
 log = get_logger(__name__)
 
@@ -98,7 +98,17 @@ def _plan(agent_id: str, prompt: str,
                 agent_id, prompt,
                 provider_name=str(spec.get("provider") or "") or None,
                 model_name=str(spec.get("model") or "") or None,
-                effort=str(spec.get("effort") or "") or None)
+                effort=str(spec.get("effort") or "") or None,
+                # **Isolated.** Persisting put the automation's whole prompt —
+                # goal, fenced context, the lot — into the agent's chat as a
+                # message attributed to the USER, who did not type 1,590
+                # characters about running an automation unattended. Every run
+                # added another one, and the reply landed beside it whether or
+                # not there was anything to say.
+                #
+                # `deliver_result` puts the answer there instead: one message,
+                # the agent's own, and only when there is something to report.
+                persist=False)
     finally:
         release_only(scope)
         if no_pages is not None:
@@ -199,6 +209,41 @@ _MEMORABLE = {
     "blocked": ("", 0.0),          # correct declines are not news
     "completed": ("", 0.0),        # success is the expected case
 }
+
+
+def deliver_result(automation: Automation, run: dict[str, Any]) -> bool:
+    """Put what a run found where the user will actually read it.
+
+    In **Messages**, the one list of things an agent wants to tell the user.
+    Not a desktop notification, which is gone if they looked away. Not the
+    agent's chat, which was tried and undone: a result is not part of a
+    conversation somebody was having, and a chat is a thing you are in the
+    middle of while a notification is a thing that arrives. Not the run
+    history, which is complete, correct, and somewhere nobody looks — you have
+    to already know something happened to go and read that it did.
+
+    Quiet runs are left out. The agent decides that, by saying so — see
+    `model.NOTHING_TO_REPORT`.
+    """
+    if not worth_delivering(automation.execution, run):
+        return False
+    detail = str(run.get("outcome") or run.get("reason") or "").strip()
+    if not detail:
+        return False
+
+    settled = str(run.get("state") or "")
+    needs_them = settled != str(store.RunState.COMPLETED)
+    with suppressed("sending an automation's result to the user"):
+        from .. import messages
+
+        sent = messages.send(
+            automation.agent_id, detail,
+            title=(f"{automation.name} — stopped and needs you" if needs_them
+                   else automation.name),
+            kind=messages.NEEDS_YOU if needs_them else messages.RESULT,
+            source="automation", source_id=str(run.get("id") or ""))
+        return bool(sent)
+    return False
 
 
 def settle_watch(automation: Automation, run: dict[str, Any]) -> bool:
@@ -339,6 +384,7 @@ def ingest(event: Event, *, deps: Deps | None = None,
             with suppressed("advancing an automation run"):
                 settled = executor.advance(run_id, automation)
                 remember_outcome(automation, settled or {})
+                deliver_result(automation, settled or {})
                 settle_watch(automation, settled or {})
     return routed.as_dict()
 

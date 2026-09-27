@@ -172,45 +172,142 @@ async function runAutomationNow(id, button) {
   loadRoutines();
 }
 
-/* What the automations produced, in the place a person already looks.
+//: Which messages the user has opened. Here rather than on the row, because
+//: the list is redrawn wholesale — marking one read repaints everything, and a
+//: state kept in the DOM would close every message the moment one was touched.
+const OPEN_MESSAGES = new Set();
+
+/* Everything the agents have told you, in the place you already look.
  *
- * The history screen answers "why did it do that" and you have to go and open
- * it. This answers "what did they get me", which is the difference between an
- * automation somebody trusts and one they forget they made. */
-async function loadAutomationResults() {
-  const host = $("#resultList");
+ * This replaced two things that did not work. A desktop notification is gone if
+ * the machine was asleep or you glanced away, with no record it existed. The
+ * agent's own chat was tried and undone: a result is not part of a conversation
+ * you were having, and putting it there also put the automation's whole prompt
+ * in beside it, attributed to a user who typed none of it.
+ *
+ * Read and unread together, because a list that hid what you had read would be
+ * impossible to find anything in a second time. */
+async function loadMessages() {
+  const host = $("#messageList");
   if (!host) return;
-  let results = [];
+  let messages = [];
+  let unread = 0;
   try {
-    ({ results } = await api("/api/automations/results"));
+    ({ messages = [], unread = 0 } = await api("/api/messages"));
   } catch (_) {
     host.innerHTML = "";
     return;
   }
-  if (!results.length) {
-    host.innerHTML = `<div class="ib-empty">Nothing yet. Results from your
-      automations show up here.</div>`;
+
+  paintUnread(unread);
+
+  const all = $("#msgReadAll");
+  if (all) {
+    all.hidden = unread === 0;
+    all.onclick = async () => {
+      await api("/api/messages/read-all", { method: "POST" });
+      loadMessages();
+    };
+  }
+
+  if (!messages.length) {
+    host.innerHTML = `<div class="ib-empty">Nothing yet. When an agent has
+      something to tell you, it shows up here.</div>`;
     return;
   }
-  host.innerHTML = results.map((r) => `<div class="ib-row${
-    r.needs_you ? " is-bad" : ""}">
-      <span class="ib-state" data-on="1" aria-hidden="true"></span>
+
+  host.innerHTML = messages.map((m) => `<div class="ib-row msg-row${
+    m.unread ? " is-unread" : ""}${m.kind === "needs_you" ? " is-bad" : ""}${
+    OPEN_MESSAGES.has(m.id) ? " is-open" : ""}" data-msg="${esc(m.id)}">
+      <span class="ib-state" data-on="${m.unread ? 1 : 0}" aria-hidden="true"></span>
       <span class="ib-text">
-        <span class="ib-name">${esc(r.name)}${r.needs_you
-          ? ` <span class="ib-badge">Needs you</span>` : ""}</span>
-        <span class="ib-meta">${esc(autoWhen(r.at))} · ${esc(
-          String(r.detail || RUN_WORDS[r.state] || r.state).slice(0, 160))}</span>
+        <span class="ib-name">${esc(m.agent_name)}${m.title
+          ? ` <span class="msg-title">${esc(m.title)}</span>` : ""}${
+          m.kind === "needs_you" ? ` <span class="ib-badge">Needs you</span>` : ""}</span>
+        <span class="ib-meta msg-body">${esc(m.body)}</span>
+        <span class="ib-meta msg-when">${esc(autoWhen(m.created_at))}</span>
       </span>
       <span class="ib-actions">
-        <button class="tiny ghost" data-open-run="${esc(r.automation_id)}"
-          data-run-id="${esc(r.run_id)}">Open</button>
+        ${m.source === "automation" && m.source_id
+          ? `<button class="tiny ghost" data-msg-open="${esc(m.source_id)}"
+              >Open run</button>` : ""}
+        <button class="tiny ghost ib-x" data-msg-del="${esc(m.id)}"
+          aria-label="Remove this message">${IC.close}</button>
       </span></div>`).join("");
-  host.querySelectorAll("[data-open-run]").forEach((button) => {
-    button.onclick = async () => {
-      await automationHistory(button.dataset.openRun);
-      runDetail(button.dataset.openRun, button.dataset.runId);
+
+  // Pressing the message opens it. A long report is clamped to four lines so a
+  // list of them is a list rather than a wall — and clamped is not the same as
+  // lost, which is what it was: the text simply ran out mid-word with nothing
+  // to press and nowhere else to read it.
+  //
+  // Reading one is also what marks it read. A list where you have to say "yes
+  // I read that" is a list with a chore in it.
+  host.querySelectorAll("[data-msg]").forEach((row) => {
+    row.onclick = async (event) => {
+      // Not when the press was meant for a button inside it.
+      if (event && event.target && event.target.closest
+          && event.target.closest("button")) return;
+      const id = row.dataset.msg;
+      if (OPEN_MESSAGES.has(id)) OPEN_MESSAGES.delete(id);
+      else OPEN_MESSAGES.add(id);
+      row.classList.toggle("is-open", OPEN_MESSAGES.has(id));
+      if (row.classList.contains("is-unread")) {
+        row.classList.remove("is-unread");
+        await api(`/api/messages/${id}/read`, { method: "POST" });
+        refreshUnread();
+        const all = $("#msgReadAll");
+        if (all) all.hidden = false;
+      }
     };
   });
+  host.querySelectorAll("[data-msg-del]").forEach((button) => {
+    button.onclick = async () => {
+      await api(`/api/messages/${button.dataset.msgDel}`, { method: "DELETE" });
+      OPEN_MESSAGES.delete(button.dataset.msgDel);
+      loadMessages();
+    };
+  });
+  host.querySelectorAll("[data-msg-open]").forEach((button) => {
+    button.onclick = () => openRunFromMessage(button.dataset.msgOpen);
+  });
+}
+
+/* How many are waiting, on the rail.
+ *
+ * A list you have to open to find out whether anything is in it is a list you
+ * stop opening. The count is the whole reason the Inbox is worth being its own
+ * screen rather than a section on a longer one. */
+function paintUnread(count) {
+  const badge = $("#navUnread");
+  if (!badge) return;
+  const n = Number(count) || 0;
+  badge.hidden = n === 0;
+  badge.textContent = n > 9 ? "9+" : String(n);
+}
+
+/* Ask how many are unread without drawing the list.
+ *
+ * Called on boot and after anything that might have produced one, so the rail
+ * is right on a screen the user has not visited — which is every screen, the
+ * first time something arrives. */
+async function refreshUnread() {
+  try {
+    const { unread = 0 } = await api("/api/messages");
+    paintUnread(unread);
+  } catch (_) { /* a rail with no number is better than a wrong one */ }
+}
+
+/* Open the run a message came from. A result you cannot trace back is one you
+ * have to take on faith. */
+async function openRunFromMessage(runId) {
+  let runs = [];
+  try {
+    ({ runs = [] } = await api("/api/automations/runs"));
+  } catch (_) { return; }
+  const run = runs.find((r) => r.id === runId);
+  if (!run) { toast("That run is no longer in the history"); return; }
+  await automationHistory(run.automation_id);
+  runDetail(run.automation_id, runId);
 }
 
 /* One automation's runs, newest first. */
