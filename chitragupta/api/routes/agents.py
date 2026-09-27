@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 from ...agents import cancellation, cards, list_agents, run_turn
 from ...agents.agent import AgentMemory
 from ...config import get_settings
-from ...log import get_logger
+from ...log import get_logger, suppressed
 from ..concurrency import calls_a_model, probes_a_provider
 from ..schemas import ChatIn
 
@@ -706,6 +706,12 @@ def clear(agent_id: str):
     return {"cleared": agent_id}
 
 
+#: How far back a card may reach to recognise its own action. A conversation
+#: is scrolled, not archived, so the card at the top can be old — and a stored
+#: message has no id a log row could carry, which is why this is a scan at all.
+RAN_LOOKBACK = 200
+
+
 @router.get("/api/agents/{agent_id}/cards")
 def agent_cards(agent_id: str):
     """What the cards in this conversation already settled as.
@@ -714,8 +720,41 @@ def agent_cards(agent_id: str):
     chat rebuilds it from scratch — and it came back offering to confirm
     something already done. The obvious thing to do with that button is press
     it, and the result is a second automation.
+
+    **Two sources, and the second is the one that matters.** `cards` is what a
+    screen recorded when the user answered; it is exact, and it is the only
+    place a *cancellation* can live, because a card nobody ran leaves no other
+    trace. But it only knows about cards answered since it existed — on a real
+    machine it held nothing at all while the log held every approval the user
+    was complaining about.
+
+    So `ran` is what this agent actually did, from the log every action is
+    written to at `actions.run_now()`. A card matches itself against it by its
+    own parameters, which is the only thing a stored message and a log row have
+    in common.
     """
-    return {"cards": cards.for_agent(agent_id)}
+    from ... import action_log
+
+    out = []
+    with suppressed("reading what this agent has already done"):
+        for row in action_log.recent(RAN_LOOKBACK):
+            if row.get("agent_id") != agent_id:
+                continue
+            # Taken back by the user. A card drawn "done" over something they
+            # undid is the app disagreeing with them about their own machine.
+            if row.get("undone"):
+                continue
+            out.append({
+                "type": row.get("action_type", ""),
+                "params": row.get("params") or {},
+                "ok": bool(row.get("ok")),
+                "detail": row.get("detail", ""),
+                "verified_at": row.get("verified_at", ""),
+                "log_id": row.get("id", ""),
+                "reversible": bool(row.get("reversible")),
+                "at": row.get("created_at", ""),
+            })
+    return {"cards": cards.for_agent(agent_id), "ran": out}
 
 
 class CardIn(BaseModel):

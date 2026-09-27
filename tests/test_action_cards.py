@@ -124,7 +124,7 @@ def test_a_state_the_store_rejects_is_a_400_not_a_silent_no_op(client):
 
 def test_reading_an_empty_conversation_is_not_an_error(client):
     """The frontend fetches this before every history, including the first
-    one."""
+    one, and reads both keys off it every time."""
     r = client.get("/api/agents/nobody/cards")
     assert r.status_code == 200
-    assert r.json() == {"cards": {}}
+    assert r.json() == {"cards": {}, "ran": []}

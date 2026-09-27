@@ -24,6 +24,18 @@
 //: rather than offering its buttons again.
 let CARD_STATE = {};
 
+//: What this agent has actually done, newest first, from the action log.
+//:
+//: `CARD_STATE` only knows about cards answered since it existed, which on a
+//: real machine was none of them: the table held nothing while the log held
+//: every approval the user was looking at. A card confirmed before any of this
+//: shipped has to recognise ITSELF, and the only thing a stored message and a
+//: log row share is the parameters.
+//:
+//: Entries are claimed as they are matched — two identical proposals in one
+//: conversation are two cards, and one action must not settle both.
+let CARD_RAN = [];
+
 //: How many cards with each key have been drawn so far in this render. Two
 //: identical proposals in one conversation are told apart by their position,
 //: which is the only thing that distinguishes them for a person reading it too.
@@ -64,9 +76,10 @@ async function selectAgent(id) {
   // and fetching this second would draw every card as pending and then have to
   // repaint them.
   try {
-    const { cards } = await api(`/api/agents/${id}/cards`);
-    CARD_STATE = cards || {};
-  } catch (_) { CARD_STATE = {}; }
+    const answered = await api(`/api/agents/${id}/cards`);
+    CARD_STATE = answered.cards || {};
+    CARD_RAN = (answered.ran || []).map((e) => ({ ...e, claimed: false }));
+  } catch (_) { CARD_STATE = {}; CARD_RAN = []; }
   renderHistory(history);
 }
 
@@ -128,6 +141,9 @@ function renderHistory(history) {
   // the same shape have been drawn, and carrying the tally over would give the
   // same card a different key the second time the chat was opened.
   CARD_SEEN = {};
+  // Same reason: a second render must be able to claim the same entries again,
+  // or reopening a chat twice draws every card pending the second time.
+  for (const entry of CARD_RAN) entry.claimed = false;
   const msgs = history.filter((m) => m.role === "user" || m.role === "assistant");
   if (!msgs.length) { box.appendChild(heroEmpty()); return; }
   for (const m of msgs) addMsg(m.role, m.content);   // so history shows action cards too
@@ -458,7 +474,7 @@ function planCard(plan) {
   // Already answered on a previous visit. This card ran every step at once, so
   // coming back with its button intact is not one duplicate — it is a second
   // copy of the whole plan.
-  const settled = CARD_STATE[key];
+  const settled = settledState(key, steps);
   if (settled && settled.state !== "failed") {
     const done = settled.state === "done";
     el.dataset.settled = settled.state;
@@ -916,6 +932,58 @@ function shapeOf(params) {
     .join("&");
 }
 
+/** What this card settled as, from either source — or null if it is still a
+ *  question.
+ *
+ *  The recorded answer wins. It is exact, and it is the only place a
+ *  **cancellation** can live: a card nobody ran leaves no trace in the log, so
+ *  letting the log override this would bring back a card the user said no to,
+ *  claiming it had run.
+ */
+function settledState(key, steps) {
+  const recorded = CARD_STATE[key];
+  if (recorded) return recorded;
+  const matched = steps.map((step) => claimRan(step));
+  // A plan is settled only when EVERY step is accounted for. Half a plan is
+  // exactly when the user needs the button back, and drawing it done would
+  // hide that a step never happened.
+  if (matched.some((m) => !m)) {
+    for (const m of matched) { if (m) m.claimed = false; }
+    return null;
+  }
+  if (!matched.length) return null;
+  const failed = matched.find((m) => !m.ok);
+  const last = matched[matched.length - 1];
+  return {
+    state: failed ? "failed" : "done",
+    detail: (failed || last).detail || "",
+    verified_at: failed ? "" : (last.verified_at || ""),
+    log_id: last.log_id || "",
+    reversible: !!last.reversible,
+  };
+}
+
+/** The oldest unclaimed thing this agent did that matches one step, claimed.
+ *
+ *  Containment, not equality: the confirm adds `agent_id` on the way through,
+ *  so what was logged is always a superset of what the card proposed. Oldest
+ *  first, because cards are drawn in the order they were proposed.
+ */
+function claimRan(step) {
+  const want = step.params || {};
+  for (let i = CARD_RAN.length - 1; i >= 0; i--) {
+    const entry = CARD_RAN[i];
+    if (entry.claimed || entry.type !== step.type) continue;
+    const had = entry.params || {};
+    const same = Object.keys(want).every((k) =>
+      String(had[k] === undefined ? "\u0000" : had[k]) === String(want[k]));
+    if (!same) continue;
+    entry.claimed = true;
+    return entry;
+  }
+  return null;
+}
+
 /** `base` plus how many cards of that shape have been drawn in this render. */
 function keyed(base) {
   const n = (CARD_SEEN[base] = (CARD_SEEN[base] || 0) + 1);
@@ -1136,7 +1204,7 @@ function actionCard(a) {
   // Rebuilt wholesale rather than by patching `.ac-tag` and `.ac-actions`,
   // because a settled card is a different card — it has no buttons at all, and
   // reaching in to empty them leaves the confirm handler's markup behind.
-  const settled = CARD_STATE[key];
+  const settled = settledState(key, [a]);
   if (settled && settled.state !== "failed") {
     const done = settled.state === "done";
     el.dataset.settled = settled.state;

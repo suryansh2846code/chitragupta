@@ -73,6 +73,17 @@ script out of eleven does not fail; it passes.
   its button runs every step at once, so an unremembered plan card is not
   one duplicate but a second copy of the whole plan. It was the card that
   never remembered, because the state work landed on `actionCard` alone.
+  **A recorded answer is not enough on its own, and that was the first version's
+  mistake.** It only covers cards answered *since* it shipped; on a real machine
+  `action_cards` held 0 rows while the action log held every approval the user
+  was complaining about. So `/api/agents/{id}/cards` also answers with `ran` —
+  what this agent actually did — and `settledState` falls back to matching a
+  card against it by the parameters, which is the only thing a stored message
+  and a log row share. Matching is **containment** (the confirm adds `agent_id`
+  on the way through, so the logged params are always a superset) and each entry
+  is **claimed once** (two identical proposals are two cards). The recorded
+  answer still wins, because a cancellation never runs and so exists nowhere
+  else. A plan settles only when every step is matched.
 - **Every left-nav item opens a screen.** The slide-over drawer is gone:
   `tasks` moved into Inbox and `tools` became the Agents & tools panel, and
   those were its only two occupants. `openDrawer()` kept its name — four call

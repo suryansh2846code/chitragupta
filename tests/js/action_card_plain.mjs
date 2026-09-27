@@ -16,7 +16,7 @@ import { appSource } from "./_app_source.mjs";
 
 const APP_JS = process.argv[2];
 const { action, plan, reply, result, edits, catalog, undoResult, cardState,
-        press } =
+        press, ran } =
   JSON.parse(fs.readFileSync(0, "utf8"));
 
 const makeEl = (tag = "div") => {
@@ -124,6 +124,11 @@ new Function(appSource(path.dirname(APP_JS)) +
   // so without seeding it every card renders pending — which is the bug this
   // is here to catch, and would pass.
   "\nglobalThis.__setCardState = (c) => { CARD_STATE = c; CARD_SEEN = {}; };" +
+  // What this agent actually did, which is how a card confirmed before any of
+  // this existed recognises itself. Seeded separately from `CARD_STATE`
+  // because the two answer different questions.
+  "\nglobalThis.__setRan = (r) => { CARD_RAN = r; };" +
+  "\nglobalThis.__ranLeft = () => CARD_RAN.filter((e) => !e.claimed).length;" +
   "\nglobalThis.__cardKey = cardKey;" +
   // `current` is the agent whose chat is open, normally set when one is
   // selected. `rememberCard` refuses without it, so a harness that never sets
@@ -133,6 +138,8 @@ new Function(appSource(path.dirname(APP_JS)) +
 globalThis.__setCurrent("health");
 
 if (cardState) globalThis.__setCardState(cardState);
+// After the card state, and before the card is drawn.
+if (ran) globalThis.__setRan(ran);
 
 if (catalog) globalThis.__setCatalog(catalog);
 
@@ -278,6 +285,8 @@ console.log(JSON.stringify({
   //: What the card was drawn as, and what it told the server it became.
   settled: card ? (card.dataset.settled || "") : "",
   cardKey: card ? (card.dataset.card || "") : "",
+  //: Entries no card has claimed yet. One logged action settles one card.
+  ranLeft: globalThis.__ranLeft(),
   remembered,
   hasUndo: Boolean(undoBtn),
   undoLabel,
