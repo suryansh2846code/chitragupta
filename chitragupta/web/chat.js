@@ -874,6 +874,37 @@ async function rememberCard(key, state, extra) {
   } catch (_) { /* see above */ }
 }
 
+/** When a *proposed* automation will run, in the words a person would use.
+ *
+ * This line used to be written inline and understood two triggers out of
+ * three: `schedule` said "every 60 min" and everything else said "on every new
+ * email". So a Sunday-morning automation was presented to the user as running
+ * on every new email — the card describing something other than what its
+ * button runs, which is the one thing a card may never do.
+ *
+ * `routineWhen` (workspace.js) already says this for a *stored* automation and
+ * its comment already claimed the card used it. Now the card does, so there is
+ * one set of words rather than two that drift. It is read at render time, long
+ * after every script has loaded, which is what makes the backwards reference
+ * safe — see docs/development/frontend-testing.md.
+ */
+function proposedWhen(p) {
+  const at = String(p.at || p.at_time || "").trim();
+  let trigger = String(p.trigger || "new_email");
+  if (!["new_email", "schedule", "daily"].includes(trigger)) trigger = "new_email";
+  // **The same rule the server applies** (`actions._create_routine`): a time of
+  // day wins over whatever trigger the model reached for first. Models pick the
+  // trigger they were shown first and then attach `at="8am"` to it, and a card
+  // that reads the trigger literally promises an interval the server will not
+  // create.
+  if (at && trigger !== "new_email") trigger = "daily";
+  return routineWhen({
+    trigger, at_time: at, days: p.days || "",
+    // Model-written: forced to a number rather than trusted.
+    interval_min: Number.parseInt(p.interval_min, 10) || 60,
+  });
+}
+
 function actionCard(a) {
   const p = a.params;
   // Before the editors and the handlers, all of which close over it.
@@ -916,12 +947,8 @@ function actionCard(a) {
        <div class="ac-row"><b>When</b> ${esc(p.at || p.when || "")}</div>`;
   } else if (a.type === "create_routine") {
     title = "Create automation"; verb = "create";
-    // Model-written attribute: force it to a number rather than trusting it.
-    const mins = Number.parseInt(p.interval_min, 10);
-    const trig = p.trigger === "schedule"
-      ? `every ${Number.isFinite(mins) && mins > 0 ? mins : 60} min` : "on every new email";
     rows = `<div class="ac-row"><b>Name</b> ${esc(p.name || "Automation")}</div>
-       <div class="ac-row"><b>Runs</b> ${trig} · ${esc(p.agent || p.agent_id || "personal")}</div>
+       <div class="ac-row"><b>Runs</b> ${esc(proposedWhen(p))} · ${esc(p.agent || p.agent_id || "personal")}</div>
        <div class="ac-body">${esc(p.instruction || "")}</div>`;
   } else if (a.type === "mcp_action") {
     // Previously this fell through to the calendar branch, so a connector

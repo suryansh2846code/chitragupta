@@ -46,6 +46,18 @@ script out of eleven does not fail; it passes.
   work lives in `automations.js` for now; the two panels are `data-sp="inbox"`
   and `data-sp="actions"`, and `test_frontend_model_screen.py` fails if a list
   ends up on both or on neither.
+- **A card never phrases a schedule itself.** `proposedWhen` in `chat.js` goes
+  through `routineWhen` (workspace.js), which mirrors
+  `core.schedule.describe_schedule`. The card used to write the line inline and
+  understood two triggers out of three — `schedule` said "every 60 min" and
+  **everything else**, `daily` included, said "on every new email". So a
+  Sunday-morning automation was presented as running on every new email, with
+  the day and the time on the card's own fields underneath it. A card
+  describing something other than what its button runs is the one thing a card
+  may never do, and this is the third time this file has done it.
+  `proposedWhen` also applies the server's rule that a time of day beats the
+  trigger the model reached for — otherwise the card promises a schedule
+  `actions._create_routine` will not create.
 - **What a card settled as is server state, not DOM state.** The outcome of an
   action card only ever lived in the element that drew it, so reopening a chat
   rebuilt every card pending — an automation created an hour ago came back

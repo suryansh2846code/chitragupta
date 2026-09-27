@@ -99,13 +99,17 @@ def test_the_schedule_interval_is_forced_to_a_number():
     out = render('<action type="create_routine" trigger="schedule" '
                  'interval_min="&lt;img src=x onerror=alert(1)&gt;" name="x">go</action>')
     joined = " ".join(out["writes"])
-    assert "every 60 min" in joined, "a non-numeric interval should fall back to 60"
+    _no_live_markup([joined])
+    # 60 minutes, in the words the row and the server both use. The card used
+    # to phrase this itself and said "every 60 min"; it now goes through
+    # `routineWhen`, so one automation reads the same everywhere it appears.
+    assert "Every hour" in joined, "a non-numeric interval should fall back to 60"
 
 
 def test_a_sensible_interval_still_shows():
     out = render('<action type="create_routine" trigger="schedule" '
                  'interval_min="15" name="Digest">summarise</action>')
-    assert "every 15 min" in " ".join(out["writes"])
+    assert "Every 15 min" in " ".join(out["writes"])
 
 
 @pytest.mark.parametrize("payload", PAYLOADS)
