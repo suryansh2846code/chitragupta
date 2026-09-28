@@ -566,6 +566,10 @@ const PLAN_NAMED_MAX = 6;
  *  to make the whole job readable is the version of this that fails. Mirrors
  *  `mail_triage.summarise` on the server; both exist because the card has to
  *  read the same as the log.
+ *
+ *  **Plain text, and every label in it was written by the model** — from a JSON
+ *  body, where a quote and a `>` both survive. Escaped where it is rendered,
+ *  never here; see `actionCard`.
  */
 function triageSummary(items) {
   const counts = new Map();
@@ -861,6 +865,10 @@ const MAIL_VERBS = {
 //: Beyond this the card gives a count instead of a list nobody reads to the end.
 const MAIL_NAMED_MAX = 6;
 
+/** "notion-update-page" + "Notion" → "Update page in Notion", as plain text.
+ *
+ *  Both arguments are model-written. This deliberately does no escaping: it
+ *  returns words, and the card's head is where words become HTML. */
 function humanAction(tool, connector) {
   // The tag may carry the connector's id rather than its label ("notion"), and
   // "Update page in notion" reads as a typo. Title-case a bare slug; leave a
@@ -1048,8 +1056,10 @@ function settledCard(el, settled, { chrome, title, body }) {
   const state = settled.state;
   el.dataset.settled = state;
   const said = esc(resultLine(settled.detail) || "");
+  // `title` is TEXT and is escaped here; `chrome` and `body` are markup this
+  // file built and are not. See the note on `actionCard`'s own head.
   el.innerHTML = `${chrome || ""}
-    <div class="ac-head">${title}</div>
+    <div class="ac-head">${esc(title)}</div>
     <span class="ac-kind">${esc(el.dataset.kind || "")}</span>
     <span class="ac-tag">${SETTLED_WORD[state] || state}</span>
     ${body}
@@ -1187,6 +1197,25 @@ function proposedWhen(p) {
   });
 }
 
+/** One proposal, as a card the user can read, correct and confirm.
+ *
+ * **`title` and `verb` are TEXT; `rows` is MARKUP.** The head escapes the
+ * first two and interpolates the third as it stands, so a branch below writes
+ * plain words and never its own `esc()`.
+ *
+ * That division is the fix for a real hole rather than a tidiness rule. The
+ * head used to interpolate `title` raw, which was safe only for as long as
+ * every branch remembered — nine wrote constants, one pre-escaped, and the two
+ * that assembled a title out of what the *model* wrote did not. So
+ * `<action type="mcp_action" tool="<img src=x onerror=…>">` put a live tag in
+ * the head of a card, in the origin that can POST `/api/actions/execute`; and
+ * one card escaped the same string correctly in a row two lines lower. The
+ * model is summarising a stranger's email, so "the model wrote it" is not a
+ * reason to trust it — it is the reason not to.
+ *
+ * Escaping once, at the one place the value becomes HTML, is what makes the
+ * next branch safe without its author having to know any of this.
+ */
 function actionCard(a) {
   const p = a.params;
   // Before the editors and the handlers, all of which close over it.
@@ -1265,7 +1294,9 @@ function actionCard(a) {
     // The app is named, because it is half the decision — the same handle can
     // be two different people on two different apps.
     const where = MESSAGING_APPS[(p.app || "").toLowerCase()] || p.app || "a messaging app";
-    title = `Send a message on ${esc(where)}`; verb = "send";
+    // Not escaped here. The head escapes it, and escaping twice turns an app
+    // called "AT&T" into "AT&amp;amp;T" on the card.
+    title = `Send a message on ${where}`; verb = "send";
     rows = `<div class="ac-row"><b>To</b> ${esc(p.chat || p.to || "someone")}</div>
        <div class="ac-body">${esc(p.text || "")}</div>`;
   } else if (a.type === "mail_triage") {
@@ -1342,13 +1373,13 @@ function actionCard(a) {
   el.innerHTML = `<div class="ac-chrome" aria-hidden="true">
       <span class="ac-dot red"></span><span class="ac-dot yellow"></span><span class="ac-dot green"></span>
     </div>
-    <div class="ac-head">${title}</div>
+    <div class="ac-head">${esc(title)}</div>
     <span class="ac-kind">${esc(el.dataset.kind)}</span>
     <span class="ac-tag">needs your confirmation</span>
     ${rows}
     ${note ? `<div class="ac-row muted ac-risk">${esc(note)}</div>` : ""}
     <div class="ac-row ac-missing" hidden></div>
-    <div class="ac-actions"><button class="ac-confirm">Confirm & ${verb}</button>
+    <div class="ac-actions"><button class="ac-confirm">Confirm & ${esc(verb)}</button>
     <button class="ac-cancel ghost">Cancel</button></div>
     <div class="ac-result"></div>`;
   // Already answered, on a previous visit — so the card is drawn as what it

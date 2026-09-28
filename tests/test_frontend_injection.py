@@ -34,10 +34,12 @@ PAYLOADS = [
 ]
 
 
-def render(text: str, markdown: str | None = None) -> dict:
+def render(text: str, markdown: str | None = None,
+           catalog: dict | None = None) -> dict:
     proc = subprocess.run(
         ["node", str(HARNESS), str(APP_JS)],
-        input=json.dumps({"text": text, "markdown": markdown}),
+        input=json.dumps({"text": text, "markdown": markdown,
+                          "catalog": catalog}),
         capture_output=True, text=True, timeout=30)
     assert proc.returncode == 0, proc.stderr
     return json.loads(proc.stdout)
@@ -51,6 +53,18 @@ OWN_TAGS = {"div", "span", "b", "strong", "em", "code", "pre", "p", "ul", "li",
 TAG = re.compile(r"<\s*/?\s*([a-zA-Z][\w-]*)")
 
 
+#: The renderer's own inlined icons, exactly as `_S()` in `core.js` builds them.
+#:
+#: A settled card draws `IC.check` beside its result, so the first test to look
+#: at one met a `<svg>` and had to decide what it was. Adding "svg" to the
+#: allowed tags would have been the easy answer and the wrong one — one of the
+#: payloads *is* `<svg/onload=alert(1)>`, so the guard would have stopped being
+#: able to see it. This removes the app's own icons by their exact opening
+#: instead, which a payload cannot spell: the attribute grammar in
+#: `parseActions` ends a value at the first double quote.
+OWN_ICON = re.compile(r'<svg viewBox="0 0 16 16"[^>]*>.*?</svg>', re.S)
+
+
 def _no_live_markup(written: list[str]):
     """No write may contain a tag the renderer did not write itself.
 
@@ -60,7 +74,7 @@ def _no_live_markup(written: list[str]):
     this looks for `<name` and compares the name against the markup the renderer
     actually produces.
     """
-    for chunk in written:
+    for chunk in [OWN_ICON.sub(" ", c) for c in written]:
         for name in TAG.findall(chunk):
             assert name.lower() in OWN_TAGS, (
                 f"a live <{name}> from model text reached innerHTML:\n{chunk[:300]}")
@@ -176,3 +190,158 @@ def test_the_live_entity_chip_type_is_constrained_server_side():
     ]:
         raw = str(candidate or "thing").lower()
         assert (raw if raw in ENTITY_TYPES else "thing") == expected
+
+
+# ── every card, not the three somebody thought of ─────────────────────────
+#
+# The tests above name `create_routine`, `send_email` and `create_event`, and
+# they are the three that were on somebody's mind. Two cards assembled their
+# **title** out of model-written text and neither was listed, so both wrote a
+# live tag into the head of a card:
+#
+#     <div class="ac-head"><img src=x onerror=alert(1)> in Notion</div>
+#     <div class="ac-head">Label as “<svg onload=alert(1)>” 1 email</div>
+#
+# One of those cards escaped the same string correctly in a row two lines lower,
+# which is what a rule living in eleven branches looks like from outside. So
+# these walk the registry, in two passes, because there are two ways params
+# reach a card and they admit different payloads.
+
+#: Fields that carry structure. A flat XML attribute cannot hold a list, so the
+#: body is JSON for these — the same split `parseActions` makes.
+STRUCTURED = {"items", "blocks", "arguments"}
+
+
+def attr_safe(payload: str) -> str:
+    r"""The payload as an `<action>` attribute could really carry it.
+
+    `parseActions` reads attributes as `(\w+)="([^"]*)"` inside `<action
+    ([^>]*?)>`, so a value can hold neither a double quote nor a `>`. A payload
+    with either does not become a card at all — the tag stops early, the JSON
+    body no longer parses, and the whole proposal is dropped.
+
+    **That is why the first version of this walk was worthless.** Every payload
+    here ends in `>`, so every attribute case was silently dropped and the pass
+    proved nothing: `mcp_action` stayed green with the escaping removed. The
+    tags are left unterminated instead, which the guard still recognises as live
+    markup (`<img` is enough) and the parser still delivers.
+    """
+    return payload.replace('"', "").replace(">", "")
+
+
+def _structured_body(field: str, payload: str) -> object:
+    """A value of the right shape for `field`, with the payload inside it.
+
+    The payload sits in a *string the card renders*, not merely somewhere in the
+    JSON: `items` is drawn through its labels and subjects, and a payload hidden
+    in a number would be a test that always passes. JSON is also where the full
+    payload survives — a quote is `\"` and a `>` is nothing special, which is
+    exactly why `mail_triage` was the one card an email could really reach.
+    """
+    if field == "items":
+        return {"items": [{"id": "m1", "do": "label", "label": payload,
+                           "subject": payload}]}
+    if field == "blocks":
+        return {"blocks": [{"exercise": payload, "sets": 3, "reps": 5,
+                            "weight": 100}]}
+    return {"title": payload, "text": payload}       # arguments
+
+
+def _tag(action_type: str, fields: list[str], payload: str) -> str:
+    """An `<action>` tag for this type with the payload in everything it reads."""
+    structured = [f for f in fields if f in STRUCTURED]
+    attrs = {f: attr_safe(payload) for f in fields if f not in STRUCTURED}
+    # `server` is what a model writes and `server_id` is what the params are
+    # called; the parser maps one onto the other, so both carry it.
+    if "server_id" in attrs:
+        attrs["server"] = attrs["server_id"]
+    body = json.dumps(_structured_body(structured[0], payload)) if structured \
+        else attr_safe(payload)
+    spelled = " ".join(f'{name}="{value}"' for name, value in attrs.items())
+    return f'<action type="{action_type}" {spelled}>{body}</action>'
+
+
+def _catalog() -> dict:
+    from chitragupta.actions import catalog
+
+    return catalog()
+
+
+def _every_action():
+    from chitragupta.actions import REGISTRY
+
+    return sorted(REGISTRY)
+
+
+@pytest.mark.parametrize("action_type", _every_action())
+@pytest.mark.parametrize("payload", PAYLOADS)
+def test_no_card_can_be_talked_into_markup(action_type, payload):
+    """Pass one: the whole path a model reply really takes.
+
+    Every action in the registry, with the payload in every field it reads —
+    and the card must actually have been drawn, or this proves nothing about it.
+    """
+    out = render(_tag(action_type, list(_catalog()[action_type]["fields"]),
+                      payload), catalog=_catalog())
+    assert any("ac-head" in w for w in out["writes"]), (
+        f"{action_type} drew no card for {payload!r}, so nothing here was "
+        f"checked — see `attr_safe`")
+    _no_live_markup(out["writes"])
+
+
+@pytest.mark.parametrize("action_type", _every_action())
+@pytest.mark.parametrize("payload", PAYLOADS)
+def test_no_card_can_be_talked_into_markup_by_its_params(action_type, payload):
+    """Pass two: the renderer on its own, handed the full payload.
+
+    The attribute grammar is what keeps a `>` out of most fields today, and
+    leaning on it would be safety by accident — it is one regex away from
+    changing, and it is not in force on any of the other paths that build an
+    action: a plan step, a queued approval, a card drawn from a stored message.
+    `mcp_action`'s title was reachable in exactly this way.
+    """
+    fields = list(_catalog()[action_type]["fields"])
+    params = {f: payload for f in fields if f not in STRUCTURED}
+    for f in fields:
+        if f in STRUCTURED:
+            got = _structured_body(f, payload)
+            params[f] = got.get(f) if isinstance(got, dict) and f in got else got
+    if "server_id" in params:
+        params["server_id"] = payload
+    proc = subprocess.run(
+        ["node", str(ROOT / "tests/js/action_card_plain.mjs"), str(APP_JS)],
+        input=json.dumps({"action": {"type": action_type, "params": params},
+                          "catalog": _catalog(),
+                          "result": {"ok": True, "detail": "done"}}),
+        capture_output=True, text=True, timeout=60)
+    assert proc.returncode == 0, proc.stderr[-2000:]
+    out = json.loads(proc.stdout)
+    assert out["error"] is None, out["error"]
+    assert "ac-head" in out["html"], f"{action_type} drew no card"
+    _no_live_markup([out["html"]])
+
+
+def test_a_settled_card_escapes_its_title_too():
+    """The second sink. A card reopened after it ran is drawn by `settledCard`,
+    which interpolates the same `title` — so escaping one of the two would have
+    left this reachable by scrolling up in yesterday's conversation.
+    """
+    tool = '<img src=x onerror=alert(1)>'
+    action = {"type": "mcp_action",
+              "params": {"server_id": "notion", "tool": tool,
+                         "arguments": {"page": "p1"}}}
+    key = ('mcp_action|arguments={"page":"p1"}&server_id=notion&'
+           f"tool={tool}#1")
+    proc = subprocess.run(
+        ["node", str(ROOT / "tests/js/action_card_plain.mjs"), str(APP_JS)],
+        input=json.dumps({"action": action, "catalog": _catalog(),
+                          "result": {"ok": True, "detail": "ran"},
+                          "cardState": {key: {"state": "done",
+                                              "detail": "ran"}}}),
+        capture_output=True, text=True, timeout=60)
+    assert proc.returncode == 0, proc.stderr[-2000:]
+    out = json.loads(proc.stdout)
+    assert out["error"] is None, out["error"]
+    assert out["settled"] == "done", (
+        "the card was not drawn settled, so this checked the pending head again")
+    _no_live_markup([out["html"]])

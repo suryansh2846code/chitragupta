@@ -107,6 +107,19 @@ script out of eleven does not fail; it passes.
   button returns on the keystroke that fills the gap. And **nothing invents a
   value for an empty field**: the automation readback used to print
   "· personal" over a blank Agent box, naming an agent nobody has.
+- **A card's title is text; its rows are markup.** The head escapes `title` and
+  `verb` and interpolates `rows` as it stands, so no branch writes its own
+  `esc()` for a title. It used to interpolate `title` raw, which was safe only
+  while every branch remembered: nine wrote constants, one pre-escaped, and the
+  two that built a title out of what the *model* wrote did not — so a
+  `mail_triage` label from a JSON body put a live `<svg onload=…>` into a card
+  head, three lines above the row that escaped the same string correctly. An
+  action tag's attributes cannot carry `"` or `>`, so most fields were safe by
+  accident; a JSON body is not, and neither is any other path that builds
+  params. `tests/test_frontend_injection.py` now walks the whole registry twice
+  — once through `parseActions`, once straight at the renderer — and asserts a
+  card was actually drawn, because the first version of that walk silently
+  dropped every attribute payload and passed with the bug live.
 - **Every card says what kind it is.** `CARD_KIND` in `chat.js` — "Automation",
   "Email", "Calendar" — beside the status. A conversation fills with cards that
   look alike, and a settled one has lost its buttons, so there is *less* left to

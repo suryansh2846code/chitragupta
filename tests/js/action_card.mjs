@@ -8,7 +8,13 @@
  * is summarising the user's own email and documents, so a crafted message can
  * decide what an attribute contains.
  *
- * Reads {text} as JSON on stdin, writes {clean, actions, html, writes} to stdout.
+ * Reads {text, markdown, catalog} as JSON on stdin and writes
+ * {clean, actions, writes, markdown} to stdout.
+ *
+ * `catalog` seeds `ACTION_CATALOG`, which the app normally fills from
+ * `/api/actions/catalog` at boot. Without it every action the branch chain does
+ * not name renders from an empty registry — no label, no rows — so a walk over
+ * every action would be checking escaping on cards that had drawn nothing.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -66,8 +72,11 @@ new Function(
   src +
   "\nglobalThis.__parseActions = parseActions;" +
   "\nglobalThis.__actionCard = actionCard;" +
+  "\nglobalThis.__setCatalog = (c) => { ACTION_CATALOG = c; };" +
   "\nglobalThis.__md = md;"
 )();
+
+if (input.catalog) globalThis.__setCatalog(input.catalog);
 
 const { clean, actions } = globalThis.__parseActions(input.text);
 for (const a of actions) globalThis.__actionCard(a);
