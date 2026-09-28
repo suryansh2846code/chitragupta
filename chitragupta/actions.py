@@ -131,6 +131,16 @@ class ActionSpec:
     depends_on: dict[str, tuple[str, tuple[str, ...]]] = field(
         default_factory=dict)
 
+    #: Fields to show only when they carry a value.
+    #:
+    #: `depends_on` answers "is this field relevant given another field", which
+    #: is the right question for a schedule and the wrong one for a flag that is
+    #: simply absent most of the time. `drive_share.anyone` is the case: it has
+    #: to be on the card when it is set, because it is the difference between
+    #: sharing and publishing, and it must not draw an empty box on every other
+    #: share — an empty box reads as something the user forgot to fill in.
+    only_when_set: tuple[str, ...] = ()
+
     #: An action the engine emits, never one a model may propose.
     #:
     #: `notify` is the case. A reminder is delivered by running an action, so it
@@ -241,7 +251,17 @@ class ActionSpec:
     #: half guesses at. `test_action_required_fields.py` blanks each of these in
     #: turn and fails if the handler runs anyway — a list that has drifted is
     #: worse than none, because the card would refuse something that works.
-    required: tuple[str, ...] = ()
+    #:
+    #: **An entry may be a tuple, meaning "at least one of these".** The list
+    #: was flat and could therefore only ever be *stricter* than a handler that
+    #: accepts either of two fields — which is the drift the docstring above
+    #: warns about, pointing the other way: `create_followup` declared `about`
+    #: while its handler is happy with `who` alone, so a card proposing
+    #: *"waiting on Rahul"* had its button hidden over something that works.
+    #: Both directions are now expressible, and
+    #: `test_every_refusal_is_declared` walks the registry rather than a list
+    #: somebody remembered to extend.
+    required: tuple[str | tuple[str, ...], ...] = ()
 
     def public(self) -> dict[str, Any]:
         """What the card needs to render itself, without the callables."""
@@ -262,7 +282,11 @@ class ActionSpec:
             "connector": self.connector,
             "capability": self.capability,
             "identity": list(self.identity),
-            "required": list(self.required),
+            "only_when_set": list(self.only_when_set),
+            # A group arrives as a nested list — "at least one of these". The
+            # card reads either shape; see `missingFields` in `web/chat.js`.
+            "required": [list(f) if isinstance(f, tuple) else f
+                         for f in self.required],
         }
 
 
@@ -1682,10 +1706,18 @@ def _undo_row(store_name: str, label: str):
 
 
 def _drive_create_doc(params: dict) -> dict:
+    # **Its own parameters before the connector.** Both Drive handlers used to
+    # ask Google first, so "say what to call it" came back as whatever the API
+    # said about an empty title — and `required` could not honestly name a
+    # field the handler never checked. A refusal about the proposal belongs
+    # before a refusal about the connection.
+    title = str(params.get("title") or "").strip()
+    if not title:
+        return {"ok": False, "error": "say what the document should be called"}
     conn = _writer("gdrive", "create_doc")
     if conn is None:
         return {"ok": False, "error": "Google Drive is not connected."}
-    return conn.create_doc(str(params.get("title") or ""),
+    return conn.create_doc(title,
                            str(params.get("text") or params.get("body") or ""))
 
 
@@ -1707,13 +1739,21 @@ def _undo_drive_doc(params: dict, result: dict) -> dict:
 
 
 def _drive_share(params: dict) -> dict:
+    file_id = str(params.get("file_id") or params.get("doc") or "").strip()
+    email = str(params.get("email") or params.get("to") or "").strip()
+    anyone = _truthy(params.get("anyone"))
+    if not file_id:
+        return {"ok": False, "error": "say which document to share"}
+    # One or the other, which is why `email` is not in `required`: a link share
+    # reaches an unbounded audience and names nobody, and that is a real thing
+    # to ask for — it is also why `_public_share_asks` forces a tap for it.
+    if not email and not anyone:
+        return {"ok": False, "error": "say who to share it with"}
     conn = _writer("gdrive", "share")
     if conn is None:
         return {"ok": False, "error": "Google Drive is not connected."}
-    return conn.share(str(params.get("file_id") or params.get("doc") or ""),
-                      email=str(params.get("email") or params.get("to") or ""),
-                      role=str(params.get("role") or "reader"),
-                      anyone=_truthy(params.get("anyone")))
+    return conn.share(file_id, email=email,
+                      role=str(params.get("role") or "reader"), anyone=anyone)
 
 
 def _undo_drive_share(params: dict, result: dict) -> dict:
@@ -1749,6 +1789,11 @@ def _public_share_asks(params: dict) -> str:
 
 REGISTRY: dict[str, ActionSpec] = {
     "send_email": ActionSpec(
+        # `_draft_or_send` has always refused a send with no recipient, and
+        # nothing said so where the card could read it — so an email card with
+        # an empty To offered "Confirm & send" over a press that could only
+        # ever come back "a recipient (to) is required".
+        required=("to",),
         identity=("to", "subject"),
         handler=_send_email, label="Send email", schedulable=True,
         connector="gmail", capability="send:email",
@@ -1848,7 +1893,10 @@ REGISTRY: dict[str, ActionSpec] = {
     # the repo including merging a pull request. The comment's Undo survived
     # as a retraction, because GitHub's server publishes no way to delete one.
     "create_followup": ActionSpec(
-        required=("about",),
+        # "At least one of". The handler fills `about` in from `who`
+        # ("Waiting on Rahul"), so a flat `("about",)` was stricter than the
+        # code it described and hid the button on a card that would have run.
+        required=(("about", "who"),),
         identity=("about",),
         handler=_create_followup, label="Track a follow-up",
         # Reaches no external system — one row in the user's own brain.
@@ -1886,7 +1934,11 @@ REGISTRY: dict[str, ActionSpec] = {
         undo=_undo_task, undo_label="Remove it",
     ),
     "set_reminder": ActionSpec(
-        required=("message",),
+        # Both. `_set_reminder` refuses a time it cannot parse, and an empty
+        # one parses to nothing — so a reminder card with an empty When offered
+        # a button whose only possible answer was "couldn't understand the
+        # time ''". Found by walking the registry rather than by a report.
+        required=("message", "at"),
         identity=("message",),
         handler=_set_reminder, label="Set reminder",
         # Reaches no external system — one row in the user's own brain.
@@ -1914,6 +1966,10 @@ REGISTRY: dict[str, ActionSpec] = {
         undo=_undo_row("routine", "automation"), undo_label="Delete it",
     ),
     "mcp_action": ActionSpec(
+        # Both are checked by the handler before it looks a connector up. A
+        # proposal that named a server and no tool drew a card titled "Run an
+        # action in Notion" with a live button behind it.
+        required=("server_id", "tool"),
         handler=_mcp_action, label="Connector action",
         connector="mcp", capability="update:record",
         fields=["server_id", "tool", "arguments"],
@@ -1954,6 +2010,10 @@ REGISTRY: dict[str, ActionSpec] = {
         undo_label="",
     ),
     "mail_triage": ActionSpec(
+        # `parse_items` refuses an empty list. The frontend parser drops such a
+        # tag before a card exists, which is why this never showed — declaring
+        # it means the card does not depend on that happening to be true.
+        required=("items",),
         handler=_mail_triage, label="Inbox changes",
         connector="gmail", capability="archive:email",
         fields=["items"],
@@ -1979,6 +2039,9 @@ REGISTRY: dict[str, ActionSpec] = {
         remember=_remember_message,
     ),
     "log_workout": ActionSpec(
+        # `parse_blocks` refuses an empty session, and the editor can empty one:
+        # dropping every exercise leaves a card whose button cannot work.
+        required=("blocks",),
         handler=_log_workout, label="Training session",
         # Reaches no external system — one row in the user's own brain.
         fields=["blocks", "at", "note"],
@@ -2007,6 +2070,7 @@ REGISTRY: dict[str, ActionSpec] = {
     # audit. One tap each, until there is a key worth showing.
 
     "drive_create_doc": ActionSpec(
+        required=("title",),
         identity=("title",),
         handler=_drive_create_doc, label="Create a document",
         connector="gdrive", capability="create:document",
@@ -2019,10 +2083,20 @@ REGISTRY: dict[str, ActionSpec] = {
         undo=_undo_drive_doc, undo_label="Move it to the bin",
     ),
     "drive_share": ActionSpec(
+        # `email` OR `anyone` — the handler accepts either and refuses neither,
+        # and a flat list could not say so.
+        required=("file_id", ("email", "anyone")),
         identity=("file_id", "email"),
         handler=_drive_share, label="Share a document",
         connector="gdrive", capability="share:document",
-        fields=["file_id", "email", "role"],
+        # **`anyone` was a parameter the card never showed.** The rows are built
+        # from this list, so "anyone with the link" — the one fact that turns
+        # sharing with Rahul into publishing — was invisible on the card that
+        # was asking permission for it. `always_ask_when` already forced the tap;
+        # the user just could not see what they were tapping about.
+        fields=["file_id", "email", "role", "anyone"],
+        # …and it must not become an empty box on every ordinary share.
+        only_when_set=("anyone",),
         # Amber against the EMAIL list, because that is genuinely who it
         # reaches and the address is on the card. Sharing a document with
         # Rahul is the same kind of decision as emailing him one.

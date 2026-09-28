@@ -40,7 +40,23 @@ CATALOG = {
                      "fields": ["app", "chat", "text", "at"],
                      "required": ["app", "chat", "text"]},
     "log_workout": {"label": "Log session", "risk": "green",
-                    "fields": ["blocks", "note"], "required": []},
+                    "fields": ["blocks", "note"], "required": ["blocks"]},
+    # Nothing required: a draft with no recipient yet is a real thing to ask
+    # for. The control for every test above.
+    "create_draft": {"label": "Save a draft", "risk": "green",
+                     "fields": ["to", "cc", "subject", "body"], "required": []},
+    # …and the one that could not work, which nothing had written down.
+    "send_email": {"label": "Send email", "risk": "amber",
+                   "fields": ["to", "cc", "subject", "body"],
+                   "required": ["to"]},
+    # A group: an address *or* the anyone-with-the-link flag.
+    "drive_share": {"label": "Share a document", "risk": "amber",
+                    "fields": ["file_id", "email", "role", "anyone"],
+                    "required": ["file_id", ["email", "anyone"]],
+                    "only_when_set": ["anyone"]},
+    "create_followup": {"label": "Track a follow-up", "risk": "green",
+                        "fields": ["about", "who", "due"],
+                        "required": [["about", "who"]]},
 }
 
 WHOLE = {"type": "create_routine",
@@ -76,9 +92,15 @@ def test_a_card_missing_a_required_field_does_not_offer_to_act():
 
 def test_it_says_which_field_is_missing():
     """"Something is wrong" is not an instruction anybody can follow, and the
-    box to fix it is on the same card."""
+    box to fix it is on the same card.
+
+    Read off `.ac-missing` rather than the card's text: this passed against the
+    card's text because the *editor label* for the same field says "Agent" too,
+    so it would have passed with no sentence at all.
+    """
     out = drive(MISSING)
-    assert "Agent" in out["text"], out["text"]
+    assert "Agent" in out["missingSay"], out["missingSay"]
+    assert "before this can run" in out["missingSay"]
 
 
 def test_it_does_not_invent_a_value_for_the_empty_field():
@@ -125,5 +147,80 @@ def test_a_complete_card_still_acts():
 
 
 def test_an_action_that_requires_nothing_is_never_blocked():
-    out = drive({"type": "log_workout", "params": {"blocks": []}})
+    out = drive({"type": "create_draft",
+                 "params": {"subject": "Notes", "body": "Later."}})
     assert not out["blocked"], out["text"]
+
+
+# ── the refusals nobody had written down ───────────────────────────────────
+#
+# Each of these offered a live button whose only possible outcome was the
+# handler's own complaint. They were found by walking the registry, not by a
+# user reporting them — see `test_action_required_fields.py`.
+
+def test_an_email_with_no_recipient_does_not_offer_to_send():
+    """`_draft_or_send` has always answered "a recipient (to) is required"."""
+    out = drive({"type": "send_email",
+                 "params": {"subject": "Proposal", "body": "Here it is."}})
+    assert out["blocked"], out["text"]
+    assert "To" in out["missingSay"], out["missingSay"]
+
+
+def test_a_session_with_every_exercise_removed_does_not_offer_to_log():
+    """An empty list is missing, not present. `String([])` is `""` either way;
+    a `{}` would have read as filled, which is why this asks the value rather
+    than its spelling."""
+    out = drive({"type": "log_workout", "params": {"blocks": []}})
+    assert out["blocked"], out["text"]
+
+
+# ── a group: either one will do ────────────────────────────────────────────
+
+def test_a_follow_up_with_only_a_person_named_still_offers_to_act():
+    """The over-strict half of the same bug: the handler fills `about` in from
+    `who` ("Waiting on Rahul"), so a flat list hid a button that worked."""
+    out = drive({"type": "create_followup",
+                 "params": {"who": "Rahul", "due": "tomorrow 9am"}})
+    assert not out["blocked"], out["text"]
+
+
+def test_a_follow_up_with_neither_is_still_blocked():
+    out = drive({"type": "create_followup", "params": {"due": "tomorrow 9am"}})
+    assert out["blocked"], out["text"]
+
+
+def test_it_names_both_ways_out_of_a_group():
+    """"Needs About" over a card that would also take a name is an instruction
+    to do the wrong thing."""
+    out = drive({"type": "create_followup", "params": {}})
+    assert "About or Who" in out["missingSay"], out["missingSay"]
+
+
+def test_a_link_share_needs_no_address():
+    """"Anyone with the link" reaches an unbounded audience and names nobody.
+    Requiring an address would hide the button over something that works."""
+    out = drive({"type": "drive_share",
+                 "params": {"file_id": "f1", "anyone": "true"}})
+    assert not out["blocked"], out["text"]
+
+
+def test_a_share_with_neither_an_address_nor_a_link_is_blocked():
+    out = drive({"type": "drive_share", "params": {"file_id": "f1"}})
+    assert out["blocked"], out["text"]
+
+
+# ── the flag that turns sharing into publishing ────────────────────────────
+
+def test_a_link_share_says_so_on_the_card():
+    """`anyone` was not in `fields`, so the card asking permission to publish a
+    document never mentioned that it would be public."""
+    out = drive({"type": "drive_share",
+                 "params": {"file_id": "f1", "anyone": "true"}})
+    assert "Anyone" in out["text"], out["text"]
+
+
+def test_an_ordinary_share_grows_no_empty_anyone_box():
+    """An empty box reads as something the user forgot to fill in."""
+    out = drive({"type": "drive_share",
+                 "params": {"file_id": "f1", "email": "rahul@work.test"}})
+    assert "Anyone" not in out["editableFields"], out["editableFields"]

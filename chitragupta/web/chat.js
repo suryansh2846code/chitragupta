@@ -707,6 +707,11 @@ function undoButton(result) {
  * carrying a value is always shown: whatever it says, hiding something that
  * would be saved is worse than showing something that will not be. */
 function relevantField(spec, name, p) {
+  // Shown only when it carries something. The flag that turns sharing into
+  // publishing has to be on the card when it is set and must not be an empty
+  // box on every other share. See `ActionSpec.only_when_set`.
+  if (Array.isArray(spec.only_when_set) && spec.only_when_set.includes(name)
+      && !hasValue(p[name])) return false;
   const rule = spec.depends_on && spec.depends_on[name];
   if (!rule) return true;
   const [decider, values] = rule;
@@ -970,13 +975,33 @@ function findFields(editor) {
   return Array.isArray(editor && editor.boxes) ? editor.boxes : [];
 }
 
+//: Is there anything in this field?
+//:
+//: `[]` and `{}` stringify to something non-empty, which would read as filled —
+//: `items` and `blocks` are both lists, and an emptied workout card is exactly
+//: the case that has to count as missing.
+function hasValue(v) {
+  if (v === undefined || v === null) return false;
+  if (Array.isArray(v)) return v.length > 0;
+  if (typeof v === "object") return Object.keys(v).length > 0;
+  return String(v).trim() !== "";
+}
+
 function missingFields(type, values) {
   const need = (ACTION_CATALOG[type] || {}).required;
   if (!Array.isArray(need)) return [];
-  return need.filter((f) => {
-    const v = values[f];
-    return v === undefined || v === null || String(v).trim() === "";
-  });
+  // A nested list is "at least one of these" — `drive_share` needs an address
+  // or the anyone-with-the-link flag, and `create_followup` takes what it is
+  // about or who it is waiting on. A flat list could only ever be stricter than
+  // the handler, which hides a button over something that would have worked.
+  return need.filter((f) => (Array.isArray(f)
+    ? !f.some((alt) => hasValue(values[alt]))
+    : !hasValue(values[f])));
+}
+
+/** What to call a gap on the card — "Subject", or "Email or Anyone". */
+function missingName(f) {
+  return Array.isArray(f) ? f.map(humanKey).join(" or ") : humanKey(f);
 }
 
 /** Draw a card that has already been acted on: what it was, and what happened.
@@ -1369,7 +1394,7 @@ function actionCard(a) {
     const say = el.querySelector(".ac-missing");
     if (say) {
       say.textContent = gaps.length
-        ? `Needs ${gaps.map(humanKey).join(" and ")} before this can run.`
+        ? `Needs ${gaps.map(missingName).join(" and ")} before this can run.`
         : "";
       say.hidden = !gaps.length;
     }

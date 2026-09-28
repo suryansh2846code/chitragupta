@@ -317,6 +317,13 @@ console.log(JSON.stringify({
   //: The card is missing something it cannot run without, so it is not
   //: offering to act. See `ActionSpec.required`.
   blocked: card ? card.dataset.blocked === "1" : false,
+  //: The sentence naming the gap, which is the instruction the user follows.
+  //: Read directly rather than out of `visibleText`: it is written with
+  //: `textContent` into an element the fake DOM hands back from its selector
+  //: cache, so nothing that walks the card's children can see it — and a test
+  //: asserting on the card's text passed because the field's *editor label*
+  //: happened to contain the same word.
+  missingSay: card ? String(card.querySelector(".ac-missing").textContent || "") : "",
   //: What the card was drawn as — before any click. See `settledAtDraw`.
   settled: settledAtDraw,
   //: And what it became after the harness answered it.
