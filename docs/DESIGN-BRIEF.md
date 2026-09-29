@@ -114,5 +114,6 @@ anyway: the contrast is higher and the mark sits bigger in frame.
 
 ## Rollout
 - Build the **first screen** first (welcome / connect), then every onboarding
-  screen in this aesthetic, then the workspace. Reference: `TURNSTONE-TEARDOWN.md`
-  for flow + content; this brief for the look.
+  screen in this aesthetic, then the workspace. This brief is the look; the
+  flow and the content are in [`../README.md`](../README.md) and
+  [`PROJECT.md`](PROJECT.md).

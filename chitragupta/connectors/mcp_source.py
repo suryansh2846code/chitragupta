@@ -5,8 +5,7 @@ sources the brain is actually built from and hopeless for the long tail, and the
 alternative everyone reaches for — a hosted broker like Composio — is the exact
 trade this product exists to refuse: it puts a third party's cloud between the
 user's mail and the user's machine, and its consent screen carries the broker's
-name instead of the vendor's. Turnstone made that trade; `TURNSTONE-TEARDOWN.md`
-records what it cost them.
+name instead of the vendor's.
 
 A local MCP server has none of that. It is a subprocess. It talks to its own
 vendor over the user's own credential, the data lands on the user's disk, and

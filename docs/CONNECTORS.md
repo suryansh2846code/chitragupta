@@ -252,11 +252,11 @@ Turnstone actually closes — **locally**, which is the entire point.
 
 ## What this deliberately does not do
 
-- **No Composio, and no hosted broker.** Turnstone routes connectors through
-  Composio's cloud (`TURNSTONE-TEARDOWN.md`: *"your data + tokens leave your
-  machine… their local story is really cloud-brain"*), and that trade is exactly
-  the ground Chitragupta owns. Adopting it deletes the winning rows from our own gap
-  analysis.
+- **No Composio, and no hosted broker.** A hosted connector broker means the
+  user's data and tokens leave their machine, and a "local-first" product whose
+  connectors run in somebody else's cloud is local-first in name only. That
+  trade is exactly the ground Chitragupta owns; adopting it would delete the
+  reason to choose this over anything else.
 - **No scraping, ever** — of LinkedIn or anything else. A ban lands on the
   *user's* account, not ours.
 - **No server.** Nango, Activepieces and Open Connector are all real open-source

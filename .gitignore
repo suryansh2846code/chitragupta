@@ -51,3 +51,9 @@ htmlcov/
 
 # Chromium downloaded for the browser integration tests
 .pw-browsers/
+
+# A competitor teardown. Kept on disk as working notes, deliberately out of the
+# repo: it is somebody else's product picked apart, and it does not belong in a
+# public tree. The reasoning it fed — why there is no hosted connector broker,
+# what the onboarding has to cover — is stated inline where it is used.
+docs/TURNSTONE-TEARDOWN.md
