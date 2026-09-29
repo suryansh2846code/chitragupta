@@ -83,7 +83,7 @@ A real Gmail query exposed weak recall: the small **MiniLM** embedder ranked
 Reading the founder's launch post reframed everything: the heart of Turnstone is
 **agents that take action** — *"my email agent… can you just handle that for me?"*
 — learning your **writing style**, from a brain built off **all** your apps. We
-wrote `context.md` to capture this and set the direction: connect daily apps →
+wrote `docs/CONTEXT.md` to capture this and set the direction: connect daily apps →
 action-taking → learn the user's voice.
 
 ## Chapter 8 — Connecting real life

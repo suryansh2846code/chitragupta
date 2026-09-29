@@ -2,7 +2,7 @@
 
 > Every important architectural/product decision, with the reasoning. Newest at
 > the bottom of each section. This is the "why we did it this way" record.
-> Companions: [`context.md`](../context.md) (direction), [`PROJECT.md`](PROJECT.md)
+> Companions: [`CONTEXT.md`](CONTEXT.md) (direction), [`PROJECT.md`](PROJECT.md)
 > (how it works), [`CONCEPTS.md`](CONCEPTS.md) (the ideas from scratch).
 
 ---

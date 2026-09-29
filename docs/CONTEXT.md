@@ -2,7 +2,7 @@
 
 > The living context doc: what we're building, the real Turnstone vision we're
 > matching, where we are, the gaps, the plan, and the bug watch-list.
-> Repo: https://github.com/suryansh2846code/TURNOVER
+> Repo: https://github.com/suryansh2846code/chitragupta
 
 ---
 
