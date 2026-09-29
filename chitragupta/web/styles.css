@@ -992,7 +992,11 @@ select:focus, input:focus, textarea:focus { outline: none; border-color: var(--a
    badge to read — green says its sentence and stays quiet. */
 .ac-risk { margin-top: 8px; padding-top: 7px; border-top: 1px solid var(--border); }
 .action-card[data-risk="green"] { border-color: var(--border2); }
-.action-card[data-risk="red"] .ac-risk { color: var(--danger); }
+/* The approval row draws the same rows as a card, so the same tier line has to
+   read the same way on it — a red sentence that is red in one place and grey in
+   the other is the app disagreeing with itself about how serious this is. */
+.action-card[data-risk="red"] .ac-risk,
+.apr[data-risk="red"] .ac-risk { color: var(--danger); }
 
 /* A plan: several actions, one judgement. The steps are a quiet list — the
    decision is the card, not each line in it. */
@@ -2569,6 +2573,12 @@ button.tiny.running:hover { background: linear-gradient(to right,
 .apr-sum { font-size: 13px; line-height: 1.45; }
 .apr-why { font-size: 12px; opacity: .68; margin-top: 3px; line-height: 1.45; }
 .apr-btns { display: flex; gap: 6px; margin-top: 9px; }
+/* The same quoted-material block as a card's, in a narrower column and a queue
+   that may hold several: shorter before it scrolls, so three waiting emails do
+   not bury the third one's buttons. */
+.apr .ac-body { max-height: 132px; margin: 9px 0; padding: 10px 11px; }
+.apr .ac-risk { margin-top: 7px; }
+.apr-sum .ac-kind { margin-right: 7px; }
 .apr-busy { opacity: .5; pointer-events: none; }
 
 /* ── the action log ──────────────────────────────────────────────────────

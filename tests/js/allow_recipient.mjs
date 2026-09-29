@@ -8,7 +8,14 @@
  * not something recovered from the sentence next to them, then run the action
  * that was waiting. So the handler is invoked and the requests are captured.
  *
- * argv: <a path inside chitragupta/web/>   stdin: {rows}
+ * The row also has to SHOW what it is asking about. It carried one summary line
+ * while the whole proposal sat in `params` on the same response, so the user
+ * approved an email without being shown what it said — see
+ * `test_frontend_approval_fidelity.py`. `catalog` seeds `ACTION_CATALOG`, which
+ * the app fills at boot; without it `actionFace` has no fields to draw from and
+ * every row degrades to exactly the line this is here to replace.
+ *
+ * argv: <a path inside chitragupta/web/>   stdin: {rows, catalog}
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -16,7 +23,7 @@ import path from "node:path";
 import { appSource } from "./_app_source.mjs";
 
 const APP_JS = process.argv[2];
-const { rows } = JSON.parse(fs.readFileSync(0, "utf8"));
+const { rows, catalog } = JSON.parse(fs.readFileSync(0, "utf8"));
 
 /** Buttons the app asks for by selector, discovered from the HTML it wrote. */
 const buttonsFrom = (html, attr, key) => {
@@ -99,9 +106,11 @@ globalThis.fetch = async (url, opts = {}) => {
 const toasts = [];
 new Function(appSource(path.dirname(APP_JS)) +
   "\nglobalThis.__load = loadApprovals;" +
+  "\nglobalThis.__setCatalog = (c) => { ACTION_CATALOG = c; };" +
   "\nglobalThis.__toast = (m) => globalThis.__toasts.push(String(m));" +
   "\ntoast = globalThis.__toast;")();
 globalThis.__toasts = toasts;
+if (catalog) globalThis.__setCatalog(catalog);
 
 let error = null;
 try {

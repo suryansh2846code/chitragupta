@@ -55,11 +55,33 @@ async function loadApprovals() {
         ? `<button class="tiny ghost" data-apralw="${esc(a.id)}"
              title="${esc(blocked.join(", "))}">Always allow ${esc(who)}</button>`
         : "";
+      // **The same face the chat card draws, from the same function.**
+      //
+      // This row is the only place an *unattended* agent asks permission, and
+      // it showed one summary line: "Email “Revised proposal” to
+      // rahul@work.test" and three buttons. So the user approved an email
+      // without being shown what it said — on the path where the text was
+      // written by an agent that had just read a stranger's message, while the
+      // card in their own conversation showed the whole body and let them
+      // correct it. The weaker surface was guarding the riskier path.
+      //
+      // The parameters were on the wire the whole time (`approvals._public`);
+      // nothing here could render them, because "what an action reads as" lived
+      // inside `actionCard`. It is `actionFace` now, and both callers read it.
+      //
+      // The summary stays the headline. It is the server's own wording, shared
+      // with the action log by rule, and it is what makes a queue scannable —
+      // "Send email" would not be. The rows carry what a summary structurally
+      // cannot: the words the agent actually wrote.
+      const face = actionFace(a.action_type, a.params || {});
       return `
-      <div class="apr" data-apr="${esc(a.id)}">
-        <div class="apr-sum">${esc(a.summary)}</div>
+      <div class="apr" data-apr="${esc(a.id)}" data-risk="${esc(face.risk)}">
+        <div class="apr-sum"><span class="ac-kind">${esc(face.kind)}</span>${
+          esc(a.summary)}</div>
         <div class="apr-why">${esc(a.reason || "")}${
           a.routine_name ? ` · from “${esc(a.routine_name)}”` : ""}</div>
+        ${face.rows}
+        ${face.note ? `<div class="ac-row muted ac-risk">${esc(face.note)}</div>` : ""}
         <div class="apr-btns">
           <button class="tiny" data-aprok="${esc(a.id)}">Approve</button>
           ${allow}

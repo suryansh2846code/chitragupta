@@ -1197,36 +1197,33 @@ function proposedWhen(p) {
   });
 }
 
-/** One proposal, as a card the user can read, correct and confirm.
+/** What an action looks like to a person: its title, its rows, its tier.
  *
- * **`title` and `verb` are TEXT; `rows` is MARKUP.** The head escapes the
- * first two and interpolates the third as it stands, so a branch below writes
- * plain words and never its own `esc()`.
+ * **One place, because two surfaces ask the same question.** This was the
+ * inside of `actionCard` and nothing else could reach it, so the approvals
+ * queue — the one place an *unattended* agent asks permission — had nothing to
+ * draw with and showed a single summary line. The card you tap in your own
+ * conversation showed the whole email; the card a routine raises after reading
+ * a stranger's email showed its subject. The weaker surface was guarding the
+ * riskier path, and the fix is not to give it a renderer of its own.
  *
- * That division is the fix for a real hole rather than a tidiness rule. The
- * head used to interpolate `title` raw, which was safe only for as long as
- * every branch remembered — nine wrote constants, one pre-escaped, and the two
- * that assembled a title out of what the *model* wrote did not. So
- * `<action type="mcp_action" tool="<img src=x onerror=…>">` put a live tag in
- * the head of a card, in the origin that can POST `/api/actions/execute`; and
- * one card escaped the same string correctly in a row two lines lower. The
- * model is summarising a stranger's email, so "the model wrote it" is not a
- * reason to trust it — it is the reason not to.
+ * `title` and `verb` are TEXT, `rows` is MARKUP, and `note` is the tier in the
+ * user's words. See `actionCard` for why that division is load-bearing.
  *
- * Escaping once, at the one place the value becomes HTML, is what makes the
- * next branch safe without its author having to know any of this.
+ * Callers: `actionCard` here, and `loadApprovals` in `workspace.js` — read at
+ * render time, long after every script has loaded, which is what makes the
+ * cross-file call safe. Same shape as `proposedWhen` reaching `routineWhen` in
+ * the other direction; see docs/development/frontend-testing.md.
  */
-function actionCard(a) {
-  const p = a.params;
-  // Before the editors and the handlers, all of which close over it.
-  const key = cardKey(a);
+function actionFace(type, params) {
+  const p = params || {};
   let title, rows, verb = "send";
   const at = p.at || p.when;
-  if (a.type === "send_email" || a.type === "create_draft") {
+  if (type === "send_email" || type === "create_draft") {
     // One branch, because the two differ in a word and a verb. The word is the
     // whole difference and it has to be the loudest thing on the card: a draft
     // sits in the user's own folder, and an email has gone.
-    const drafting = a.type === "create_draft";
+    const drafting = type === "create_draft";
     title = drafting ? "Save a draft" : "Send email";
     verb = drafting ? "save" : (at ? "schedule" : "send");
     const files = attachmentNames(p);
@@ -1237,11 +1234,11 @@ function actionCard(a) {
        ${at && !drafting ? `<div class="ac-row"><b>Send at</b> ${esc(at)}</div>` : ""}
        ${files ? `<div class="ac-row"><b>Attached</b> ${esc(files)}</div>` : ""}
        <div class="ac-body">${esc(p.body || "")}</div>`;
-  } else if (a.type === "update_event" || a.type === "cancel_event") {
+  } else if (type === "update_event" || type === "cancel_event") {
     // What is CHANGING, never "an event was changed". This card emails every
     // attendee, so the thing being approved has to be readable as the thing
     // that will land in their inbox.
-    const off = a.type === "cancel_event";
+    const off = type === "cancel_event";
     title = off ? "Cancel this meeting" : "Move this meeting";
     verb = off ? "cancel" : "move";
     rows = (off
@@ -1252,17 +1249,17 @@ function actionCard(a) {
          ${p.location ? `<div class="ac-row"><b>Where</b> ${esc(p.location)}</div>` : ""}
          ${p.attendees ? `<div class="ac-row"><b>Who</b> ${esc(String(p.attendees))}</div>` : ""}
          <div class="ac-row muted">Everybody in it gets the update.</div>`);
-  } else if (a.type === "set_reminder") {
+  } else if (type === "set_reminder") {
     title = "Set reminder"; verb = "set";
     rows = `<div class="ac-row"><b>Remind</b> ${esc(p.message || "")}</div>
        <div class="ac-row"><b>When</b> ${esc(p.at || p.when || "")}</div>`;
-  } else if (a.type === "create_routine") {
+  } else if (type === "create_routine") {
     title = "Create automation"; verb = "create";
     rows = `<div class="ac-row"><b>Name</b> ${esc(p.name || "Automation")}</div>
        <div class="ac-row"><b>Runs</b> ${esc(proposedWhen(p))}${
          p.agent || p.agent_id ? ` · ${esc(p.agent || p.agent_id)}` : ""}</div>
        <div class="ac-body">${esc(p.instruction || "")}</div>`;
-  } else if (a.type === "mcp_action") {
+  } else if (type === "mcp_action") {
     // Previously this fell through to the calendar branch, so a connector
     // action would have been presented as "Create calendar event" — a card
     // describing something other than what the button runs.
@@ -1279,7 +1276,7 @@ function actionCard(a) {
       return `<div class="ac-row"><b>${esc(humanKey(k))}</b> ${esc(v.slice(0, 300))}</div>`;
     }).filter(Boolean).join("");
     rows = shown || `<div class="ac-row muted">No details to fill in.</div>`;
-  } else if (a.type === "log_workout") {
+  } else if (type === "log_workout") {
     // Chat only: there is no training screen and there is not going to be one.
     // The user talks, this appears, they fix what is wrong, they confirm.
     const blocks = Array.isArray(p.blocks) ? p.blocks : [];
@@ -1290,7 +1287,7 @@ function actionCard(a) {
     rows = volume
       ? `<div class="ac-row muted">${volume.toLocaleString()} kg of work, as it stands.</div>`
       : "";
-  } else if (a.type === "message_send") {
+  } else if (type === "message_send") {
     // The app is named, because it is half the decision — the same handle can
     // be two different people on two different apps.
     const where = MESSAGING_APPS[(p.app || "").toLowerCase()] || p.app || "a messaging app";
@@ -1299,7 +1296,7 @@ function actionCard(a) {
     title = `Send a message on ${where}`; verb = "send";
     rows = `<div class="ac-row"><b>To</b> ${esc(p.chat || p.to || "someone")}</div>
        <div class="ac-body">${esc(p.text || "")}</div>`;
-  } else if (a.type === "mail_triage") {
+  } else if (type === "mail_triage") {
     // Plain verbs and real subjects. The user is approving a change to their
     // own inbox, so the card has to read like one — never a message id, never
     // a Gmail label name, and never twelve separate cards for twelve emails.
@@ -1315,7 +1312,7 @@ function actionCard(a) {
     const rest = items.length - named.length;
     rows = rows + (rest > 0 ? `<div class="ac-row muted">and ${rest} more</div>` : "")
       + `<div class="ac-row muted">Nothing is deleted — archiving takes an email out of your inbox and keeps it.</div>`;
-  } else if (a.type === "create_event") {
+  } else if (type === "create_event") {
     title = "Create calendar event"; verb = "create";
     rows = `<div class="ac-row"><b>Title</b> ${esc(p.title || "")}</div>
        <div class="ac-row"><b>When</b> ${esc(p.start || "")}${p.end ? " → " + esc(p.end) : ""}</div>
@@ -1338,10 +1335,10 @@ function actionCard(a) {
     // and the frontend was ignoring both. So an unknown action now says its
     // own name and shows its own values, and the worst a future action can do
     // is look plain.
-    title = ACTION_CATALOG[a.type] && ACTION_CATALOG[a.type].label
-      ? ACTION_CATALOG[a.type].label : "Confirm this action";
+    title = ACTION_CATALOG[type] && ACTION_CATALOG[type].label
+      ? ACTION_CATALOG[type].label : "Confirm this action";
     verb = "do it";
-    const shown = (ACTION_CATALOG[a.type] && ACTION_CATALOG[a.type].fields) || [];
+    const shown = (ACTION_CATALOG[type] && ACTION_CATALOG[type].fields) || [];
     rows = shown.filter((f) => p[f] !== undefined && p[f] !== "")
       .map((f) => {
         const value = typeof p[f] === "object"
@@ -1353,20 +1350,49 @@ function actionCard(a) {
           : `<div class="ac-row"><b>${esc(humanKey(f))}</b> ${esc(value)}</div>`;
       }).join("");
   }
-  const isEmail = a.type === "send_email";
-  const spec = ACTION_CATALOG[a.type] || {};
+  const spec = ACTION_CATALOG[type] || {};
   // The tier, in the user's words. A red action says why it always asks — that
   // sentence is per action and comes from the registry, because "this always
   // needs your approval" told about the wrong thing teaches nobody anything.
   const note = spec.always_ask_because || RISK_NOTE[spec.risk] || "";
+  return { title, rows, verb, note,
+           kind: cardKind(type), risk: spec.risk || "" };
+}
+
+/** One proposal, as a card the user can read, correct and confirm.
+ *
+ * **`title` and `verb` are TEXT; `rows` is MARKUP.** The head escapes the
+ * first two and interpolates the third as it stands, so a branch in
+ * `actionFace` writes plain words and never its own `esc()`.
+ *
+ * That division is the fix for a real hole rather than a tidiness rule. The
+ * head used to interpolate `title` raw, which was safe only for as long as
+ * every branch remembered — nine wrote constants, one pre-escaped, and the two
+ * that assembled a title out of what the *model* wrote did not. So
+ * `<action type="mcp_action" tool="<img src=x onerror=…>">` put a live tag in
+ * the head of a card, in the origin that can POST `/api/actions/execute`; and
+ * one card escaped the same string correctly in a row two lines lower. The
+ * model is summarising a stranger's email, so "the model wrote it" is not a
+ * reason to trust it — it is the reason not to.
+ *
+ * Escaping once, at the one place the value becomes HTML, is what makes the
+ * next branch safe without its author having to know any of this.
+ */
+function actionCard(a) {
+  const p = a.params;
+  // Before the editors and the handlers, all of which close over it.
+  const key = cardKey(a);
+  // What this action reads as, from the one place that decides. The approvals
+  // queue draws the same face from the same function.
+  const { title, rows, verb, note, kind, risk } = actionFace(a.type, p);
   const el = document.createElement("div");
   el.className = "action-card";
   // The key it will have on every render, including the next reload.
   el.dataset.card = key;
-  el.dataset.kind = cardKind(a.type);
+  el.dataset.kind = kind;
   // The tier as an attribute, so the card can be styled and tested by what it
   // actually is rather than by reading its prose.
-  el.dataset.risk = spec.risk || "";
+  el.dataset.risk = risk;
   // A window, not a notice. The chrome is decorative and says so to screen
   // readers — the three dots are the shape of "an application is asking you
   // something", and nothing is announced by them that the title does not say.
@@ -1374,7 +1400,7 @@ function actionCard(a) {
       <span class="ac-dot red"></span><span class="ac-dot yellow"></span><span class="ac-dot green"></span>
     </div>
     <div class="ac-head">${esc(title)}</div>
-    <span class="ac-kind">${esc(el.dataset.kind)}</span>
+    <span class="ac-kind">${esc(kind)}</span>
     <span class="ac-tag">needs your confirmation</span>
     ${rows}
     ${note ? `<div class="ac-row muted ac-risk">${esc(note)}</div>` : ""}

@@ -107,6 +107,17 @@ script out of eleven does not fail; it passes.
   button returns on the keystroke that fills the gap. And **nothing invents a
   value for an empty field**: the automation readback used to print
   "· personal" over a blank Agent box, naming an agent nobody has.
+- **One face, two surfaces.** `actionFace` in `chat.js` turns an action into its
+  title, rows, kind and tier; `actionCard` draws it and so does `loadApprovals`
+  in `workspace.js`. It was the inside of `actionCard`, so the approvals queue —
+  the **only** place an *unattended* agent asks permission — had nothing to draw
+  with and showed one summary line and three buttons. The user approved an email
+  without being shown what it said, on the path where the text was composed
+  after reading a stranger's message, while the card in their own conversation
+  showed the whole body and let them fix a typo in it. The parameters were on the
+  wire the entire time (`approvals._public`). Undo stays off that row on purpose:
+  the row disappears on the next poll, and *What just happened* is where Undo
+  lives afterwards.
 - **A card's title is text; its rows are markup.** The head escapes `title` and
   `verb` and interpolates `rows` as it stands, so no branch writes its own
   `esc()` for a title. It used to interpolate `title` raw, which was safe only
