@@ -80,7 +80,7 @@ async function loadApprovals() {
           esc(a.summary)}</div>
         <div class="apr-why">${esc(a.reason || "")}${
           a.routine_name ? ` · from “${esc(a.routine_name)}”` : ""}</div>
-        ${face.rows}
+        ${rowsHtml(face.rows, null)}
         ${face.note ? `<div class="ac-row muted ac-risk">${esc(face.note)}</div>` : ""}
         <div class="apr-btns">
           <button class="tiny" data-aprok="${esc(a.id)}">Approve</button>

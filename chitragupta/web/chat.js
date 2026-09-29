@@ -392,7 +392,20 @@ const NOT_TYPEABLE = new Set(["items", "blocks", "arguments", "agent_id",
                               // half-typed one is an attachment that silently
                               // vanishes. Changing what is attached means
                               // asking the agent.
-                              "attach", "attachments"]);
+                              "attach", "attachments",
+                              // **Which app, and which tool.** Not a typo you
+                              // can fix: "slcak" is not a misspelling the send
+                              // recovers from, it is a different service, and a
+                              // handle only means anything on the app it came
+                              // from. A vendor's verb is the same — nobody
+                              // corrects `add_issue_comment` by reading it.
+                              //
+                              // They are also the two fields a card's own TITLE
+                              // is built from ("Send a message on Telegram",
+                              // "Update page in Notion"), so a box for either
+                              // would let the heading stop being true while the
+                              // button ran the new value.
+                              "app", "tool", "server_id"]);
 
 //: A one-line input for a short field, a textarea for the long ones. The body
 //: of an email is the field most worth fixing and the one least suited to a
@@ -764,6 +777,11 @@ function actionFields(type, p) {
   //: by class — a selector in a handler is a claim about markup and it goes
   //: stale.
   wrap.boxes = Object.values(inputs);
+  //: Which fields these boxes ARE, so the card can leave those rows out of the
+  //: readback. Published rather than recomputed by the caller: the filter above
+  //: decides what is typeable, and a second copy of that decision would drift
+  //: from it — which is how the same value came to be on the card twice.
+  wrap.names = usable;
   //: Read at click time, never copied back — an edit the user made and a
   //: confirm that ignored it would be the worst possible version of this.
   wrap.readFields = () => {
@@ -822,6 +840,10 @@ function workoutFields(blocks) {
       entry.dropped = !entry.dropped;
       row.style.opacity = entry.dropped ? "0.4" : "1";
       for (const cell of Object.values(cells)) cell.disabled = entry.dropped;
+      // Removing a whole exercise is the largest a frozen total can be wrong
+      // by, and it is not a keystroke — so nothing the card listens for would
+      // have told it. `notify` is set by whoever owns the readback.
+      if (wrap.notify) wrap.notify();
     };
 
     // Separators are spans, not text nodes. Twenty hand-built fake DOMs stand
@@ -847,6 +869,11 @@ function workoutFields(blocks) {
     + "Weight in kg; leave it 0 for bodyweight.";
   wrap.appendChild(hint);
 
+  //: Every cell, so whoever owns the readback can watch them. `findFields` read
+  //: `boxes` and this editor never published any — so the one card whose total is
+  //: computed from its own inputs was the one card that could not notice them
+  //: change.
+  wrap.boxes = rows.flatMap((r) => Object.values(r.cells));
   // Reads at call time, so what is stored is what is on screen right now.
   wrap.readBlocks = () => rows.filter((r) => !r.dropped).map((r) => ({
     exercise: r.cells.exercise.value.trim(),
@@ -1111,6 +1138,36 @@ function settledCard(el, settled, { chrome, title, body }) {
   return el;
 }
 
+/** The rows a card DERIVES, drawn so they can be redrawn.
+ *
+ *  Two lines on two cards are not readbacks of a field — they are computed from
+ *  several: an automation's *"Runs weekdays at 8:00 AM"*, and a session's total
+ *  volume. Leaving them out because their fields have boxes would delete the
+ *  most important sentence on the card. Leaving them static lets the card
+ *  promise 8am over a box that now says 9, which is the one thing a card may
+ *  never do — and `web/CLAUDE.md` records that this file has done it three times.
+ *
+ *  So they are an element rather than a string, and `refresh` recomputes them
+ *  from the face of *what is on the card now*. Created with `createElement` and
+ *  appended deliberately: a harness walks real children and sees this, where
+ *  anything written through a selector into the card's own markup would be
+ *  invisible to every test.
+ */
+function liveRows(type, face) {
+  const derived = face.rows.filter((r) => r.live);
+  if (!derived.length) return { el: null, refresh: () => {} };
+  const box = document.createElement("div");
+  box.className = "ac-live";
+  box.innerHTML = rowsHtml(derived, null);
+  return {
+    el: box,
+    refresh: (params) => {
+      box.innerHTML = rowsHtml(actionFace(type, params).rows.filter((r) => r.live),
+                               null);
+    },
+  };
+}
+
 /** What this card settled as, from either source — or null if it is still a
  *  question.
  *
@@ -1260,9 +1317,55 @@ function proposedWhen(p) {
  * cross-file call safe. Same shape as `proposedWhen` reaching `routineWhen` in
  * the other direction; see docs/development/frontend-testing.md.
  */
+//: A card's rows, as DATA rather than markup.
+//:
+//: They were HTML strings, and that is why every value appeared on the card
+//: twice: the branch printed "To rahul@work.test" and the editor then drew a
+//: labelled box with the same address in it, because neither half could know
+//: what the other had already said. Worse, an edit made the first one *wrong* —
+//: the readback above the button kept the old value while the button ran the new
+//: one, which is the single thing a card may never do.
+//:
+//: `owns` is the answer: the registry field or fields this line is a readback
+//: OF. A card with a box for that field skips the line, and nothing is ever
+//: shown twice or left stale. A line that owns nothing is a line no box can
+//: replace — a sentence, an attachment, one of seventeen emails.
+function rowOf(label, value, extra) {
+  return { label, value: value === null || value === undefined ? "" : String(value),
+           ...(extra || {}) };
+}
+
+/** A sentence rather than a value: quieter, and never owned by a box. */
+function noteOf(text) {
+  return { label: "", value: text, muted: true };
+}
+
+/** The quoted block — an email's text, an automation's instruction. */
+function bodyOf(value, owns) {
+  return { label: "", value: value === null || value === undefined ? "" : String(value),
+           long: true, owns };
+}
+
+/** Rows as markup. `skip` is the set of fields the editor is drawing boxes for.
+ *
+ *  Empty values are dropped rather than printed as a bare label: an empty row
+ *  reads as something the user forgot, and `.ac-missing` is what says a field is
+ *  needed. `live` rows are left out here and drawn by `liveRows` instead — see
+ *  there for why.
+ */
+function rowsHtml(rows, skip) {
+  return (rows || []).filter((r) => r.value !== "").filter(
+    (r) => !(skip && Array.isArray(r.owns) && r.owns.some((f) => skip.has(f))))
+    .map((r) => (r.long
+      ? `<div class="ac-body">${esc(r.value)}</div>`
+      : `<div class="ac-row${r.muted ? " muted" : ""}">${
+          r.label ? `<b>${esc(r.label)}</b> ` : ""}${esc(r.value)}</div>`))
+    .join("");
+}
+
 function actionFace(type, params) {
   const p = params || {};
-  let title, rows, verb = "send";
+  let title, rows = [], verb = "send";
   const at = p.at || p.when;
   if (type === "send_email" || type === "create_draft") {
     // One branch, because the two differ in a word and a verb. The word is the
@@ -1272,13 +1375,18 @@ function actionFace(type, params) {
     title = drafting ? "Save a draft" : "Send email";
     verb = drafting ? "save" : (at ? "schedule" : "send");
     const files = attachmentNames(p);
-    rows = `<div class="ac-row"><b>To</b> ${esc(p.to || (drafting ? "(nobody yet)" : ""))}</div>
-       ${p.cc ? `<div class="ac-row"><b>Cc</b> ${esc(p.cc)}</div>` : ""}
-       <div class="ac-row"><b>Subject</b> ${esc(p.subject || "")}</div>
-       ${p.thread_id ? `<div class="ac-row muted">Goes into the existing conversation.</div>` : ""}
-       ${at && !drafting ? `<div class="ac-row"><b>Send at</b> ${esc(at)}</div>` : ""}
-       ${files ? `<div class="ac-row"><b>Attached</b> ${esc(files)}</div>` : ""}
-       <div class="ac-body">${esc(p.body || "")}</div>`;
+    rows = [
+      rowOf("To", p.to, { owns: ["to"] }),
+      rowOf("Cc", p.cc, { owns: ["cc"] }),
+      rowOf("Subject", p.subject, { owns: ["subject"] }),
+      p.thread_id ? noteOf("Goes into the existing conversation.") : null,
+      // `at` is not one of this action's fields, so no box replaces this and the
+      // row stands on its own. It is declared anyway: the day a scheduled send
+      // becomes correctable, this line should disappear rather than double up.
+      at && !drafting ? rowOf("Send at", at, { owns: ["at"] }) : null,
+      files ? rowOf("Attached", files, { owns: ["attach", "attachments"] }) : null,
+      bodyOf(p.body, ["body"]),
+    ];
   } else if (type === "update_event" || type === "cancel_event") {
     // What is CHANGING, never "an event was changed". This card emails every
     // attendee, so the thing being approved has to be readable as the thing
@@ -1286,24 +1394,37 @@ function actionFace(type, params) {
     const off = type === "cancel_event";
     title = off ? "Cancel this meeting" : "Move this meeting";
     verb = off ? "cancel" : "move";
-    rows = (off
-      ? `<div class="ac-row muted">It is called off and everybody in it is told.</div>`
-      : `${p.start ? `<div class="ac-row"><b>New time</b> ${esc(p.start)}${
-            p.end ? " → " + esc(p.end) : " (same length)"}</div>` : ""}
-         ${p.title ? `<div class="ac-row"><b>New name</b> ${esc(p.title)}</div>` : ""}
-         ${p.location ? `<div class="ac-row"><b>Where</b> ${esc(p.location)}</div>` : ""}
-         ${p.attendees ? `<div class="ac-row"><b>Who</b> ${esc(String(p.attendees))}</div>` : ""}
-         <div class="ac-row muted">Everybody in it gets the update.</div>`);
+    rows = off
+      ? [noteOf("It is called off and everybody in it is told.")]
+      : [
+        rowOf("New time", p.start
+          ? `${p.start}${p.end ? " \u2192 " + p.end : " (same length)"}` : "",
+          { owns: ["start", "end"] }),
+        rowOf("New name", p.title, { owns: ["title"] }),
+        rowOf("Where", p.location, { owns: ["location"] }),
+        rowOf("Who", p.attendees === undefined || p.attendees === null
+          ? "" : String(p.attendees), { owns: ["attendees"] }),
+        noteOf("Everybody in it gets the update."),
+      ];
   } else if (type === "set_reminder") {
     title = "Set reminder"; verb = "set";
-    rows = `<div class="ac-row"><b>Remind</b> ${esc(p.message || "")}</div>
-       <div class="ac-row"><b>When</b> ${esc(p.at || p.when || "")}</div>`;
+    rows = [rowOf("Remind", p.message, { owns: ["message"] }),
+            rowOf("When", p.at || p.when, { owns: ["at"] })];
   } else if (type === "create_routine") {
     title = "Create automation"; verb = "create";
-    rows = `<div class="ac-row"><b>Name</b> ${esc(p.name || "Automation")}</div>
-       <div class="ac-row"><b>Runs</b> ${esc(proposedWhen(p))}${
-         p.agent || p.agent_id ? ` · ${esc(p.agent || p.agent_id)}` : ""}</div>
-       <div class="ac-body">${esc(p.instruction || "")}</div>`;
+    rows = [
+      rowOf("Name", p.name || "Automation", { owns: ["name"] }),
+      // **Live, and owning nothing.** This is the promise the card makes — the
+      // one line `web/CLAUDE.md` has a rule of its own about — and it is derived
+      // from four fields the user can correct. Skipping it because those have
+      // boxes would drop the most important sentence on the card; leaving it
+      // static would let the card promise 8am while the box said 9. So it is
+      // recomputed on every keystroke instead. See `liveRows`.
+      rowOf("Runs", proposedWhen(p)
+        + (p.agent || p.agent_id ? ` \u00b7 ${p.agent || p.agent_id}` : ""),
+        { live: true }),
+      bodyOf(p.instruction, ["instruction"]),
+    ];
   } else if (type === "mcp_action") {
     // Previously this fell through to the calendar branch, so a connector
     // action would have been presented as "Create calendar event" — a card
@@ -1315,23 +1436,20 @@ function actionFace(type, params) {
     // Only the arguments that say something. `properties {}` and
     // `content_updates []` are the tool's own empty defaults, and printing them
     // asks the user to read noise before approving.
-    const shown = Object.keys(args).map((k) => {
-      const v = humanValue(args[k]);
-      if (!v) return "";
-      return `<div class="ac-row"><b>${esc(humanKey(k))}</b> ${esc(v.slice(0, 300))}</div>`;
-    }).filter(Boolean).join("");
-    rows = shown || `<div class="ac-row muted">No details to fill in.</div>`;
+    const shown = Object.keys(args)
+      .map((k) => rowOf(humanKey(k), humanValue(args[k]).slice(0, 300)))
+      .filter((r) => r.value !== "");
+    rows = shown.length ? shown : [noteOf("No details to fill in.")];
   } else if (type === "log_workout") {
     // Chat only: there is no training screen and there is not going to be one.
     // The user talks, this appears, they fix what is wrong, they confirm.
     const blocks = Array.isArray(p.blocks) ? p.blocks : [];
-    const volume = blocks.reduce(
-      (sum, b) => sum + (Number(b.sets) || 0) * (Number(b.reps) || 0) * (Number(b.weight) || 0), 0);
-    title = blocks.length === 1 ? "Log this set" : `Log this session`;
+    title = blocks.length === 1 ? "Log this set" : "Log this session";
     verb = "log";
-    rows = volume
-      ? `<div class="ac-row muted">${volume.toLocaleString()} kg of work, as it stands.</div>`
-      : "";
+    // Live for the same reason as the automation's schedule: it is a total of
+    // numbers the user is about to correct, and `workoutFields` can drop a whole
+    // exercise. A frozen total under an edited session is a wrong number.
+    rows = [rowOf("", workoutVolume(blocks), { live: true, muted: true })];
   } else if (type === "message_send") {
     // The app is named, because it is half the decision — the same handle can
     // be two different people on two different apps.
@@ -1339,8 +1457,8 @@ function actionFace(type, params) {
     // Not escaped here. The head escapes it, and escaping twice turns an app
     // called "AT&T" into "AT&amp;amp;T" on the card.
     title = `Send a message on ${where}`; verb = "send";
-    rows = `<div class="ac-row"><b>To</b> ${esc(p.chat || p.to || "someone")}</div>
-       <div class="ac-body">${esc(p.text || "")}</div>`;
+    rows = [rowOf("To", p.chat || p.to || "someone", { owns: ["chat"] }),
+            bodyOf(p.text, ["text"])];
   } else if (type === "mail_triage") {
     // Plain verbs and real subjects. The user is approving a change to their
     // own inbox, so the card has to read like one — never a message id, never
@@ -1351,17 +1469,22 @@ function actionFace(type, params) {
     const named = items.slice(0, MAIL_NAMED_MAX);
     rows = named.map((it) => {
       const what = MAIL_VERBS[it && it.do] || "Change";
-      const suffix = it && it.label ? ` as “${it.label}”` : "";
-      return `<div class="ac-row"><b>${esc(what + suffix)}</b> ${esc((it && it.subject) || "(no subject)")}</div>`;
-    }).join("");
+      const suffix = it && it.label ? ` as \u201c${it.label}\u201d` : "";
+      return rowOf(what + suffix, (it && it.subject) || "(no subject)");
+    });
     const rest = items.length - named.length;
-    rows = rows + (rest > 0 ? `<div class="ac-row muted">and ${rest} more</div>` : "")
-      + `<div class="ac-row muted">Nothing is deleted — archiving takes an email out of your inbox and keeps it.</div>`;
+    if (rest > 0) rows.push(noteOf(`and ${rest} more`));
+    rows.push(noteOf("Nothing is deleted \u2014 archiving takes an email out of "
+                     + "your inbox and keeps it."));
   } else if (type === "create_event") {
     title = "Create calendar event"; verb = "create";
-    rows = `<div class="ac-row"><b>Title</b> ${esc(p.title || "")}</div>
-       <div class="ac-row"><b>When</b> ${esc(p.start || "")}${p.end ? " → " + esc(p.end) : ""}</div>
-       ${p.description ? `<div class="ac-body">${esc(p.description)}</div>` : ""}`;
+    rows = [
+      rowOf("Title", p.title, { owns: ["title"] }),
+      rowOf("When", p.start
+        ? `${p.start}${p.end ? " \u2192 " + p.end : ""}` : "",
+        { owns: ["start", "end"] }),
+      bodyOf(p.description, ["description"]),
+    ];
   } else {
     // **Anything this chain does not name renders from the REGISTRY.**
     //
@@ -1390,18 +1513,25 @@ function actionFace(type, params) {
           ? JSON.stringify(p[f]) : String(p[f]);
         // The long one reads as the body, the way every other card's does.
         return value.length > 80
-          ? `<div class="ac-row"><b>${esc(humanKey(f))}</b></div>
-             <div class="ac-body">${esc(value)}</div>`
-          : `<div class="ac-row"><b>${esc(humanKey(f))}</b> ${esc(value)}</div>`;
-      }).join("");
+          ? bodyOf(value, [f])
+          : rowOf(humanKey(f), value, { owns: [f] });
+      });
   }
   const spec = ACTION_CATALOG[type] || {};
   // The tier, in the user's words. A red action says why it always asks — that
   // sentence is per action and comes from the registry, because "this always
   // needs your approval" told about the wrong thing teaches nobody anything.
   const note = spec.always_ask_because || RISK_NOTE[spec.risk] || "";
-  return { title, rows, verb, note,
+  return { title, rows: rows.filter(Boolean), verb, note,
            kind: cardKind(type), risk: spec.risk || "" };
+}
+
+/** "4,500 kg of work, as it stands." — or "" for a bodyweight session. */
+function workoutVolume(blocks) {
+  const volume = (Array.isArray(blocks) ? blocks : []).reduce(
+    (sum, b) => sum + (Number(b.sets) || 0) * (Number(b.reps) || 0)
+      * (Number(b.weight) || 0), 0);
+  return volume ? `${volume.toLocaleString()} kg of work, as it stands.` : "";
 }
 
 /** One proposal, as a card the user can read, correct and confirm.
@@ -1429,7 +1559,26 @@ function actionCard(a) {
   const key = cardKey(a);
   // What this action reads as, from the one place that decides. The approvals
   // queue draws the same face from the same function.
-  const { title, rows, verb, note, kind, risk } = actionFace(a.type, p);
+  const face = actionFace(a.type, p);
+  const { title, verb, note, kind, risk } = face;
+
+  // **The editors are built BEFORE the card, because they decide what it says.**
+  //
+  // A row and a box for the same field is the same value twice — and after an
+  // edit, the row is the wrong one of the two. `fields.names` is what the
+  // generic editor drew, so `rowsHtml` can leave exactly those lines out.
+  //
+  // Two editors, because two kinds of field. `workoutFields` understands a list
+  // of blocks; `actionFields` covers every scalar the registry declares. An
+  // action can have both — a session has blocks *and* a note.
+  const editor = a.type === "log_workout"
+    ? workoutFields(Array.isArray(p.blocks) ? p.blocks : []) : null;
+  const fields = actionFields(a.type, p);
+  const covered = new Set(fields && Array.isArray(fields.names) ? fields.names : []);
+  //: Derived lines are drawn separately and recomputed on every keystroke, so
+  //: they are left out of the static block here. See `liveRows`.
+  const rows = rowsHtml(face.rows.filter((r) => !r.live), covered);
+
   const el = document.createElement("div");
   el.className = "action-card";
   // The key it will have on every render, including the next reload.
@@ -1448,8 +1597,6 @@ function actionCard(a) {
     <span class="ac-kind">${esc(kind)}</span>
     <span class="ac-tag">needs your confirmation</span>
     ${rows}
-    ${note ? `<div class="ac-row muted ac-risk">${esc(note)}</div>` : ""}
-    <div class="ac-row ac-missing" hidden></div>
     <div class="ac-actions"><button class="ac-confirm">Confirm & ${esc(verb)}</button>
     <button class="ac-cancel ghost">Cancel</button></div>
     <div class="ac-result"></div>`;
@@ -1463,22 +1610,44 @@ function actionCard(a) {
       chrome: `<div class="ac-chrome" aria-hidden="true">
         <span class="ac-dot red"></span><span class="ac-dot yellow"></span><span class="ac-dot green"></span>
       </div>`,
-      title, body: rows });
+      // Every row, derived ones included: nothing here can be edited, so there
+      // is nothing for a box to duplicate and nothing to keep in step.
+      title, body: rowsHtml(face.rows, null) });
   }
 
-  // Editable types grow real inputs. Held here, not looked up again later:
-  // the values that execute are read off these elements at click time.
+  // **Above the button, in the order a person reads.** The boxes used to be
+  // appended after `.ac-result`, so the form you are meant to correct sat below
+  // the button you press — and tabbing from the Confirm button went *forwards*
+  // into the fields it had already run.
   //
-  // Two editors, because two kinds of field. `workoutFields` understands a
-  // list of blocks; `actionFields` covers every scalar the registry declares.
-  // An action can have both — a session has blocks *and* a note.
-  let editor = null;
-  if (a.type === "log_workout") {
-    editor = workoutFields(Array.isArray(p.blocks) ? p.blocks : []);
-    el.appendChild(editor);
+  // `insertBefore` rather than a CSS `order`: visual order and tab order have to
+  // be the same thing, or a keyboard user gets the version nobody designed.
+  const before = (node) => {
+    if (!node) return;
+    el.insertBefore(node, el.querySelector(".ac-actions"));
+  };
+  before(editor);
+  before(fields);
+  //: The derived lines, last of the readback and recomputed on every keystroke.
+  const live = liveRows(a.type, face);
+  before(live.el);
+  // **The tier, then the gap, then the buttons.** Both used to sit in the card's
+  // own markup above the form — which was only right while the form was below
+  // the buttons. "This leaves your machine" belongs immediately above the button
+  // that does it, and "needs a subject" belongs immediately above the button it
+  // is disabling; a warning three fields further up is one the eye has already
+  // passed. They are inserted rather than written so that order is one decision
+  // in one place.
+  if (note) {
+    const tier = document.createElement("div");
+    tier.className = "ac-row muted ac-risk";
+    tier.textContent = note;
+    before(tier);
   }
-  const fields = actionFields(a.type, p);
-  if (fields) el.appendChild(fields);
+  const gap = document.createElement("div");
+  gap.className = "ac-row ac-missing";
+  gap.hidden = true;
+  before(gap);
 
   //: A card missing something the action cannot run without does not offer to
   //: act — an automation with an empty Agent box showed "Confirm & create"
@@ -1491,6 +1660,10 @@ function actionCard(a) {
   const watchGaps = () => {
     const now = fields && fields.readFields
       ? { ...p, ...fields.readFields() } : p;
+    if (editor && editor.readBlocks) now.blocks = editor.readBlocks();
+    // What the card SAYS follows what the card holds, on the same keystroke as
+    // what the button would run. One call site, so the two cannot diverge.
+    live.refresh(now);
     const gaps = missingFields(a.type, now);
     el.dataset.blocked = gaps.length ? "1" : "";
     const say = el.querySelector(".ac-missing");
@@ -1506,11 +1679,13 @@ function actionCard(a) {
       go.hidden = gaps.length > 0;
     }
   };
-  if (fields) {
-    for (const box of findFields(fields)) {
+  for (const source of [fields, editor]) {
+    for (const box of findFields(source)) {
       box.addEventListener("input", watchGaps);
     }
   }
+  // Dropping an exercise is not an `input` event. See `workoutFields`.
+  if (editor) editor.notify = watchGaps;
   watchGaps();
 
   el.querySelector(".ac-cancel").onclick = () => {

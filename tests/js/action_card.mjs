@@ -32,7 +32,8 @@ const makeEl = (tag = "div") => {
     className: "", title: "", textContent: "", style: {}, dataset: {},
     classList: { add() {}, remove() {}, toggle() {}, contains: () => false },
     querySelector: () => makeEl(), querySelectorAll: () => [],
-    addEventListener() {}, appendChild() {}, setAttribute() {},
+    addEventListener() {}, appendChild() {}, insertBefore() {},
+    setAttribute() {},
     getAttribute: () => null, focus() {}, remove() {}, closest: () => null,
   };
   Object.defineProperty(e, "innerHTML", {

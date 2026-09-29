@@ -944,9 +944,18 @@ select:focus, input:focus, textarea:focus { outline: none; border-color: var(--a
    and the mono panel inside becomes 110 characters wide, which is past the line
    length anyone reads comfortably. Wider than 400 because these rows carry a
    label AND a value, which 400 wraps. */
+/* **One vertical rhythm, declared once.** The card's spacing was eleven
+   hand-picked numbers — 13, 6, 12, 3, 11, 12, 8, 10, 7 — and the padding was
+   `16px 18px 15px`, a pixel shorter at the bottom than the top for no reason
+   anybody wrote down. Nothing was individually wrong and the whole thing was
+   never square: every block met its neighbour at a slightly different distance,
+   and each new block added another number. Two steps now, used by every part,
+   so a block added later is spaced by reading one line rather than guessing. */
 .action-card { align-self: flex-start; width: min(520px, 100%);
+  --ac-gap: 12px;          /* between blocks: a rule, a form, the buttons */
+  --ac-tight: 6px;         /* inside a block: a title and its chips */
   background: var(--rail); border: 1px solid var(--line);
-  border-radius: 12px; padding: 16px 18px 15px;
+  border-radius: 12px; padding: 16px 18px;
   box-shadow: 0 4px 14px rgba(0,0,0,.35);
   transition: transform .2s, box-shadow .2s; }
 /* The lift is the reference's, at less than half the distance. -5px on a card
@@ -958,29 +967,32 @@ select:focus, input:focus, textarea:focus { outline: none; border-color: var(--a
 @media (prefers-reduced-motion: reduce) {
   .action-card, .action-card:hover { transform: none; transition: none; }
 }
-.ac-chrome { display: flex; align-items: center; gap: 7px; margin-bottom: 13px; }
+.ac-chrome { display: flex; align-items: center; gap: 7px;
+  margin-bottom: var(--ac-gap); }
 .ac-dot { width: 11px; height: 11px; border-radius: 50%; display: inline-block; flex: none; }
 .ac-dot.red { background: #ff5f57; } .ac-dot.yellow { background: #ffbd2e; } .ac-dot.green { background: #28c941; }
-.ac-head { font-size: 16px; font-weight: 700; margin-bottom: 6px; color: var(--text); }
+.ac-head { font-size: 16px; font-weight: 700; margin-bottom: var(--ac-tight);
+  color: var(--text); }
 /* Below the title, the way the reference puts its tag — and still gold,
    because it is the one line on the card that says you have to do something. */
 .ac-tag { display: inline-block; font-size: 10px; text-transform: uppercase; letter-spacing: .5px;
   color: var(--north); background: var(--north-dim); padding: 4px 8px;
-  border-radius: 5px; margin-bottom: 12px; }
+  border-radius: 5px; margin-bottom: var(--ac-gap); }
 .ac-row { font-size: 13px; margin: 3px 0; } .ac-row b { color: var(--muted); font-weight: 500; margin-right: 6px; }
 /* The "code editor": what the agent is actually going to act on, inset and
    mono, so it reads as quoted material rather than as more of the card's own
    prose. Scrolls rather than grows — a long payload must not push the Confirm
    button off the bottom of a conversation. */
 .ac-body { background: var(--panel-2); border: 1px solid var(--line2);
-  border-radius: 6px; padding: 13px 14px; margin: 11px 0;
+  border-radius: 6px; padding: 13px 14px; margin: var(--ac-gap) 0;
   font-family: var(--mono); font-size: 12.5px; line-height: 1.55;
   color: var(--text); white-space: pre-wrap; max-height: 200px; overflow-y: auto; }
 .ac-body::-webkit-scrollbar { width: 8px; }
 .ac-body::-webkit-scrollbar-thumb { background: var(--line2); border-radius: 4px; }
-.ac-actions { display: flex; gap: 8px; margin-top: 12px; align-items: center; }
+.ac-actions { display: flex; gap: 8px; margin-top: var(--ac-gap);
+  align-items: center; }
 .ac-confirm { background: var(--north); color: var(--north-ink); border-radius: 8px; padding: 8px 14px; font-weight: 600; }
-.ac-result { margin-top: 8px; font-size: 13px; } .ac-ok { color: var(--accent-2); } .ac-err { color: var(--danger); }
+.ac-result { margin-top: var(--ac-tight); font-size: 13px; } .ac-ok { color: var(--accent-2); } .ac-err { color: var(--danger); }
 /* "We tried and we do not know." Amber, not red: red is a thing that certainly
    did not happen, and this one may well have. It wraps because it is a sentence
    rather than a status — the user has a decision to make and needs the reason
@@ -996,7 +1008,8 @@ select:focus, input:focus, textarea:focus { outline: none; border-color: var(--a
 
 /* The risk line. Amber and red get a border that says so without a second
    badge to read — green says its sentence and stays quiet. */
-.ac-risk { margin-top: 8px; padding-top: 7px; border-top: 1px solid var(--border); }
+.ac-risk { margin-top: var(--ac-gap); padding-top: var(--ac-gap);
+  border-top: 1px solid var(--border); }
 .action-card[data-risk="green"] { border-color: var(--border2); }
 /* The approval row draws the same rows as a card, so the same tier line has to
    read the same way on it — a red sentence that is red in one place and grey in
@@ -1018,8 +1031,12 @@ select:focus, input:focus, textarea:focus { outline: none; border-color: var(--a
 
 /* Correcting a proposal before confirming it. One row per scalar field the
    registry declares, in the registry's order. */
-.ac-edit { display: flex; flex-direction: column; gap: 7px; margin-top: 10px;
-  padding-top: 10px; border-top: 1px solid var(--border); }
+.ac-edit { display: flex; flex-direction: column; gap: var(--ac-tight);
+  margin-top: var(--ac-gap); padding-top: var(--ac-gap);
+  border-top: 1px solid var(--border); }
+/* Two blocks that both open with a hairline would draw the line twice when a
+   session has blocks AND a note. The second one is a continuation of the first. */
+.ac-edit + .ac-edit { margin-top: 0; padding-top: 0; border-top: 0; }
 .ac-edit-row { display: flex; flex-direction: column; gap: 3px; }
 .ac-edit-label { font-size: 11px; color: var(--muted); letter-spacing: .2px; }
 .ac-field-wide { width: 100%; background: var(--panel-2); border: 1px solid var(--border);
@@ -3228,10 +3245,23 @@ button.tiny.running:hover { background: linear-gradient(to right,
 
 /* What kind of card this is. Beside the status, and quieter than it: the
    status is what changed, the kind is what it has always been. */
+/* Beside the status tag, and it has to carry the same bottom margin: two chips
+   on one line with different margins leave a ragged box under them, which is
+   what put the rows a hair closer to the kind than to the status. */
 .ac-kind { display: inline-block; font-size: 10px; text-transform: uppercase;
   letter-spacing: .5px; padding: 2px 7px; margin-right: 6px; border-radius: 5px;
   border: 1px solid var(--line2); color: var(--muted); vertical-align: middle; }
+/* On the card only. In an approval row the chip is inline at the start of the
+   summary sentence, so a bottom margin there opens a gap inside one line. */
+.action-card .ac-kind { margin-bottom: var(--ac-gap); }
 
 /* What a card still needs before it can run. Amber rather than red: nothing
    has gone wrong, there is just a box to fill in on this same card. */
-.ac-missing { color: var(--accent); margin: 6px 0 2px; }
+.ac-missing { color: var(--accent); margin: var(--ac-tight) 0 2px; }
+
+/* What the card DERIVES from the boxes above it — when an automation will run,
+   what a session adds up to. It sits under the form because it is a readback of
+   the form, and it is quiet because it is not a decision: the decision is the
+   button. It redraws on every keystroke, so it never disagrees with the boxes. */
+.ac-live { margin-top: var(--ac-tight); }
+.ac-live .ac-row { margin: 2px 0; }

@@ -123,6 +123,30 @@ script out of eleven does not fail; it passes.
   button returns on the keystroke that fills the gap. And **nothing invents a
   value for an empty field**: the automation readback used to print
   "· personal" over a blank Agent box, naming an agent nobody has.
+- **A row and a box for the same field are the same value twice.** `actionFace`
+  returns rows as data, each carrying the registry field it `owns`; a field with
+  an editable box has no row. They were HTML strings, so neither half knew what
+  the other had said and an email card printed its recipient, subject and whole
+  body twice — and after a correction the printed copy was the *wrong* one, which
+  is a card describing something other than what its button runs, reachable by
+  typing. Two lines are **derived** rather than owned (an automation's "Runs …",
+  a session's total): dropping them because their inputs have boxes would delete
+  the most important sentence on the card, so `liveRows` redraws them on every
+  keystroke instead. Dropping an exercise is not a keystroke — `workoutFields`
+  calls `notify` for that.
+- **The form goes above the buttons, and the tier line goes last.** The boxes
+  were appended after `.ac-result`, so the thing to correct sat under the thing
+  to press and tabbing off Confirm moved *forwards* into the fields it had
+  already run with. `insertBefore(.ac-actions)`, not a CSS `order`: visual order
+  and tab order have to be the same thing. `.ac-risk` and `.ac-missing` are
+  inserted too, so "this leaves your machine" is immediately above the button
+  that does it. Three `tests/js/` harnesses needed `insertBefore` for this, and
+  the one that did not get it *threw* — which the anti-vacuity check in
+  `test_frontend_tool_result_injection.py` caught, exactly as designed.
+- **The card has one vertical rhythm, `--ac-gap` and `--ac-tight`.** It was
+  eleven hand-picked numbers and a padding a pixel shorter at the bottom than the
+  top. Nothing was individually wrong and it was never square; a block added
+  later now spaces itself by reading one line.
 - **One face, two surfaces.** `actionFace` in `chat.js` turns an action into its
   title, rows, kind and tier; `actionCard` draws it and so does `loadApprovals`
   in `workspace.js`. It was the inside of `actionCard`, so the approvals queue —

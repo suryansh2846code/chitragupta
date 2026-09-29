@@ -36,6 +36,17 @@ const makeEl = (tag = "div") => {
     addEventListener() {}, setAttribute() {}, getAttribute: () => null,
     focus() {}, remove() {}, closest: () => null,
     appendChild(child) { this.children.push(child); return child; },
+    // A card puts its form above its buttons, and `.ac-actions` lives in the
+    // card's own markup rather than in `children` — so the reference node is
+    // never found here and appending is the honest answer. Without this the
+    // card threw, the harness reported an error, and the two anti-vacuity
+    // checks caught it: exactly what they are for.
+    insertBefore(child, ref) {
+      const at = ref ? this.children.indexOf(ref) : -1;
+      if (at === -1) this.children.push(child);
+      else this.children.splice(at, 0, child);
+      return child;
+    },
   };
   return e;
 };

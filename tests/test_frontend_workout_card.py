@@ -79,8 +79,13 @@ def test_it_says_what_the_units_are(card):
 
 
 def test_it_shows_the_work_done(card):
-    """5×5×100 + 3×8×60 = 3,940."""
-    assert "3,940 kg" in card["html"]
+    """5×5×100 + 3×8×60 = 3,940.
+
+    From `text` for the reason the test above this one already gives: the total
+    is a *derived* line now, drawn as an appended element so it can be redrawn
+    when the user corrects a weight. `innerHTML` cannot see it.
+    """
+    assert "3,940 kg" in card["text"]
 
 
 # ── the claim: what executes is what is on screen ────────────────────────

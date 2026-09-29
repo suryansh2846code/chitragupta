@@ -25,7 +25,15 @@ const makeEl = (tag = "div") => {
     dataset: {}, onclick: null, textContent: "", children: [],
     classList: { add() {}, remove() {}, toggle() {}, contains: () => false },
     querySelectorAll: () => [],
-    addEventListener() {},
+    // **Recorded, not dropped.** This was `addEventListener() {}`, so no input
+    // event had ever fired in any test — and everything the card does *while*
+    // the user types was therefore unreachable: the re-check that brings the
+    // Confirm button back when a gap is filled, and the derived lines that have
+    // to follow the boxes. Both passed their tests by never running.
+    addEventListener(type, fn) {
+      this._on = this._on || {};
+      (this._on[type] = this._on[type] || []).push(fn);
+    },
     // Recorded, not discarded: the generic field editor labels its boxes with
     // `aria-label`, and a test addressing them by position would pin the
     // registry's field order as well as the behaviour it means to check.
@@ -35,6 +43,25 @@ const makeEl = (tag = "div") => {
     focus() {}, remove() {}, closest: () => null,
     parent: null,
     appendChild(c) { c.parent = this; this.children.push(c); return c; },
+    // The card puts its editors ABOVE its buttons, so visual order and tab
+    // order are the same thing. `.ac-actions` lives in the card's own markup
+    // rather than in `children`, so the reference node is not found here — and
+    // appending is the honest answer to that, not a throw: this DOM has no
+    // layout, and every test about the boxes finds them by walking `children`.
+    insertBefore(node, ref) {
+      // Recorded with the node it was placed before. `.ac-actions` is part of
+      // the card's own markup rather than a child object, so where the editor
+      // *landed* is not observable here — but WHAT it was placed before is, by
+      // identity, because the selector cache hands out the same object twice.
+      // That is the claim worth checking: a card that went back to appending
+      // would put its form under its button in a real browser.
+      (this._inserts = this._inserts || []).push({ node, ref });
+      const at = ref ? this.children.indexOf(ref) : -1;
+      node.parent = this;
+      if (at === -1) this.children.push(node);
+      else this.children.splice(at, 0, node);
+      return node;
+    },
     // Without this the Undo button's success path threw `replaceWith is not a
     // function`, was swallowed by its own error handler, and the harness
     // reported the button still sitting there — a green test over a path that
@@ -59,6 +86,11 @@ const makeEl = (tag = "div") => {
     set(v) { html = String(v); if (v === "") node.children.length = 0; },
   });
   return node;
+};
+
+/** Fire the listeners a node recorded, the way typing into it would. */
+const fire = (node, type) => {
+  for (const fn of ((node && node._on && node._on[type]) || [])) fn();
 };
 
 const registry = new Map();
@@ -253,7 +285,10 @@ let fields = [];
 if (card && edits) {
   fields = findAll(card, "ac-field");
   for (const [index, value] of Object.entries(edits.set || {})) {
-    if (fields[index]) fields[index].value = String(value);
+    if (fields[index]) {
+      fields[index].value = String(value);
+      fire(fields[index], "input");
+    }
   }
   for (const index of edits.drop || []) {
     const drops = findAll(card, "ac-drop ghost");
@@ -265,7 +300,12 @@ if (card && edits) {
   const wide = findAll(card, "ac-field ac-field-wide");
   for (const [name, value] of Object.entries(edits.setField || {})) {
     const box = wide.find((b) => (b.attrs || {})["aria-label"] === name);
-    if (box) box.value = String(value);
+    if (box) {
+      box.value = String(value);
+      // The card watches for this, and until now nothing in any harness sent
+      // one — so a corrected field never reached the code that reads it back.
+      fire(box, "input");
+    }
   }
 }
 
@@ -340,6 +380,17 @@ console.log(JSON.stringify({
   settled: settledAtDraw,
   //: And what it became after the harness answered it.
   settledAfter: card ? (card.dataset.settled || "") : "",
+  //: The classes of the card's children, in order.
+  childOrder: card ? (card.children || []).map((c) => c.className) : [],
+  //: What each part was placed before, by identity — "ac-actions" for the slot
+  //: holding the buttons. Tab order follows the DOM, and a form appended after
+  //: the buttons is one a keyboard user reaches only after pressing them.
+  insertedBefore: card
+    ? (card._inserts || []).map((i) => ({
+        what: i.node.className,
+        before: i.ref === card.querySelector(".ac-actions") ? "ac-actions" : "?",
+      }))
+    : [],
   //: The tag, and the slot the buttons were in, AFTER the answer.
   //:
   //: The two things that were wrong on a card whose request threw, and neither

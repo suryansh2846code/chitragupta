@@ -318,10 +318,18 @@ def test_an_unknown_action_says_its_own_name_from_the_registry():
 def test_an_unknown_action_shows_its_own_values_not_a_calendar_shape():
     """The old branch rendered `Title` and `When` — fields a Notion write does
     not have — so the card was blank where it mattered and populated where it
-    did not."""
+    did not.
+
+    Read from `text` rather than `html`: a field the user can correct is now an
+    *editable box* instead of a printed row and a box saying the same thing
+    twice, and a box is an appended element that `innerHTML` cannot see.
+    `visibleText` walks the children and reads their values, which is what a
+    person actually looks at. `html` is still the right surface for the things
+    no box replaces — the heading below, and every escaping test.
+    """
     out = _run(APPEND, DONE, catalog=NOTION)
 
-    assert "Dishu — 9999999999" in out["html"]
+    assert "Dishu — 9999999999" in out["text"]
     assert "<b>When</b>" not in out["html"]
 
 
@@ -346,7 +354,9 @@ def test_a_calendar_event_still_renders_as_one():
                {"ok": True, "detail": "created"}, catalog=cal)
 
     assert "Create calendar event" in out["html"]
-    assert "Budget review" in out["html"]
+    # In its box, which is where a correctable value lives now. See the note on
+    # `test_an_unknown_action_shows_its_own_values_not_a_calendar_shape`.
+    assert "Budget review" in out["text"]
 
 
 def test_every_action_in_the_registry_has_a_label_to_fall_back_on():
