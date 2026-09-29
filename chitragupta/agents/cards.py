@@ -51,21 +51,82 @@ UNKNOWN = "unknown"
 
 SETTLED = (DONE, FAILED, CANCELLED, UNKNOWN)
 
+#: The columns, in order, so the schema and the migration cannot disagree about
+#: what a row is. `key` is not unique on its own — see `_SCHEMA`.
+_COLUMNS = ("key", "agent_id", "state", "detail", "log_id", "verified_at",
+            "reversible", "undo_label", "at")
+
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS action_cards (
-    key        TEXT PRIMARY KEY,
+    key        TEXT NOT NULL,
     agent_id   TEXT NOT NULL DEFAULT '',
     state      TEXT NOT NULL DEFAULT 'done',
     detail     TEXT NOT NULL DEFAULT '',
     log_id     TEXT NOT NULL DEFAULT '',
     verified_at TEXT NOT NULL DEFAULT '',
     reversible INTEGER NOT NULL DEFAULT 0,
-    at         TEXT NOT NULL
+    undo_label TEXT NOT NULL DEFAULT '',
+    at         TEXT NOT NULL,
+    -- **A card is named by its conversation AND its key.** `key TEXT PRIMARY
+    -- KEY` baked "one card per key" into storage, and the key is computed from
+    -- the action, its parameters and its position — none of which mentions the
+    -- agent. So two agents proposing the same thing at the same point in their
+    -- conversations shared a row, and answering the second MOVED the first
+    -- one's answer: `ON CONFLICT(key) DO UPDATE` overwrote `agent_id` too.
+    --
+    -- What that costs is worst for the one state that exists nowhere else. A
+    -- card the user CANCELLED leaves no trace in the action log, so once its
+    -- row had been taken by another agent there was nothing left to recognise
+    -- it by — and it came back offering its button, over something the user had
+    -- explicitly declined. The column and its index were already here; only the
+    -- key was wrong.
+    PRIMARY KEY (agent_id, key)
 );
 CREATE INDEX IF NOT EXISTS idx_cards_agent ON action_cards(agent_id, at);
 """
 
+#: Columns added after the table shipped. `CREATE TABLE IF NOT EXISTS` does
+#: nothing to a table that already exists, so a user upgrading in place keeps the
+#: old shape and every read of a new column raises. Same reason and same shape as
+#: `agents/approvals.py::_ADDED_COLUMNS`.
+_ADDED_COLUMNS = {"undo_label": "TEXT NOT NULL DEFAULT ''"}
+
 _READY = False
+
+
+def _repair_primary_key(conn: sqlite3.Connection) -> None:
+    """Move an old `PRIMARY KEY (key)` table to `PRIMARY KEY (agent_id, key)`.
+
+    SQLite cannot alter a primary key, so the table is rebuilt. The rows are
+    carried across rather than dropped: a card's answer is a fact about the
+    world, and the whole reason this table is not `localStorage` is that
+    clearing a cache must not make the app offer to send an email again.
+
+    `INSERT OR REPLACE` is the honest resolution for the rows the old key had
+    already collapsed — they are indistinguishable by then, and the newest is
+    the one the screen last agreed with.
+    """
+    pk = [r["name"] for r in conn.execute("PRAGMA table_info(action_cards)")
+          if r["pk"]]
+    if set(pk) == {"agent_id", "key"}:
+        return
+    columns = ", ".join(_COLUMNS)
+    # The one schema, under a temporary name — every occurrence renamed, so the
+    # index is created on the new table rather than on the one about to be
+    # dropped. `_COLUMNS` is what makes the copy explicit: `SELECT *` would
+    # depend on two tables happening to declare their columns in the same order.
+    conn.executescript(_SCHEMA.replace("action_cards", "cards_rebuilt")
+                       .replace("idx_cards_agent", "idx_cards_rebuilt"))
+    conn.execute(f"INSERT OR REPLACE INTO cards_rebuilt ({columns}) "
+                 f"SELECT {columns} FROM action_cards")
+    conn.executescript(
+        # Dropping the old table takes its own index with it.
+        "DROP TABLE action_cards;"
+        "ALTER TABLE cards_rebuilt RENAME TO action_cards;"
+        # The rename carries the index across under its temporary name.
+        "DROP INDEX IF EXISTS idx_cards_rebuilt;"
+        "CREATE INDEX IF NOT EXISTS idx_cards_agent ON action_cards(agent_id, at);")
+    conn.commit()
 
 
 def _db() -> sqlite3.Connection:
@@ -78,7 +139,14 @@ def _db() -> sqlite3.Connection:
     conn = _conn()
     if not _READY:
         conn.executescript(_SCHEMA)
+        have = {r["name"] for r in conn.execute("PRAGMA table_info(action_cards)")}
+        for column, decl in _ADDED_COLUMNS.items():
+            if column not in have:
+                conn.execute(
+                    f"ALTER TABLE action_cards ADD COLUMN {column} {decl}")
         conn.commit()
+        # After the columns, because the rebuild copies every one of them.
+        _repair_primary_key(conn)
         _READY = True
     return conn
 
@@ -90,7 +158,8 @@ def reset_for_tests() -> None:
 
 def remember(agent_id: str, key: str, *, state: str, detail: str = "",
              log_id: str = "", verified_at: str = "",
-             reversible: bool = False) -> dict[str, Any]:
+             reversible: bool = False,
+             undo_label: str = "") -> dict[str, Any]:
     """Record what a card settled as. Replaces any earlier answer for it.
 
     Replaces rather than refuses, because a card can legitimately be answered
@@ -103,22 +172,31 @@ def remember(agent_id: str, key: str, *, state: str, detail: str = "",
     conn = _db()
     conn.execute(
         "INSERT INTO action_cards (key,agent_id,state,detail,log_id,"
-        "verified_at,reversible,at) VALUES (?,?,?,?,?,?,?,?) "
-        "ON CONFLICT(key) DO UPDATE SET state=excluded.state, "
+        "verified_at,reversible,undo_label,at) VALUES (?,?,?,?,?,?,?,?,?) "
+        "ON CONFLICT(agent_id,key) DO UPDATE SET state=excluded.state, "
         "detail=excluded.detail, log_id=excluded.log_id, "
         "verified_at=excluded.verified_at, reversible=excluded.reversible, "
-        "at=excluded.at",
+        "undo_label=excluded.undo_label, at=excluded.at",
         (key, str(agent_id or ""), state, str(detail or "")[:400],
          str(log_id or ""), str(verified_at or ""), 1 if reversible else 0,
-         datetime.now(UTC).isoformat()))
+         str(undo_label or "")[:60], datetime.now(UTC).isoformat()))
     conn.commit()
-    return get(key)
+    return get(agent_id, key)
 
 
-def get(key: str) -> dict[str, Any]:
-    row = _db().execute("SELECT * FROM action_cards WHERE key=?",
-                        (key,)).fetchone()
-    return dict(row) if row else {}
+def get(agent_id: str, key: str) -> dict[str, Any]:
+    """One card's answer. **Addressed by conversation and key**, because the key
+    alone was never unique — it names an action and a position, not an agent."""
+    row = _db().execute(
+        "SELECT * FROM action_cards WHERE agent_id=? AND key=?",
+        (str(agent_id or ""), key)).fetchone()
+    return _public(dict(row)) if row else {}
+
+
+def _public(item: dict[str, Any]) -> dict[str, Any]:
+    """A row as the screen reads it — `reversible` a bool, not sqlite's 1."""
+    item["reversible"] = bool(item.get("reversible"))
+    return item
 
 
 def for_agent(agent_id: str) -> dict[str, dict[str, Any]]:
@@ -127,8 +205,7 @@ def for_agent(agent_id: str) -> dict[str, dict[str, Any]]:
     with suppressed("reading which action cards were already answered"):
         for row in _db().execute(
                 "SELECT * FROM action_cards WHERE agent_id=?", (agent_id,)):
-            item = dict(row)
-            item["reversible"] = bool(item.get("reversible"))
+            item = _public(dict(row))
             out[item["key"]] = item
     return out
 

@@ -759,6 +759,14 @@ def agent_cards(agent_id: str):
                 "verified_at": row.get("verified_at", ""),
                 "log_id": row.get("id", ""),
                 "reversible": bool(row.get("reversible")),
+                # The words on the Undo button, decided per run — `mcp_action`
+                # can retract a comment and cannot unmerge a pull request, so
+                # the type alone does not say. Sent because a *reopened* card
+                # offers Undo too, and a button labelled "Undo" over an action
+                # whose inverse is "Move it to the bin" describes the wrong
+                # thing.
+                "undo_label": str((row.get("result") or {}).get("undo_label")
+                                  or ""),
                 "at": row.get("created_at", ""),
             })
     return {"cards": cards.for_agent(agent_id), "ran": out}
@@ -772,6 +780,11 @@ class CardIn(BaseModel):
     log_id: str = ""
     verified_at: str = ""
     reversible: bool = False
+    #: The words the Undo button wears, as the server decided them for THIS run.
+    #: Stored rather than looked up from the catalog later: whether a connector
+    #: action has an inverse is a fact about the tool and the result, not about
+    #: the action type, so the catalog cannot answer it after the fact.
+    undo_label: str = ""
 
 
 @router.post("/api/agents/{agent_id}/cards/{key}")
@@ -779,7 +792,7 @@ def remember_card(agent_id: str, key: str, body: CardIn):
     saved = cards.remember(
         agent_id, key, state=body.state, detail=body.detail,
         log_id=body.log_id, verified_at=body.verified_at,
-        reversible=body.reversible)
+        reversible=body.reversible, undo_label=body.undo_label)
     if not saved:
         # An unknown state is a screen and a store disagreeing about the
         # vocabulary, which is worth a 400 rather than a silent no-op.

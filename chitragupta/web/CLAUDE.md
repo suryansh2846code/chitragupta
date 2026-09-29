@@ -99,6 +99,22 @@ script out of eleven does not fail; it passes.
   on is never a proposal again — trying again means asking the agent, which
   produces a fresh card instead of replaying an old one. `markAnswered` is the
   same decision for the card already on screen, so live and reloaded agree.
+- **Undo survives a reload, and a card is named by its conversation too.** The
+  record has carried `log_id`, `reversible` and now `undo_label` since it was
+  written and nothing read any of them, so the Undo a user could see at 3:42 was
+  gone by the time they reloaded — which is when a person notices the date was
+  wrong. `settledCard` offers it when the server said this run has an inverse and
+  the log does not say it was already taken back, wearing the words the server
+  chose (a connector action's inverse is decided per run, so the catalog cannot
+  answer after the fact), and re-records the card as no longer reversible once it
+  is used. A settled **plan** offers nothing: its record keeps one log id, the
+  last step's, so the button would take back one of nine and look like all nine.
+  `action_cards` is keyed `(agent_id, key)` now — the key names an action, its
+  parameters and its position, and nothing in it mentions the agent, so two
+  agents proposing the same thing at the same point shared a row and the second
+  answer *moved* the first. The state that paid for it is the one that exists
+  nowhere else: a **cancelled** card whose row had been taken came back offering
+  its button over something the user had explicitly declined.
 - **There are four settled states, and the fourth is "we do not know".** A
   confirm whose request never came back — no network, a 500, a timeout — settled
   nothing at all: `api()` rejects, and that `catch` was the one exit

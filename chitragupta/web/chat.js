@@ -692,7 +692,7 @@ function clockTime(stamp) {
  * this one is never rendered on a guess — a sent email has no undo and does
  * not pretend to.
  */
-function undoButton(result) {
+function undoButton(result, onUndone) {
   const b = document.createElement("button");
   b.className = "tiny ac-undo";
   b.textContent = result.undo_label || "Undo";
@@ -707,6 +707,11 @@ function undoButton(result) {
       if (out.ok) {
         b.replaceWith(Object.assign(document.createElement("span"),
           { className: "muted ac-undone", textContent: " · " + (out.detail || "Undone") }));
+        // So the card does not offer it again on the next visit. Without this
+        // the record still said `reversible`, and the button came back over an
+        // action that had already been taken back — one that can now only
+        // answer "that was already undone".
+        if (onUndone) onUndone();
         loadReminders(); loadRoutines(); loadActionLog();
       } else {
         b.disabled = false; b.textContent = was;
@@ -1108,7 +1113,20 @@ function markAnswered(el, state) {
   }
 }
 
-function settledCard(el, settled, { chrome, title, body }) {
+/** Draw a card that has already been acted on: what it was, and what happened.
+ *
+ * `undoable` asks for the Undo button, and only a single action card asks. It is
+ * offered on a **reopened** card and not only for the few seconds after a
+ * confirm — the record has carried `log_id` and `reversible` since it was
+ * written and nothing read either, so an Undo the user could see at 3:42 was
+ * gone by the time they reloaded and noticed the date was wrong. The action log
+ * remains where an *older* one is found; these two just have to agree.
+ *
+ * A plan does not ask. Its record keeps one log id — the last step's — so an
+ * Undo here would take back one of nine and look like it had taken back all of
+ * them. Nine log rows is the honest place for that.
+ */
+function settledCard(el, settled, { chrome, title, body, undoable }) {
   const state = settled.state;
   el.dataset.settled = state;
   const said = esc(resultLine(settled.detail) || "");
@@ -1135,6 +1153,19 @@ function settledCard(el, settled, { chrome, title, body }) {
             ? `<span class="ac-unsure">${IC.warn} ${esc(UNKNOWN_SAID)}</span>`
               + (said ? `<div class="ac-row muted">${said}</div>` : "")
             : `<span class="muted">Cancelled</span>`}</div>`;
+  // Never on a guess: the server says `reversible` only where the registry
+  // declares an inverse AND this run of it succeeded, and `/cards` drops a log
+  // row that was already undone. A button that quietly does nothing is worse
+  // than no button.
+  if (undoable && state === "done" && settled.reversible && settled.log_id) {
+    const rr = el.querySelector(".ac-result");
+    if (rr) {
+      rr.appendChild(undoButton(settled, () => rememberCard(
+        el.dataset.card, "done",
+        { detail: settled.detail || "", log_id: settled.log_id,
+          verified_at: settled.verified_at || "", reversible: false })));
+    }
+  }
   return el;
 }
 
@@ -1206,6 +1237,7 @@ function settledState(key, steps) {
     verified_at: failed ? "" : (last.verified_at || ""),
     log_id: last.log_id || "",
     reversible: !!last.reversible,
+    undo_label: last.undo_label || "",
   };
 }
 
@@ -1612,7 +1644,7 @@ function actionCard(a) {
       </div>`,
       // Every row, derived ones included: nothing here can be edited, so there
       // is nothing for a box to duplicate and nothing to keep in step.
-      title, body: rowsHtml(face.rows, null) });
+      title, body: rowsHtml(face.rows, null), undoable: true });
   }
 
   // **Above the button, in the order a person reads.** The boxes used to be
@@ -1720,12 +1752,16 @@ function actionCard(a) {
         rr.innerHTML = `<span class="ac-ok">${IC.check} ${esc(resultLine(r.detail))}`
           + (stamp ? `<span class="ac-verified"> · confirmed ${esc(stamp)}</span>` : "")
           + `</span>`;
-        if (r.reversible && r.log_id) rr.appendChild(undoButton(r));
-        markAnswered(el, "done");
-        rememberCard(key, "done", {
+        const settle = {
           detail: r.detail || "", log_id: r.log_id || "",
           verified_at: r.verified ? (r.verified_at || "") : "",
-          reversible: !!r.reversible });
+          undo_label: r.undo_label || "" };
+        if (r.reversible && r.log_id) {
+          rr.appendChild(undoButton(r, () => rememberCard(
+            key, "done", { ...settle, reversible: false })));
+        }
+        markAnswered(el, "done");
+        rememberCard(key, "done", { ...settle, reversible: !!r.reversible });
         loadReminders(); loadRoutines(); loadActionLog(); return;
       }
       rr.innerHTML = `<span class="ac-err">${esc(r.error || "Failed")}</span>`
