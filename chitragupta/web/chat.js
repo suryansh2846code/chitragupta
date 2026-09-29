@@ -549,7 +549,15 @@ function planCard(plan) {
                    { detail: r.detail || "" });
       loadReminders(); loadRoutines(); loadActionLog();
     } catch (e) {
-      rr.innerHTML = `<span class="ac-err">${esc(resultLine(e) || "That did not go through.")}</span>`;
+      // The same exit as the action card's, and the worse one to leave open:
+      // this button runs every step, so a card that came back pending would
+      // offer a second copy of the whole plan. `unknown` — some of it may have
+      // run, and the log is what knows which.
+      const why = resultLine(e) || "";
+      rr.innerHTML = `<span class="ac-unsure">${IC.warn} ${esc(UNKNOWN_SAID)}</span>`
+        + (why ? `<div class="ac-row muted">${esc(why)}</div>` : "");
+      markAnswered(el, "unknown");
+      rememberCard(key, "unknown", { detail: why });
     }
   };
   return el;
@@ -968,8 +976,20 @@ function shapeOf(params) {
 //: What each settled state is called on the card. The words are the user's:
 //: "failed" is ours, and a person reading their own conversation wants to know
 //: it did not work, not what the enum is called.
+//:
+//: `unknown` is the one that must not be rounded off in either direction. "It
+//: didn't work" is a claim nobody checked, and "done" is worse — see
+//: `cards.UNKNOWN`.
 const SETTLED_WORD = { done: "done", cancelled: "cancelled",
-                       failed: "didn\u2019t work" };
+                       failed: "didn\u2019t work",
+                       unknown: "couldn\u2019t tell" };
+
+//: What an `unknown` card says where the others say what happened. The state is
+//: useless without this sentence: the user has to know that asking for it again
+//: is a decision only they can make, and that the agent is how to find out —
+//: it can read the sent folder or the calendar back, and the card cannot.
+const UNKNOWN_SAID = "This did not get a reply, so it may or may not have gone "
+  + "through. Ask the agent to check before asking for it again.";
 
 /** The fields this action cannot run without that the card has not got.
  *
@@ -1050,6 +1070,15 @@ function markAnswered(el, state) {
     actions.innerHTML = state === "cancelled"
       ? "<span class='muted'>Cancelled</span>" : "";
   }
+  // `unknown` is the one state whose result slot may still be empty: the request
+  // threw, so there was no answer to render. Without this the card kept
+  // "Working…" where its buttons had been for the rest of the session.
+  if (state === "unknown") {
+    const rr = el.querySelector(".ac-result");
+    if (rr && !rr.innerHTML) {
+      rr.innerHTML = `<span class="ac-unsure">${IC.warn} ${esc(UNKNOWN_SAID)}</span>`;
+    }
+  }
 }
 
 function settledCard(el, settled, { chrome, title, body }) {
@@ -1072,7 +1101,13 @@ function settledCard(el, settled, { chrome, title, body }) {
           + `</span>`
         : state === "failed"
           ? `<span class="ac-err">${IC.close} ${said || "It did not work"}</span>`
-          : `<span class="muted">Cancelled</span>`}</div>`;
+          : state === "unknown"
+            // Named explicitly. Everything that was not `done` or `failed` fell
+            // through to "Cancelled", so a card we could not get an answer
+            // about would have told the user nothing had happened.
+            ? `<span class="ac-unsure">${IC.warn} ${esc(UNKNOWN_SAID)}</span>`
+              + (said ? `<div class="ac-row muted">${said}</div>` : "")
+            : `<span class="muted">Cancelled</span>`}</div>`;
   return el;
 }
 
@@ -1083,19 +1118,29 @@ function settledCard(el, settled, { chrome, title, body }) {
  *  **cancellation** can live: a card nobody ran leaves no trace in the log, so
  *  letting the log override this would bring back a card the user said no to,
  *  claiming it had run.
+ *
+ *  **`unknown` is the exception, and it is the whole point of that state.** It
+ *  means the confirm never got a reply, so the screen does not know whether the
+ *  action ran — and the action log does. So the log is consulted first for those
+ *  and wins if it has an answer; the record is what stands when it does not.
+ *  That is what makes the state self-correcting rather than a dead end: a send
+ *  whose response was lost comes back "done · confirmed 3:42 PM" on the next
+ *  render instead of staying a question forever.
  */
 function settledState(key, steps) {
   const recorded = CARD_STATE[key];
-  if (recorded) return recorded;
+  if (recorded && recorded.state !== "unknown") return recorded;
   const matched = steps.map((step) => claimRan(step));
   // A plan is settled only when EVERY step is accounted for. Half a plan is
   // exactly when the user needs the button back, and drawing it done would
   // hide that a step never happened.
   if (matched.some((m) => !m)) {
     for (const m of matched) { if (m) m.claimed = false; }
-    return null;
+    // Nothing in the log accounts for this. A card we could not get an answer
+    // about stays that card — it must not go back to offering its button.
+    return recorded || null;
   }
-  if (!matched.length) return null;
+  if (!matched.length) return recorded || null;
   const failed = matched.find((m) => !m.ok);
   const last = matched[matched.length - 1];
   return {
@@ -1522,10 +1567,27 @@ function actionCard(a) {
         rr.appendChild(document.createElement("br")); rr.appendChild(b);
       }
     } catch (e) {
+      // **The request itself did not come back, so we do not know.**
+      //
+      // This was the one exit that settled nothing. The buttons had already been
+      // replaced by "Working…", so the card sat with a stale spinner, a tag
+      // reading *needs your confirmation*, and a red error underneath it — for
+      // the rest of the session. That is a state the card's own state machine
+      // does not have, and it was the only path `markAnswered` did not cover,
+      // which is why one renderer for the settled states did not catch it.
+      //
+      // `unknown`, not `failed`: a 500 from `/api/actions/execute` can arrive
+      // after the email has gone. Saying it failed would be a claim nobody
+      // checked, and leaving the button up would offer to send it twice.
+      //
       // A rejected request carries FastAPI's `detail`, which for a validation
       // error is a LIST of objects — so this must not assume a string either.
+      const why = resultLine(e) || "";
       el.querySelector(".ac-result").innerHTML =
-        `<span class="ac-err">${esc(resultLine(e) || "That did not go through.")}</span>`;
+        `<span class="ac-unsure">${IC.warn} ${esc(UNKNOWN_SAID)}</span>`
+        + (why ? `<div class="ac-row muted">${esc(why)}</div>` : "");
+      markAnswered(el, "unknown");
+      rememberCard(key, "unknown", { detail: why });
     }
   };
   return el;

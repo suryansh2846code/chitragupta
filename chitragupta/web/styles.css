@@ -981,6 +981,12 @@ select:focus, input:focus, textarea:focus { outline: none; border-color: var(--a
 .ac-actions { display: flex; gap: 8px; margin-top: 12px; align-items: center; }
 .ac-confirm { background: var(--north); color: var(--north-ink); border-radius: 8px; padding: 8px 14px; font-weight: 600; }
 .ac-result { margin-top: 8px; font-size: 13px; } .ac-ok { color: var(--accent-2); } .ac-err { color: var(--danger); }
+/* "We tried and we do not know." Amber, not red: red is a thing that certainly
+   did not happen, and this one may well have. It wraps because it is a sentence
+   rather than a status — the user has a decision to make and needs the reason
+   for it, not a word. */
+.ac-unsure { color: var(--accent); display: block; line-height: 1.5; }
+.ac-unsure svg { vertical-align: -2px; margin-right: 4px; }
 
 /* The verified time is a quieter claim than the result itself: "sent" is what
    was asked for, "confirmed 3:42 PM" is what the service said happened. */
@@ -3214,6 +3220,11 @@ button.tiny.running:hover { background: linear-gradient(to right,
   border: 1px solid var(--line); }
 .action-card[data-settled="cancelled"] .ac-head { text-decoration: line-through;
   text-decoration-color: var(--faint); }
+/* Not struck through, and not faded as far as the others. A card nobody could
+   get an answer about is the one settled state still asking something of the
+   user, so it stays legible rather than becoming furniture. */
+.action-card[data-settled="unknown"] { opacity: 1; border-color: var(--accent); }
+.action-card[data-settled="unknown"] .ac-tag { color: var(--accent); }
 
 /* What kind of card this is. Beside the status, and quieter than it: the
    status is what changed, the kind is what it has always been. */

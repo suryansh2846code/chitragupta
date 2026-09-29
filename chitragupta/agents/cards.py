@@ -32,7 +32,24 @@ from .agent import _conn
 DONE = "done"
 FAILED = "failed"
 CANCELLED = "cancelled"
-SETTLED = (DONE, FAILED, CANCELLED)
+
+#: **We tried and we do not know.** The request itself did not come back — no
+#: network, a 500, a timeout — so the action may have run and may not.
+#:
+#: This is a fourth state rather than a shade of `failed`, because the two call
+#: for opposite things. `failed` is a thing that certainly did not happen and
+#: the agent can be asked to fix its call. An unknown may have happened, so
+#: pressing the button again is exactly the duplicate this whole table exists to
+#: prevent — and telling the user it failed would be a claim nobody checked.
+#:
+#: The vocabulary is `automation/`'s, for the same situation one layer down: a
+#: handler that raised leaves its claim open, "we tried and do not know", and
+#: the retry verifies instead of repeating. Here the verifier is the action log:
+#: `settledState` prefers a logged run over an `unknown` record, so a card that
+#: really did go through corrects itself on the next render.
+UNKNOWN = "unknown"
+
+SETTLED = (DONE, FAILED, CANCELLED, UNKNOWN)
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS action_cards (
@@ -78,7 +95,8 @@ def remember(agent_id: str, key: str, *, state: str, detail: str = "",
 
     Replaces rather than refuses, because a card can legitimately be answered
     twice: an action that failed leaves its buttons, and the second attempt is
-    the one that counts.
+    the one that counts. An `unknown` is also written over once the action log
+    settles the question.
     """
     if not key or state not in SETTLED:
         return {}

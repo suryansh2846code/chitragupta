@@ -99,6 +99,22 @@ script out of eleven does not fail; it passes.
   on is never a proposal again — trying again means asking the agent, which
   produces a fresh card instead of replaying an old one. `markAnswered` is the
   same decision for the card already on screen, so live and reloaded agree.
+- **There are four settled states, and the fourth is "we do not know".** A
+  confirm whose request never came back — no network, a 500, a timeout — settled
+  nothing at all: `api()` rejects, and that `catch` was the one exit
+  `markAnswered` did not cover, so the card kept the stale "Working…" where its
+  buttons had been, a tag reading *needs your confirmation*, and a red error
+  underneath, for the rest of the session. `cards.UNKNOWN` is that state.
+  It is deliberately **not** a shade of `failed`: a 500 from
+  `/api/actions/execute` can arrive after the email has gone, so claiming it
+  failed is a claim nobody checked and leaving the button up offers to send it
+  twice. It is not a dead end either — `settledState` prefers a *logged* run
+  over an `unknown` record (the only state where the log outranks the record),
+  so a send whose reply was lost comes back "done · confirmed 3:42 PM" on the
+  next render. `settledCard`'s result line was a three-way choice with
+  everything that was not `done` or `failed` falling through to **"Cancelled"**,
+  which would have told the user nothing had happened; that arm is now named
+  explicitly, and reverting it is how the missing test was found.
 - **A card never offers a button that cannot work.** `ActionSpec.required` is
   the handler's own list of what it refuses to run without, published in the
   catalog; `missingFields` reads it, so a message with no chat and an

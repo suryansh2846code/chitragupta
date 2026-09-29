@@ -86,6 +86,37 @@ def test_answering_twice_keeps_the_second_answer(client):
     assert len(cards.for_agent("health")) == 1, "replaced, not appended"
 
 
+def test_we_tried_and_do_not_know_is_a_state_of_its_own(client):
+    """`unknown` is what the screen records when the confirm got no reply.
+
+    Not a shade of `failed`: a 500 from `/api/actions/execute` can arrive after
+    the email has gone, so "it did not work" would be a claim nobody checked and
+    a button would offer to send it twice. The frontend's `settledState` prefers
+    a logged run over one of these, which is what makes it self-correcting
+    rather than a dead end.
+    """
+    cards.remember("health", KEY, state=cards.UNKNOWN,
+                   detail="Internal Server Error")
+
+    got = cards.for_agent("health")[KEY]
+    assert got["state"] == "unknown"
+    assert got["detail"] == "Internal Server Error"
+    assert cards.UNKNOWN in cards.SETTLED, (
+        "a card with this state must not be drawn as pending — that is the "
+        "duplicate the table exists to prevent")
+
+
+def test_an_unknown_is_overwritten_once_the_log_settles_it(client):
+    """The other half of the same idea. An action whose reply was lost and which
+    really did run is recorded again as done, so the row stops disagreeing with
+    the log."""
+    cards.remember("health", KEY, state=cards.UNKNOWN, detail="timed out")
+    cards.remember("health", KEY, state=cards.DONE, detail="Sent", log_id="L9")
+
+    assert cards.get(KEY)["state"] == "done"
+    assert len(cards.for_agent("health")) == 1
+
+
 def test_a_state_nobody_defined_is_refused(client):
     """The vocabulary is closed. A typo'd state stored as-is would draw a card
     with a tag nobody wrote and no way back to its buttons."""

@@ -16,7 +16,7 @@ import { appSource } from "./_app_source.mjs";
 
 const APP_JS = process.argv[2];
 const { action, plan, reply, result, edits, catalog, undoResult, cardState,
-        press, ran, sequence } =
+        press, ran, sequence, failRequest } =
   JSON.parse(fs.readFileSync(0, "utf8"));
 
 const makeEl = (tag = "div") => {
@@ -91,6 +91,18 @@ let undoSent = null;
 const remembered = [];
 globalThis.fetch = async (url, options) => {
   const body = options && options.body;
+  // **The request does not come back.** `api()` in core.js rejects on any
+  // non-2xx, so a 500, a timeout and a dropped connection all arrive at the
+  // confirm handler as a throw — and that path settled nothing, leaving a card
+  // with a stale "Working…" and a tag still asking to be confirmed. No harness
+  // could reach it, because every stubbed fetch here has always succeeded.
+  //
+  // A substring rather than a flag, so a test can fail the action while letting
+  // `/cards/` through — which is how "it told the server it could not tell" is
+  // checked at all.
+  if (failRequest && String(url || "").includes(failRequest)) {
+    throw "Internal Server Error";
+  }
   const isUndo = String(url || "").includes("/api/actions/undo");
   if (body && isUndo) {
     try { undoSent = JSON.parse(body); } catch { undoSent = "unparseable"; }
@@ -328,6 +340,15 @@ console.log(JSON.stringify({
   settled: settledAtDraw,
   //: And what it became after the harness answered it.
   settledAfter: card ? (card.dataset.settled || "") : "",
+  //: The tag, and the slot the buttons were in, AFTER the answer.
+  //:
+  //: The two things that were wrong on a card whose request threw, and neither
+  //: was visible to any harness: the tag still read "needs your confirmation"
+  //: and the slot still held "Working…". `visibleText` cannot see them — both
+  //: are written through a selector the fake DOM answers from its own cache —
+  //: so a test about the card's text would pass with both of them stale.
+  tagAfter: card ? String(card.querySelector(".ac-tag").textContent || "") : "",
+  actionsAfter: card ? String(card.querySelector(".ac-actions").innerHTML || "") : "",
   cardKey: card ? (card.dataset.card || "") : "",
   //: What kind of thing the card says it is.
   kind: card ? (card.dataset.kind || "") : "",
