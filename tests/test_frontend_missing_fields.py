@@ -213,10 +213,28 @@ def test_a_share_with_neither_an_address_nor_a_link_is_blocked():
 
 def test_a_link_share_says_so_on_the_card():
     """`anyone` was not in `fields`, so the card asking permission to publish a
-    document never mentioned that it would be public."""
+    document never mentioned that it would be public.
+
+    And then it was in `fields`, which was worse in a way only a picture showed:
+    the registry fallback drew a box labelled **Anyone** containing the word
+    **true**. A flag is not a field and a boolean is not something anybody types
+    — it is a sentence, and the title says which of the two things this is.
+    """
     out = drive({"type": "drive_share",
                  "params": {"file_id": "f1", "anyone": "true"}})
-    assert "Anyone" in out["text"], out["text"]
+    assert "Publish this document" in out["text"], out["text"]
+    assert "Anyone with the link" in out["text"], out["text"]
+    assert "Anyone" not in out["editableFields"], out["editableFields"]
+    assert "true" not in out["text"], "the flag is showing as its own value"
+
+
+def test_an_ordinary_share_does_not_say_it_is_public():
+    """The other half: a card that warned about publishing on every share would
+    teach the user to skim past the warning."""
+    out = drive({"type": "drive_share",
+                 "params": {"file_id": "f1", "email": "rahul@work.test"}})
+    assert "Share a document" in out["text"], out["text"]
+    assert "Anyone with the link" not in out["text"], out["text"]
 
 
 def test_an_ordinary_share_grows_no_empty_anyone_box():

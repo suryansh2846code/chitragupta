@@ -159,10 +159,25 @@ script out of eleven does not fail; it passes.
   that does it. Three `tests/js/` harnesses needed `insertBefore` for this, and
   the one that did not get it *threw* — which the anti-vacuity check in
   `test_frontend_tool_result_injection.py` caught, exactly as designed.
+- **A boolean is not a text box, and a flag is not a card.** `drive_share` fell
+  through to the registry fallback, which draws a field per value — so a link
+  share drew a box labelled **Anyone** containing the word **true**, and the
+  difference between sending a document to Rahul and publishing it to everyone
+  was an internal nobody explained. It has its own branch now: the card is
+  titled *Publish this document* and says "anyone with the link will be able to
+  open it". Found by rendering the card in a real browser and looking at it —
+  every `tests/js/` harness had been green the whole time, because a fake DOM
+  can say what a card *says* and never what it *looks like*.
 - **The card has one vertical rhythm, `--ac-gap` and `--ac-tight`.** It was
   eleven hand-picked numbers and a padding a pixel shorter at the bottom than the
   top. Nothing was individually wrong and it was never square; a block added
-  later now spaces itself by reading one line.
+  later now spaces itself by reading one line. **`--border` is `transparent`**
+  by design — "separation comes from panel fills, not lines" — so a
+  `border-top: 1px solid var(--border)` separator draws nothing, and the
+  `margin-top` + `padding-top` around it were both spending space to separate
+  with a line that was never there: a 24px void under the last field on every
+  card. And two chips on one line have to be the same box, or the line under
+  them is ragged in a way nobody can name and everybody sees.
 - **One face, two surfaces.** `actionFace` in `chat.js` turns an action into its
   title, rows, kind and tier; `actionCard` draws it and so does `loadApprovals`
   in `workspace.js`. It was the inside of `actionCard`, so the approvals queue —

@@ -405,7 +405,14 @@ const NOT_TYPEABLE = new Set(["items", "blocks", "arguments", "agent_id",
                               // "Update page in Notion"), so a box for either
                               // would let the heading stop being true while the
                               // button ran the new value.
-                              "app", "tool", "server_id"]);
+                              "app", "tool", "server_id",
+                              // Whether a document becomes public is not a word
+                              // anybody types. Left to the generic editor it
+                              // drew a box containing "true" — an internal, on
+                              // the card whose whole job is saying what is about
+                              // to happen. It is a sentence now; see
+                              // `actionFace`.
+                              "anyone"]);
 
 //: A one-line input for a short field, a textarea for the long ones. The body
 //: of an email is the field most worth fixing and the one least suited to a
@@ -837,7 +844,10 @@ function workoutFields(blocks) {
     };
     const drop = document.createElement("button");
     drop.className = "ac-drop ghost";
-    drop.textContent = "✕";
+    // Drawn, never typed — `web/CLAUDE.md`. This was a literal ✕, which is a
+    // dingbat doing an icon's job: the OS picks the font, so it ignores
+    // `currentColor` and sits at its own weight beside every other control.
+    drop.innerHTML = IC.close;
     drop.setAttribute("aria-label", "Remove this exercise");
 
     const entry = { cells, row, dropped: false };
@@ -1508,6 +1518,25 @@ function actionFace(type, params) {
     if (rest > 0) rows.push(noteOf(`and ${rest} more`));
     rows.push(noteOf("Nothing is deleted \u2014 archiving takes an email out of "
                      + "your inbox and keeps it."));
+  } else if (type === "drive_share") {
+    // **The one fact on this card is who ends up able to open it.** It fell
+    // through to the registry fallback, which renders a field per value — so a
+    // link share drew a box reading "true" under a label reading "Anyone", and
+    // the difference between sending a document to Rahul and publishing it was
+    // a word nobody explained. `always_ask_when` already forces the tap; this is
+    // what the tap is about.
+    const anyone = ["1", "true", "yes", "on"].includes(
+      String(p.anyone === undefined ? "" : p.anyone).trim().toLowerCase());
+    title = anyone ? "Publish this document" : "Share a document";
+    verb = "share";
+    rows = [
+      rowOf("Document", p.file_id || p.doc || "", { owns: ["file_id"] }),
+      anyone
+        ? noteOf("Anyone with the link will be able to open it \u2014 not just "
+                 + "the people you name.")
+        : rowOf("With", p.email || p.to || "", { owns: ["email"] }),
+      rowOf("Access", p.role || "reader", { owns: ["role"] }),
+    ];
   } else if (type === "create_event") {
     title = "Create calendar event"; verb = "create";
     rows = [

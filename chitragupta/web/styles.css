@@ -975,9 +975,14 @@ select:focus, input:focus, textarea:focus { outline: none; border-color: var(--a
   color: var(--text); }
 /* Below the title, the way the reference puts its tag — and still gold,
    because it is the one line on the card that says you have to do something. */
+/* The same box as `.ac-kind` beside it: two chips on one line at two different
+   heights is the kind of thing nobody can name and everybody sees. The border is
+   transparent rather than absent, so the 1px the other chip spends on its own is
+   spent here too. */
 .ac-tag { display: inline-block; font-size: 10px; text-transform: uppercase; letter-spacing: .5px;
   color: var(--north); background: var(--north-dim); padding: 4px 8px;
-  border-radius: 5px; margin-bottom: var(--ac-gap); }
+  border: 1px solid transparent; border-radius: 5px; line-height: 1.2;
+  vertical-align: middle; margin-bottom: var(--ac-gap); }
 .ac-row { font-size: 13px; margin: 3px 0; } .ac-row b { color: var(--muted); font-weight: 500; margin-right: 6px; }
 /* The "code editor": what the agent is actually going to act on, inset and
    mono, so it reads as quoted material rather than as more of the card's own
@@ -1008,8 +1013,11 @@ select:focus, input:focus, textarea:focus { outline: none; border-color: var(--a
 
 /* The risk line. Amber and red get a border that says so without a second
    badge to read — green says its sentence and stays quiet. */
-.ac-risk { margin-top: var(--ac-gap); padding-top: var(--ac-gap);
-  border-top: 1px solid var(--border); }
+/* `--border` is transparent by design — "separation comes from panel fills, not
+   lines" — so this rule's hairline never drew anything and the margin AND the
+   padding were both spending space to separate with nothing. One step, and the
+   24px void under the last field is gone. */
+.ac-risk { margin-top: var(--ac-gap); }
 .action-card[data-risk="green"] { border-color: var(--border2); }
 /* The approval row draws the same rows as a card, so the same tier line has to
    read the same way on it — a red sentence that is red in one place and grey in
@@ -1032,11 +1040,9 @@ select:focus, input:focus, textarea:focus { outline: none; border-color: var(--a
 /* Correcting a proposal before confirming it. One row per scalar field the
    registry declares, in the registry's order. */
 .ac-edit { display: flex; flex-direction: column; gap: var(--ac-tight);
-  margin-top: var(--ac-gap); padding-top: var(--ac-gap);
-  border-top: 1px solid var(--border); }
-/* Two blocks that both open with a hairline would draw the line twice when a
-   session has blocks AND a note. The second one is a continuation of the first. */
-.ac-edit + .ac-edit { margin-top: 0; padding-top: 0; border-top: 0; }
+  margin-top: var(--ac-gap); }
+/* A session has blocks AND a note: two editors, one form. */
+.ac-edit + .ac-edit { margin-top: var(--ac-tight); }
 .ac-edit-row { display: flex; flex-direction: column; gap: 3px; }
 .ac-edit-label { font-size: 11px; color: var(--muted); letter-spacing: .2px; }
 .ac-field-wide { width: 100%; background: var(--panel-2); border: 1px solid var(--border);
@@ -3249,8 +3255,9 @@ button.tiny.running:hover { background: linear-gradient(to right,
    on one line with different margins leave a ragged box under them, which is
    what put the rows a hair closer to the kind than to the status. */
 .ac-kind { display: inline-block; font-size: 10px; text-transform: uppercase;
-  letter-spacing: .5px; padding: 2px 7px; margin-right: 6px; border-radius: 5px;
-  border: 1px solid var(--line2); color: var(--muted); vertical-align: middle; }
+  letter-spacing: .5px; padding: 4px 8px; margin-right: 6px; border-radius: 5px;
+  border: 1px solid var(--line2); color: var(--muted); vertical-align: middle;
+  line-height: 1.2; }
 /* On the card only. In an approval row the chip is inline at the start of the
    summary sentence, so a bottom margin there opens a gap inside one line. */
 .action-card .ac-kind { margin-bottom: var(--ac-gap); }
