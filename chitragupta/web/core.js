@@ -231,6 +231,17 @@ const IC = {
   cloud: _S('<path d="M5 12a3 3 0 0 1 .3-6 3.5 3.5 0 0 1 6.6.8A2.6 2.6 0 0 1 11.5 12z"/>', 13),
   clock: _S('<circle cx="8" cy="8" r="6"/><path d="M8 4.5V8l2.4 1.4"/>'),
   bolt: _S('<path d="M9 1.5L3.5 9H8l-1 5.5L12.5 7H8z"/>'),
+  //: The onboarding's source tiles, its trust row and its four area cards.
+  //: Those were the last dingbats in the product (✉ ☏ ✎ ▤ ▲ ◆), alongside a set
+  //: of <svg> literals hand-inlined into onboarding.html. Both are here now, so
+  //: the page a user sees FIRST draws from the same set as the one they land in
+  //: — which is the point of there being one set.
+  shield: _S('<path d="M8 1.9l5 1.9v4.1c0 3.7-2.7 5.6-5 6.4-2.3-.8-5-2.7-5-6.4V3.8z"/>'),
+  shieldcheck: _S('<path d="M8 1.9l5 1.9v4.1c0 3.7-2.7 5.6-5 6.4-2.3-.8-5-2.7-5-6.4V3.8z"/><path d="M5.8 8.1l1.6 1.6L10.5 6"/>'),
+  chart: _S('<path d="M2.6 13.4h10.8M4.7 13.4V8.2M8 13.4V3.1M11.3 13.4V6.4"/>'),
+  briefcase: _S('<rect x="2.4" y="5.3" width="11.2" height="7.6" rx="1.6"/><path d="M6.1 5.3V4.2a1.6 1.6 0 0 1 1.6-1.6h.6a1.6 1.6 0 0 1 1.6 1.6v1.1"/>'),
+  book: _S('<path d="M2.7 3.3h3.6A1.7 1.7 0 0 1 8 5v8a1.4 1.4 0 0 0-1.4-1.2H2.7z"/><path d="M13.3 3.3H9.7A1.7 1.7 0 0 0 8 5v8a1.4 1.4 0 0 1 1.4-1.2h3.9z"/>'),
+  pencil: _S('<path d="M11 2.6l2.4 2.4-7.7 7.7-3 .6.6-3z"/>'),
   //: The glyph set. These replaced the emoji and dingbats that were doing an
   //: icon's job — 🔒 in nine places, 📁, ✨, ⚠️, and ✕/✓/↗ as button faces.
   //: An emoji is a colour font the OS picks: it ignores `currentColor`, so it
