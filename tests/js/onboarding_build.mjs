@@ -33,11 +33,21 @@ const TICK = 700;
 const at = (arr, i) => arr[Math.min(i, arr.length - 1)];
 
 // ── the smallest DOM the block touches ──────────────────────────────────────
-const node = () => ({ textContent: "", style: {}, hidden: false, onclick: null });
+const node = () => ({
+  textContent: "", style: {}, hidden: false, disabled: false, onclick: null,
+  attrs: {},
+  setAttribute(k, v) { this.attrs[k] = String(v); },
+  getAttribute(k) { return k in this.attrs ? this.attrs[k] : null; },
+  removeAttribute(k) { delete this.attrs[k]; },
+});
 const els = {
   bFill: node(), bPct: node(), bDet: node(), stItems: node(), stEnt: node(),
   bSkip: node(),
+  // The bar reports its value to assistive tech as well as to the eye, and the
+  // warning row is how a stalled sync reaches the screen at all.
+  bBar: node(), bWarn: node(), bWarnText: node(), bRetry: node(),
 };
+els.bWarn.classList = mkClassList();
 const bWhat = node();
 const steps = [node(), node(), node()];
 for (const s of steps) s.classList = mkClassList();
@@ -65,6 +75,18 @@ const document = {
   },
   querySelectorAll: () => steps,
 };
+
+// Every stage transition in the page goes through `setStage`, which also
+// re-inerts the panes — the block under test only ever asks for a state, so the
+// harness records which one and nothing more.
+const stages = [];
+const setStage = (names) => {
+  stages.push(names.slice());
+  stage.classList.remove("on", "building", "brainready");
+  names.forEach((n) => stage.classList.add(n));
+};
+const focused = [];
+const focusPane = (id) => focused.push(id);
 
 // ── the scripted backend ────────────────────────────────────────────────────
 let tick = 0;
@@ -101,11 +123,13 @@ try {
   const make = new Function(
     "document", "stage", "api", "ripplePop", "fetchDigestData", "fillCards",
     "digestDone", "localStorage", "Date", "setInterval", "clearInterval", "setTimeout",
+    "setStage", "focusPane",
     block + "\nreturn runBuildProgress;");
   const runBuildProgress = make(
     document, stage, api, () => {}, fetchDigestData, fillCards,
     false, { getItem: () => null }, { now: () => clock },
-    setInterval_, clearInterval_, setTimeout_);
+    setInterval_, clearInterval_, setTimeout_,
+    setStage, focusPane);
 
   stage.classList.add("on", "building");
   runBuildProgress(0);
@@ -116,6 +140,9 @@ try {
     timeline.push({
       tick, pct: els.bPct.textContent, what: bWhat.textContent,
       detail: els.bDet.textContent, skipShown: !els.bSkip.hidden,
+      skipLabel: els.bSkip.textContent, skipDisabled: els.bSkip.disabled,
+      ariaNow: els.bBar.getAttribute("aria-valuenow"),
+      warn: els.bWarn.classList.contains("show") ? els.bWarnText.textContent : "",
       handedOver: stage.classList.contains("brainready"),
     });
     clock += TICK;
@@ -132,5 +159,6 @@ process.stdout.write(JSON.stringify({
   filledWith: filledWith === undefined ? null : filledWith,
   digestFetches,
   startedEnrichment: calls.some((c) => c.startsWith("/api/brain/enrich/start")),
+  stages, focused,
   timeline,
 }));

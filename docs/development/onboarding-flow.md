@@ -16,14 +16,52 @@ OAuth client makes the connector look configured when the user has not consented
 to anything.
 
 Clicking a source really connects it: Google OAuth, an inline token, a folder
-picker, or a custom form. **Continue requires Gmail connected AND an AI model
-chosen** (`canContinue()`), with a gold hint that narrows as each is satisfied.
+picker, or a custom form. A Google sign-in **can be cancelled** by tapping the
+busy card; it used to hold the card for a 180-second poll with
+`pointer-events:none` over it.
 
-## Start from zero
+### What Continue actually requires
+
+`canContinue()` is **one source — any source — and a model that answers.**
+Both halves were wrong, and both are bracketed by `// >>> connect-gate >>>` and
+executed by `tests/js/onboarding_gate.mjs`.
+
+- It required **`selected["gmail"]`**, which nothing downstream does.
+  `_base_personas` files an entity by what it *is*, never by where it came from,
+  so a brain of Notion pages works exactly as well as one of email. What the
+  check did was dead-end every user without Gmail — and the header's
+  "Skip for now" used to disappear the moment the connect screen appeared, so
+  there was no way past it at all. The skip now stays until the handover.
+- It read **`localStorage.getItem("chitragupta_provider")`** — the presence of a
+  string. Choosing a cloud provider and leaving the key box empty wrote that
+  string, lit the button, and three minutes later the finale rendered
+  `reason: "no_model"` and told the user to connect an AI model. A stored model
+  id is a **request**: `verifyLLM()` asks `/api/providers` for this account's own
+  answer, on load and on every save, and `llmReady` is that answer.
+
+## Start from zero — and when it asks first
 
 "Build my brain" calls `POST /api/brain/reset` — wipes memories and graph and
 connector state, clears connector secrets, disconnects Google — and clears local
 prefs, so it genuinely feels like a new user rather than a cleared screen.
+
+It is the most destructive call in the product and it used to fire with **no
+confirmation**. Right for a genuine first run; wrong for every other way of
+arriving here — and this page binds Cmd+R to reload onto the hero, where that
+button is the only call to action. A user who had just pasted a Notion token and
+a GitHub token could lose both to a refresh reflex.
+
+So `somethingToLose()` runs first, and the dialog appears only when there is
+something to lose. Two things it deliberately does **not** count:
+
+- a connector that is merely `ready`. `always_available` sources (Manual Notes,
+  Apple Mail) report ready before the user has done anything, and a reset does
+  not touch them because they hold no credential. Counting them put "You already
+  have a brain" in front of every genuine first run — *detection is not consent*,
+  wearing a dialog.
+- the decline. "Carry on from here" **continues to Connect** keeping everything;
+  refusing to erase is not refusing to proceed, and parking the user on the hero
+  would be a second dead end where the first one was.
 
 A wiped or empty brain also redirects `/` → `/onboarding` once per session
 (`sessionStorage.ls_saw_onboarding` guards it).
@@ -63,8 +101,9 @@ Three things stop it becoming a hostage situation:
 - while nothing is groundable the digest is re-asked every `DIGEST_RETRY` — the
   sync is still running, so the answer really does change;
 - after `PATIENCE` a **Continue anyway →** appears. Both jobs keep running in the
-  app. (`Skip for now` in the header is hidden once `.stage.on` is set, so the
-  build screen needs its own way out.)
+  app. The build screen needs a way out of its own because `Skip for now` is
+  hidden here — it stays up through Connect now, but not past the handover,
+  where Cancel and Continue anyway are the two exits.
 
 The block is bracketed by `// >>> build-progress >>>` and is **executed** by
 `tests/js/onboarding_build.mjs` against a scripted backend and a scripted clock —
@@ -128,6 +167,24 @@ The render block is bracketed by `// >>> digest-render >>>` markers and is
 **executed** by `tests/js/onboarding_digest.mjs`; a grep over the page would
 pass while the cards rendered nothing.
 
+## Getting out, and being told what is happening
+
+- **Cancel** returns to Connect at any point during the build.
+- **Continue anyway** appears after `PATIENCE` and now *answers the tap*: it
+  disables itself, says "Finishing…", and moves the detail line. It used to set
+  a flag and change nothing, and the next tick is 700ms away with a digest
+  behind it that can take 30 seconds.
+- A **stalled sync is reported**. `/api/sync/now` failing was swallowed whole,
+  so the bar sat at 30% saying "Waiting for your first source to answer…" for
+  150 seconds. `kickSync()` surfaces the refusal with a retry, and `STALL`
+  catches "nothing has arrived and nothing is syncing".
+- A **backend that stops answering** is reported too: `LOST_AFTER` unanswered
+  polls in a row is a fact worth saying out loud, and it is the one state the
+  detail line cannot express by standing still.
+- The progress bar is a `role="progressbar"` carrying `aria-valuenow`, and the
+  detail line is an `aria-live` region — for anyone who cannot see the bar, that
+  line *is* the progress.
+
 ## First entry — the Agent Library
 
 There used to be a fifth step here: *name your lead agent*, which built a custom
@@ -145,6 +202,43 @@ there is no lead agent, so a new install genuinely has no agents: the library is
 not a nicety here, it is the only way to get one. It opens once
 (`chitragupta_saw_library`), and the agent rail says so and points there whenever
 it is empty.
+
+## The panes are switched, not just faded
+
+The four screens are each `position:absolute; inset:0`, layered on one stage and
+hidden with `opacity:0; pointer-events:none`. That hides a screen from the eyes
+and from the mouse **and from nothing else** — `Tab` still walked every control
+on every screen. On the finale, five of seven tab stops were invisible, and one
+of them was `#buildBtn`, which erases the brain and every credential.
+
+`setStage()` is the only way the stage's classes change, and it calls
+`syncPanes()`, which puts `inert` (plus `aria-hidden`) on everything that is not
+the live screen — out of the tab order *and* out of the accessibility tree.
+Where `inert` is unsupported the fallback is `visibility:hidden`, which also
+removes a subtree from the tab order. An open dialog inerts the whole stage
+behind it, so the backdrop cannot be tabbed through either.
+
+Focus follows: `focusPane()` moves it to the new screen's `<h1>`. Moving the eye
+is not moving the focus, and a keyboard user who pressed Continue used to stay
+parked on a button that had just gone inert.
+
+Bracketed by `// >>> pane-switching >>>` and executed by
+`tests/js/onboarding_panes.mjs`, which reports the tab order the way a keyboard
+sees it — a question no grep and no screenshot can answer.
+
+## Motion
+
+This is the most motion-heavy surface in the product — a canvas rAF loop
+redrawing a rotating point cloud every 32ms, a scanline overlay, a ripple and a
+horizontal glitch offset — and it is the first thing a new user sees. It had
+**zero** occurrences of `prefers-reduced-motion`; the rule was enforced for
+`styles.css` and for the app's JS, in a test that never read this file.
+
+Under `reduce` the field is a **still image**: the CSS kills transitions and
+hides `.scan`, and because a rAF loop is something CSS cannot reach, `step()`
+asks as well — the camera snaps to each state instead of easing to it, nothing
+rotates, and ripple and glitch never start. It is redrawn on demand (state
+change, resize) rather than thirty times a second.
 
 ## Brain status
 
@@ -174,6 +268,12 @@ app opens looking empty. See [`../DESKTOP-SIGNIN.md`](../DESKTOP-SIGNIN.md) → 
 
 (`POST /api/agents/lead` and `POST /api/agents/{id}/welcome` were removed with
 the lead agent.)
+
+There is exactly **one** onboarding. `workspace.js` used to carry a second — a
+`#onboard` modal with six buttons, kept alive by six empty `hidden` stubs in
+`index.html` so the bindings would not throw — and `openOnboard()` had no
+caller. Two answers to one question is how one of them goes stale, and that one
+had: it still offered a lead agent that no longer exists.
 
 The authoritative list of every endpoint is `tests/api_surface.json`, not this
 file.

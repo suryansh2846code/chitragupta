@@ -3,20 +3,40 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="icon" type="image/png" sizes="64x64" href="/static/favicon-64.png" />
-  <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32.png" />
-</head>
-<body>
 <title>Chitragupta — Neural Brain</title>
+<link rel="icon" type="image/png" sizes="64x64" href="/static/favicon-64.png" />
+<link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32.png" />
+<!-- `IC` — the one icon set (docs: CLAUDE.md § Conventions). Onboarding used to
+     draw its source tiles with dingbats (✉ ☏ ✎ ▤ ▲), which are colour fonts that
+     ignore `currentColor`, so they could never take the accent. core.js has no
+     side effects on load and defines `IC`/`_S`/`_lessMotion`; everything this
+     page needs of its own lives inside the IIFE below and shadows the rest. -->
+<script src="/static/core.js"></script>
 <style>
-  /* Charcoal, matching styles.css. Onboarding keeps its own copy of the palette
-     because it is a standalone page, so both have to move together — arriving
-     in the workspace must not feel like arriving in a different product. */
-  :root{--ground:#191817;--panel:#232120;--star:#dfe7f2;--muted:#928c85;--faint:#5f5a54;
-    --line:rgba(223,231,242,.1);--line2:rgba(223,231,242,.18);--north:#f5c877;--blue:#5b9bff;--ok:#5fcf8e;
+  /* Living Constellation — docs/DESIGN-BRIEF.md.
+     Onboarding declares its OWN copy of the palette because it is a standalone
+     page, so the two files have to move together; changing one alone is how the
+     seam between arriving and being here comes back.
+     GOLD IS THE ONLY INTERACTIVE COLOUR: live, hover, focus, primary. `--ok`
+     survives because "connected" is a meaning gold cannot carry. Blue is gone
+     — it was the generic-AI default the brief exists to avoid, and on this page
+     it was doing every job gold does in the workspace, which meant a user
+     walked a blue onboarding and landed somewhere gold. */
+  :root{--rail:#151413;--ground:#191817;--surface:#1d1c1a;--panel:#232120;
+    --panel-2:#2a2826;--raise:#35322f;
+    --star:#dfe7f2;--muted:#928c85;--faint:#756f68;
+    --line:rgba(223,231,242,.10);--line2:rgba(223,231,242,.18);
+    --north:#f5c877;--north-dim:rgba(245,200,119,.14);--north-track:rgba(245,200,119,.28);
+    --north-ink:#1a1300;--north-lift:#f7dca6;
+    --ok:#5fcf8e;--danger:#ff6b6b;
     --mono:ui-monospace,"SF Mono",SFMono-Regular,"JetBrains Mono",Menlo,Consolas,monospace;
-    --sans:-apple-system,"SF Pro Display","Helvetica Neue",system-ui,Arial,sans-serif;color-scheme:dark;}
+    --sans:-apple-system,"SF Pro Text","SF Pro Display",system-ui,"Helvetica Neue",Arial,sans-serif;
+    color-scheme:dark;}
   *{box-sizing:border-box}body{margin:0}
+  /* Focus has to be VISIBLE. Every control on this page is a custom-painted
+     button on a dark ground, and the UA ring is nearly invisible on it — which
+     made the keyboard path untestable by eye as well as unusable. */
+  :focus-visible{outline:2px solid var(--north);outline-offset:3px;border-radius:3px}
   .stage{position:relative;min-height:100svh;background:radial-gradient(120% 90% at 40% 0,rgba(58,54,48,.32),transparent 60%),var(--ground);
     color:var(--star);font-family:var(--mono);overflow:hidden}
   .grid{position:absolute;inset:0;z-index:0;pointer-events:none;opacity:.55;
@@ -24,13 +44,13 @@
     background-size:38px 38px;-webkit-mask:radial-gradient(58% 60% at 64% 46%,transparent 24%,#000 82%);mask:radial-gradient(58% 60% at 64% 46%,transparent 24%,#000 82%);transition:-webkit-mask 1s ease}
   .stage.on .grid{-webkit-mask:radial-gradient(34% 42% at 22% 68%,transparent 20%,#000 78%);mask:radial-gradient(34% 42% at 22% 68%,transparent 20%,#000 78%)}
   .glow{position:absolute;inset:0;z-index:0;pointer-events:none;opacity:0;transition:opacity .8s;
-    background:radial-gradient(20% 26% at 22% 68%,rgba(40,120,220,.18),transparent 70%),radial-gradient(18% 22% at 18% 66%,rgba(232,116,40,.1),transparent 70%)}
+    background:radial-gradient(20% 26% at 22% 68%,rgba(245,200,119,.16),transparent 70%),radial-gradient(18% 22% at 18% 66%,rgba(245,200,119,.07),transparent 70%)}
   canvas#c{position:absolute;inset:0;width:100%;height:100%;z-index:1}
   .scan{position:absolute;inset:0;z-index:2;pointer-events:none;opacity:.4;background:repeating-linear-gradient(0deg,rgba(0,0,0,0) 0,rgba(0,0,0,0) 2px,rgba(0,0,0,.2) 3px);mix-blend-mode:multiply}
   .bk{position:absolute;width:16px;height:16px;border-color:var(--line2);border-style:solid;border-width:0;z-index:6}
   .bk.tl{top:96px;left:34px;border-top-width:1px;border-left-width:1px}.bk.bl{bottom:34px;left:34px;border-bottom-width:1px;border-left-width:1px}
   /* top bars */
-  .top{position:absolute;top:0;left:0;right:0;z-index:6;display:flex;align-items:center;justify-content:space-between;padding:30px 44px}
+  .top{position:absolute;top:0;left:0;right:0;z-index:6;display:flex;align-items:center;justify-content:space-between;padding:30px 44px;gap:16px}
   .brand{display:flex;align-items:center;gap:12px;font-size:12px;letter-spacing:.42em;text-transform:uppercase}
   /* The logo as drawn — ink on its own paper, the same tile the rail and the
      Dock wear. It used to be masked and filled with --north, which made the
@@ -41,70 +61,89 @@
   .topR{display:flex;align-items:center;gap:12px;transition:opacity .4s}
   .pill{font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--star);background:rgba(223,231,242,.04);border:1px solid var(--line2);border-radius:999px;padding:8px 15px;cursor:pointer;display:inline-flex;gap:7px;align-items:center;transition:all .18s}
   .pill:hover{border-color:var(--north);color:var(--north)}
-  .menu{background:none;border:0;color:var(--muted);font-size:20px;cursor:pointer;padding:4px 6px}.menu:hover{color:var(--star)}
+  /* The step rail is a real progress indicator, so it carries the state in the
+     markup too — `aria-current` on the live step, not colour alone. */
   .steps{display:flex;align-items:center;font-size:12px;opacity:0;pointer-events:none;transition:opacity .5s;position:absolute;left:50%;transform:translateX(-50%)}
   .stage.on .steps{opacity:1;pointer-events:auto}
   .step{display:flex;align-items:center;gap:9px;color:var(--faint)}
   .step .n{width:26px;height:26px;border-radius:50%;border:1px solid var(--line2);display:flex;align-items:center;justify-content:center;font-size:11px}
-  .step.act{color:var(--star)}.step.act .n{background:var(--blue);border-color:var(--blue);color:#04121f;box-shadow:0 0 16px rgba(91,155,255,.5)}
+  .step.act{color:var(--star)}.step.act .n{background:var(--north);border-color:var(--north);color:var(--north-ink);box-shadow:0 0 16px var(--north-track)}
+  .step.done .n{border-color:var(--north-track);color:var(--north)}
   .sdash{color:var(--faint);margin:0 14px}
-  .stage.on .topR{opacity:0;pointer-events:none}
-  .skip{opacity:0;pointer-events:none;transition:opacity .5s;font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);background:none;border:1px solid var(--line2);border-radius:999px;padding:9px 16px;cursor:pointer}
-  .stage.on .skip{opacity:1;pointer-events:auto}.skip:hover{color:var(--star);border-color:var(--star)}
-  .trust{border:0;padding:9px 0;color:var(--muted);letter-spacing:.16em;cursor:default}.trust:hover{color:var(--muted)}
+  .stage.on .topR{opacity:1}
+  .stage.building .topR,.stage.brainready .topR{opacity:0;pointer-events:none}
   /* HERO content */
   .hero{position:absolute;inset:0;z-index:4;display:flex;align-items:center;padding:0 44px;transition:opacity .5s ease}
   .stage.on .hero{opacity:0;pointer-events:none}
   .lead{width:min(560px,50%);display:flex;flex-direction:column;gap:20px}
-  .eyebrow{font-size:11px;letter-spacing:.34em;text-transform:uppercase;color:var(--blue)}
+  .eyebrow{font-size:11px;letter-spacing:.34em;text-transform:uppercase;color:var(--north)}
   .lead h1{margin:0;font-family:var(--sans);font-weight:500;font-size:clamp(40px,6vw,76px);line-height:.98;letter-spacing:-.03em}
   .lead h1 .l1{color:#fff;display:block}
-  .lead h1 .l2{display:block;font-weight:300;background:linear-gradient(100deg,#a9d3ff,#5b9bff);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .lead h1 .l2{display:block;font-weight:300;background:linear-gradient(100deg,var(--north-lift),var(--north));-webkit-background-clip:text;background-clip:text;color:transparent}
   .sub{margin:0;max-width:42ch;font-size:13px;line-height:1.7;color:var(--muted)}
   .actions{display:flex;align-items:center;gap:20px;margin-top:6px}
-  .cta{font-family:var(--mono);font-size:11.5px;letter-spacing:.18em;text-transform:uppercase;color:#08090d;background:#d6dae2;border:1px solid #d6dae2;border-radius:3px;padding:14px 24px;cursor:pointer;transition:background .18s,transform .18s,box-shadow .3s;box-shadow:0 0 0 rgba(255,255,255,0)}
-  .cta:hover{background:#eef1f5;transform:translateY(-1px);box-shadow:0 0 26px rgba(255,255,255,.14)}
-  .how{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);background:none;border:0;cursor:pointer;display:inline-flex;align-items:center;gap:9px}
-  .how:hover{color:var(--star)}.how .ply{width:26px;height:26px;border:1px solid var(--line2);border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:8px}
+  .cta{font-family:var(--mono);font-size:11.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--north-ink);background:var(--north);border:1px solid var(--north);border-radius:3px;padding:14px 24px;cursor:pointer;transition:background .18s,transform .18s,box-shadow .3s;box-shadow:0 0 0 rgba(245,200,119,0)}
+  .cta:hover{background:var(--north-lift);border-color:var(--north-lift);transform:translateY(-1px);box-shadow:0 0 26px var(--north-dim)}
   .stats{position:absolute;right:56px;top:50%;transform:translateY(-50%);z-index:4;display:flex;flex-direction:column;gap:22px;padding-left:22px;border-left:1px solid var(--line);transition:opacity .4s}
   .stage.on .stats{opacity:0;pointer-events:none}
   .stat b{display:block;font-size:20px;font-weight:400;color:var(--star);font-variant-numeric:tabular-nums}.stat span{font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:var(--faint)}
   .bot{position:absolute;left:0;right:0;bottom:0;z-index:4;display:flex;justify-content:space-between;padding:22px 44px;font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:var(--faint);transition:opacity .4s}
   .stage.on .bot{opacity:0;pointer-events:none}
   /* CONNECT content */
-  .conn{position:absolute;inset:0;z-index:4;display:grid;grid-template-columns:0.9fr 1.05fr;gap:40px;padding:100px 44px 96px;max-width:1440px;margin:0 auto;opacity:0;pointer-events:none;transition:opacity .7s ease .25s}
+  .conn{position:absolute;inset:0;z-index:4;display:grid;grid-template-columns:0.9fr 1.05fr;gap:40px;
+    /* The bottom padding is the Continue button's lane. It is absolutely
+       positioned over this pane, so the grid has to stop above it rather than
+       run underneath it — which is what put a source card behind the button. */
+    padding:100px 44px 128px;max-width:1440px;margin:0 auto;opacity:0;pointer-events:none;transition:opacity .7s ease .25s}
   .stage.on .conn{opacity:1;pointer-events:auto}
-  .cleft{position:relative}
-  .cleft .eyebrow{color:var(--blue)}
+  .cleft{position:relative;min-height:0;overflow-y:auto}
+  /* The source list is as long as the user's machine makes it — thirteen
+     connectors is five rows, and it used to run off the bottom of the window
+     and under the Continue button. Only the GRID scrolls: the heading and its
+     "N selected" counter are the feedback for what you are doing, so they stay
+     put, and so does the privacy panel. */
+  .cright{min-height:0;display:flex;flex-direction:column}
+  .cright .rhead,.cright .rsub,.cright .privacy{flex:none}
+  .srcs{flex:1 1 auto;min-height:0;overflow-y:auto;padding-right:6px}
+  /* A visible track, deliberately. macOS overlay scrollbars are invisible at
+     rest, so the only clue that the list continues was a card sliced off at
+     the edge — which reads as a rendering fault, not as "there is more". */
+  .srcs{scrollbar-width:thin;scrollbar-color:var(--line2) transparent}
+  .srcs::-webkit-scrollbar,.cleft::-webkit-scrollbar{width:8px}
+  .srcs::-webkit-scrollbar-track{background:rgba(223,231,242,.04);border-radius:4px}
+  .srcs::-webkit-scrollbar-thumb,.cleft::-webkit-scrollbar-thumb{background:var(--line2);border-radius:4px}
+  .srcs::-webkit-scrollbar-thumb:hover{background:var(--north-track)}
   .cleft h1{margin:12px 0 0;font-family:var(--sans);font-weight:600;font-size:clamp(34px,4vw,52px);line-height:1;letter-spacing:-.03em}
-  .cleft h1 b{font-weight:300;background:linear-gradient(100deg,#a9d3ff,#5b9bff);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .cleft h1 b{font-weight:300;background:linear-gradient(100deg,var(--north-lift),var(--north));-webkit-background-clip:text;background-clip:text;color:transparent}
   .cleft .sub{margin-top:18px}
-  .feats{display:flex;gap:24px;margin-top:24px}
-  .feat{display:flex;gap:10px}.feat .fi{color:var(--blue);margin-top:1px}.feat b{display:block;font-size:12px;color:var(--star)}.feat span{font-size:10px;color:var(--faint)}
+  .feats{display:flex;gap:24px;margin-top:24px;flex-wrap:wrap}
+  .feat{display:flex;gap:10px}.feat .fi{color:var(--north);margin-top:1px}.feat b{display:block;font-size:12px;color:var(--star)}.feat span{font-size:10px;color:var(--faint)}
   .lab{position:absolute;font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);z-index:5;opacity:0;transition:opacity .6s .5s}
   .stage.on .lab{opacity:1}
   .ver{position:absolute;left:44px;bottom:22px;z-index:5;font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:var(--faint);opacity:0;transition:opacity .5s}
   .stage.on .ver{opacity:1}
   .rhead{display:flex;align-items:baseline;justify-content:space-between}.rhead h2{margin:0;font-size:12px;letter-spacing:.24em;text-transform:uppercase}.rhead .cnt{font-size:11px;color:var(--muted)}
   .rsub{margin:8px 0 18px;font-size:12px;color:var(--faint)}
-  .srcs{display:grid;grid-template-columns:repeat(3,1fr);gap:11px}
-  .src{position:relative;border:1px solid var(--line);background:var(--panel);border-radius:9px;padding:14px;cursor:pointer;transition:border-color .18s,background .18s}
-  .src:hover{border-color:var(--line2);background:#0e131e}.src.sel{border-color:var(--blue);background:rgba(91,155,255,.06)}
+  .srcs{display:grid;grid-template-columns:repeat(3,1fr);gap:11px;align-content:start}
+  .src{position:relative;border:1px solid var(--line);background:var(--panel);border-radius:9px;padding:14px;cursor:pointer;text-align:left;font:inherit;color:inherit;transition:border-color .18s,background .18s}
+  .src:hover{border-color:var(--line2);background:var(--panel-2)}
+  .src.sel{border-color:var(--north);background:var(--north-dim)}
   .src .ico{width:28px;height:28px;border-radius:7px;display:flex;align-items:center;justify-content:center;font-family:var(--sans);font-weight:700;color:#fff;margin-bottom:10px}
   .src .nm{font-size:12.5px;font-weight:500;font-family:var(--sans)}.src .ds{font-size:10px;color:var(--faint);margin-top:3px;line-height:1.35}
-  .src .add{position:absolute;top:12px;right:12px;width:23px;height:23px;border-radius:50%;border:1px solid var(--line2);color:var(--muted);display:flex;align-items:center;justify-content:center;font-size:13px;transition:all .18s}
-  .src:hover .add{border-color:var(--star);color:var(--star)}.src.sel .add{background:var(--blue);border-color:var(--blue);color:#04121f}
-  .privacy{display:flex;align-items:center;gap:13px;margin-top:14px;border:1px solid var(--line);border-radius:9px;padding:13px 15px;background:rgba(91,155,255,.03)}
-  .privacy .pi{color:var(--blue);flex:none}.privacy b{font-size:12px}.privacy p{margin:2px 0 0;font-size:10.5px;color:var(--faint)}.privacy a{margin-left:auto;color:var(--blue);font-size:11px;text-transform:uppercase;text-decoration:none;white-space:nowrap}
+  .src .add{position:absolute;top:12px;right:12px;width:23px;height:23px;border-radius:50%;border:1px solid var(--line2);color:var(--muted);display:flex;align-items:center;justify-content:center;transition:all .18s}
+  .src:hover .add{border-color:var(--star);color:var(--star)}
+  .src.sel .add{background:var(--north);border-color:var(--north);color:var(--north-ink)}
+  .privacy{display:flex;align-items:center;gap:13px;margin-top:14px;border:1px solid var(--line);border-radius:9px;padding:13px 15px;background:rgba(245,200,119,.035)}
+  .privacy .pi{color:var(--north);flex:none}.privacy b{font-size:12px}.privacy p{margin:2px 0 0;font-size:10.5px;color:var(--faint)}.privacy a{margin-left:auto;color:var(--north);font-size:11px;text-transform:uppercase;text-decoration:none;white-space:nowrap}
   .cfixed{position:absolute;right:44px;bottom:34px;z-index:6;opacity:0;pointer-events:none;transition:opacity .5s ease .3s}
   .stage.on .cfixed{opacity:1;pointer-events:auto}
   .creq{position:absolute;right:44px;bottom:78px;z-index:6;font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--north);opacity:0;pointer-events:none;transition:opacity .4s;display:flex;align-items:center;gap:7px}
   .stage.on .creq.show{opacity:.9}
   .stage.building .creq{opacity:0}
-  .creq .rq{width:5px;height:5px;border-radius:50%;background:var(--north);box-shadow:0 0 8px rgba(245,200,119,.5)}
-  .stage.building .cfixed{opacity:0;pointer-events:none}
-  .cbtn{font-family:var(--mono);font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);background:#20242e;border:1px solid var(--line2);border-radius:4px;padding:13px 28px;cursor:not-allowed;transition:all .2s}
-  .cbtn.ready{color:#08090d;background:#d6dae2;border-color:#d6dae2;cursor:pointer}.cbtn.ready:hover{background:#eef1f5}
+  .creq .rq{width:5px;height:5px;border-radius:50%;background:var(--north);box-shadow:0 0 8px var(--north-track)}
+  .stage.building .cfixed,.stage.brainready .cfixed{opacity:0;pointer-events:none}
+  .cbtn{font-family:var(--mono);font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);background:var(--panel-2);border:1px solid var(--line2);border-radius:4px;padding:13px 28px;cursor:not-allowed;transition:all .2s}
+  .cbtn.ready{color:var(--north-ink);background:var(--north);border-color:var(--north);cursor:pointer}.cbtn.ready:hover{background:var(--north-lift);border-color:var(--north-lift)}
   /* BUILD phase */
   .stage.building .conn{opacity:0;pointer-events:none;transition:opacity .4s}
   .stage.building .lab{opacity:0}
@@ -113,169 +152,252 @@
   .bLeft{position:absolute;left:44px;top:22%;max-width:340px}
   .bLeft .eyebrow{color:var(--faint)}
   .bLeft h1{margin:12px 0 0;font-family:var(--sans);font-weight:600;font-size:clamp(34px,4vw,52px);line-height:1;letter-spacing:-.03em}
-  .bLeft h1 b{font-weight:300;background:linear-gradient(100deg,#a9d3ff,#5b9bff);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .bLeft h1 b{font-weight:300;background:linear-gradient(100deg,var(--north-lift),var(--north));-webkit-background-clip:text;background-clip:text;color:transparent}
   .bLeft .sub{margin-top:18px}
   .bStats{position:absolute;right:56px;top:26%;display:flex;flex-direction:column;gap:24px;padding-left:20px;border-left:1px solid var(--line)}
   .bStat b{display:block;font-size:22px;font-weight:400;color:var(--star);font-variant-numeric:tabular-nums}.bStat span{font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:var(--faint)}
   .bProg{position:absolute;left:50%;bottom:20%;transform:translateX(-50%);text-align:center;width:min(520px,60%)}
   .bPct{font-family:var(--sans);font-size:34px;font-weight:500;color:#fff;font-variant-numeric:tabular-nums}
   .bBar{height:5px;border-radius:4px;background:rgba(223,231,242,.1);margin:14px 0 14px;overflow:hidden}
-  .bFill{height:100%;width:0;border-radius:4px;background:linear-gradient(90deg,#3f7fe0,#7ec0ff);box-shadow:0 0 14px rgba(120,180,255,.5)}
+  .bFill{height:100%;width:0;border-radius:4px;background:linear-gradient(90deg,var(--north),var(--north-lift));box-shadow:0 0 14px var(--north-track)}
   .bWhat{font-size:11px;letter-spacing:.2em;text-transform:uppercase;color:var(--star)}
-  .bDet{font-size:12px;color:var(--muted);margin-top:6px}
-  .bPriv{position:absolute;left:50%;bottom:9%;transform:translateX(-50%);display:flex;align-items:center;gap:13px;border:1px solid var(--line);border-radius:9px;padding:13px 16px;background:rgba(91,155,255,.03);width:min(480px,60%)}
-  .bPriv .pi{color:var(--blue);flex:none}.bPriv b{font-size:12px}.bPriv p{margin:2px 0 0;font-size:10.5px;color:var(--faint)}.bPriv a{margin-left:auto;color:var(--blue);font-size:11px;text-transform:uppercase;text-decoration:none;white-space:nowrap}
+  .bDet{font-size:12px;color:var(--muted);margin-top:6px;min-height:1.2em}
+  /* A stalled sync is reported, not left to look like a slow one. */
+  .bWarn{margin-top:12px;font-size:11.5px;color:var(--north);display:none;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap}
+  .bWarn.show{display:flex}
+  .bRetry{font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--north);background:none;border:1px solid var(--north-track);border-radius:999px;padding:6px 14px;cursor:pointer}
+  .bRetry:hover{background:var(--north-dim)}
+  .bPriv{position:absolute;left:50%;bottom:8%;transform:translateX(-50%);display:flex;align-items:center;gap:13px;border:1px solid var(--line);border-radius:9px;padding:13px 16px;background:rgba(245,200,119,.035);width:min(480px,60%)}
+  .bPriv .pi{color:var(--north);flex:none}.bPriv b{font-size:12px}.bPriv p{margin:2px 0 0;font-size:10.5px;color:var(--faint)}
   .cancel{position:absolute;right:44px;bottom:34px;font-family:var(--mono);font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);background:none;border:1px solid var(--line2);border-radius:999px;padding:12px 22px;cursor:pointer}
   .cancel:hover{color:var(--star);border-color:var(--star)}
-  .bskip{position:absolute;left:44px;bottom:34px;font-family:var(--mono);font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--north);background:none;border:1px solid var(--north-track,rgba(245,200,119,.28));border-radius:999px;padding:12px 22px;cursor:pointer}
+  .bskip{position:absolute;left:44px;bottom:34px;font-family:var(--mono);font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--north);background:none;border:1px solid var(--north-track);border-radius:999px;padding:12px 22px;cursor:pointer}
   .bskip[hidden]{display:none}
-  .bskip:hover{background:rgba(245,200,119,.1)}
+  .bskip:hover{background:var(--north-dim)}
+  .bskip:disabled{opacity:.6;cursor:default}
   /* STEP 03: Your Brain digest */
-  .stage.brainready .build,.stage.brainready .cfixed{opacity:0;pointer-events:none}
+  .stage.brainready .build{opacity:0;pointer-events:none}
   .stage.brainready .conn,.stage.brainready .lab,.stage.brainready .ver{opacity:0!important;pointer-events:none}
   .digest{position:absolute;inset:0;z-index:5;opacity:0;pointer-events:none;transition:opacity .8s ease .2s}
   .stage.brainready .digest{opacity:1;pointer-events:auto}
-  .dhead{position:absolute;left:50%;top:16%;transform:translateX(-50%);text-align:center;width:520px}
+  .dhead{position:absolute;left:50%;top:8%;transform:translateX(-50%);text-align:center;
+    /* Never wider than the gap between the two card columns, or the sentence
+       goes behind them however far up it is moved. */
+    width:min(460px,calc(100vw - 52vw - 200px))}
   .dhead .eyebrow{color:var(--faint);letter-spacing:.28em}
   .dhead h1{margin:8px 0 10px;font-family:var(--sans);font-weight:600;font-size:clamp(34px,4vw,52px);line-height:1;letter-spacing:-.03em}
-  .dhead h1 b{font-weight:300;background:linear-gradient(100deg,#a9d3ff,#5b9bff);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .dhead h1 b{font-weight:300;background:linear-gradient(100deg,var(--north-lift),var(--north));-webkit-background-clip:text;background-clip:text;color:transparent}
   .dhead p{margin:0;font-size:12.5px;color:var(--muted);line-height:1.6}
   /* loader shown until the profile is extracted */
-  .dloading{position:absolute;left:50%;top:30%;transform:translateX(-50%);display:flex;align-items:center;gap:10px;font-family:var(--mono);font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);white-space:nowrap;transition:opacity .4s}
+  .dloading{position:absolute;left:50%;top:36%;transform:translateX(-50%);display:flex;align-items:center;gap:10px;font-family:var(--mono);font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);white-space:nowrap;transition:opacity .4s}
   .digest.ready .dloading{opacity:0;pointer-events:none}
-  .dspin{width:14px;height:14px;border:2px solid var(--line2);border-top-color:var(--blue);border-radius:50%;animation:spin .7s linear infinite}
+  .dspin{width:14px;height:14px;border:2px solid var(--line2);border-top-color:var(--north);border-radius:50%;animation:spin .7s linear infinite}
   /* cards stay hidden until the profile is ready, then fade in staggered */
-  .dcard{position:absolute;width:min(360px,26vw);max-height:38vh;overflow:hidden;border:1px solid var(--line);background:rgba(11,15,24,.72);backdrop-filter:blur(3px);border-radius:12px;padding:20px;opacity:0;transform:translateY(10px);pointer-events:none;transition:opacity .5s ease,transform .5s ease}
+  /* A long summary SCROLLS inside its own card. It used to be clamped to five
+     lines inside `overflow:hidden`, so a model that wrote six sentences had the
+     last two deleted with nothing to say so and no way to reach them. */
+  .dcard{position:absolute;width:min(360px,26vw);max-height:28vh;overflow-y:auto;overscroll-behavior:contain;border:1px solid var(--line);background:rgba(35,33,32,.82);backdrop-filter:blur(3px);border-radius:12px;padding:20px;opacity:0;transform:translateY(10px);pointer-events:none;transition:opacity .5s ease,transform .5s ease}
+  .dcard::-webkit-scrollbar{width:6px}
+  .dcard::-webkit-scrollbar-thumb{background:var(--line2);border-radius:3px}
   .digest.ready .dcard{opacity:1;transform:none;pointer-events:auto}
   .digest.ready .dcard.tl{transition-delay:.05s}.digest.ready .dcard.tr{transition-delay:.15s}
   .digest.ready .dcard.bl{transition-delay:.25s}.digest.ready .dcard.br{transition-delay:.35s}
-  .dcard.tl{left:60px;top:23%}.dcard.bl{left:60px;top:57%}.dcard.tr{right:60px;top:23%}.dcard.br{right:60px;top:57%}
+  .dcard.tl{left:60px;top:26%}.dcard.bl{left:60px;top:54%}.dcard.tr{right:60px;top:26%}.dcard.br{right:60px;top:54%}
   .dc-h{display:flex;align-items:center;gap:11px;margin-bottom:13px}
-  .dc-ic{width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;flex:none}
+  /* One accent, so the four area chips are neutral and gold marks the one
+     state that means something: this area is BACKED by the user's own data.
+     Four decorative hues (a purple, a green, a blue, a gold) made the gold on
+     the Personal card read as decoration too. */
+  .dc-ic{width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;flex:none;background:rgba(223,231,242,.07);color:var(--muted)}
+  .dcard:not(.empty) .dc-ic{background:var(--north-dim);color:var(--north)}
   .dc-nm{font-family:var(--sans);font-weight:600;font-size:14px;color:var(--star)}
   .dc-it{margin-left:auto;font-size:11px;color:var(--muted)}
-  .dc-p{margin:0;font-size:12px;line-height:1.6;color:var(--star);opacity:.92;display:-webkit-box;-webkit-line-clamp:5;-webkit-box-orient:vertical;overflow:hidden}
+  .dc-p{margin:0;font-size:12px;line-height:1.6;color:var(--star);opacity:.92}
   .dc-k{margin:14px 0 0;font-size:11px;color:var(--faint);line-height:1.5;display:flex;justify-content:space-between;align-items:flex-end;gap:10px}
   .dc-k:empty,.dc-k span:empty{margin:0}
   /* An area with nothing behind it recedes instead of shouting a blank card.
      It stays on screen — four areas that become three teaches the user the app
      lost one, when the truth is that nothing has synced into it yet. */
   .digest.ready .dcard.empty{opacity:.55}
-  .dcard.empty .dc-ic{filter:saturate(.25)}
   .dcard.empty .dc-p{color:var(--muted);font-family:var(--mono);font-size:11px;letter-spacing:.04em}
-  .dcont{position:absolute;left:50%;bottom:11%;transform:translateX(-50%);text-align:center}
-  .dcta{font-family:var(--mono);font-size:12.5px;letter-spacing:.14em;text-transform:uppercase;color:#08090d;background:#eef1f5;border:1px solid #eef1f5;border-radius:8px;padding:16px 30px;cursor:pointer;box-shadow:0 0 30px rgba(255,255,255,.12);transition:transform .18s}
-  .dcta:hover{transform:translateY(-1px)}
-  .dedit{display:block;margin-top:16px;font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);background:none;border:0;cursor:pointer}
-  .dedit:hover{color:var(--star)}
+  .dcont{position:absolute;left:50%;bottom:6%;transform:translateX(-50%);text-align:center;z-index:2}
+  .dcta{font-family:var(--mono);font-size:12.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--north-ink);background:var(--north);border:1px solid var(--north);border-radius:8px;padding:16px 30px;cursor:pointer;box-shadow:0 0 30px var(--north-dim);transition:transform .18s,background .18s}
+  .dcta:hover{transform:translateY(-1px);background:var(--north-lift)}
   .bfoot{position:absolute;left:44px;bottom:22px;z-index:5;font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:var(--faint);opacity:0;transition:opacity .5s}
   .stage.brainready .bfoot{opacity:1}
   /* source card connection state */
-  .src.llm-src{border-color:rgba(143,192,255,.28);background:linear-gradient(180deg,rgba(91,155,255,.06),transparent)}
-  .src.llm-src.sel{border-color:var(--blue);background:rgba(91,155,255,.1)}
-  .src.busy{opacity:.7;pointer-events:none}
-  .src .spin{position:absolute;top:12px;right:12px;width:15px;height:15px;border:2px solid var(--line2);border-top-color:var(--blue);border-radius:50%;animation:spin .7s linear infinite}
+  .src.llm-src{border-color:var(--north-track);background:linear-gradient(180deg,rgba(245,200,119,.06),transparent)}
+  .src.llm-src.sel{border-color:var(--north);background:var(--north-dim)}
+  .src.busy{opacity:.75}
+  .src .spin{position:absolute;top:12px;right:12px;width:15px;height:15px;border:2px solid var(--line2);border-top-color:var(--north);border-radius:50%;animation:spin .7s linear infinite}
   @keyframes spin{to{transform:rotate(360deg)}}
   /* connect modal (tokens / folder / custom) */
-  .cmodal{position:fixed;inset:0;z-index:40;display:none;align-items:center;justify-content:center;background:rgba(3,5,10,.72);backdrop-filter:blur(4px)}
+  .cmodal{position:fixed;inset:0;z-index:40;display:none;align-items:center;justify-content:center;background:rgba(5,5,4,.72);backdrop-filter:blur(4px)}
   .cmodal.on{display:flex}
-  .cmbox{width:min(440px,92vw);border:1px solid var(--line2);background:#0b0f18;border-radius:14px;padding:26px 26px 22px;box-shadow:0 24px 80px rgba(0,0,0,.6)}
+  .cmbox{width:min(440px,92vw);max-height:88vh;overflow-y:auto;border:1px solid var(--line2);background:var(--surface);border-radius:14px;padding:26px 26px 22px;box-shadow:0 24px 80px rgba(0,0,0,.6)}
   .cmbox h3{margin:0 0 6px;font-family:var(--sans);font-weight:600;font-size:19px;color:var(--star)}
   .cmbox p{margin:0 0 14px;font-size:12.5px;line-height:1.6;color:var(--muted)}
   .cmbox ol{margin:0 0 14px;padding-left:18px;font-size:12px;line-height:1.7;color:var(--faint)}
   .cmbox ol b{color:var(--star)}
-  .cmbox a{color:var(--blue);font-size:12px;text-decoration:none}
+  .cmbox a{color:var(--north);font-size:12px;text-decoration:none}
+  .cmbox a:hover{text-decoration:underline}
   .cmbox label{display:block;font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);margin-bottom:6px}
-  .cmbox input{width:100%;padding:11px 13px;border:1px solid var(--line2);border-radius:8px;background:#05070d;color:var(--star);font-family:var(--mono);font-size:13px;margin-bottom:8px}
-  .cmbox input:focus{outline:none;border-color:var(--blue)}
+  .cmbox input,.cmbox select{width:100%;padding:11px 13px;border:1px solid var(--line2);border-radius:8px;background:var(--rail);color:var(--star);font-family:var(--mono);font-size:13px;margin-bottom:8px}
+  .cmbox input:focus,.cmbox select:focus{outline:none;border-color:var(--north)}
   .cmnote{font-size:10.5px;color:var(--faint);margin:2px 0 16px}
+  .cmerr{color:var(--danger)}
   .cmrow{display:flex;gap:10px;justify-content:flex-end}
   .cmbtn{font-family:var(--mono);font-size:12px;letter-spacing:.1em;text-transform:uppercase;border-radius:7px;padding:11px 20px;cursor:pointer;border:1px solid var(--line2);background:none;color:var(--muted)}
-  .cmbtn.pri{background:#d6dae2;border-color:#d6dae2;color:#08090d}
-  .cmbtn.pri:hover{background:#eef1f5}.cmbtn:hover{color:var(--star)}
-  @media(max-width:1080px){.lead{width:100%}.stats,.bot{display:none}.conn{grid-template-columns:1fr;overflow-y:auto}.srcs{grid-template-columns:repeat(2,1fr)}}
+  .cmbtn.pri{background:var(--north);border-color:var(--north);color:var(--north-ink)}
+  .cmbtn.pri:hover{background:var(--north-lift);border-color:var(--north-lift)}.cmbtn:hover{color:var(--star)}
+  .cmbtn.pri:hover{color:var(--north-ink)}
+  .cmbtn.danger{background:var(--danger);border-color:var(--danger);color:#1a0505}
+  .cmbtn:disabled{opacity:.55;cursor:default}
+  /* A screen-reader-only live region: progress that is announced, not only drawn. */
+  .sr{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+
+  /* ── small and short windows ──────────────────────────────────────────────
+     The window minimum is 920×620 (desktop.py). At that size the four corner
+     cards and the Continue button below them overlap, so the digest stops
+     being a diagram and becomes a column that scrolls. The build screen's
+     absolute furniture collapses the same way. Only `.conn` used to adapt. */
+  @media(max-width:1080px){
+    .lead{width:100%}.stats,.bot{display:none}
+    .conn{grid-template-columns:1fr;overflow-y:auto}
+    .srcs{grid-template-columns:repeat(2,1fr)}
+  }
+  @media(max-width:1180px),(max-height:820px){
+    .digest{overflow-y:auto;padding:88px 32px 32px}
+    .dhead,.dcard,.dcont,.dloading{position:static;transform:none;width:auto;max-height:none}
+    .dhead{margin:0 auto 22px;max-width:520px}
+    .dloading{justify-content:center;margin-bottom:18px}
+    .digest{display:flex;flex-direction:column;align-items:center}
+    .dcards{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;width:100%;max-width:820px}
+    .dcont{margin:26px 0 0}
+    .bLeft,.bStats{position:static;max-width:none}
+    .build{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px;padding:88px 32px 32px;overflow-y:auto}
+    .bStats{flex-direction:row;gap:28px;border-left:0;padding-left:0}
+    .bProg,.bPriv{position:static;transform:none;width:min(520px,100%)}
+    .bLeft{text-align:center}.bLeft .sub{margin-left:auto;margin-right:auto}
+    .cancel,.bskip{position:static}
+    .build .brow{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
+  }
+  @media(min-width:1181px) and (min-height:821px){ .dcards{display:contents} }
+
+  /* ── reduced motion ───────────────────────────────────────────────────────
+     This page is the most motion-heavy surface in the product: a canvas loop
+     redrawing a rotating point cloud every 32ms, a scanline overlay, ripple and
+     a horizontal glitch offset. None of it was asked for, and it is the FIRST
+     thing a new user sees. The canvas is a rAF loop CSS cannot reach, so the
+     JS asks as well — see LESS_MOTION below. */
+  @media (prefers-reduced-motion: reduce){
+    *,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;
+      transition-duration:.001ms!important;transition-delay:0s!important;scroll-behavior:auto!important}
+    .scan{display:none}
+    .grid{transition:none}
+    .cta:hover,.dcta:hover{transform:none}
+    .dspin,.src .spin{border-top-color:var(--north);animation:none}
+  }
 </style>
+</head>
+<body>
 <div class="stage" id="stage">
   <div class="grid"></div><div class="glow" id="glow"></div>
-  <canvas id="c"></canvas><div class="scan"></div>
-  <span class="bk tl"></span><span class="bk bl"></span>
+  <canvas id="c" aria-hidden="true"></canvas><div class="scan" aria-hidden="true"></div>
+  <span class="bk tl" aria-hidden="true"></span><span class="bk bl" aria-hidden="true"></span>
   <div class="top">
-    <div class="brand"><span class="mark"></span>Chitragupta</div>
-    <div class="steps">
-      <div class="step act"><span class="n">1</span>Connect</div><span class="sdash">·····</span>
-      <div class="step" id="stepBuild"><span class="n">2</span>Build</div><span class="sdash">·····</span>
-      <div class="step"><span class="n">3</span>Your Brain</div>
+    <div class="brand"><span class="mark" role="img" aria-label="Chitragupta"></span>Chitragupta</div>
+    <ol class="steps" id="steps" aria-label="Setup progress">
+      <li class="step act" id="stepConnect" aria-current="step"><span class="n" aria-hidden="true">1</span>Connect</li><span class="sdash" aria-hidden="true">·····</span>
+      <li class="step" id="stepBuild"><span class="n" aria-hidden="true">2</span>Build</li><span class="sdash" aria-hidden="true">·····</span>
+      <li class="step" id="stepBrain"><span class="n" aria-hidden="true">3</span>Your Brain</li>
+    </ol>
+    <div class="topR">
+      <button class="pill" id="skipTop">Skip for now →</button>
     </div>
-    <div class="topR"><button class="pill" id="skipTop">Skip for now →</button></div>
-    <div class="skip trust">On-device · Private · Yours</div>
   </div>
   <!-- HERO -->
-  <div class="hero"><div class="lead">
+  <div class="hero" id="paneHero"><div class="lead">
     <div class="eyebrow">Local · Private · Yours</div>
     <h1><span class="l1">Your world,</span><span class="l2">oriented.</span></h1>
-    <p class="sub">Chitragupta maps what you connect. These are your four strongest areas right now — they change as your world does. Everything stays on your Mac.</p>
+    <!-- What this screen can honestly promise. It used to read "These are your
+         four strongest areas right now" — on a screen showing no areas, beside a
+         counter reading 0. That sentence belongs on step 3, after the areas are
+         measured, and it is there. -->
+    <p class="sub">Chitragupta reads the sources you connect and builds a map of your work, your people and what you are learning — on your Mac, and nowhere else.</p>
     <div class="actions"><button class="cta" id="buildBtn">Build my brain →</button></div>
   </div></div>
-  <div class="stats">
+  <div class="stats" aria-hidden="true">
     <div class="stat"><b id="heroNodes">0</b><span>Memories</span></div><div class="stat"><b id="heroSources">0</b><span>Sources</span></div><div class="stat"><b>On-device</b><span>Private</span></div>
   </div>
-  <div class="bot"><div>Built for a more focused you</div><div>———— v0.3</div></div>
+  <div class="bot" aria-hidden="true"><div>Built for a more focused you</div><div>———— v0.3</div></div>
   <!-- CONNECT (same screen) -->
-  <div class="conn">
+  <div class="conn" id="paneConnect">
     <div class="cleft">
       <div class="eyebrow">Step 01 · Connect your world</div>
       <h1>Connect<br>your <b>world.</b></h1>
       <div class="feats">
-        <div class="feat"><span class="fi"><svg width="17" height="17" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="4" y="8" width="10" height="7" rx="1.5"/><path d="M6 8V6a3 3 0 0 1 6 0v2"/></svg></span><div><b>On-device</b><span>Data stays local</span></div></div>
-        <div class="feat"><span class="fi"><svg width="17" height="17" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M9 2l5 2v4c0 4-3 6-5 7-2-1-5-3-5-7V4l5-2z"/></svg></span><div><b>Private</b><span>You're in control</span></div></div>
-        <div class="feat"><span class="fi"><svg width="17" height="17" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M3 15h12M5 15V9M9 15V4M13 15v-7"/></svg></span><div><b>Useful</b><span>Built for you</span></div></div>
+        <div class="feat"><span class="fi" data-ic="lock" aria-hidden="true"></span><div><b>On-device</b><span>Data stays local</span></div></div>
+        <div class="feat"><span class="fi" data-ic="shield" aria-hidden="true"></span><div><b>Private</b><span>You're in control</span></div></div>
+        <div class="feat"><span class="fi" data-ic="chart" aria-hidden="true"></span><div><b>Useful</b><span>Built for you</span></div></div>
       </div>
     </div>
     <div class="cright">
-      <div class="rhead"><h2>Choose sources</h2><span class="cnt"><b id="selcnt">0</b> selected</span></div>
-      <p class="rsub">Choose the tools you want to connect. You can always add more later.</p>
-      <div class="srcs" id="srcs"></div>
-      <div class="privacy"><span class="pi"><svg width="19" height="19" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M10 2l6 2v5c0 4-3 6.5-6 8-3-1.5-6-4-6-8V4l6-2z"/><path d="M7.5 10l1.7 1.7L13 8"/></svg></span><div><b>Your data never leaves your device.</b><p>We run everything locally, so your information stays private and secure.</p></div></div>
-      
+      <div class="rhead"><h2 id="srcsLabel">Choose sources</h2><span class="cnt"><b id="selcnt">0</b> selected</span></div>
+      <p class="rsub">Pick anything you want your agents to read. One is enough to start — you can always add more later.</p>
+      <div class="srcs" id="srcs" role="group" aria-labelledby="srcsLabel"></div>
+      <div class="privacy"><span class="pi" data-ic="shieldcheck" aria-hidden="true"></span><div><b>Your data never leaves your device.</b><p>We run everything locally, so your information stays private and secure.</p></div></div>
     </div>
   </div>
-  <div class="lab" style="left:2%;top:42%">Your data</div>
-  <div class="lab" style="left:41%;top:35%">Your brain</div>
-  <div class="lab" style="left:3%;bottom:15%">Your context</div>
-  <div class="lab" style="left:37%;bottom:6%">A more focused you</div>
-  <div class="build">
+  <div class="lab" style="left:2%;top:42%" aria-hidden="true">Your data</div>
+  <div class="lab" style="left:41%;top:35%" aria-hidden="true">Your brain</div>
+  <div class="lab" style="left:3%;bottom:15%" aria-hidden="true">Your context</div>
+  <div class="lab" style="left:37%;bottom:6%" aria-hidden="true">A more focused you</div>
+  <div class="build" id="paneBuild">
     <div class="bLeft"><div class="eyebrow">Step 02</div><h1>Building<br>your <b>brain.</b></h1><p class="sub">We're processing your data, finding connections, and mapping what matters to you.</p></div>
     <div class="bStats"><div class="bStat"><b id="stSrc">0</b><span>Sources</span></div><div class="bStat"><b id="stItems">0</b><span>Memories</span></div><div class="bStat"><b id="stEnt">0</b><span>Entities</span></div></div>
-    <div class="bProg"><div class="bPct" id="bPct">0%</div><div class="bBar"><div class="bFill" id="bFill"></div></div><div class="bWhat">Indexing your world</div><div class="bDet" id="bDet">Reading your sources…</div></div>
-    <div class="bPriv"><span class="pi"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="4" y="8" width="10" height="7" rx="1.5"/><path d="M6 8V6a3 3 0 0 1 6 0v2"/></svg></span><div><b>All processing happens locally.</b><p>Your data never leaves your device.</p></div></div>
-    <button class="cancel" id="cancel">Cancel</button>
-    <!-- Appears only once the wait has been long. Anything the user starts they
-         can leave: the sync and the enrichment both keep running in the app. -->
-    <button class="bskip" id="bSkip" hidden>Continue anyway →</button>
+    <div class="bProg">
+      <div class="bPct" id="bPct" aria-hidden="true">0%</div>
+      <div class="bBar" id="bBar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-labelledby="bWhat"><div class="bFill" id="bFill"></div></div>
+      <div class="bWhat" id="bWhat">Indexing your world</div>
+      <!-- Announced as it changes: the detail line IS the progress for anyone
+           who cannot see the bar. -->
+      <div class="bDet" id="bDet" role="status" aria-live="polite">Reading your sources…</div>
+      <div class="bWarn" id="bWarn"><span id="bWarnText"></span><button class="bRetry" id="bRetry">Try again</button></div>
+    </div>
+    <div class="bPriv"><span class="pi" data-ic="lock" aria-hidden="true"></span><div><b>All processing happens locally.</b><p>Your data never leaves your device.</p></div></div>
+    <div class="brow">
+      <!-- Appears only once the wait has been long. Anything the user starts they
+           can leave: the sync and the enrichment both keep running in the app. -->
+      <button class="bskip" id="bSkip" hidden>Continue anyway →</button>
+      <button class="cancel" id="cancel">Cancel</button>
+    </div>
   </div>
-  <div class="creq" id="creq"><span class="rq"></span><span id="creqText">Connect Gmail &amp; an AI model to continue</span></div>
-  <button class="cbtn cfixed" id="continue">Continue →</button>
-  <div class="digest">
-    <div class="dhead"><div class="eyebrow">Step 03</div><h1>Here's your <b>brain.</b></h1><p>A quick snapshot of what we understand about you. You can always refine this later.</p></div>
-    <div class="dloading" id="dloading"><span class="dspin"></span>Analyzing your brain…</div>
-    <div class="dcard tl" data-area="work"><div class="dc-h"><span class="dc-ic" style="background:rgba(180,152,240,.14);color:#b498f0"><svg width="16" height="16" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="3" y="6" width="12" height="8" rx="1.5"/><path d="M7 6V5a2 2 0 0 1 4 0v1"/></svg></span><span class="dc-nm">Work</span><span class="dc-it"></span></div>
-      <p class="dc-p"></p>
-      <div class="dc-k"><span></span></div></div>
-    <div class="dcard bl" data-area="learning"><div class="dc-h"><span class="dc-ic" style="background:rgba(95,207,142,.14);color:#5fcf8e"><svg width="16" height="16" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M9 5v10M9 5c-1.5-1.2-3.5-1.2-6-1v10c2.5-.2 4.5-.2 6 1M9 5c1.5-1.2 3.5-1.2 6-1v10c-2.5-.2-4.5-.2-6 1"/></svg></span><span class="dc-nm">Learning</span><span class="dc-it"></span></div>
-      <p class="dc-p"></p>
-      <div class="dc-k"><span></span></div></div>
-    <div class="dcard tr" data-area="comm"><div class="dc-h"><span class="dc-ic" style="background:rgba(91,155,255,.14);color:#5b9bff"><svg width="16" height="16" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="3" y="4" width="12" height="10" rx="1.5"/><path d="M3 5l6 4 6-4"/></svg></span><span class="dc-nm">Communication</span><span class="dc-it"></span></div>
-      <p class="dc-p"></p>
-      <div class="dc-k"><span></span></div></div>
-    <div class="dcard br" data-area="personal"><div class="dc-h"><span class="dc-ic" style="background:rgba(245,200,119,.14);color:#f5c877"><svg width="16" height="16" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="9" cy="6" r="3"/><path d="M4 15c0-2.8 2.2-5 5-5s5 2.2 5 5"/></svg></span><span class="dc-nm">Personal</span><span class="dc-it"></span></div>
-      <p class="dc-p"></p>
-      <div class="dc-k"><span></span></div></div>
-    <div class="dcont"><button class="dcta" id="toBrain">Continue to Your Brain →</button><button class="dedit">Edit summary later</button></div>
+  <div class="creq" id="creq"><span class="rq" aria-hidden="true"></span><span id="creqText">Connect a source and an AI model to continue</span></div>
+  <button class="cbtn cfixed" id="continue" aria-describedby="creqText">Continue →</button>
+  <div class="digest" id="paneDigest">
+    <div class="dhead"><div class="eyebrow">Step 03</div><h1>Here's your <b>brain.</b></h1><p id="dheadP">A quick snapshot of what we understand about you.</p></div>
+    <div class="dloading" id="dloading" role="status" aria-live="polite"><span class="dspin" aria-hidden="true"></span>Analyzing your brain…</div>
+    <div class="dcards">
+      <div class="dcard tl" data-area="work"><div class="dc-h"><span class="dc-ic" data-ic="briefcase" aria-hidden="true"></span><span class="dc-nm">Work</span><span class="dc-it"></span></div>
+        <p class="dc-p"></p>
+        <div class="dc-k"><span></span></div></div>
+      <div class="dcard bl" data-area="learning"><div class="dc-h"><span class="dc-ic" data-ic="book" aria-hidden="true"></span><span class="dc-nm">Learning</span><span class="dc-it"></span></div>
+        <p class="dc-p"></p>
+        <div class="dc-k"><span></span></div></div>
+      <div class="dcard tr" data-area="comm"><div class="dc-h"><span class="dc-ic" data-ic="inbox" aria-hidden="true"></span><span class="dc-nm">Communication</span><span class="dc-it"></span></div>
+        <p class="dc-p"></p>
+        <div class="dc-k"><span></span></div></div>
+      <div class="dcard br" data-area="personal"><div class="dc-h"><span class="dc-ic" data-ic="account" aria-hidden="true"></span><span class="dc-nm">Personal</span><span class="dc-it"></span></div>
+        <p class="dc-p"></p>
+        <div class="dc-k"><span></span></div></div>
+    </div>
+    <div class="dcont"><button class="dcta" id="toBrain">Continue to Your Brain →</button></div>
   </div>
-  <div class="bfoot">Built for a more focused you</div>
-  <div class="ver">Chitragupta v0.3</div>
+  <div class="bfoot" aria-hidden="true">Built for a more focused you</div>
+  <div class="ver" aria-hidden="true">Chitragupta v0.3</div>
 </div>
-<div class="cmodal" id="cmodal"><div class="cmbox">
+<div class="cmodal" id="cmodal" role="dialog" aria-modal="true" aria-labelledby="cmTitle"><div class="cmbox">
   <h3 id="cmTitle">Connect</h3>
   <div id="cmBody"></div>
   <div class="cmrow"><button class="cmbtn" id="cmCancel">Cancel</button><button class="cmbtn pri" id="cmSave">Connect</button></div>
@@ -320,7 +442,12 @@
       var L=rnx*Ld[0]+rny2*Ld[1]+rnz2*Ld[2];if(L<0)L=0;var b3=bst[id2],lum=Math.min(1,0.18+0.82*L+b3*0.9);
       var ci=(lum*(RAMP.length-1))|0;if(ci<1)ci=1;if(ci>RAMP.length-1)ci=RAMP.length-1;
       var gg=38+206*lum,mR=gg,mG=gg,mB=gg;var Xr=px[k2]*cy+pz[k2]*sy,wm=0.5-Xr*0.85;if(wm<0)wm=0;if(wm>1)wm=1;
-      var dR=wm*(206+45*L)+(1-wm)*(34+48*L),dG=wm*(68+70*lum)+(1-wm)*(108+88*lum),dB=wm*(28+22*L)+(1-wm)*(198+46*L);
+      // The duotone the field resolves into as sources connect: warm gold
+      // (--north, 245/200/119) on one side, cool white (--star, 223/231/242)
+      // on the other. It used to be orange against #22 6c c6 — a generic-AI
+      // blue that appears nowhere else in the product and is exactly what
+      // docs/DESIGN-BRIEF.md exists to avoid.
+      var dR=wm*(214+41*L)+(1-wm)*(172+51*L),dG=wm*(170+50*lum)+(1-wm)*(184+47*lum),dB=wm*(92+40*L)+(1-wm)*(206+36*L);
       var dd=Math.hypot(c*CELL-hoverX,r*CELL-hoverY),rv=connectView?(1-smooth(HOVR-HOVF,HOVR,dd)):0;var toDuo=build+rv-2*build*rv;
       var R=mR+(dR-mR)*toDuo,G=mG+(dG-mG)*toDuo,B=mB+(dB-mB)*toDuo;
       ox.fillStyle="rgba("+(R|0)+","+(G|0)+","+(B|0)+","+(0.34+0.66*lum).toFixed(3)+")";ox.fillText(RAMP[ci],c*CELL,r*CELL);}
@@ -338,13 +465,38 @@
     var dx=(glitch*9+(ripple.on?ripple.t*5:0))*DPR*build;
     if(dx>0.6){ctx.globalCompositeOperation="lighter";ctx.globalAlpha=0.3;ctx.drawImage(off,-dx,0);ctx.drawImage(off,dx,0);ctx.globalCompositeOperation="source-over";ctx.globalAlpha=1;}
   }
-  var last=0;
-  function loop(t){if(t-last>32){mX+=(mtX-mX)*0.06;mY+=(mtY-mY)*0.06;
+  // ── reduced motion ─────────────────────────────────────────────────────
+  //  The canvas is a rAF loop, which CSS cannot reach, so it has to ask too —
+  //  the same rule `styles.css` and `core.js` already follow. Under `reduce`
+  //  the field is a STILL image: the camera snaps to each state instead of
+  //  easing to it, nothing rotates, and ripple/glitch never start. It is
+  //  redrawn on demand (state change, resize) rather than 30 times a second.
+  //  `_lessMotion` lives in core.js; the fallback keeps this page standing if
+  //  that file ever fails to load.
+  var LESS_MOTION=(typeof _lessMotion==="function")
+    ? _lessMotion()
+    : !!(window.matchMedia&&window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+  var last=0,needsDraw=true;
+  function redraw(){needsDraw=true;}
+  function step(){
     var buildP=stage.classList.contains('building');var digP=stage.classList.contains('brainready');
     var tcx=(buildP||digP)?0.5:(connectView?0.26:0.64),tcy=digP?0.54:(buildP?0.42:(connectView?0.64:0.46)),tsc=digP?0.72:(buildP?0.85:(connectView?0.8:0.9)),tb=colorT;
+    if(LESS_MOTION){
+      // Snap, do not ease. An eased transition IS motion, however slow.
+      var settled=Math.abs(tcx-ccx)<1e-4&&Math.abs(tcy-ccy)<1e-4&&Math.abs(tsc-csc)<1e-4&&Math.abs(tb-build)<1e-4;
+      ccx=tcx;ccy=tcy;csc=tsc;build=tb;
+      glowEl.style.opacity=(build*0.9).toFixed(3);
+      mX=0;mY=0;ripple.on=false;glitch=0;
+      if(!settled)needsDraw=true;
+      if(needsDraw){needsDraw=false;render();}
+      return;
+    }
+    mX+=(mtX-mX)*0.06;mY+=(mtY-mY)*0.06;
     ccx+=(tcx-ccx)*0.05;ccy+=(tcy-ccy)*0.05;csc+=(tsc-csc)*0.05;build+=(tb-build)*0.045;glowEl.style.opacity=(build*0.9).toFixed(3);
     if(buildP||digP)rotY+=0.006;
-    if(ripple.on){ripple.t+=0.05;if(ripple.t>2.4)ripple.on=false;}glitch*=0.86;render();last=t;}requestAnimationFrame(loop);}
+    if(ripple.on){ripple.t+=0.05;if(ripple.t>2.4)ripple.on=false;}glitch*=0.86;render();
+  }
+  function loop(t){if(t-last>32){step();last=t;}requestAnimationFrame(loop);}
   var drag={on:false,x:0,y:0,moved:0};
   function projPt(k,cy,sy,ct,st,sc,bx,by){var X=px[k],Y=py[k],Z=pz[k];var x1=X*cy+Z*sy,z1=-X*sy+Z*cy,y1=Y;var y2=y1*ct-z1*st,z2=y1*st+z1*ct;var zc=CAMZ-z2;return[x1*sc/zc+bx,-y2*sc/zc+by,z2,zc];}
   function fireAt(cx,cy2){var r=cv.getBoundingClientRect();var mx=cx-r.left,my=cy2-r.top;var sy=Math.sin(rotY+mX*0.10),cy=Math.cos(rotY+mX*0.10),st=Math.sin(rotX+mY*0.07),ct=Math.cos(rotX+mY*0.07),sc=Math.min(W,H)*csc,bx=W*ccx,by=H*ccy;
@@ -352,101 +504,288 @@
     if(best>=0){ripple.on=true;ripple.t=0;ripple.ox=px[best];ripple.oy=py[best];ripple.oz=pz[best];glitch=0.6;}}
   cv.addEventListener("pointerdown",function(e){drag.on=true;drag.x=e.clientX;drag.y=e.clientY;drag.moved=0;cv.setPointerCapture(e.pointerId);});
   cv.addEventListener("pointermove",function(e){if(!drag.on)return;drag.moved+=Math.abs(e.clientX-drag.x)+Math.abs(e.clientY-drag.y);drag.x=e.clientX;drag.y=e.clientY;});
-  cv.addEventListener("pointerup",function(e){if(drag.on&&drag.moved<5)fireAt(e.clientX,e.clientY);drag.on=false;});
-  addEventListener("mousemove",function(e){var r=cv.getBoundingClientRect();var hx=e.clientX-r.left,hy=e.clientY-r.top;mtX=hx/W*2-1;mtY=hy/H*2-1;hoverX=hx;hoverY=hy;});
+  cv.addEventListener("pointerup",function(e){if(drag.on&&drag.moved<5&&!LESS_MOTION)fireAt(e.clientX,e.clientY);drag.on=false;});
+  addEventListener("mousemove",function(e){if(LESS_MOTION)return;var r=cv.getBoundingClientRect();var hx=e.clientX-r.left,hy=e.clientY-r.top;mtX=hx/W*2-1;mtY=hy/H*2-1;hoverX=hx;hoverY=hy;redraw();});
   cv.addEventListener("mouseleave",function(){hoverX=-9999;hoverY=-9999;});
-  addEventListener("resize",resize);resize();requestAnimationFrame(loop);
+  addEventListener("resize",function(){resize();redraw();});resize();requestAnimationFrame(loop);
   // ── backend wiring ───────────────────────────────────────────────────────
-  async function api(path,opts){var r=await fetch(path,opts);if(!r.ok){var t="";try{t=(await r.json()).detail||"";}catch(e){}throw new Error(t||(path+" "+r.status));}
+  async function api(path,opts){var r=await fetch(path,opts);if(!r.ok){var t="";try{t=(await r.json()).detail||"";}catch(_){/* not JSON — the status line below is the message */}throw new Error(t||(path+" "+r.status));}
     var ct=r.headers.get("content-type")||"";return ct.indexOf("application/json")>=0?r.json():r.text();}
   function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];});}
   function val(id){var e=document.getElementById(id);return e?(e.value||"").trim():"";}
-  function ripplePop(){var k=(Math.random()*N)|0;ripple.on=true;ripple.t=0;ripple.ox=px[k];ripple.oy=py[k];ripple.oz=pz[k];glitch=0.6;}
+  function ripplePop(){if(LESS_MOTION)return;var k=(Math.random()*N)|0;ripple.on=true;ripple.t=0;ripple.ox=px[k];ripple.oy=py[k];ripple.oz=pz[k];glitch=0.6;}
+  //: `except Exception: pass` is invisible afterwards, in this language too.
+  //: Every swallow on this page now says what it was attempting.
+  function suppressed(what,e){try{console.warn("[onboarding] "+what+":",e);}catch(_){/* no console — nothing left to do */}}
+
+  // ── the one icon set ─────────────────────────────────────────────────────
+  //  `IC` comes from core.js. A missing glyph renders as nothing rather than
+  //  throwing — a page that cannot draw an icon must still be usable.
+  function ic(name){return (typeof IC==="object"&&IC&&IC[name])||"";}
+  function paintIcons(root){
+    Array.prototype.forEach.call((root||document).querySelectorAll("[data-ic]"),function(el){
+      el.innerHTML=ic(el.getAttribute("data-ic"));});}
+  paintIcons(document);
+
+  // ── which screen is live, and which are merely still in the DOM ──────────
+  //
+  //  The four panes are layered, not switched: each is `position:absolute;
+  //  inset:0` and is hidden with `opacity:0;pointer-events:none`. That hides it
+  //  from the eyes and the mouse and from NOTHING else — Tab still walks every
+  //  control on every screen, so on the finale five of seven tab stops were
+  //  invisible and one of them ("Build my brain") wipes the brain. `inert`
+  //  takes a subtree out of the tab order AND out of the accessibility tree,
+  //  which is the actual intent; `visibility:hidden` is the fallback where it
+  //  is unsupported, applied after the fade so the transition still plays.
+  // >>> pane-switching >>>  (sliced out and EXECUTED by tests/js/onboarding_panes.mjs
+  // — whether a hidden screen is REACHABLE is invisible to a grep and invisible
+  // on screen; the only way to know is to run it and look at the tab order.)
+  var INERT_OK=("inert" in HTMLElement.prototype);
+  function pane(id){return document.getElementById(id);}
+  function setLive(el,live){
+    if(!el)return;
+    if(INERT_OK){el.inert=!live;}
+    else{el.style.visibility=live?"":"hidden";}
+    if(live)el.removeAttribute("aria-hidden");else el.setAttribute("aria-hidden","true");}
+  function syncPanes(){
+    var on=stage.classList.contains("on"),
+        building=stage.classList.contains("building"),
+        brainready=stage.classList.contains("brainready"),
+        connecting=on&&!building&&!brainready;
+    setLive(pane("paneHero"),!on);
+    setLive(pane("paneConnect"),connecting);
+    setLive(pane("paneBuild"),building);
+    setLive(pane("paneDigest"),brainready);
+    // The Continue button and its hint belong to the connect screen but sit
+    // outside it in the markup, so they are inerted with it rather than by it.
+    setLive(document.getElementById("continue"),connecting);
+    setLive(document.getElementById("creq"),connecting);
+    // A way out exists on every screen up to the handover. It used to vanish
+    // the moment `.stage.on` was set, which left the connect screen with no
+    // exit at all — and the build screen's own "Continue anyway" is 150s away.
+    setLive(document.getElementById("skipTop"),!building&&!brainready);
+    // Steps: `aria-current` says which one is live, because colour alone does
+    // not reach a screen reader.
+    var steps=[["stepConnect",connecting||!on],["stepBuild",building],["stepBrain",brainready]];
+    steps.forEach(function(s){var el=document.getElementById(s[0]);if(!el)return;
+      el.classList.toggle("act",s[1]);
+      if(s[1])el.setAttribute("aria-current","step");else el.removeAttribute("aria-current");});
+    var order=["stepConnect","stepBuild","stepBrain"],live=-1;
+    steps.forEach(function(s,i){if(s[1])live=i;});
+    order.forEach(function(id,i){var el=document.getElementById(id);if(el)el.classList.toggle("done",live>=0&&i<live);});
+    redraw();
+  }
+  //: Every stage transition goes through here, so a pane can never be shown
+  //: without also being made reachable — or hidden without being made inert.
+  function setStage(names){
+    stage.classList.remove("on","building","brainready");
+    (names||[]).forEach(function(n){stage.classList.add(n);});
+    syncPanes();}
+  // <<< pane-switching <<<
+  //: Moving the eye is not moving the focus. Without this a keyboard user who
+  //: pressed Continue stayed parked on a button that had just gone inert.
+  function focusPane(id){
+    var el=pane(id);if(!el)return;
+    var h=el.querySelector("h1")||el;
+    if(!h.hasAttribute("tabindex"))h.setAttribute("tabindex","-1");
+    try{h.focus({preventScroll:true});}catch(e){try{h.focus();}catch(_){/* nothing focusable — the pane is still correct */}}}
 
   // ── connect modal (tokens / folder / custom) ─────────────────────────────
-  var cmodal=document.getElementById("cmodal");
-  function cmodalOpen(title,body,onSave,saveLabel){
+  var cmodal=document.getElementById("cmodal"),cmodalReturn=null,cmodalClose=null;
+  function cmodalOpen(title,body,onSave,saveLabel,opts){
+    opts=opts||{};
     document.getElementById("cmTitle").textContent=title;
     document.getElementById("cmBody").innerHTML=body;
+    paintIcons(document.getElementById("cmBody"));
     var save=document.getElementById("cmSave"),cancel=document.getElementById("cmCancel");
-    save.textContent=saveLabel||"Connect";save.disabled=false;cmodal.classList.add("on");
-    function close(){cmodal.classList.remove("on");save.onclick=null;cancel.onclick=null;}
-    cancel.onclick=close;
-    save.onclick=async function(){var lbl=save.textContent;save.disabled=true;save.textContent="Connecting…";
+    save.textContent=saveLabel||"Connect";save.disabled=false;
+    save.className="cmbtn pri"+(opts.danger?" danger":"");
+    cancel.textContent=opts.cancelLabel||"Cancel";
+    cmodalReturn=document.activeElement;
+    cmodal.classList.add("on");
+    setLive(stage,false);        // the whole page behind it, not just the panes
+    // Focus goes IN, and comes back out to whatever opened it.
+    setTimeout(function(){var f=cmodal.querySelector("input,select,textarea,button.pri");if(f)try{f.focus();}catch(_){/* nothing focusable in the dialog */}},50);
+    function close(){cmodal.classList.remove("on");save.onclick=null;cancel.onclick=null;cmodalClose=null;
+      setLive(stage,true);syncPanes();   // and give the live screen back
+      if(cmodalReturn&&cmodalReturn.focus)try{cmodalReturn.focus();}catch(_){/* whatever opened it is gone */}}
+    cmodalClose=close;
+    cancel.onclick=function(){if(opts.onCancel)opts.onCancel();close();};
+    save.onclick=async function(){var lbl=save.textContent;save.disabled=true;save.textContent=opts.busyLabel||"Connecting…";
       try{var ok=await onSave();if(ok!==false){close();}else{save.disabled=false;save.textContent=lbl;}}
       catch(e){save.disabled=false;save.textContent=lbl;var b=document.getElementById("cmBody");
-        if(!b.querySelector(".cmerr")){b.insertAdjacentHTML("beforeend",'<div class="cmnote cmerr" style="color:#ff8080"></div>');}
+        if(!b.querySelector(".cmerr")){b.insertAdjacentHTML("beforeend",'<div class="cmnote cmerr" role="alert"></div>');}
         b.querySelector(".cmerr").textContent=String(e.message||e);}};
   }
+  // Escape closes it, and Tab cannot leave it. A dialog you can tab out of but
+  // not see past is a dialog that hides the focus ring somewhere behind itself.
+  document.addEventListener("keydown",function(e){
+    if(!cmodal.classList.contains("on"))return;
+    if(e.key==="Escape"){e.preventDefault();if(cmodalClose)cmodalClose();return;}
+    if(e.key!=="Tab")return;
+    var f=cmodal.querySelectorAll('button:not([disabled]),input:not([disabled]),select:not([disabled]),a[href]');
+    if(!f.length)return;
+    var first=f[0],lastEl=f[f.length-1];
+    if(e.shiftKey&&document.activeElement===first){e.preventDefault();lastEl.focus();}
+    else if(!e.shiftKey&&document.activeElement===lastEl){e.preventDefault();first.focus();}
+  });
 
   // ── sources: real connectors, real connect flows ─────────────────────────
-  var ICONS={gmail:["#ea4335","M"],gdrive:["#1fa463","▲"],gcal:["#4285f4","31"],
-    notion:["#101418","N"],slack:["#611f69","#"],github:["#20252b","GH"],
-    linear:["#5e6ad2","L"],notes:["#d6b24a","✎"],files:["#3b6ea5","▤"],
-    apple_mail:["#2b8fff","✉"],apple_calendar:["#ff5a5f","31"],imessage:["#25d366","☏"]};
-  function iconFor(c){var m=ICONS[c.name]||ICONS[(c.name||"").split(":")[0]];
-    return m||["#0e131e",(c.label||"?").slice(0,1).toUpperCase()];}
+  //
+  //  A source tile is a BUTTON. It was a <div> with a click handler for long
+  //  enough that the connect screen could not be operated from a keyboard at
+  //  all: the only reachable controls were Skip and a Continue that no keyboard
+  //  user could ever satisfy.
+  //
+  //  The marks are letters or icons, never dingbats. `✉ ☏ ✎ ▤ ▲ ◆` were colour
+  //  fonts doing an icon's job — they ignore `currentColor`, so they could
+  //  never take the accent, and they sat three inches from real SVG.
+  var LETTERS={gmail:["#c5321f","M"],gdrive:["#1a7a4c","D"],gcal:["#2f5fb8","31"],
+    notion:["#101418","N"],slack:["#4a1850","S"],github:["#20252b","GH"],
+    linear:["#4a55b5","L"],apple_calendar:["#b8433f","31"]};
+  var GLYPHS={notes:["#8a6f2e","pencil"],files:["#3d3a36","folder"],
+    apple_mail:["#2a4a78","inbox"],imessage:["#2a6a44","message"]};
+  function iconFor(c){
+    var key=c.name,base=(c.name||"").split(":")[0];
+    if(GLYPHS[key]||GLYPHS[base]){var g=GLYPHS[key]||GLYPHS[base];return {bg:g[0],svg:ic(g[1])};}
+    var m=LETTERS[key]||LETTERS[base];
+    if(m)return {bg:m[0],text:m[1]};
+    return {bg:"#2a2826",text:(c.label||"?").slice(0,1).toUpperCase()};}
+  function icoHTML(spec){
+    var fs=spec.text&&spec.text.length>1?11:14;
+    return '<div class="ico" style="background:'+esc(spec.bg)+';font-size:'+fs+'px" aria-hidden="true">'
+      +(spec.svg||esc(spec.text||""))+'</div>';}
   var GOOGLE=["gmail","gdrive","gcal"];
   var grid=document.getElementById("srcs"),cnt=document.getElementById("selcnt"),cont=document.getElementById("continue");
   var CONNECTORS=[],selected={};
   function selCount(){var n=0;for(var k in selected)if(selected[k])n++;return n;}
-  function canContinue(){return !!selected["gmail"] && !!llmName();}
-  function refreshCount(){var n=selCount();cnt.textContent=n;colorT=Math.min(1,n/3);
+
+  // >>> connect-gate >>>  (sliced out and EXECUTED by tests/js/onboarding_gate.mjs
+  // — what this gate accepts is the difference between a first run that works
+  // and one that dead-ends, and no grep over it can see that.)
+  //
+  //  Two things have to be true before a brain can be built, and each is the
+  //  narrowest true statement of what the next screen needs:
+  //
+  //  1. AT LEAST ONE SOURCE — any source. It used to be `selected["gmail"]`,
+  //     which is not a requirement of the build, of the digest or of the graph:
+  //     `_base_personas` files an entity by what it IS, never by where it came
+  //     from, so a brain of Notion pages works exactly as well as one of email.
+  //     What the Gmail gate actually did was dead-end every user who does not
+  //     use Gmail — on Apple Mail, on Outlook, on notes alone — with a gold
+  //     hint naming a product they had not got and no way past it.
+  //
+  //  2. A MODEL THAT CAN ACTUALLY ANSWER. This used to be
+  //     `localStorage.getItem("chitragupta_provider")`, i.e. the presence of a
+  //     string. Picking a cloud provider and leaving the key box empty wrote
+  //     that string, lit the button, and three minutes later the finale said
+  //     "Connect an AI model and this is written from your own data" — to
+  //     somebody who just had. A stored model id is a REQUEST, re-checked
+  //     before use; the provider's own `ready` is the answer.
+  var llmReady=false;               // the provider answered yes, this session
+  function llmName(){return localStorage.getItem("chitragupta_provider")||"";}
+  function canContinue(){return selCount()>=1 && llmReady;}
+  function gateHint(){
+    var need=[];
+    if(selCount()<1)need.push("a source");
+    if(!llmReady)need.push(llmName()?"a working AI model":"an AI model");
+    if(!need.length)return "";
+    return "Connect "+need.join(" & ")+" to continue";}
+  // <<< connect-gate <<<
+
+  function refreshCount(){var n=selCount();cnt.textContent=n;colorT=Math.min(1,n/3);redraw();
     var ok=canContinue();cont.classList.toggle("ready",ok);
+    cont.setAttribute("aria-disabled",ok?"false":"true");
     var creq=document.getElementById("creq"),creqText=document.getElementById("creqText");
     if(!creq)return;
-    if(ok){creq.classList.remove("show");}
-    else{var need=[];if(!selected["gmail"])need.push("Gmail");if(!llmName())need.push("an AI model");
-      creqText.textContent="Connect "+need.join(" & ")+" to continue";creq.classList.add("show");}}
+    var hint=gateHint();
+    if(!hint){creq.classList.remove("show");creqText.textContent="";}
+    else{creqText.textContent=hint;creq.classList.add("show");}}
+  function markFor(on){return on?ic("check"):ic("plus");}
   function setBusy(el,on,txt){if(!el)return;el.classList.toggle("busy",on);
-    var add=el.querySelector(".add");if(add)add.innerHTML=on?'<span class="spin"></span>':(selected[el.dataset.name]?"✓":"+");
+    var add=el.querySelector(".add");if(add)add.innerHTML=on?'<span class="spin"></span>':markFor(!!selected[el.dataset.name]);
     if(txt){var ds=el.querySelector(".ds");if(ds)ds.textContent=txt;}}
 
   function renderSources(list){grid.innerHTML="";
     grid.appendChild(llmCard());
     list.forEach(function(c){
-      var ic=iconFor(c),fs=ic[1].length>1?11:14,on=!!selected[c.name];
-      var el=document.createElement("div");el.className="src"+(on?" sel":"");el.dataset.name=c.name;
-      el.innerHTML='<div class="ico" style="background:'+ic[0]+';font-size:'+fs+'px">'+esc(ic[1])+'</div>'
+      var on=!!selected[c.name];
+      var el=document.createElement("button");
+      el.type="button";el.className="src"+(on?" sel":"");el.dataset.name=c.name;
+      el.setAttribute("aria-pressed",on?"true":"false");
+      el.innerHTML=icoHTML(iconFor(c))
         +'<div class="nm">'+esc(c.label)+'</div>'
         +'<div class="ds">'+esc(c.ready?"Connected · ready":(c.reason||"Tap to connect"))+'</div>'
-        +'<div class="add">'+(on?"✓":"+")+'</div>';
+        +'<div class="add" aria-hidden="true">'+markFor(on)+'</div>';
       el.addEventListener("click",function(){
+        if(el.classList.contains("busy"))return cancelGoogle(el);
         if(c.ready){var v=!selected[c.name];selected[c.name]=v;el.classList.toggle("sel",v);
-          el.querySelector(".add").textContent=v?"✓":"+";refreshCount();if(v)ripplePop();}
+          el.setAttribute("aria-pressed",v?"true":"false");
+          el.querySelector(".add").innerHTML=markFor(v);refreshCount();if(v)ripplePop();}
         else connectFlow(c,el);});
       grid.appendChild(el);});
     refreshCount();}
 
   // ── AI model (LLM) — the brain reasons; this is where it thinks ──────────
-  function llmName(){return localStorage.getItem("chitragupta_provider")||"";}
+  //
+  //  `llmReady` is the provider's own answer for THIS account, never a string
+  //  in storage. It is re-asked on load, because a key can be removed, a plan
+  //  can lapse, and a stored id can be retired.
+  async function verifyLLM(){
+    var name=llmName();
+    if(!name){llmReady=false;return false;}
+    try{
+      var provs=(await api("/api/providers")).providers||[];
+      var p=provs.filter(function(x){return x.name===name;})[0];
+      llmReady=!!(p&&p.ready);
+    }catch(e){suppressed("checking whether the chosen model can answer",e);llmReady=false;}
+    return llmReady;}
   function llmCard(){
-    var p=llmName(),on=!!p;
-    var el=document.createElement("div");el.className="src llm-src"+(on?" sel":"");el.dataset.name="__llm";
-    el.innerHTML='<div class="ico" style="background:#12203a;color:#8fc0ff;font-size:15px">◆</div>'
+    var p=llmName(),on=llmReady;
+    var el=document.createElement("button");
+    el.type="button";el.className="src llm-src"+(on?" sel":"");el.dataset.name="__llm";
+    el.setAttribute("aria-pressed",on?"true":"false");
+    var model=localStorage.getItem("chitragupta_model");
+    //: Three states, and the middle one is the whole point: a provider that is
+    //: chosen but cannot answer says so HERE, not on the finale screen.
+    var ds=on?(p+(model?" · "+model:""))
+             :(p?(p+" · needs a key"):"Choose where it thinks");
+    el.innerHTML=icoHTML({bg:"#3d3524",svg:ic("spark")})
       +'<div class="nm">AI Model</div>'
-      +'<div class="ds">'+esc(on?(p+(localStorage.getItem("chitragupta_model")?" · "+localStorage.getItem("chitragupta_model"):"")):"Choose where it thinks")+'</div>'
-      +'<div class="add">'+(on?"✓":"+")+'</div>';
+      +'<div class="ds">'+esc(ds)+'</div>'
+      +'<div class="add" aria-hidden="true">'+markFor(on)+'</div>';
     el.addEventListener("click",openLLM);
     return el;}
   async function openLLM(){
-    var provs=[];try{provs=(await api("/api/providers")).providers||[];}catch(e){}
+    var provs=[];try{provs=(await api("/api/providers")).providers||[];}catch(e){suppressed("listing model providers",e);}
     var cur=llmName();
     var opts=provs.map(function(p){return '<option value="'+esc(p.name)+'"'+(p.name===cur?' selected':'')+'>'+esc(p.name)+(p.ready?' · ready':(p.locality==='cloud'?' · needs key':''))+'</option>';}).join('');
+    if(!opts)opts='<option value="">No providers available</option>';
     cmodalOpen('Connect your AI model',
       '<p>Pick where your agents think. Local models keep everything on your Mac; cloud models need an API key.</p>'
-      +'<label>Provider</label><select id="cmProv" style="width:100%;padding:11px 13px;border:1px solid var(--line2);border-radius:8px;background:#05070d;color:var(--star);font-family:var(--mono);font-size:13px;margin-bottom:8px">'+opts+'</select>'
+      +'<label for="cmProv">Provider</label><select id="cmProv">'+opts+'</select>'
       +'<div id="cmDest" class="cmnote"></div>'
-      +'<label>Model <span style="text-transform:none;letter-spacing:0;color:var(--faint)">(optional)</span></label>'
+      +'<label for="cmModel">Model <span style="text-transform:none;letter-spacing:0;color:var(--faint)">(optional)</span></label>'
       +'<input id="cmModel" placeholder="e.g. claude-sonnet-5" value="'+esc(localStorage.getItem("chitragupta_model")||"")+'">'
-      +'<div id="cmKeyWrap" style="display:none"><label id="cmKeyLabel">API key</label>'
+      +'<div id="cmKeyWrap" style="display:none"><label for="cmKey" id="cmKeyLabel">API key</label>'
       +'<input id="cmKey" type="password" autocomplete="off" spellcheck="false" placeholder="paste your key">'
       +'<div class="cmnote">Stored locally on your Mac only — never uploaded.</div></div>',
-      async function(){var prov=val("cmProv");if(!prov)return false;var key=val("cmKey");
-        if(key){var r=await api("/api/providers/"+prov+"/key",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({value:key})});
+      async function(){
+        var prov=val("cmProv");if(!prov)return false;
+        var key=val("cmKey");
+        if(key){var r=await api("/api/providers/"+prov+"/key",{method:"POST",headers:{"Content-Type":"application/json"},
+            body:JSON.stringify({value:key})});
           if(!r.ready)throw new Error(r.reason||"That key wasn't accepted");}
         localStorage.setItem("chitragupta_provider",prov);
         var m=val("cmModel");if(m)localStorage.setItem("chitragupta_model",m);else localStorage.removeItem("chitragupta_model");
+        // Saving is not connecting. Ask the provider whether it can actually
+        // answer for this account before letting the gate believe it can.
+        if(!await verifyLLM()){
+          var p=provs.filter(function(x){return x.name===prov;})[0];
+          throw new Error(p&&p.locality==="cloud"
+            ? "Add an API key for "+prov+" — it can't answer without one."
+            : (p&&p.reason)||(prov+" isn't ready to answer yet."));
+        }
         renderSources(CONNECTORS.length?CONNECTORS:FALLBACK);ripplePop();return true;},"Save model");
     function upd(){var p=null,pv=val("cmProv");for(var i=0;i<provs.length;i++)if(provs[i].name===pv)p=provs[i];
       var d=document.getElementById("cmDest");if(d)d.textContent=p?(p.destination||""):"";
@@ -459,49 +798,63 @@
     if(c.name==="files")return connectFiles();
     if(c.custom||(c.name||"").split(":")[0]==="custom")return connectCustom();
     // local / no-auth connector (Apple Mail·Calendar, iMessage, Notes): just include it
-    selected[c.name]=true;el.classList.add("sel");el.querySelector(".add").textContent="✓";refreshCount();ripplePop();}
+    selected[c.name]=true;el.classList.add("sel");el.setAttribute("aria-pressed","true");
+    el.querySelector(".add").innerHTML=markFor(true);refreshCount();ripplePop();}
 
+  // Anything the user starts, they can stop. This poll used to run for three
+  // minutes with the card frozen and `pointer-events:none`, so somebody who
+  // closed the Google tab watched "Opening Google sign-in…" until it timed out.
+  var gpoll=null,gcard=null;
+  function cancelGoogle(el){
+    if(gpoll){clearInterval(gpoll);gpoll=null;}
+    var card=el||gcard;gcard=null;
+    if(card)setBusy(card,false,"Sign-in cancelled — tap to try again");}
   async function connectGoogle(el){
-    setBusy(el,true,"Opening Google sign-in…");
-    try{await api("/api/google/reconnect",{method:"POST"});}catch(e){}
-    var tries=0;var poll=setInterval(async function(){
+    if(gpoll)cancelGoogle(gcard);
+    gcard=el;
+    setBusy(el,true,"Signing in… tap to cancel");
+    try{await api("/api/google/reconnect",{method:"POST"});}
+    catch(e){suppressed("opening the Google sign-in",e);
+      setBusy(el,false,"Couldn't open Google sign-in — tap to retry");gcard=null;return;}
+    var tries=0;
+    gpoll=setInterval(async function(){
       var g;try{g=await api("/api/google/status");}catch(e){return;}
-      if(g.connected){clearInterval(poll);GOOGLE.forEach(function(n){selected[n]=true;});await refreshConnectors();ripplePop();}
-      else if(++tries>60){clearInterval(poll);setBusy(el,false,"Sign-in didn't finish — tap to retry");}
+      if(g.connected){clearInterval(gpoll);gpoll=null;gcard=null;
+        GOOGLE.forEach(function(n){selected[n]=true;});await refreshConnectors();ripplePop();}
+      else if(++tries>60){clearInterval(gpoll);gpoll=null;gcard=null;
+        setBusy(el,false,"Sign-in didn't finish — tap to retry");}
     },3000);}
 
   function connectSecret(c){
     var f=c.secret_field||{};
-    var steps=(f.steps||[]).map(function(s){return '<li>'+s+'</li>';}).join('');
+    var steps=(f.steps||[]).map(function(s){return '<li>'+esc(s)+'</li>';}).join('');
     var link=f.help_url?'<p><a href="'+esc(f.help_url)+'" target="_blank" rel="noopener">Get your '+esc(c.label)+' key →</a></p>':'';
     cmodalOpen('Connect '+c.label,
       (steps?'<ol>'+steps+'</ol>':'')+link
-      +'<label>'+esc(f.label||'API token')+'</label>'
+      +'<label for="cmInput">'+esc(f.label||'API token')+'</label>'
       +'<input id="cmInput" type="password" autocomplete="off" spellcheck="false" placeholder="'+esc(f.placeholder||'')+'">'
       +'<div class="cmnote">Stored locally on your Mac only (~/Library/Chitragupta/secrets.json) — never uploaded.</div>',
       async function(){var v=val("cmInput");if(!v)return false;
         var r=await api("/api/connectors/"+c.name+"/secret",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({value:v})});
         if(!r.ready)throw new Error(r.reason||"That key wasn't accepted");
-        selected[c.name]=true;await refreshConnectors();ripplePop();return true;});
-    setTimeout(function(){var i=document.getElementById("cmInput");if(i)i.focus();},60);}
+        selected[c.name]=true;await refreshConnectors();ripplePop();return true;});}
 
   function connectFiles(){
     cmodalOpen('Add a folder',
       '<p>Point Chitragupta at a folder of notes or docs — it reads them locally and adds them to your brain.</p>'
-      +'<label>Folder path</label><input id="cmInput" type="text" spellcheck="false" placeholder="/Users/you/Notes">'
+      +'<label for="cmInput">Folder path</label><input id="cmInput" type="text" spellcheck="false" placeholder="/Users/you/Notes">'
       +'<div class="cmnote">Everything stays on your Mac.</div>',
       async function(){var p=val("cmInput");if(!p)return false;
         await api("/api/connectors/files/sync",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({params:{path:p}})});
-        filesAdded=true;selected["files"]=true;await refreshConnectors();ripplePop();return true;},"Add folder");
-    setTimeout(function(){var i=document.getElementById("cmInput");if(i)i.focus();},60);}
+        filesAdded=true;selected["files"]=true;await refreshConnectors();ripplePop();return true;},"Add folder");}
 
   function connectCustom(){
     cmodalOpen('Connect a custom app',
       '<p>Connect any REST API by URL — Chitragupta pulls items into your brain.</p>'
-      +'<label>Name</label><input id="cmName" placeholder="My API">'
-      +'<label>Base URL</label><input id="cmUrl" placeholder="https://api.example.com">'
-      +'<label>Endpoint path</label><input id="cmEnd" placeholder="/v1/items">'
-      +'<label>Bearer token (optional)</label><input id="cmTok" type="password" placeholder="token">',
+      +'<label for="cmName">Name</label><input id="cmName" placeholder="My API">'
+      +'<label for="cmUrl">Base URL</label><input id="cmUrl" placeholder="https://api.example.com">'
+      +'<label for="cmEnd">Endpoint path</label><input id="cmEnd" placeholder="/v1/items">'
+      +'<label for="cmTok">Bearer token (optional)</label><input id="cmTok" type="password" placeholder="token">',
       async function(){var url=val("cmUrl");if(!url)return false;var tok=val("cmTok");
         var r=await api("/api/custom-apps",{method:"POST",headers:{"Content-Type":"application/json"},
           body:JSON.stringify({name:val("cmName")||"Custom app",base_url:url,endpoint:val("cmEnd"),auth_type:tok?"bearer":"none",token:tok||null})});
@@ -517,35 +870,95 @@
     try{var d=await api("/api/connectors");CONNECTORS=(d.connectors||[]).slice();
       // Google connectors report ready via the bundled client — override with the
       // user's actual sign-in state so they prompt real consent when not signed in.
-      var gconn=false;try{gconn=(await api("/api/google/status")).connected;}catch(e){}
+      var gconn=false;try{gconn=(await api("/api/google/status")).connected;}catch(e){suppressed("reading Google sign-in state",e);}
       CONNECTORS.forEach(function(c){
         if(GOOGLE.indexOf(c.name)>=0)c.ready=gconn;
         if(c.name==="files")c.ready=filesAdded;});   // files needs a folder first
       CONNECTORS.sort(function(a,b){return (b.ready?1:0)-(a.ready?1:0)||a.label.localeCompare(b.label);});
       renderSources(CONNECTORS.length?CONNECTORS:FALLBACK);}
-    catch(e){renderSources(FALLBACK);}
+    catch(e){suppressed("loading the connector list",e);renderSources(FALLBACK);}
     updateHero();}
   function updateHero(){
-    api("/api/brain/stats").then(function(s){var hn=document.getElementById("heroNodes");if(hn)hn.textContent=(s.total||0).toLocaleString();}).catch(function(){});
+    api("/api/brain/stats").then(function(s){var hn=document.getElementById("heroNodes");if(hn)hn.textContent=(s.total||0).toLocaleString();})
+      .catch(function(e){suppressed("reading brain stats for the hero",e);});
     var hs=document.getElementById("heroSources");if(hs)hs.textContent=CONNECTORS.filter(function(c){return c.ready;}).length;}
 
   // ── start from zero: wipe brain + forget every credential, then reconnect ──
+  //
+  //  `/api/brain/reset {memories, secrets, google}` is the most destructive
+  //  call in the product, and "Build my brain →" fired it with no confirmation
+  //  — which is right for a genuine first run and wrong for every other way of
+  //  arriving here. The page binds Cmd+R to reload onto the hero, so a user who
+  //  had just pasted a Notion token and a GitHub token and signed into Google
+  //  could lose all three to a refresh reflex; a user on the finale could lose
+  //  the brain they had waited three minutes for.
+  //
+  //  So: ask first, and only when there is something to lose. A true first run
+  //  never sees the dialog.
   var REPLAY=/[?&]replay=1/.test(location.search);   // just re-experience it — don't wipe
   var didReset=false;
+  //: What `/api/brain/reset` would actually destroy — never what merely
+  //: exists. `ready` on a connector means "usable on this machine": Manual
+  //: Notes and Apple Mail report it before the user has done anything, and a
+  //: reset does not touch them because they hold no credential. Counting them
+  //: put "You already have a brain" in front of every genuine first run, which
+  //: is the same "detection is not consent" mistake wearing a dialog.
+  function heldACredential(c){
+    return c.ready&&(!!c.secret_field||GOOGLE.indexOf(c.name)>=0||!!c.custom);}
+  async function somethingToLose(){
+    var mem=0;
+    try{mem=(await api("/api/brain/stats")).total||0;}catch(e){suppressed("counting memories before a reset",e);}
+    var sources=CONNECTORS.filter(heldACredential).map(function(c){return c.label;});
+    return {memories:mem,sources:sources,provider:llmName(),
+            any:mem>0||sources.length>0||!!llmName()};}
+  function confirmWipe(have){
+    return new Promise(function(resolve){
+      var bits=[];
+      if(have.memories)bits.push("<b>"+have.memories.toLocaleString()+"</b> "+(have.memories===1?"memory":"memories"));
+      if(have.sources.length)bits.push("a connection to <b>"+have.sources.map(esc).join(", ")+"</b>");
+      if(have.provider)bits.push("a saved <b>"+esc(have.provider)+"</b> key");
+      cmodalOpen("You already have a brain",
+        "<p>Chitragupta already has "+bits.join(", ")+".</p>"
+        +"<p>You can carry on from here, or erase all of it and start over. "
+        +"Erasing cannot be undone.</p>",
+        function(){resolve(true);return true;},
+        "Erase and start over",
+        {danger:true,busyLabel:"Erasing…",cancelLabel:"Carry on from here",
+         onCancel:function(){resolve(false);}});
+    });}
   async function startFromZero(){
-    if(didReset)return;didReset=true;
-    if(REPLAY){await refreshConnectors();return;}   // replay: keep the brain & creds
+    if(didReset)return true;
+    if(REPLAY){didReset=true;await refreshConnectors();await verifyLLM();return true;}
+    var have=await somethingToLose();
+    if(have.any&&!await confirmWipe(have)){
+      // Carry on, keep everything. This is the replay path by another name.
+      didReset=true;await refreshConnectors();await verifyLLM();
+      renderSources(CONNECTORS.length?CONNECTORS:FALLBACK);
+      return true;}
+    didReset=true;
     // truly new-user: wipe brain + credentials server-side AND clear local prefs
     try{["chitragupta_onboarded","chitragupta_saw_library","chitragupta_provider","chitragupta_model"]
-      .forEach(function(k){localStorage.removeItem(k);});}catch(e){}
-    try{await api("/api/onboarded",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({value:false})});}catch(e){}
+      .forEach(function(k){localStorage.removeItem(k);});}catch(e){suppressed("clearing local preferences",e);}
+    llmReady=false;
+    try{await api("/api/onboarded",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({value:false})});}
+    catch(e){suppressed("clearing the onboarded flag",e);}
     try{await api("/api/brain/reset",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({memories:true,secrets:true,google:true})});}catch(e){}
-    selected={};await refreshConnectors();}
+      body:JSON.stringify({memories:true,secrets:true,google:true})});}
+    catch(e){suppressed("resetting the brain",e);}
+    selected={};filesAdded=false;await refreshConnectors();
+    renderSources(CONNECTORS.length?CONNECTORS:FALLBACK);
+    return true;}
 
   // hero → connect view (and reset to a clean slate)
-  document.getElementById("buildBtn").addEventListener("click",function(){connectView=true;stage.classList.add("on");startFromZero();});
-  refreshConnectors();
+  document.getElementById("buildBtn").addEventListener("click",async function(){
+    var btn=this;btn.disabled=true;
+    try{
+      if(!await startFromZero())return;     // they chose to keep what they had
+      connectView=true;setStage(["on"]);focusPane("paneConnect");
+    } finally{btn.disabled=false;}
+  });
+  (async function(){await refreshConnectors();await verifyLLM();
+    renderSources(CONNECTORS.length?CONNECTORS:FALLBACK);syncPanes();})();
 
   // ── build: a real sync, a real first enrichment, and real progress ───────
   //
@@ -576,15 +989,34 @@
   //: Before offering the way out. Long enough that a normal build never sees
   //: it; short enough that a stuck one is not a hostage situation.
   var PATIENCE=150000;
+  //: How long "nothing has arrived AND nothing is syncing" has to hold before
+  //: it is reported as a stall. Two ticks of slack over the first sync's own
+  //: start-up, so a slow connector is never accused of being broken.
+  var STALL=15000;
+  //: Set when `/api/sync/now` refuses. Re-armed by the retry button.
+  var retrySync=null;
+  //: Consecutive unanswered polls before the screen says the backend is not
+  //: answering. Three, so one dropped request is not an accusation.
+  var LOST_AFTER=3;
 
-  function backToConnect(){if(buildIv){clearInterval(buildIv);buildIv=null;}stage.classList.remove("building");
-    var sk=document.getElementById("bSkip");if(sk)sk.hidden=true;
-    document.querySelector('.step[id="stepBuild"]').classList.remove("act");document.querySelectorAll(".step")[0].classList.add("act");}
+  function backToConnect(){if(buildIv){clearInterval(buildIv);buildIv=null;}
+    var sk=document.getElementById("bSkip");if(sk){sk.hidden=true;sk.disabled=false;sk.textContent="Continue anyway →";}
+    showWarn("");setStage(["on"]);focusPane("paneConnect");}
 
-  function enterBuildUI(){
-    stage.classList.remove("brainready");stage.classList.add("on","building");connectView=true;
-    document.querySelector('.step[id="stepBuild"]').classList.add("act");
-    document.querySelectorAll(".step")[0].classList.remove("act");document.querySelectorAll(".step")[2].classList.remove("act");}
+  function enterBuildUI(){connectView=true;setStage(["on","building"]);focusPane("paneBuild");}
+
+  //: A stalled sync is REPORTED. `/api/sync/now` failing used to be swallowed
+  //: whole, so the screen said "Waiting for your first source to answer…" for
+  //: the full 150 seconds and the only clue was a devtools console nobody has
+  //: open. The retry is on the screen that noticed.
+  function showWarn(msg,onRetry){
+    var w=document.getElementById("bWarn"),t=document.getElementById("bWarnText"),
+        r=document.getElementById("bRetry");
+    if(!w)return;
+    if(!msg){w.classList.remove("show");return;}
+    t.textContent=msg;w.classList.add("show");
+    r.hidden=!onRetry;
+    r.onclick=onRetry||null;}
 
   function runBuildProgress(startPct){
     var fill=document.getElementById("bFill"),pct=document.getElementById("bPct"),
@@ -592,7 +1024,12 @@
         itemsEl=document.getElementById("stItems"),entEl=document.getElementById("stEnt"),
         skipBtn=document.getElementById("bSkip");
     var prog=startPct||0.06,t0=Date.now(),finishing=false;
+    var bar=document.getElementById("bBar");
+    function setProg(v){fill.style.width=(v*100)+"%";
+      var n=Math.round(v*100);pct.textContent=n+"%";
+      if(bar)bar.setAttribute("aria-valuenow",String(n));}
 
+    var lost=0;                  // consecutive ticks the backend did not answer
     var firstDataAt=0;           // when the first memory landed
     var enrichAsked=false;       // we have called enrich/start
     var enrichAskedAt=0;
@@ -603,7 +1040,12 @@
 
     digestDone=false;
     document.querySelector(".digest").classList.remove("ready");
-    if(skipBtn){skipBtn.hidden=true;skipBtn.onclick=function(){forced=true;};}
+    // A button that sets a flag and changes nothing on screen reads as broken.
+    // The next tick is 700ms away and the digest behind it can take 30 seconds,
+    // so the tap is acknowledged here, immediately, by the thing that got it.
+    if(skipBtn){skipBtn.hidden=true;skipBtn.disabled=false;skipBtn.textContent="Continue anyway →";
+      skipBtn.onclick=function(){forced=true;skipBtn.disabled=true;skipBtn.textContent="Finishing…";
+        say("Writing your snapshot","Showing what your brain has so far…");};}
     if(buildIv)clearInterval(buildIv);
 
     function say(label,detail){if(what)what.textContent=label;
@@ -611,13 +1053,27 @@
     function grounded(d){return ((d&&d.personas)||[]).filter(function(p){return p.grounded;}).length;}
 
     buildIv=setInterval(async function(){
-      var total=0,ents=0,syncing=true;
-      try{var st=await api("/api/brain/stats");total=st.total||0;ents=(st.graph&&st.graph.entities)||0;}catch(e){}
-      try{syncing=(await api("/api/sync/status")).syncing;}catch(e){}
+      var total=0,ents=0,syncing=true,reached=true;
+      try{var st=await api("/api/brain/stats");total=st.total||0;ents=(st.graph&&st.graph.entities)||0;}
+      catch(e){reached=false;suppressed("reading brain stats",e);}
+      try{syncing=(await api("/api/sync/status")).syncing;}
+      catch(e){reached=false;suppressed("reading sync status",e);}
+      //: A backend we cannot reach is not a slow source, and it is the one
+      //: thing this screen cannot express by standing still. One bad tick is
+      //: noise; LOST_AFTER of them in a row is a fact worth saying out loud.
+      lost=reached?0:lost+1;
       var now=Date.now(),elapsed=now-t0;
       if(total>0&&!firstDataAt)firstDataAt=now;
       itemsEl.textContent=total.toLocaleString();entEl.textContent=ents.toLocaleString();
       if(skipBtn&&elapsed>=PATIENCE)skipBtn.hidden=false;
+      //: Nothing has arrived and nothing is syncing: that is a stall, not a
+      //: slow start, and it is the one state the detail line cannot express.
+      if(lost>=LOST_AFTER)showWarn(
+        "Lost contact with Chitragupta. It may still be working — this page "
+        +"catches up on its own.",null);
+      else if(!firstDataAt&&!syncing&&elapsed>=STALL)showWarn(
+        "No source has answered yet. The sync may not have started.",retrySync);
+      else showWarn("");
 
       // ── 1. the sync ──────────────────────────────────────────────────────
       if(!firstDataAt){
@@ -637,7 +1093,8 @@
       }
       if(enrichAsked&&!enrichOver){
         var es=null;
-        try{es=await api("/api/brain/enrich/status");}catch(e){}
+        try{es=await api("/api/brain/enrich/status");}
+        catch(e){suppressed("reading enrichment progress",e);}
         var did=es?(es.processed||0):0,left=es?(es.remaining||0):0;
         if(es&&(es.running||did>0))enrichSeen=true;
         if(enrichSeen&&es&&!es.running)enrichOver=true;
@@ -674,7 +1131,7 @@
                           :"Writing your snapshot…"));
       }
 
-      fill.style.width=(prog*100)+"%";pct.textContent=Math.round(prog*100)+"%";
+      setProg(prog);
 
       // ── 4. hand over ─────────────────────────────────────────────────────
       // Only with something real on the cards — or because the user said go.
@@ -682,11 +1139,9 @@
       if(ready&&!finishing){
         finishing=true;clearInterval(buildIv);buildIv=null;
         if(skipBtn)skipBtn.hidden=true;
-        prog=Math.max(prog,0.96);fill.style.width=(prog*100)+"%";pct.textContent=Math.round(prog*100)+"%";
-        setTimeout(function(){stage.classList.remove("building");stage.classList.add("brainready");
-          document.querySelectorAll(".step")[2].classList.add("act");
-          document.querySelector('.step[id="stepBuild"]').classList.remove("act");
-          fillCards(digestData);},500);
+        prog=Math.max(prog,0.96);setProg(prog);
+        setTimeout(function(){setStage(["on","brainready"]);
+          fillCards(digestData);focusPane("paneDigest");},500);
       } else if(forced&&!digestData&&!digestBusy){
         // Pressed before the first digest even came back: fetch the measured
         // half so the cards show what is known rather than nothing at all.
@@ -698,17 +1153,36 @@
   }
   // <<< build-progress <<<
 
+  //: Kicking the sync is its own step because it can FAIL, and the failure has
+  //: to reach the screen. Swallowed, it looked identical to a slow first
+  //: source: a bar stuck at 30% for two and a half minutes.
+  async function kickSync(){
+    try{await api("/api/sync/now",{method:"POST"});showWarn("");return true;}
+    catch(e){suppressed("starting the first sync",e);
+      showWarn("Couldn't start the sync — "+String(e.message||e),function(){
+        showWarn("Starting…");kickSync();});
+      return false;}}
+
   async function startBuild(){
-    if(!canContinue()){refreshCount();return;}   // Gmail + an AI model are required
+    if(!canContinue()){refreshCount();return;}   // one source + a model that answers
     enterBuildUI();
     document.getElementById("stSrc").textContent=selCount();
+    retrySync=function(){showWarn("Starting…");kickSync();};
     // every chosen source is already connected — kick a real sync of them all
-    try{await api("/api/sync/now",{method:"POST"});}catch(e){}
+    await kickSync();
     runBuildProgress(0);
   }
-  cont.addEventListener("click",startBuild);
+  cont.addEventListener("click",function(){
+    if(!canContinue()){refreshCount();
+      // The hint is the answer to "why is this button dead". Say it out loud
+      // for anyone who cannot see it go gold.
+      var c=document.getElementById("creq");if(c){c.setAttribute("role","alert");
+        setTimeout(function(){c.removeAttribute("role");},100);}
+      return;}
+    startBuild();});
   document.getElementById("cancel").addEventListener("click",function(){
-    api("/api/sync/cancel",{method:"POST"}).catch(function(){});backToConnect();});
+    api("/api/sync/cancel",{method:"POST"}).catch(function(e){suppressed("cancelling the sync",e);});
+    backToConnect();});
 
   // ── digest: four areas, and nothing on a card that was not measured ──────
   //  Cards stay hidden (loader spins) until the digest returns, then fade in.
@@ -831,12 +1305,16 @@
   }
 
   // ── navigation / completion ──────────────────────────────────────────────
-  function enterApp(){try{localStorage.setItem("chitragupta_onboarded","1");}catch(e){}
+  function enterApp(){try{localStorage.setItem("chitragupta_onboarded","1");}catch(e){suppressed("recording that onboarding finished",e);}
     // mark onboarded on the server so it never shows again on launch, then enter
     api("/api/onboarded",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({value:true})})
-      .catch(function(){}).then(function(){window.location.href="/";});}
-  document.getElementById("toBrain").addEventListener("click",function(){this.textContent="Entering…";setTimeout(enterApp,400);});
-  var dedit=document.querySelector(".dedit");if(dedit)dedit.addEventListener("click",enterApp);
+      .catch(function(e){suppressed("recording the onboarded flag on the server",e);})
+      .then(function(){window.location.href="/";});}
+  document.getElementById("toBrain").addEventListener("click",function(){
+    this.disabled=true;this.textContent="Entering…";setTimeout(enterApp,400);});
+  // "Edit summary later" used to sit here: a second button, byte-identical to
+  // the one beside it, promising an affordance that does not exist. A control
+  // that cannot do what it says is worse than no control.
   var skipTop=document.getElementById("skipTop");if(skipTop)skipTop.addEventListener("click",enterApp);
 
   // Cmd/Ctrl+R → reload to the first screen (the hero). The desktop app runs in a
