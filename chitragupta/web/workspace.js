@@ -9,9 +9,11 @@
  * what happened either way — an approval that silently does nothing is the same
  * bug as a dead spinner.
  *
- * First-run lives here too: the welcome, naming the lead agent, and the
- * one-time intro. `flashConnectors` exists because pointing at the thing you
- * mean is better than describing where it is.
+ * First run lives here only as the redirect: `maybeOnboard()` sends a genuine
+ * new install to /onboarding, and `libraryOnFirstRun()` opens the Agent Library
+ * once on the way back. The welcome, the lead agent and the in-page intro modal
+ * are all gone — each was a second answer to a question /onboarding and the
+ * library already answer.
  */
 
 // What is actually on the list this grant would join. The plural used to be
@@ -867,31 +869,17 @@ $("#amCreate").onclick = async () => {
 };
 
 // ── onboarding ───────────────────────────────────────────────────────────
-function openOnboard() { $("#onboard").hidden = false; }
-function closeOnboard() {
-  $("#onboard").hidden = true;
-  localStorage.setItem("chitragupta_onboarded", "1");
-}
-function flashConnectors() {
-  const el = $("#connectors");
-  el.scrollIntoView({ behavior: "smooth", block: "center" });
-  el.classList.add("flash"); setTimeout(() => el.classList.remove("flash"), 1600);
-}
-$("#obSkip").onclick = closeOnboard;
-$("#obDone").onclick = closeOnboard;
-$("#obGoogle").onclick = () => { closeOnboard(); flashConnectors(); connectGoogle(); };
-$("#obLocal").onclick = () => { closeOnboard(); flashConnectors();
-  toast("Pick Files, Apple Mail, Calendar or iMessage below → click setup"); };
-$("#obApps").onclick = () => { closeOnboard(); flashConnectors();
-  toast("Notion · Linear · GitHub — or + Connect a custom app"); };
-$("#obFact").onclick = () => { closeOnboard(); $("#ingestText").focus();
-  $("#ingestText").scrollIntoView({ behavior: "smooth" }); };
-// #helpBtn is gone: "Replay onboarding" moved into the Settings rail, which
-// navigates to /onboarding?replay=1. This binding had in fact been dead for a
-// while — app.js loads after this file and overwrote the handler with that same
-// redirect — but `$("#helpBtn")` is unguarded, so once the button left the
-// markup this line threw during script evaluation and took every binding below
-// it down with it. Hence: removed, not left to fail quietly.
+// There used to be a SECOND onboarding here: a `#onboard` modal with its own
+// six buttons, kept alive by six empty `hidden` stubs in index.html so these
+// bindings would not throw. `openOnboard()` had no caller. Onboarding is
+// /onboarding — one implementation, and the Settings rail replays it with
+// `?replay=1`. Two answers to one question is how one of them goes stale, and
+// this one had: it still offered a lead agent that no longer exists.
+//
+// #helpBtn went the same way: app.js loads after this file and overwrote the
+// handler with that same redirect, but `$("#helpBtn")` was unguarded, so once
+// the button left the markup the line threw during script evaluation and took
+// every binding below it down with it. Removed, not left to fail quietly.
 
 // ── brain export / import (you own your data) ──────────────────────────────
 $("#brainExport").onclick = async () => {
