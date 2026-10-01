@@ -287,6 +287,37 @@ def granted_by_default() -> list[str]:
     return sorted(n for n in _FACTS if tool_group(n) in ALWAYS)
 
 
+#: What an agent may ask for in a chat card, and what it may not.
+#:
+#: Reading and changing, never the irreversible tier. Running code is the one
+#: thing that must be granted on the settings screen, deliberately and not in
+#: the middle of a flow where somebody is trying to get something done — a tap
+#: given to unblock a task is not the same decision as one given while reading
+#: a page about what the tap means. `permissions.NEVER_UNATTENDED` already says
+#: the equivalent about actions; this is it for capabilities.
+ASKABLE = ("read", "change")
+
+
+def tools_for(group: str, level: str) -> list[str]:
+    """The built-ins a `group` + `level` grant covers, or [] for a bad pair.
+
+    The one place a grant is turned into tool names. Returns empty rather than
+    raising for anything it does not recognise, because the caller is a handler
+    running behind a card and an unknown pair has to refuse rather than crash —
+    and because the strings reach it from a model, which is exactly the input
+    `capability.parse` fails closed on.
+    """
+    if level not in ASKABLE:
+        return []
+    for found in permission_groups():
+        if found["key"] != group:
+            continue
+        # A group that is always on has nothing to grant: asking for it would
+        # produce a card that changes nothing and still wants a tap.
+        return [] if found["always"] else list(found.get(level) or [])
+    return []
+
+
 def permission_groups() -> list[dict[str, Any]]:
     """The permission screen, derived rather than hand-arranged.
 

@@ -1072,6 +1072,64 @@ def _resolve_agent(named: str) -> tuple[str, str]:
     return (str(found.value.id), "") if found else ("", found.problem)
 
 
+def _request_permission(params: dict) -> dict:
+    """Give one agent one more thing it may do, because the user tapped.
+
+    **The agent asks; it never grants.** Everything about this action is that
+    sentence. It is RED, so no unattended run can reach it; the scope is a
+    group and a level and nothing else, so a tap on "let it read websites"
+    cannot widen into typing on them; and the only code that writes is this
+    handler, reached by Confirm.
+
+    It exists because the alternative had been measured. An agent asked whether
+    it could post to a site answered *"You haven't enabled browser access for
+    this agent yet. To turn it on: Settings → Agents & tools → Social Media
+    Manager"* — a path nothing had told it, invented because a withheld tool is
+    simply absent and it could not tell "never granted" from "does not exist".
+    Even corrected, that answer ends the conversation and sends somebody to a
+    settings screen to re-derive what they were already being asked.
+
+    So: the ask lands where the work is, carrying the agent's own reason for
+    wanting it, which is the thing a person actually needs in order to decide.
+    """
+    from .agents.tool_facts import ASKABLE, tools_for
+
+    # The same write path the switches use — an override, not an edit, so a
+    # preset keeps its shipped definition and a later release can still improve
+    # it. Writing anywhere else would be a second way to change one fact.
+    from .agents.tool_overrides import get_tool_overrides
+
+    group = (params.get("group") or "").strip().lower()
+    level = (params.get("level") or "").strip().lower()
+    agent_id = (params.get("agent_id") or "").strip()
+    if not agent_id:
+        return {"ok": False, "error": "no agent to give this to"}
+
+    wanted = tools_for(group, level)
+    if not wanted:
+        # Named rather than described: the model chose these two strings, and a
+        # vague refusal would have it guess again rather than read the list.
+        return {"ok": False,
+                "error": (f"“{group}: {level}” is not something to ask for. "
+                          f"Levels are {' or '.join(ASKABLE)}, and running "
+                          "code is granted on the Agents & tools screen "
+                          "rather than from a card.")}
+
+    from .agents import list_agents
+    found = next((a for a in list_agents() if a.id == agent_id), None)
+    if found is None:
+        return {"ok": False, "error": "that agent is not on the roster"}
+
+    already = set(found.tools or [])
+    added = sorted(t for t in wanted if t not in already)
+    if not added:
+        return {"ok": True, "detail": "It already had that.", "added": []}
+
+    get_tool_overrides().set(agent_id, sorted(already | set(wanted)))
+    return {"ok": True, "added": added,
+            "detail": f"{found.name} can now {level} {group.replace('_', ' ')}."}
+
+
 def _create_routine(params: dict) -> dict:
     # The leaves, not the feature module: `routines` drives an agent turn
     # and passes its proposals through the approval gate, which reads the
@@ -1440,6 +1498,34 @@ def _verify_reminder(params: dict, result: dict) -> dict:
     if row is None:
         return {"verified": False, "detail": "the reminder is not stored"}
     return {"verified": True, "at": str(row.get("fire_at") or "")}
+
+
+def _verify_permission(params: dict, result: dict) -> dict:
+    """Read the agent's tools back, and check the grant is really on it.
+
+    This one genuinely can be checked, which is why it is not declared
+    unverifiable: the whole act is a write to one list, and the list is right
+    here. A permission that reported success and did not land would be the
+    worst kind of silent failure — the user believes they granted it, the agent
+    still cannot act, and the next thing either of them does is ask again.
+    """
+    from .agents import list_agents
+    from .agents.tool_facts import tools_for
+
+    agent_id = str(params.get("agent_id") or "")
+    wanted = tools_for(str(params.get("group") or ""),
+                       str(params.get("level") or ""))
+    if not wanted:
+        return {"verified": False, "detail": "nothing was asked for"}
+    found = next((a for a in list_agents() if a.id == agent_id), None)
+    if found is None:
+        return {"verified": False, "detail": "that agent is not on the roster"}
+    missing = [t for t in wanted if t not in set(found.tools or [])]
+    if missing:
+        return {"verified": False,
+                "detail": f"{len(missing)} of {len(wanted)} did not take"}
+    return {"verified": True,
+            "detail": f"{found.name} has all {len(wanted)} of them"}
 
 
 def _verify_routine(params: dict, result: dict) -> dict:
@@ -2077,6 +2163,24 @@ REGISTRY: dict[str, ActionSpec] = {
         risk=Risk.GREEN,
         verify=_verify_reminder,
         undo=_undo_row("reminder", "reminder"), undo_label="Cancel it",
+    ),
+    # Asking for one more thing it may do. RED and not promotable, because the
+    # one run that must never reach this is the unattended one: a routine reads
+    # text a stranger wrote, and an agent that could widen itself on that input
+    # is the whole threat model in one action.
+    "request_permission": ActionSpec(
+        required=("group", "level"),
+        identity=("group", "level"),
+        handler=_request_permission, label="Give access",
+        fields=["group", "level", "why"],
+        risk=Risk.RED,
+        always_ask_because=(
+            "Giving an agent something new to reach always needs your tap."),
+        verify=_verify_permission,
+        # No `undo`: the inverse is a switch on the Agents & tools screen, and
+        # an Undo button that silently took back a permission the user had just
+        # deliberately granted would be the opposite of the control this is.
+        # They revoke it where they can see what else it sits beside.
     ),
     "create_routine": ActionSpec(
         required=("agent", "instruction"),

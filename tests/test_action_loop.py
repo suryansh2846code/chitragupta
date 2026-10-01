@@ -132,7 +132,12 @@ def test_the_tiers_hold_exactly_the_actions_they_are_meant_to():
       this action is the only route to it.
     """
     never = frozenset({"create_routine", "mail_triage",
-                       "update_event", "cancel_event", "place_order"})
+                       "update_event", "cancel_event", "place_order",
+                       # Asking to be allowed something new. The one run that
+                       # must never reach it is the unattended one: a routine
+                       # reads text a stranger wrote, and an agent that could
+                       # widen itself on that input is the whole threat model.
+                       "request_permission"})
     outbound = frozenset({"send_email", "create_event", "message_send",
                           "mcp_action", "drive_share"})
 

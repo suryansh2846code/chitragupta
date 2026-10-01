@@ -213,7 +213,11 @@ def test_an_action_that_cannot_name_who_it_reaches_still_asks_every_time():
     """
     unpromotable = {n for n, s in REGISTRY.items() if s.risk is Risk.RED}
     assert unpromotable == {"update_event", "cancel_event", "mail_triage",
-                            "create_routine", "place_order"}
+                            "create_routine", "place_order",
+                            # "Always allow" on a permission card would be a
+                            # standing permission to acquire permissions,
+                            # which is every permission.
+                            "request_permission"}
 
     for action_type in unpromotable:
         verdict = permissions.check(action_type, {})

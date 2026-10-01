@@ -199,4 +199,11 @@ def test_acting_on_the_world_still_goes_through_the_user():
         # Linear and GitHub are absent because they are written to through
         # `mcp_action`, which is already in this list. GitHub was the last of
         # the three still carrying action types of its own.
-        "drive_share"}
+        "drive_share",
+        # The one entry here that reaches NOBODY. It is RED for the other
+        # reason a thing can be red — it must never run unattended — because
+        # an agent that could widen itself on text a stranger wrote is the
+        # threat every other gate in this codebase exists to prevent. Listed
+        # rather than excepted: the set this pins is "not GREEN", and an
+        # exception for one action is how the next one slips in unexamined.
+        "request_permission"}

@@ -466,6 +466,7 @@ const CARD_KIND = {
   drive_create_doc: "Document", drive_share: "Document",
   mcp_action: "Connector",
   place_order: "Order",
+  request_permission: "Access",
 };
 
 function cardKind(type) {
@@ -1455,6 +1456,46 @@ function rowsHtml(rows, skip) {
     .join("");
 }
 
+//: What each grant MEANS, in a sentence a person can answer.
+//:
+//: `group` and `level` are the server's words — "websites", "change" — and a
+//: card that printed them would be asking somebody to consent to a pair of
+//: identifiers. The pair is the key; the sentence is the card.
+//:
+//: An unrecognised pair falls back to printing the pair, which is ugly and
+//: honest. It cannot be granted anyway: `actions._request_permission` resolves
+//: the same pair server-side and refuses what it does not know, so a card the
+//: UI could not name is a card whose Confirm correctly fails.
+const PERMISSION_WORDS = {
+  "accounts:read": {
+    title: "Let it read your accounts",
+    means: "Mail, calendar and messages from the accounts you have connected. "
+         + "Reading only — it cannot send or change anything.",
+  },
+  "websites:read": {
+    title: "Let it read websites",
+    means: "Pages on sites you have already allowed. Reading only — it cannot "
+         + "click, type or send on them.",
+  },
+  "websites:change": {
+    title: "Let it change websites",
+    means: "Clicking, typing and sending on sites you have already allowed. "
+         + "Still only the sites on that list, and never when nobody is "
+         + "watching.",
+  },
+  "mac:read": {
+    title: "Let it read files on this Mac",
+    means: "Opening and searching files and folders. Reading only — it cannot "
+         + "write, move or delete anything.",
+  },
+  "mac:change": {
+    title: "Let it change files on this Mac",
+    means: "Writing, editing and moving files. Running code is not included "
+         + "and is not available this way.",
+  },
+};
+
+
 function actionFace(type, params) {
   const p = params || {};
   let title, rows = [], verb = "send";
@@ -1478,6 +1519,23 @@ function actionFace(type, params) {
       at && !drafting ? rowOf("Send at", at, { owns: ["at"] }) : null,
       files ? rowOf("Attached", files, { owns: ["attach", "attachments"] }) : null,
       bodyOf(p.body, ["body"]),
+    ];
+  } else if (type === "request_permission") {
+    // The agent is asking to be allowed something, and the only thing a person
+    // needs in order to answer is WHAT and WHY. The reason is the agent's own
+    // sentence — it goes in the body, where an email's body goes, because it is
+    // the part worth reading rather than a label to skim.
+    const what = PERMISSION_WORDS[`${p.group}:${p.level}`];
+    title = what ? what.title : "Give access";
+    verb = "allow";
+    rows = [
+      what ? noteOf(what.means) : rowOf("Asking for", `${p.group} — ${p.level}`),
+      // Said on every one of these cards, because it is the thing that makes
+      // the tap safe to give: it is this agent only, and it is revocable in a
+      // place the sentence names.
+      noteOf("This agent only. You can take it back any time under "
+             + "Settings → Agents & tools."),
+      bodyOf(p.why, ["why"]),
     ];
   } else if (type === "update_event" || type === "cancel_event") {
     // What is CHANGING, never "an event was changed". This card emails every

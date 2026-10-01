@@ -37,7 +37,12 @@ KNOWN_ACTIONS = ("create_draft", "send_email", "create_event", "update_event",
                  # tools could click, and `browse_click` refuses the one
                  # control that charges a card. This is the way through, and
                  # it is one card with the basket and the total on it.
-                 "place_order")
+                 "place_order",
+                 # Asking for one more thing it may do. Every agent gets this
+                 # one — see `library._PROACTIVE` — because an agent that
+                 # cannot ask can only describe a settings screen, and the one
+                 # that tried invented the path.
+                 "request_permission")
 
 #: Argument names listed per connector tool. Enough for a model to fill a call
 #: in correctly; few enough that twenty tools do not become the system prompt.
@@ -352,6 +357,18 @@ _BLOCKS: dict[str, str] = {
         "action per message. Use send_email for email; this is not that.\n"
         "For a time they named, add `at=\"6pm\"` and it waits until then - "
         "never send now and mention the time in the message instead."
+    ),
+    "request_permission": (
+        "To ASK FOR SOMETHING YOU HAVE NOT BEEN GIVEN, when a task needs it:\n"
+        '<action type="request_permission" group="websites" level="read">'
+        "Why you need it, in one sentence, naming the task.</action>\n"
+        "`group` is one of: accounts, websites, mac. `level` is read or "
+        "change. The user taps once and you have it from the next question "
+        "onwards. Ask ONLY when a task in front of you actually needs it, ask "
+        "for the LEAST that would do — read before change — and say what you "
+        "would do with it rather than that you lack it. One ask per turn, and "
+        "never ask again for something already refused. Running code is not "
+        "available this way: say it is on the Agents & tools screen."
     ),
     "place_order": (
         "To ORDER something from a shop the user has allowed you to change:\n"
@@ -1055,6 +1072,21 @@ _WITHHELD = (
     "WHAT YOU HAVE NOT BEEN GIVEN\n"
     "You do not currently have: {missing}.\n"
     "These exist and work — they are simply not switched on for you, and you "
+    "cannot switch them on yourself. If a task in front of you needs one, ASK "
+    "FOR IT with the request_permission action: the user taps once, in this "
+    "conversation, and you have it. Say what you would do with it rather than "
+    "that you lack it. Never guess at a different route, and never say a "
+    "capability does not exist when it is only withheld."
+)
+
+#: The same note for an agent that cannot ask — an automation, or one whose
+#: template withholds the action. Naming the screen is the fallback, not the
+#: plan: it ends the conversation and sends somebody off to re-derive what they
+#: were already being asked, which is why the card exists.
+_WITHHELD_NO_ASK = (
+    "WHAT YOU HAVE NOT BEEN GIVEN\n"
+    "You do not currently have: {missing}.\n"
+    "These exist and work — they are simply not switched on for you, and you "
     "cannot switch them on yourself. If a task needs one, say plainly which "
     "one and what you would do with it, and tell the user it is theirs to turn "
     "on under Settings → Agents & tools. Never guess at a different route, and "
@@ -1062,12 +1094,17 @@ _WITHHELD = (
 )
 
 
-def _withheld(tools: list[str] | None) -> str:
+def _withheld(tools: list[str] | None, can_ask: bool = False) -> str:
     """Name the groups this agent has none of, so it stops inventing routes.
 
     Grouped rather than listed: an agent that is told it lacks `browse_select`
     reports that it cannot choose from a dropdown, which is true and useless.
     Told it lacks *Websites*, it says the thing a person can act on.
+
+    `can_ask` picks which of the two endings it gets. An agent holding
+    `request_permission` is told to ask with it; one that cannot is told the
+    screen. Both are true, and sending an agent to a settings screen it could
+    have replaced with a card is the thing this pair exists to stop.
     """
     # `tool_facts`, never `tools`. The table is a leaf precisely so this module
     # can read it; importing `tools` here grew the frozen `agents_tools` cycle
@@ -1087,7 +1124,8 @@ def _withheld(tools: list[str] | None) -> str:
         missing.append(group.label.lower())
     if not missing:
         return ""
-    return _WITHHELD.format(missing="; ".join(missing))
+    template = _WITHHELD if can_ask else _WITHHELD_NO_ASK
+    return template.format(missing="; ".join(missing))
 
 
 def build(*, name: str, role: str, system_prompt: str,
@@ -1105,6 +1143,13 @@ def build(*, name: str, role: str, system_prompt: str,
     parts += [_RECALL, _HONESTY, _CORRECTIONS]
 
     allowed = [a for a in (actions or []) if a in KNOWN_ACTIONS]
+    # An agent is only told what it can do — the rule this module exists for.
+    # There is nothing to ask for when nothing is withheld, so the asking
+    # protocol is ninety words of instructions about a card it could never
+    # draw. Computed once and reused below, because `_withheld` is not free.
+    withheld = _withheld(tools, can_ask="request_permission" in allowed)
+    if not withheld:
+        allowed = [a for a in allowed if a != "request_permission"]
     if allowed:
         lines = [_ACTION_PREAMBLE]
         lines += [_BLOCKS[a] for a in KNOWN_ACTIONS if a in allowed]
@@ -1142,7 +1187,6 @@ def build(*, name: str, role: str, system_prompt: str,
     if connectors:
         parts.append(connectors)
 
-    withheld = _withheld(tools)
     if withheld:
         parts.append(withheld)
 

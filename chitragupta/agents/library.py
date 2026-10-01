@@ -183,7 +183,12 @@ _TRAINING = ["list_exercises", "lift_progress", "training_load"]
 #: `create_followup` records what other people owe and has no way to write
 #: down what the user does, which is most of what a thread actually produces.
 _PROACTIVE = ["set_reminder", "create_routine", "create_followup",
-              "create_task"]
+              "create_task",
+              # Asking for one more thing it may do, which every agent needs
+              # for the reason `_BROWSE` is in `BASE_TOOLS`: one that cannot
+              # ask can only describe a settings screen, and the one that
+              # tried invented the path it described.
+              "request_permission"]
 
 #: `create_draft` travels with `send_email` and never without it.
 #:

@@ -45,6 +45,13 @@ from chitragupta.actions import REGISTRY, catalog
 #: missing fixture is a hole in the walk, so the walk fails rather than skips.
 COMPLETE: dict[str, dict] = {
     "send_email": {"to": "a@b.test", "subject": "Hi", "body": "Text"},
+    # Asking to be allowed something. `agent_id` is not one of its fields —
+    # the confirm adds it on the way through — but the handler refuses without
+    # it, so the fixture carries it or every refusal here reads as the missing
+    # agent rather than the missing field under test.
+    "request_permission": {"group": "websites", "level": "read",
+                           "why": "To read the page you linked.",
+                           "agent_id": "chotu"},
     "create_draft": {"to": "a@b.test", "subject": "Hi", "body": "Text"},
     "create_routine": {"name": "Nudge", "trigger": "daily", "at": "8am",
                        "agent": "Chief of Staff", "instruction": "Say hello."},
