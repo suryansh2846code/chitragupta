@@ -266,6 +266,33 @@ even when every test is green. Reasoning and measurements:
 **Browser — `browser/`** · [`docs/BROWSER.md`](docs/BROWSER.md)
 - **The unit of consent is the origin**, and the check runs at the tool, never in
   the model — a page naming another site is an injection, not a decision.
+- **A browser failure is named once, in `browser/trouble.py`.** That question had
+  four answers — a table in `agents/browse_tools`, three `str(exc)` leaks in
+  `api/routes/browser`, a `suppressed` in `signin.begin` that then reported
+  success, and nothing at all for a stale handle on the Browser screen — and
+  three of the four were wrong about at least one failure. A navigation that
+  timed out was reported as *"the browser itself failed to start"* while the
+  browser ran for another day; fixing that in one module left the other printing
+  Playwright's call log at the user. `classify()` returns which failure, whether
+  the handle is **stale**, and whether retrying **could** work; those are facts
+  about the browser, and only the wording varies by audience. It is a **leaf**
+  and both exception types live in it, or the frozen `browser` import cycle
+  grows.
+- **A navigation arrives at `domcontentloaded`, never `load`.** `load` waits for
+  every avatar and font an app pulls in: measured on WhatsApp Web, 0.8s versus
+  5.7s cold, and past the timeout on a real connection. `settle` guards the
+  redirect and `browse_wait` owns "not drawn yet".
+- **A refusal a grant would fix names the site *and* the capability.**
+  `grantable` without `needs` produced the dead end: changing something on a
+  readable site refused with *"needs your approval"*, no site offered, pointing
+  at an approval card deleted a release earlier. The capability survives
+  `may_act` delegating to `may_read`, or the one-press control takes two.
+- **`driver.ACTS` is the one list of what may be done to a page, and
+  `CHANGING_ACTS` the one split between looking and changing.**
+  `permissions.NEVER_UNATTENDED_TOOLS` is *derived* from it rather than retyped,
+  so a verb added to the table is gated the moment it exists. `reveal` is a read
+  — scrolling sends nothing — and `press` takes a key off a closed list, because
+  a free string is a keyboard-shaped way to the browser's own menus.
 - **Check where the browser landed, not where it was sent.** A granted page can
   redirect anywhere; a refused landing drops the page rather than returning it.
 - **Page content must never be able to close its own quarantine fence**, or it
@@ -421,11 +448,15 @@ In order: **the focused test → the subsystem's suite → `pytest` →
 `ruff check chitragupta tests` → `mypy chitragupta` → the `tests/js/` harnesses if
 the frontend changed → `chitragupta app` opens and renders.**
 
-Baseline, measured 2026-09-30: **5455 passed, 32 skipped in ~7min05**, ruff
-clean, mypy clean over 217 files, coverage 82%. Locally the split differs — some
-tests skip when a provider is genuinely connected on the machine. Run tests when
-stuck or finishing, not after every edit. Details:
-[`tests/CLAUDE.md`](tests/CLAUDE.md).
+Baseline, measured 2026-10-01: **5619 passed, 32 skipped**, ruff clean, mypy
+clean over 218 files. With `PLAYWRIGHT_BROWSERS_PATH` pointed at the managed
+browser the same run is **5631 passed, 20 skipped in ~7min15** — the twelve are
+`tests/test_browser_driver.py`'s real-Chromium tests, which skip when there is
+no browser to find. Worth setting: they are the only tests that drive a real
+page, and one of them is the regression for a navigation that used to hang.
+Locally the split differs again — some tests skip when a provider is genuinely
+connected on the machine. Run tests when stuck or finishing, not after every
+edit. Details: [`tests/CLAUDE.md`](tests/CLAUDE.md).
 
 **Re-measure this number in the commit that changes it.** It said 1440 for long
 enough that the suite had grown past 3,600 underneath it — so the figure every
