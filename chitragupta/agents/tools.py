@@ -1332,15 +1332,22 @@ def describe_tools() -> list[dict[str, str]]:
     with the app.
 
     `label` is now one word a person would use, and `category` is what it sits
-    under — see `_LABELS`. Both come from here rather than the UI, because a
-    name-to-label table in a consumer is the name chain this codebase keeps
-    paying for.
+    under — see `tool_facts._FACTS`. Both come from here rather than the UI,
+    because a name-to-label table in a consumer is the name chain this codebase
+    keeps paying for.
+
+    `group` and `access` are the newer pair and the ones the panel actually
+    arranges itself by: which of the four things a tool touches, and whether it
+    reads, changes or runs. `category` is kept beside them because it is still
+    the finer-grained heading inside a group, and because removing a field a
+    consumer reads is the third of the three landings, not the first.
     """
     rows = []
     for n, t in TOOL_DEFS.items():
         label, category = tool_label(n)
         rows.append({"name": n, "description": t.description, "label": label,
-                     "category": category, "source": "builtin", "connector": ""})
+                     "category": category, "source": "builtin", "connector": "",
+                     "group": tool_group(n), "access": tool_access(n).value})
     rows.extend(mcp_tools.describe())
     return rows
 

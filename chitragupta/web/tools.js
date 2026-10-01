@@ -72,6 +72,55 @@ function toolBlurb(t) {
 // without one lands in "Other", which is visible enough to get fixed.
 function toolCategory(t) { return ((t && t.category) || "").trim() || "Other"; }
 
+// ── what a built-in touches, and what it does to it ───────────────────────
+//
+// The panel used to arrange itself by `category` — thirteen headings and
+// sixty-four switches, every one of them a question about a tool, asked before
+// the user had sent the agent a single message.
+//
+// `group` and `access` come from the API because the decision is not this
+// layer's: a tool declares a capability, and `agents/tool_facts.py` derives
+// both from it. A consumer that re-derived them would be the name chain this
+// file's own comments keep warning about.
+function toolGroupKey(t) { return ((t && t.group) || "").trim(); }
+function toolAccess(t) { return ((t && t.access) || "").trim(); }
+
+//: What a group can be allowed to do, in the order the tiers escalate.
+//:
+//: `access` is the server's word and `verb` is the person's — they are not the
+//: same word and must not be assumed to be. Writing the bucket keys as the UI
+//: labels and comparing them straight against `access` silently matched
+//: nothing for two of the four tiers, so "Change" and the irreversible bucket
+//: rendered no switch at all while their tools sat in the disclosure below,
+//: on. A panel that omits a switch for something an agent can do is worse than
+//: the sixty-four it replaced.
+//:
+//: `outbound` has its own bucket even though no built-in is one today.
+//: Folding it into "change" would mean the first tool that reaches a person
+//: arrives already covered by a switch somebody set for something else.
+const ACCESS_BUCKETS = [
+  { key: "read", access: ["read"], verb: "Read",
+    blurb: "Look, and report back." },
+  { key: "change", access: ["write"], verb: "Change",
+    blurb: "Alter something. Each change is yours to undo." },
+  { key: "send", access: ["outbound"], verb: "Send to people",
+    blurb: "Reaches somebody who is not you." },
+  { key: "run", access: ["destructive"], verb: "Irreversible",
+    blurb: "Running code, and anything else nothing can undo." },
+];
+
+//: Which bucket a row belongs in, or "" for a tier nobody has named.
+//:
+//: Unknown is dropped from the SWITCHES and stays visible in the per-tool rows
+//: — the opposite way round from failing closed, and deliberately: a switch
+//: nobody can describe is one a person cannot consent with, while the row
+//: still lets them set it and still says what it does.
+function bucketOf(row) {
+  const tier = toolAccess(row);
+  const found = ACCESS_BUCKETS.find((b) => b.access.includes(tier));
+  return found ? found.key : "";
+}
+
 function toolConnector(t) {
   // Anything that is not explicitly a builtin came in with a connector —
   // including source kinds that do not exist yet, which is the whole point of
@@ -113,9 +162,68 @@ let AGENT_TOOLS_FOR = "";
 //: second click cannot race the first.
 const _toolSaving = new Set();
 
-function agentToolGroups(tools, connectors, agentTools, categories) {
+//: The sentence under a group heading, saying what the whole group IS.
+//:
+//: Sixty-four switches had sixty-four descriptions and no answer to "what am I
+//: deciding?". A group has one, and it is the server's — this layer renders it
+//: and never writes it, for the reason every other label on this screen comes
+//: down the wire.
+function groupBlurb(g) {
+  const text = ((g.spec && g.spec.blurb) || "").trim();
+  return text ? `<p class="at-group-ds">${esc(text)}</p>` : "";
+}
+
+//: The switches a person actually sets: one per thing this group can do.
+//:
+//: A master switch over every tool in its bucket, because "may it read my
+//: mail" is the decision and `list_mail` versus `read_thread` is not. The
+//: per-tool rows survive inside the disclosure below for anyone who wants
+//: them — taking them away would be removing control, where the complaint was
+//: that control was the ONLY thing on offer.
+function groupSwitches(g, why) {
+  if (!g.spec) return "";          // an older server, or a group nobody named
+  if (g.spec.always) {
+    return `<p class="at-always">Always on. Nothing here leaves this machine,
+      so it is not something to switch.</p>`;
+  }
+  const buckets = ACCESS_BUCKETS.map((b) => {
+    const inBucket = g.tools.filter(({ row }) => bucketOf(row) === b.key);
+    if (!inBucket.length) return "";
+    const on = inBucket.every(({ on: isOn }) => isOn);
+    const some = !on && inBucket.some(({ on: isOn }) => isOn);
+    const names = inBucket.map(({ row }) => (row && row.name) || "").join(" ");
+    const control = why
+      ? `<span class="at-blocked">${esc(why)}</span>`
+      : `<button type="button" role="switch" aria-checked="${on}"
+           class="at-toggle${on ? " is-on" : ""}${some ? " is-some" : ""}"
+           data-bulk="${esc(names)}" data-on="${on ? "1" : ""}"
+           aria-label="${esc(b.verb)} — ${esc(g.name)}"><span class="at-knob"></span></button>`;
+    // "3 of 7 on" rather than a half-lit switch with nothing explaining it:
+    // a partially-granted group is a real state, usually because somebody
+    // used the per-tool rows, and it has to be legible without opening them.
+    const part = some
+      ? `<span class="at-part">${inBucket.filter((t) => t.on).length} of ${inBucket.length} on</span>`
+      : "";
+    return `<div class="at-bulk" data-bucket="${esc(b.key)}">
+      <span class="at-text">
+        <span class="at-nm">${esc(b.verb)}</span>
+        <span class="at-ds">${esc(b.blurb)}</span>
+      </span>${part}${control}</div>`;
+  }).join("");
+  return buckets ? `<div class="at-bulks">${buckets}</div>` : "";
+}
+
+function agentToolGroups(tools, connectors, agentTools, categories, specs) {
   const rows = Array.isArray(tools) ? tools : [];
   const have = new Set(Array.isArray(agentTools) ? agentTools : []);
+
+  // What each built-in group IS, in the API's words. Absent (an older server,
+  // or a tool whose group nobody recognises) and the screen falls back to the
+  // thirteen categories — worse, and still a working screen.
+  const byKey = new Map();
+  for (const s of (Array.isArray(specs) ? specs : [])) {
+    if (s && s.key) byKey.set(s.key, s);
+  }
 
   const health = new Map();
   for (const c of (Array.isArray(connectors) ? connectors : [])) {
@@ -125,10 +233,13 @@ function agentToolGroups(tools, connectors, agentTools, categories) {
 
   const groups = [];
   const seen = new Map();
-  const groupFor = (name, kind) => {
+  const groupFor = (name, kind, spec) => {
     const key = name.toLowerCase();
     let g = seen.get(key);
-    if (!g) { g = { name, kind, tools: [], connector: null }; seen.set(key, g); groups.push(g); }
+    if (!g) {
+      g = { name, kind, tools: [], connector: null, spec: spec || null };
+      seen.set(key, g); groups.push(g);
+    }
     return g;
   };
 
@@ -140,11 +251,18 @@ function agentToolGroups(tools, connectors, agentTools, categories) {
     //   a built-in           — its own category, from the API
     // Thirty-two built-ins under one heading is a wall; under nine short
     // headings it is a list you can choose from.
+    // A built-in goes under what it TOUCHES, not under its old heading. The
+    // heading survives inside the group, where it is a sub-list rather than a
+    // decision.
+    const spec = !isCategoryRow(t) && !toolConnector(t)
+      ? byKey.get(toolGroupKey(t)) : null;
     const group = isCategoryRow(t)
       ? groupFor("Your connectors", "category")
       : toolConnector(t)
         ? groupFor(toolConnector(t), "connector")
-        : groupFor(toolCategory(t), "builtin");
+        : spec
+          ? groupFor(spec.label, "builtin", spec)
+          : groupFor(toolCategory(t), "builtin");
     group.tools.push({ row: t, on: have.has(name) });
   }
 
@@ -165,7 +283,13 @@ function agentToolGroups(tools, connectors, agentTools, categories) {
   // last whatever letter it starts with, and that is a judgement the layer
   // that owns the categories already made.
   const builtin = groups.filter((g) => g.kind === "builtin");
-  const order = Array.isArray(categories) ? categories : [];
+  // The API's group order first — it is the layer that decided "Your Mac"
+  // comes last, and a consumer sorting them itself would be re-deciding that
+  // alphabetically. Categories remain the fallback for a server that predates
+  // groups, so the screen degrades rather than scrambles.
+  const groupOrder = (Array.isArray(specs) ? specs : []).map((s) => s.label);
+  const order = groupOrder.length ? groupOrder
+    : (Array.isArray(categories) ? categories : []);
   const rank = (g) => {
     const i = order.indexOf(g.name);
     return i === -1 ? order.length : i;        // unnamed sinks to the bottom
@@ -191,9 +315,9 @@ function toolBlockedReason(group) {
   return "";
 }
 
-function renderAgentTools(boxEl, { agent, tools, connectors, categories }) {
+function renderAgentTools(boxEl, { agent, tools, connectors, categories, specs }) {
   if (!boxEl) return;
-  const groups = agentToolGroups(tools, connectors, agent && agent.tools, categories);
+  const groups = agentToolGroups(tools, connectors, agent && agent.tools, categories, specs);
   const usable = groups.reduce((n, g) =>
     n + (toolBlockedReason(g) ? 0 : g.tools.filter((t) => t.on).length), 0);
 
@@ -244,12 +368,19 @@ function renderAgentTools(boxEl, { agent, tools, connectors, categories }) {
       ? `<div class="at-row"><span class="at-text"><span class="at-ds">${esc(why)}</span></span>
          <span class="at-blocked">Unavailable</span></div>`
       : `<div class="at-row"><span class="at-text"><span class="at-ds">Nothing here yet.</span></span></div>`);
-    return `<section class="at-group${why ? " is-blocked" : ""}">
+    return `<section class="at-group${why ? " is-blocked" : ""}${
+        g.spec && g.spec.always ? " is-always" : ""}">
       <div class="at-group-head">
         <h3 class="at-group-nm">${esc(g.name)}</h3>
         ${why ? `<span class="at-group-why">${esc(why)}</span>${fix}` : ""}
       </div>
-      <div class="at-card">${body}</div>
+      ${groupBlurb(g)}
+      ${groupSwitches(g, why)}
+      <details class="at-detail">
+        <summary>${g.tools.length === 1 ? "Show the one tool"
+          : `Show all ${g.tools.length} tools`}</summary>
+        <div class="at-card">${body}</div>
+      </details>
     </section>`;
   }).join("");
   wireAgentToolActions(boxEl, agent);
@@ -264,6 +395,62 @@ function wireAgentToolActions(boxEl, agent) {
   boxEl.querySelectorAll("[data-tool]").forEach((b) => {
     b.onclick = () => toggleAgentTool(agent, b);
   });
+  boxEl.querySelectorAll("[data-bulk]").forEach((b) => {
+    b.onclick = () => toggleToolBucket(agent, b);
+  });
+}
+
+//: One switch, every tool in a bucket. The whole point of the compaction.
+//:
+//: A separate function from `toggleAgentTool` rather than a loop over it,
+//: because N tools must be **one** PATCH: looping would fire seven requests
+//: that each send the whole list, and whichever replied last would win — so
+//: turning a group on could land as a group half on, depending on the network.
+async function toggleToolBucket(agent, btn) {
+  const names = (btn.dataset.bulk || "").split(" ").filter(Boolean);
+  if (!agent || !names.length) return;
+  const wasOn = btn.dataset.on === "1";
+  const forAgent = agent.id;
+  const next = !wasOn;
+
+  btn.dataset.on = next ? "1" : "";
+  btn.setAttribute("aria-checked", String(next));
+  btn.classList.toggle("is-on", next);
+  btn.classList.remove("is-some");        // it is all-or-nothing after a press
+  btn.classList.add("is-busy");
+
+  const tools = new Set(agent.tools || []);
+  for (const n of names) { if (next) tools.add(n); else tools.delete(n); }
+
+  try {
+    const saved = await api(`/api/agents/${encodeURIComponent(forAgent)}/tools`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tools: [...tools] }),
+    });
+    agent.tools = saved.tools || [...tools];
+    const inList = agents.find((a) => a.id === forAgent);
+    if (inList) inList.tools = agent.tools;
+    // Bring the per-tool rows with it. They are inside the disclosure below
+    // this switch, and a row showing the opposite of the switch above it is
+    // the screen arguing with itself. Updated in place rather than by a
+    // re-render, because a re-render would close every disclosure the user
+    // had opened.
+    const section = btn.closest(".at-group");
+    for (const n of names) {
+      const row = section && section.querySelector(`[data-tool="${CSS.escape(n)}"]`);
+      if (!row) continue;
+      row.dataset.on = next ? "1" : "";
+      row.setAttribute("aria-checked", String(next));
+      row.classList.toggle("is-on", next);
+    }
+  } catch (e) {
+    btn.dataset.on = wasOn ? "1" : "";
+    btn.setAttribute("aria-checked", String(wasOn));
+    btn.classList.toggle("is-on", wasOn);
+    toast("Couldn't save that — try again.");
+  } finally {
+    btn.classList.remove("is-busy");
+  }
 }
 
 async function toggleAgentTool(agent, btn) {
@@ -315,22 +502,26 @@ async function loadAgentTools(agentId) {
   const id = agentId || AGENT_TOOLS_FOR || current;
   AGENT_TOOLS_FOR = id;
   box.innerHTML = `<div class="at-empty">Loading…</div>`;
-  let tools = [], categories = [];
-  try { ({ tools, categories } = await api("/api/agents/tools")); }
+  let tools = [], categories = [], specs = [];
+  try {
+    const got = await api("/api/agents/tools");
+    ({ tools, categories } = got);
+    specs = got.groups || [];
+  }
   catch (e) { box.innerHTML = `<div class="at-empty">Couldn't load the tool list.</div>`; return; }
   if (AGENT_TOOLS_FOR !== id) return;      // the user switched while we waited
 
   const agent = (agents || []).find((a) => a.id === id);
   if (!agent) { box.innerHTML = `<div class="at-empty">Pick an agent.</div>`; return; }
 
-  renderAgentTools(box, { agent, tools, connectors: CONNECTORS, categories });
+  renderAgentTools(box, { agent, tools, connectors: CONNECTORS, categories, specs });
   if (!CONNECTORS.length) {
     // /api/connectors starts every added server to answer honestly, so it is
     // far too slow to block a panel on. Render what we know, then sharpen.
     try {
       const { connectors } = await api("/api/connectors");
       CONNECTORS = connectors;
-      if (AGENT_TOOLS_FOR === id) renderAgentTools(box, { agent, tools, connectors, categories });
+      if (AGENT_TOOLS_FOR === id) renderAgentTools(box, { agent, tools, connectors, categories, specs });
     } catch (_) { /* the tools are on screen; health is a bonus */ }
   }
 }

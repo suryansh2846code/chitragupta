@@ -1674,6 +1674,45 @@ textarea.ac-field-wide { resize: vertical; min-height: 58px; line-height: 1.45; 
 .at-toggle:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--north-dim); }
 .at-toggle.is-busy { opacity: .6; cursor: progress; }
 
+/* ── what a group IS, and the switches that set it ──────────────────────
+   The panel used to be sixty-four rows under thirteen headings. The decision
+   lives up here now: a sentence saying what the group is, then one switch per
+   thing it can do. The per-tool rows survive inside the disclosure below —
+   taking them away would be removing control, where the complaint was that
+   control was the only thing on offer. */
+.at-group-ds { font-size: 12.5px; color: var(--muted); line-height: 1.5;
+  margin: -4px 0 10px; max-width: 62ch; }
+
+.at-always { font-size: 12.5px; color: var(--muted); line-height: 1.5;
+  margin: 0 0 10px; padding: 11px 14px; border-radius: 12px;
+  background: var(--north-dim); max-width: 62ch; }
+
+.at-bulks { background: var(--panel); border: 1px solid var(--line);
+  border-radius: 14px; overflow: hidden; margin-bottom: 10px; }
+.at-bulk { display: flex; align-items: center; gap: 16px; padding: 13px 16px; }
+.at-bulk + .at-bulk { border-top: 1px solid var(--line); }
+/* The count for a group somebody part-granted with the per-tool rows. Tabular
+   so "3 of 7" and "11 of 13" do not shift the switch beside them. */
+.at-part { flex: none; font-size: 12px; color: var(--faint);
+  font-variant-numeric: tabular-nums; }
+/* Neither on nor off, and it has to look like neither — a half-granted group
+   showing a plain "off" is the screen lying about what the agent can do. */
+.at-toggle.is-some { background: color-mix(in srgb, var(--north) 18%, transparent);
+  border-color: var(--north-track); }
+.at-toggle.is-some .at-knob { transform: translateX(8px);
+  background: var(--north); }
+
+/* The rows, folded away. `summary` carries the affordance; the triangle is the
+   browser's own, which is the one dingbat that is a control rather than an
+   icon standing in for one. */
+.at-detail > summary { font-size: 12.5px; color: var(--muted); cursor: pointer;
+  padding: 2px 0 2px 2px; list-style-position: outside; }
+.at-detail > summary:hover { color: var(--text); }
+.at-detail > summary:focus-visible { outline: none;
+  box-shadow: 0 0 0 3px var(--north-dim); border-radius: 6px; }
+.at-detail[open] > summary { margin-bottom: 10px; }
+.at-group.is-always .at-detail > summary { color: var(--faint); }
+
 .at-empty { background: var(--panel); border: 1px solid var(--line);
   border-radius: 14px; padding: 20px; color: var(--muted); font-size: 13.5px;
   line-height: 1.6; }

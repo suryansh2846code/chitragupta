@@ -341,7 +341,6 @@ class NewAgent(BaseModel):
 
 @router.get("/api/agents/tools")
 def available_tools():
-    from ...agents.tools import TOOL_CATEGORIES, describe_tools
     # Each row keeps `name` and `description` exactly as before and adds
     # `source` ("builtin" | "mcp") and `connector`, so the agent builder can
     # group the user's own connectors instead of listing their tools as if they
@@ -351,7 +350,19 @@ def available_tools():
     # rows already say that. It is here because the layer that decided "Your
     # Mac" comes last is this one, and a consumer sorting them itself would be
     # re-deciding it alphabetically.
-    return {"tools": describe_tools(), "categories": list(TOOL_CATEGORIES)}
+    #
+    # `groups` is what the panel arranges itself by now: four things an agent
+    # can be given, each with the sentence a person reads and its tools already
+    # split into read / change / run. Sixty-four switches became six, and the
+    # split is derived from what each tool declared rather than arranged here —
+    # see `agents/tool_facts.py`. Sent alongside `categories` rather than
+    # instead of it, because removing a field a consumer reads is a separate
+    # landing from adding the one that replaces it.
+    from ...agents.tool_facts import permission_groups
+    from ...agents.tools import TOOL_CATEGORIES, describe_tools
+
+    return {"tools": describe_tools(), "categories": list(TOOL_CATEGORIES),
+            "groups": permission_groups()}
 
 
 @router.get("/api/agents/connector-gaps")
