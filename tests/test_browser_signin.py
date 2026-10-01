@@ -721,3 +721,75 @@ def test_the_shared_browser_can_be_replaced_when_it_dies(monkeypatch):
     chromium.reset_shared()
 
     assert chromium.shared_driver() is not first
+
+
+# ── a sign-in that could not open the window ─────────────────────────────
+#
+# `begin` navigated under `with suppressed(...)`, so a failure left the card
+# saying *"A browser window is open at {host}. Sign in there, then come back and
+# press Done"* over a window showing nothing — and `_state.current` still set,
+# so the next attempt was refused with "already signing in to…". The user was
+# told to do something impossible and then stopped from trying again.
+class _CannotOpen:
+    def __init__(self, message):
+        self.message = message
+        self.went = []
+
+    def goto(self, url):
+        from chitragupta.browser.trouble import BrowserError
+        self.went.append(url)
+        raise BrowserError(self.message)
+
+    def close(self):
+        pass
+
+
+def _cannot_open(monkeypatch, message="Page.goto: Timeout 20000ms exceeded"):
+    from chitragupta.browser import chromium
+
+    driver = _CannotOpen(message)
+    monkeypatch.setattr(chromium, "shared_driver", lambda: driver)
+    return driver
+
+
+def test_a_sign_in_that_could_not_open_says_so(monkeypatch):
+    """It reported `ok: True` and told the user to go and look at a window that
+    was not there."""
+    _cannot_open(monkeypatch)
+
+    out = signin.begin("https://payroll.example.com")
+
+    assert out["ok"] is False
+    assert out["error"]
+
+
+def test_a_failed_sign_in_does_not_block_the_next_attempt(monkeypatch):
+    """The worse half. `_state.current` stayed set, so the retry — the one
+    thing that fixes a slow page — was refused as "already signing in"."""
+    _cannot_open(monkeypatch)
+
+    signin.begin("https://payroll.example.com")
+    second = signin.begin("https://payroll.example.com")
+
+    assert "Already signing in" not in str(second.get("error", ""))
+    assert signin.status().get("connecting") in (False, None)
+
+
+def test_a_failed_sign_in_never_shows_playwrights_words(monkeypatch):
+    """The error goes straight onto the sign-in card."""
+    _cannot_open(monkeypatch)
+
+    error = signin.begin("https://payroll.example.com")["error"]
+
+    for leak in ("Page.goto", "20000ms", "Playwright", "Traceback"):
+        assert leak not in error
+
+
+def test_a_sign_in_grants_nothing_when_the_window_never_opened(monkeypatch):
+    """A window being open is not consent, and a window that never opened is
+    certainly not."""
+    _cannot_open(monkeypatch)
+
+    signin.begin("https://payroll.example.com")
+
+    assert origins.matching_grant("https://payroll.example.com") is None

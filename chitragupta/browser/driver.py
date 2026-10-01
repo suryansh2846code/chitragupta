@@ -32,11 +32,48 @@ from typing import Any
 from ..log import get_logger, suppressed
 from .page import Node
 
+# Re-exported, not redefined. `trouble` owns the vocabulary for a browser
+# failure and is a leaf so that every layer above can read it; `BrowserError`
+# moved down with it, so `from .driver import BrowserError` still means what it
+# always did.
+from .trouble import BrowserError
+
+__all__ = ["ARRIVED", "BrowserError", "PlaywrightDriver", "parse_aria",
+           "read_page", "settle"]
+
 log = get_logger(__name__)
 
 #: How long any single browser operation may take before we give up on it. A
 #: page that never settles must not hold an agent's turn open indefinitely.
 TIMEOUT_MS = 20_000
+
+#: What counts as having arrived, for a navigation.
+#:
+#: **Not `load`.** `load` waits for every subresource — every avatar, font and
+#: media thumbnail an app pulls in — and a messaging app on a cold cache spends
+#: most of its first visit doing exactly that. Measured on WhatsApp Web with a
+#: signed-in profile: `domcontentloaded` at 0.8s cold and 0.3s warm, `load` at
+#: 5.7s cold on a fast link — and on a real user's connection it went past
+#: `TIMEOUT_MS`, which is the bug this constant exists because of. The browser
+#: was running fine the whole time; a navigation that could not finish within
+#: twenty seconds was reported to them as *"the browser itself failed to
+#: start"*.
+#:
+#: Nothing downstream needed `load`. `settle` is what guards against a page
+#: moving itself after we arrive, `_land` re-checks the origin on every read,
+#: and "the app has not drawn itself yet" is already owned by
+#: `browse_tools._unready_hint` and `browse_wait` — which is the correct answer
+#: to a loading screen and was unreachable while the navigation itself failed.
+ARRIVED = "domcontentloaded"
+
+#: How long past `TIMEOUT_MS` to wait for the browser thread to answer at all.
+#:
+#: The operation has its own budget; this is the margin on top of it, covering
+#: the hand-off through the queue and the thread's own bookkeeping. Running out
+#: of *this* means the thread is wedged rather than the page being slow — a
+#: different failure, and `_call` says so rather than raising an empty
+#: `queue.Empty` at the agent.
+REPLY_GRACE_SECONDS = 10
 
 #: Chromium switches we always launch with.
 #:
@@ -274,7 +311,21 @@ class PlaywrightDriver:
         self._ensure_started()
         reply: queue.Queue = queue.Queue(maxsize=1)
         self._commands.put(_Command(name, args, reply))
-        ok, payload = reply.get(timeout=TIMEOUT_MS / 1000 + 10)
+        try:
+            ok, payload = reply.get(
+                timeout=TIMEOUT_MS / 1000 + REPLY_GRACE_SECONDS)
+        except queue.Empty:
+            # The browser thread is wedged on something that outlasted its own
+            # budget. `queue.Empty` carries no message at all and is not a
+            # `BrowserError`, so left alone it walks straight past
+            # `browse_tools._browser_errors` to the catch-all in
+            # `tools.run_tool` — and the model is handed "Tool browse_open
+            # failed:" with nothing after the colon. Said as a timeout because
+            # that is what it is, and because that is the word
+            # `browse_tools._TIMED_OUT` reads to tell the agent to try again.
+            raise BrowserError(
+                f"Timeout: the browser did not answer the {name} it was "
+                "given.") from None
         if not ok:
             raise BrowserError(payload)
         return payload
@@ -392,10 +443,10 @@ class PlaywrightDriver:
 
     def _do(self, page: Any, command: _Command) -> Any:  # pragma: no cover
         if command.name == "goto":
-            page.goto(command.args[0], wait_until="load")
+            page.goto(command.args[0], wait_until=ARRIVED)
             settle(page)
         elif command.name == "back":
-            page.go_back(wait_until="load")
+            page.go_back(wait_until=ARRIVED)
             settle(page)
         elif command.name == "clear_cookies":
             # Playwright filters by domain including subdomains, which is what
@@ -442,8 +493,6 @@ class PlaywrightDriver:
         return read_page(page)
 
 
-class BrowserError(RuntimeError):
-    """Something went wrong driving the browser. Carries a readable message."""
 
 
 #: How long to let a page move itself after it has loaded, before deciding where
@@ -462,6 +511,11 @@ def settle(page: Any) -> None:
     origin that is no longer true. That is a boundary check answering about the
     wrong page, which is the one failure this whole package exists to prevent.
 
+    It carries that alone now. Navigation returns at `ARRIVED` rather than at
+    `load`, so this is also the gap between the document being parsed and the
+    app having fetched anything — which is the same wait, measured from a
+    slightly earlier point, and the reason that change cost nothing.
+
     Bounded and best-effort: a site that never goes idle is common, and the
     landing check runs again on every read, so the cost of giving up here is one
     stale read rather than a wrong decision.
@@ -473,7 +527,90 @@ def settle(page: Any) -> None:
 #: What `act` may be asked to do. A closed set, checked before anything is
 #: resolved: an unknown verb is a bug or an injection, and neither should reach
 #: a page the user is signed in to.
-ACTS = ("click", "type", "submit")
+#: Keys an agent may send by name, and nothing else.
+#:
+#: A closed list because `press` takes a *string that Chromium interprets*, and
+#: the unbounded version of that is a keyboard-shaped hole in everything else
+#: this package does: `Control+A` then `Control+V` is a paste, `F12` is devtools,
+#: and a modifier chord is how you reach a browser menu. These are the keys that
+#: navigate and dismiss — what a person uses to get around a page they are not
+#: typing into — and nothing here composes with a modifier.
+NAMED_KEYS = frozenset({
+    "Enter", "Escape", "Tab", "Backspace", "Delete",
+    "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight",
+    "Home", "End", "PageUp", "PageDown",
+})
+
+
+def _check_key(text: str) -> None:
+    """Refuse a key that is not on the list, before anything is resolved.
+
+    **Before**, not during. Checking inside the act would mean the element had
+    already been located on a page the user is signed in to by the time we
+    decided we were not going to touch it — harmless today and exactly the kind
+    of ordering that stops being harmless when somebody adds a hover or a focus
+    to the resolution step.
+    """
+    key = str(text or "").strip()
+    if key not in NAMED_KEYS:
+        raise BrowserError(
+            f"{key!r} is not a key that may be sent. Allowed: "
+            + ", ".join(sorted(NAMED_KEYS)))
+
+
+#: What an act requires of its text, checked before the page is touched at all.
+#: A dict rather than a branch for `ACTS`' reason: the verb and its rules stay
+#: together, so a verb cannot acquire one and leave the other behind.
+CHECKS: dict[str, Any] = {"press": _check_key}
+
+
+#: Every verb that may be done to an element, and how each is performed.
+#:
+#: **A table rather than an `if` chain, because adding one used to mean editing
+#: five places** — the tuple of names, the branch that ran it, the tool wrapper,
+#: the unattended floor and the test that enumerates write tools. Four of those
+#: are still real (a verb needs a tool and a tool needs a floor), but the two
+#: that could silently disagree — the list of what is allowed and the code that
+#: does it — are now one thing that cannot.
+#:
+#: Each takes the resolved locator and the approved text. Nothing composes, so
+#: there is no verb an injected page can assemble out of two others.
+ACTS: dict[str, Any] = {
+    "click": lambda one, text: one.click(),
+    # `fill` rather than `press_sequentially`: it clears first, so re-running a
+    # correction does not append to what is already in the box.
+    "type": lambda one, text: one.fill(text),
+    "submit": lambda one, text: one.press("Enter"),
+    # The form control a page tool could not touch at all. A dropdown is matched
+    # by its visible label, for the same reason everything else here is matched
+    # by its accessible name: that is the string the model was shown and the
+    # user could check.
+    "select": lambda one, text: one.select_option(label=str(text)),
+    # Dismissing a dialog, moving through a list, accepting an autocomplete.
+    # The reason `NAMED_KEYS` exists rather than a free string.
+    "press": lambda one, text: one.press(str(text).strip()),
+    # Reveal what a virtualised list has not drawn yet. A chat list, a mail list
+    # and a feed all render roughly a screenful, so without this an agent can
+    # see thirty rows and genuinely cannot reach the thirty-first.
+    "reveal": lambda one, text: one.scroll_into_view_if_needed(),
+}
+
+
+#: The acts that change what a page or an account does, as opposed to what this
+#: side of the glass can see.
+#:
+#: **`reveal` is deliberately not one.** Scrolling an element into view sends
+#: nothing, presses nothing and alters no state the site can observe beyond a
+#: list deciding to draw more of itself — which is reading. Gating it as a write
+#: would mean a user had to allow *changes* on a site before an agent could read
+#: past the first screenful of it, and the thing they were agreeing to would not
+#: be the thing they were being asked about.
+#:
+#: Everything above derives from this rather than restating it: the tool names,
+#: the origin check in `Session.act`, and the unattended floor in
+#: `agents/permissions.py`. A verb added to `ACTS` is therefore gated by
+#: default, which is the direction this has to fail in.
+CHANGING_ACTS = frozenset(ACTS) - {"reveal"}
 
 
 def locate(page: Any, handle: str, kind: str, text: str = "") -> None:
@@ -487,8 +624,12 @@ def locate(page: Any, handle: str, kind: str, text: str = "") -> None:
     already showed the model. `exact=True` because "Send" and "Send later" are
     different buttons and a prefix match would pick whichever came first.
     """
-    if kind not in ACTS:                          # pragma: no cover - guarded above
+    doing = ACTS.get(kind)
+    if doing is None:                             # pragma: no cover - guarded above
         raise BrowserError(f"unknown act {kind!r}")
+    checking = CHECKS.get(kind)
+    if checking is not None:
+        checking(text)
     role, _, name = str(handle or "").partition("␟")
     if not role:
         raise BrowserError("that element has no role to find it by")
@@ -497,15 +638,7 @@ def locate(page: Any, handle: str, kind: str, text: str = "") -> None:
     # `.first` rather than a strict match: a real page has two "Send" buttons
     # more often than not — one visible, one in a hidden menu — and a strict
     # locator raises where a person would simply use the one on screen.
-    one = target.first
-    if kind == "click":
-        one.click()
-    elif kind == "type":
-        # `fill` rather than `press_sequentially`: it clears first, so re-running
-        # a correction does not append to what is already in the box.
-        one.fill(text)
-    else:
-        one.press("Enter")
+    doing(target.first, text)
 
 
 def read_windows(context: Any) -> list[tuple[str, str]]:

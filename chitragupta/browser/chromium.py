@@ -60,6 +60,11 @@ from typing import Any
 from ..config import get_settings
 from ..log import get_logger, suppressed
 
+# Re-exported, not redefined — see `trouble`, which owns what a browser failure
+# is called and is a leaf precisely so this module can read it without the
+# `browser` cycle growing.
+from .trouble import BrowserNotReadyError, Diagnosis
+
 log = get_logger(__name__)
 
 #: Marker recorded with a spawned browser, so the reaper can recognise ours and
@@ -67,13 +72,6 @@ log = get_logger(__name__)
 PROCESS_MARKER = "chitragupta-browser"
 
 
-class BrowserNotReadyError(RuntimeError):
-    """The browser is not installed or cannot be driven yet.
-
-    Carries text written for the user, not for a log: it reaches a tool result
-    and a panel, and "FileNotFoundError" is not an answer to "why did that not
-    work".
-    """
 
 
 def root() -> Path:
@@ -372,6 +370,27 @@ def reset_shared(*, close: bool = False) -> None:
     if close and doomed is not None:
         with suppressed("closing the shared browser"):
             doomed.close()
+
+
+def recover_from(diagnosis: Diagnosis) -> bool:
+    """Put right whatever a failure left broken, so the next call can work.
+
+    **One place, because the recovery is a property of the failure and not of
+    who hit it.** `browse_tools` learned to drop the dead handle after a browser
+    was closed out from under an agent; the Browser screen did not, so a user
+    whose window had closed saw "the browser is not answering" for the rest of
+    the session — `_ensure_started` finds the driver's thread alive and never
+    relaunches, and nothing was dropping the handle for it. Same failure, same
+    fix, two code paths, one of them missing it.
+
+    Returns whether anything was actually dropped, so a caller can say "try
+    again" honestly rather than as a guess.
+    """
+    if not diagnosis.stale:
+        return False
+    reset_shared()
+    log.info("dropped the shared browser after %s", diagnosis.trouble.value)
+    return True
 
 
 #: Set when the user would rather the browser did not exist as an application at

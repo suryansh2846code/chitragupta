@@ -72,6 +72,10 @@ class Reading:
     truncated: bool = False
     #: Set when a grant would change the answer, so the UI can offer that site.
     grantable: str | None = None
+    #: Which capability that grant has to carry — `origins.READ` or
+    #: `origins.CHANGE`. Carried rather than inferred: a caller that guessed
+    #: told the user to allow *reading* on a site already granted for it.
+    needs: str = origins.READ
     reason: str = ""
     #: The page's fingerprint, so a caller can skip re-reading an unchanged page.
     digest: str = ""
@@ -95,7 +99,8 @@ class Session:
         if not asked.allowed:
             # Refused before the browser is touched: an ungranted address is not
             # a place we request and then decline, it is a place we do not go.
-            return Reading(False, grantable=asked.grantable, reason=asked.reason)
+            return Reading(False, grantable=asked.grantable,
+                           needs=asked.needs, reason=asked.reason)
 
         final_url, title, nodes = self._driver.goto(url)
         return self._land(final_url, title, nodes, came_from=url)
@@ -199,10 +204,19 @@ class Session:
                         "page you last read — read it again and use a ref from "
                         "that."))
 
-        allowed = origins.may_act(self._snapshot.url)
-        if not allowed.allowed:
-            return Reading(False, url=self._snapshot.url,
-                           grantable=allowed.grantable, reason=allowed.reason)
+        # **Which check, decided by the verb and not by the method it arrived
+        # in.** Reading past the first screenful of a virtualised list is
+        # reading; asking a user to allow *changes* before an agent may scroll
+        # would be asking them about something other than what happens.
+        # `CHANGING_ACTS` is the one place that split is written down.
+        from .driver import CHANGING_ACTS
+
+        if kind in CHANGING_ACTS:
+            allowed = origins.may_act(self._snapshot.url)
+            if not allowed.allowed:
+                return Reading(False, url=self._snapshot.url,
+                               grantable=allowed.grantable, needs=allowed.needs,
+                               reason=allowed.reason)
 
         final_url, title, nodes = self._driver.act(kind, node.handle, text)
         return self._land(final_url, title, nodes, came_from=self._snapshot.url)
@@ -233,7 +247,7 @@ class Session:
             log.info("browser refused a landing at %s (from %s)",
                      final_url, came_from)
             return Reading(False, url=final_url,
-                           grantable=landed.grantable,
+                           grantable=landed.grantable, needs=landed.needs,
                            reason=self._redirect_reason(came_from, final_url,
                                                         landed.reason))
 

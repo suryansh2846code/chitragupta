@@ -142,6 +142,13 @@ PAGE = b"""<!doctype html><html><head><title>Payslips</title></head><body>
 ELSEWHERE = b"""<!doctype html><html><head><title>Sign in</title></head><body>
 <h1>Sign in to continue</h1></body></html>"""
 
+#: A page that is perfectly readable and whose `load` event never arrives.
+#: The shape of every real web app on a slow connection, reduced to one image.
+STALLS = (b'<!doctype html><html><head><title>Your chats</title></head><body>'
+          b'<h1>Your chats</h1><p>Two unread.</p>'
+          b'<img src="https://payroll.example.com/hangs">'
+          b'</body></html>')
+
 EXPIRED = (b'<!doctype html><html><head><title>Redirecting</title>'
            b'<meta http-equiv="refresh" '
            b'content="0;url=https://login.example.test/signin">'
@@ -179,6 +186,14 @@ def browser_context(tmp_path_factory):
 
     def handle(route):
         url = route.request.url
+        if url.rstrip("/").endswith("/hangs"):
+            # Never fulfilled, never aborted. This is the subresource that an
+            # app pulls in and a cold cache is slow to produce — the thing
+            # `load` waits for and `ARRIVED` does not.
+            return
+        if url.rstrip("/").endswith("/stalls"):
+            route.fulfill(status=200, content_type="text/html", body=STALLS)
+            return
         if "login.example.test" in url:
             route.fulfill(status=200, content_type="text/html", body=ELSEWHERE)
         elif url.rstrip("/").endswith("/expired"):
@@ -209,10 +224,12 @@ class _RealDriver:
         return read_page(self._page)
 
     def goto(self, url):
-        from chitragupta.browser.driver import settle
-        self._page.goto(url, wait_until="load")
+        from chitragupta.browser.driver import ARRIVED, settle
+        self._page.goto(url, wait_until=ARRIVED)
         # The same call production makes, on purpose: a test driver that settles
-        # differently proves something the app does not do.
+        # differently proves something the app does not do. `ARRIVED` rather
+        # than a repeated `"load"` for that reason — the constant is where the
+        # decision lives, so this cannot drift away from it.
         settle(self._page)
         return self._read()
 
@@ -220,8 +237,8 @@ class _RealDriver:
         return self._read()
 
     def back(self):
-        from chitragupta.browser.driver import settle
-        self._page.go_back(wait_until="load")
+        from chitragupta.browser.driver import ARRIVED, settle
+        self._page.go_back(wait_until=ARRIVED)
         settle(self._page)
         return self._read()
 
@@ -497,3 +514,85 @@ def test_a_start_failure_does_not_outlive_the_thing_that_caused_it():
 
     assert len(attempts) == 2
     assert driver._start_error == ""
+
+
+# ── a page whose `load` never comes ──────────────────────────────────────
+#
+# Reported from a real session: an agent asked to open WhatsApp Web, and the
+# user was told *"The browser itself failed to start — not a sign-in or
+# permission issue on your end."* The browser had started. It was still running
+# the next day. What had happened is that `goto` was gated on `load`, `load`
+# waits for every subresource a messaging app pulls in, and a cold cache took
+# that past `TIMEOUT_MS` — so a slow page became a browser that would not start,
+# and the agent had been told not to retry.
+#
+# Measured on the real site before the change: `domcontentloaded` 0.8s cold,
+# `load` 5.7s cold on a fast link and over twenty on the connection that
+# reported this.
+def test_a_page_whose_subresource_never_finishes_is_still_read(live):
+    """The user-visible property, against a real browser. Nothing about this
+    page is broken — it has a heading, text and a title — and waiting for
+    `load` is the only reason it could not be read."""
+    origins.grant("payroll.example.com")
+
+    reading = live.open("https://payroll.example.com/stalls")
+
+    assert reading.ok is True, reading.reason
+    assert "Your chats" in reading.text
+    assert "Two unread." in reading.text
+
+
+def test_a_navigation_does_not_wait_for_every_subresource():
+    """The shape, pinned where the decision is made rather than at one call
+    site. `_do` is what production runs; a test driver agreeing with it proves
+    only that two files were edited together."""
+    from chitragupta.browser import driver as drivermod
+
+    assert drivermod.ARRIVED == "domcontentloaded"
+
+    seen = {}
+
+    class _Page:
+        url = "https://payroll.example.com/stalls"
+
+        def goto(self, url, wait_until=None):
+            seen["wait_until"] = wait_until
+
+        def go_back(self, wait_until=None):
+            seen["wait_until"] = wait_until
+
+        def wait_for_load_state(self, *_a, **_k):
+            raise RuntimeError("never idle, the way a live app never is")
+
+        def title(self):
+            return "Your chats"
+
+        def aria_snapshot(self):
+            return '- heading "Your chats"'
+
+    made = drivermod.PlaywrightDriver(None, "/nowhere")
+    for command in ("goto", "back"):
+        seen.clear()
+        made._do(_Page(), drivermod._Command(
+            command, ("https://payroll.example.com/stalls",), None))
+        assert seen["wait_until"] == "domcontentloaded", command
+
+
+def test_a_wedged_browser_thread_is_a_timeout_not_an_empty_message():
+    """`queue.Empty` has no message and is not a `BrowserError`, so it used to
+    walk past `browse_tools._browser_errors` to the catch-all — which hands the
+    model "Tool browse_open failed:" and nothing after the colon."""
+    from chitragupta.browser import driver as drivermod
+
+    made = drivermod.PlaywrightDriver(None, "/nowhere")
+    made._ensure_started = lambda: None               # no browser to start
+    made._thread = object()                           # and none to wait on
+    budget = drivermod.TIMEOUT_MS, drivermod.REPLY_GRACE_SECONDS
+    drivermod.TIMEOUT_MS, drivermod.REPLY_GRACE_SECONDS = 1, 0.01
+    try:
+        with pytest.raises(drivermod.BrowserError) as raised:
+            made._call("goto", "https://payroll.example.com/")
+    finally:
+        drivermod.TIMEOUT_MS, drivermod.REPLY_GRACE_SECONDS = budget
+
+    assert "timeout" in str(raised.value).lower()

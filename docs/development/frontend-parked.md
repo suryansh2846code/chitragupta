@@ -123,3 +123,4 @@ and `#5fd0e0` are still in the file.
   substitution.
 - The digest never refreshes — if enrichment finishes seconds after handover,
   the cards keep the state they were built with.
+

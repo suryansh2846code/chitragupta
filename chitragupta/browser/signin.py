@@ -35,7 +35,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from ..log import get_logger, suppressed
-from . import origins
+from . import origins, trouble
 
 log = get_logger(__name__)
 
@@ -192,16 +192,38 @@ def begin(url: str) -> dict[str, Any]:
             # Borrowed, not started. One browser holds the profile, and a
             # second one is refused by Chromium — see `chromium.shared_driver`.
             driver = chromium.shared_driver()
-        except chromium.BrowserNotReadyError as exc:
-            return {"ok": False, "error": str(exc)}
+        except Exception as exc:
+            # Every failure, not only `BrowserNotReadyError`: a locked profile
+            # raises here too, and it used to escape this function entirely.
+            found = trouble.classify(exc)
+            chromium.recover_from(found)
+            return {"ok": False, "error": found.for_person}
 
         _state.session = driver
         _state.current = Connecting(host=host, url=origin)
 
     # Outside the lock: navigating can take a while, and holding the lock
     # across it would make `status()` hang for whoever is polling it.
-    with suppressed("opening a site for the user to sign in to"):
+    #
+    # **Not `suppressed`, which is what this was.** A navigation that failed
+    # left the card saying *"A browser window is open at {host}. Sign in there,
+    # then come back and press Done"* over a window showing nothing — and
+    # `_state.current` still set, so the next attempt was refused with "already
+    # signing in to…". The user was told to do something impossible and then
+    # blocked from trying again. `/CLAUDE.md`: a close button that silently
+    # leaves work running is a lie, and so is a card that reports a window it
+    # could not open.
+    try:
         driver.goto(origin)
+    except Exception as exc:
+        found = trouble.classify(exc)
+        log.warning("browser sign-in could not open %s (%s)",
+                    host, found.trouble.value)
+        # Put the state back before answering. Leaving it set is what turned one
+        # failed navigation into a sign-in nobody could start again.
+        _clear(close_browser=False)
+        chromium.recover_from(found)
+        return {"ok": False, "error": found.for_person}
 
     log.info("browser sign-in started for %s", host)
     return {"ok": True, "host": host, "url": origin,

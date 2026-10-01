@@ -324,7 +324,21 @@ def test_acting_on_a_site_granted_only_for_reading_is_refused():
 
     assert out.ok is False
     assert driver.acted == [], "it touched the page before checking"
-    assert "approval" in out.reason.lower()
+
+
+def test_a_refused_change_names_the_permission_that_would_allow_it():
+    """It used to say "needs your approval" and carry `grantable=None` — a
+    sentence pointing at an approval card removed a release earlier, and no site
+    for anything above to offer. So the one thing a user had to do to make this
+    work was named nowhere, which reads as the feature not existing."""
+    session, _ = _open()
+
+    out = session.act("type", _ref_for(session, "Message"), "I'm home")
+
+    assert out.ok is False
+    assert out.grantable == "https://payroll.example.com"
+    assert out.needs == origins.CHANGE
+    assert "approval" not in out.reason.lower()
 
 
 def test_acting_is_allowed_once_the_user_turns_it_on_for_that_site():
