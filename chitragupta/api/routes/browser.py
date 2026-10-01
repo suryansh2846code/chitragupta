@@ -23,7 +23,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from ...browser import chromium, origins, signin
+from ...browser import chromium, origins, signin, trouble
 from ...browser.driver import VIEWPORT
 from ...log import get_logger, suppressed
 from ..concurrency import probes_a_provider
@@ -245,6 +245,33 @@ def set_hidden(body: HiddenIn):
     return {"ok": True, "hidden": chromium.set_hidden(bool(body.hidden))}
 
 
+def _trouble(exc: BaseException, status: int = 502) -> HTTPException:
+    """One browser failure, said to a person, with the handle put right.
+
+    **The route used to answer this question three different ways**, and all
+    three handed Playwright's own paragraphs to somebody who did not build the
+    app: `raise HTTPException(502, str(exc)[:160])` is how a user came to read
+    *"Page.goto: Timeout 20000ms exceeded. Call log: - navigating to…"* on the
+    Browser screen. `/CLAUDE.md` names that first — never surface an internal —
+    and a 502 body is as user-facing as anything gets.
+
+    It also never recovered. `browse_tools` learned to drop the dead handle when
+    a browser had been closed; this side did not, so the screen stayed broken
+    for the life of the app. That is why recovery is part of this and not
+    something a caller remembers to do.
+
+    `browser.trouble` decides which failure it is; the sentence is the one the
+    panel and the agent are both derived from, so neither can drift.
+    """
+    found = trouble.classify(exc)
+    log.warning("browser trouble on the view (%s): %s",
+                found.trouble.value, str(exc)[:200])
+    chromium.recover_from(found)
+    if found.trouble is trouble.Trouble.NOT_SET_UP:
+        status = 409
+    return HTTPException(status, found.for_person)
+
+
 def _view_driver():
     """The shared browser, or a sentence saying why there is not one."""
     if not chromium.can_drive() or not chromium.is_installed():
@@ -253,8 +280,11 @@ def _view_driver():
                  "“Set up browsing”.")
     try:
         return chromium.shared_driver()
-    except chromium.BrowserNotReadyError as exc:
-        raise HTTPException(409, str(exc)) from None
+    except Exception as exc:
+        # Every failure, not only `BrowserNotReadyError`. Launching is exactly
+        # where a locked profile shows up, and that used to escape as a 500 with
+        # a traceback behind it.
+        raise _trouble(exc, 409) from None
 
 
 @router.get("/api/browser/view")
@@ -272,8 +302,7 @@ def browser_view(quality: int = 55):
     try:
         image, url, title = driver.frame(quality)
     except Exception as exc:
-        log.warning("browser view unavailable: %s", str(exc)[:200])
-        raise HTTPException(503, "The browser is not answering right now.") from None
+        raise _trouble(exc, 503) from None
     return {"image": base64.b64encode(image).decode("ascii"),
             "url": url, "title": title,
             "width": VIEWPORT["width"], "height": VIEWPORT["height"]}
@@ -287,7 +316,7 @@ def browser_input(body: PointIn):
     try:
         driver.point(body.kind, body.x, body.y, body.text)
     except Exception as exc:
-        raise HTTPException(400, str(exc)[:160]) from None
+        raise _trouble(exc) from None
     return {"ok": True}
 
 
@@ -308,7 +337,7 @@ def browser_goto(body: SiteIn):
     try:
         driver.goto(url)
     except Exception as exc:
-        raise HTTPException(502, str(exc)[:160]) from None
+        raise _trouble(exc) from None
     return {"ok": True, "url": url}
 
 

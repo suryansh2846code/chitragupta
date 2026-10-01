@@ -145,3 +145,115 @@ def test_no_agent_tool_can_reach_these_routes():
     assert "api/browser" not in text
     assert "origins.grant" not in text
     assert "origins.revoke" not in text
+
+
+# ── the browser screen's own failures ────────────────────────────────────
+#
+# This side was the loophole. `browse_tools` was given careful wording for a
+# browser that would not start, had been closed, or was slow — and the routes
+# next to it still ended with `raise HTTPException(502, str(exc)[:160])`. So a
+# user who typed an address into the in-app browser and hit a slow site read
+# *"Page.goto: Timeout 20000ms exceeded. Call log: - navigating to…"*, which is
+# an internal in a 502 body, which is as user-facing as anything gets.
+#
+# It never recovered either: `browse_tools` learned to drop the dead handle
+# after a browser was closed, and the route did not, so the screen stayed broken
+# for the life of the app.
+class _Wedged:
+    """A driver whose browser answers nothing, the way a dead one does."""
+
+    def __init__(self, message):
+        self.message = message
+
+    def _boom(self, *_a, **_k):
+        from chitragupta.browser.trouble import BrowserError
+        raise BrowserError(self.message)
+
+    goto = frame = point = current = _boom
+
+    def close(self):
+        pass
+
+
+GONE = "Target page, context or browser has been closed"
+SLOW = 'Page.goto: Timeout 20000ms exceeded.\nCall log:\n  - navigating to "x"'
+
+
+@pytest.fixture
+def wedged(monkeypatch):
+    """The shared browser, replaced by one that only fails."""
+    from chitragupta.browser import chromium
+
+    def install(message):
+        driver = _Wedged(message)
+        monkeypatch.setattr(chromium, "shared_driver", lambda: driver)
+        monkeypatch.setattr(chromium, "can_drive", lambda: True)
+        monkeypatch.setattr(chromium, "is_installed", lambda: True)
+        return driver
+    return install
+
+
+@pytest.mark.parametrize("message", [SLOW, GONE])
+@pytest.mark.parametrize("call", [
+    lambda c: c.post("/api/browser/view/goto", json={"url": "https://x.test/"}),
+    lambda c: c.get("/api/browser/view"),
+    lambda c: c.post("/api/browser/view/input", json={"kind": "click",
+                                                      "x": 1, "y": 1}),
+])
+def test_playwrights_own_words_never_reach_the_browser_screen(
+        client, wedged, message, call):
+    """All three routes, because all three had their own `str(exc)` and the
+    reported fix only ever reached one module."""
+    wedged(message)
+
+    body = call(client).json().get("detail", "")
+
+    for leak in ("Page.goto", "Call log", "20000ms", "Target page",
+                 "Playwright", "context or browser"):
+        assert leak not in body, f"{leak!r} reached the user"
+
+
+def test_a_slow_page_is_not_reported_to_the_user_as_a_dead_browser(
+        client, wedged):
+    """The reported sentence, on the other side of the app."""
+    wedged(SLOW)
+
+    body = client.post("/api/browser/view/goto",
+                       json={"url": "https://x.test/"}).json()["detail"].lower()
+
+    assert "failed to start" not in body
+    assert "could not be started" not in body
+    assert "again" in body
+
+
+def test_a_closed_browser_drops_the_handle_so_the_next_try_can_work(
+        client, wedged, monkeypatch):
+    """The recovery `browse_tools` had and this side did not. A driver's thread
+    outlives its browser, so `_ensure_started` finds it alive and never
+    relaunches — without dropping it, "try again" is advice that cannot work."""
+    from chitragupta.browser import chromium
+
+    dropped = []
+    monkeypatch.setattr(chromium, "reset_shared",
+                        lambda **k: dropped.append(True))
+    wedged(GONE)
+
+    client.post("/api/browser/view/goto", json={"url": "https://x.test/"})
+
+    assert dropped, "a closed browser left its dead handle in place"
+
+
+def test_a_slow_page_does_not_throw_the_browser_away(client, wedged, monkeypatch):
+    """The other half of the same decision. The browser is alive and whatever
+    page was open still is; dropping it would turn a slow navigation into a lost
+    session for nothing."""
+    from chitragupta.browser import chromium
+
+    dropped = []
+    monkeypatch.setattr(chromium, "reset_shared",
+                        lambda **k: dropped.append(True))
+    wedged(SLOW)
+
+    client.post("/api/browser/view/goto", json={"url": "https://x.test/"})
+
+    assert not dropped

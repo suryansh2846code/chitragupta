@@ -2,12 +2,15 @@
 agent change.
 
 The set splits in two, and the split is the design. **Looking** — `browse_open`,
-`browse_read`, `browse_find`, `browse_wait`, `browse_sites` — is free on any
-allowed site. **Changing** — `browse_click`, `browse_type`, `browse_submit` — is
+`browse_read`, `browse_find`, `browse_wait`, `browse_reveal`, `browse_back`,
+`browse_sites` — is free on any allowed site. **Changing** — `browse_click`,
+`browse_type`, `browse_submit`, `browse_select`, `browse_press` — is
 off until the user turns it on for that host, and is refused outright when
 nobody is watching (`permissions.NEVER_UNATTENDED_TOOLS`): a routine reads text a
 stranger wrote, and that is the one caller that must never click inside somebody's
-logged-in accounts.
+logged-in accounts. Which side a verb falls on is `driver.CHANGING_ACTS` and is
+never restated here — `_gate_for` reads it, so a new act is gated the moment it
+exists rather than when somebody remembers.
 
 **Changing has one exception, and it is money.** A per-site decision can mean
 "fill a basket here"; it cannot mean "and buy whatever you decide, at whatever
@@ -40,6 +43,7 @@ import time
 
 from ..browser import live, origins
 from ..browser.session import Reading, Session
+from ..browser.trouble import Trouble
 from ..log import get_logger
 from .results import ToolResult
 
@@ -78,133 +82,159 @@ def _answer(reading: Reading) -> ToolResult:
     A refusal is a `ToolResult.failed`, so the loop knows to try something else
     rather than reissuing the same call — `results.py` exists because guessing
     that from the text got all three real failures wrong.
+
+    **Including the loading hint, which only `browse_read` used to carry.** This
+    function's first line claims to be the one place, and it was not: the hint
+    was written on the read and never on the *open*, which is the more likely of
+    the two to land on a loading screen — it is the first look at a page the
+    browser has only just arrived at. Opening WhatsApp Web returns *"Your
+    messages are downloading"* and nothing else for several seconds, and an
+    agent handed that with no hint reports the site as empty. `browse_read`
+    keeps its own call because it appends a page-version too; the rule itself
+    lives in `_unready_hint` and only ever has.
     """
     if reading.ok:
         _remember(reading)
-        return ToolResult(reading.text, truncated=reading.truncated)
+        return ToolResult(reading.text + _unready_hint(reading),
+                          truncated=reading.truncated)
 
     if reading.grantable:
         # Named so the agent can report it and the user can act on it. The agent
         # cannot grant it — that is a decision only a person makes, and a tool
         # that could widen its own access would make the allow-list decorative.
+        #
+        # **Which permission, not just which site.** This said "if they want you
+        # to read it" for every refusal, including the one where reading was
+        # already allowed and only changing was not — so an agent asked to send
+        # a message told the user to turn on a setting that was already on.
+        site = reading.grantable.split("://")[-1]
+        wanted = ("read it" if reading.needs == origins.READ
+                  else "change things on it")
         return ToolResult.failed(
-            f"{reading.reason} Tell the user they can allow "
-            f"{reading.grantable} in Settings if they want you to read it. Do "
-            "not try other addresses for the same thing.")
+            f"{reading.reason} Tell the user they can turn that on for {site} "
+            f"on the Browser screen if they want you to {wanted}. You cannot "
+            "turn it on yourself. Do not try other addresses for the same "
+            "thing.")
     return ToolResult.failed(reading.reason)
 
 
-#: What an agent is told when the browser itself will not start.
-#:
-#: The one failure this module had no words for, and the module docstring says
-#: wording is the thing it owns. A `BrowserError` used to travel all the way to
-#: the model as whatever Playwright wrote — *"Failed to create a ProcessSingleton
-#: for your profile directory"* — which is an internal, so the model paraphrased
-#: it into "the browser session closed unexpectedly" and offered to try again.
-#: It then failed identically, because nothing about retrying closes the other
-#: window that is holding the profile.
-#:
-#: So: say which of the two it is, and say the thing that actually clears it.
-#: Every browser we open takes an *exclusive* lock on the profile, so a second
-#: one cannot start while the first is alive.
-BROWSER_BUSY = (
-    "Another browser window opened by this app is still using the browser "
-    "profile, so a new page cannot be opened. Tell the user to close the extra "
-    "browser window — the one left over from connecting a site — and that "
-    "reading will work again straight away. Do not retry this call: retrying "
-    "cannot close that window, and it will fail the same way."
-)
-BROWSER_UNAVAILABLE = (
-    "The browser could not be started, so no page can be read right now. Tell "
-    "the user, and say it is the browser rather than their sign-in or their "
-    "permission. Do not retry this call more than once."
-)
+# ── what an agent is told when the browser itself will not cooperate ─────
+#
+# **The wording is here; the verdict is not.** `browser/trouble.py` decides
+# which failure a browser handed back, because that question had four answers
+# living in four modules and three of them were wrong about at least one case.
+# What stays here is the *phrasing for a model*, which is genuinely different
+# from the phrasing for a person: an agent needs to be told whether to retry and
+# what to say to the user, and a person reading a panel needs neither.
+#
+# Selecting both tables on the same `Trouble` is the point. A failure nobody has
+# words for cannot reach only one of them.
+#
+# Each entry was bought. A `BrowserError` used to travel to the model as
+# whatever Playwright wrote — *"Failed to create a ProcessSingleton for your
+# profile directory"* — so the model paraphrased it into "the browser session
+# closed unexpectedly" and offered to try again, which failed identically
+# because nothing about retrying closes the other window.
+FOR_AGENT: dict[Trouble, str] = {
+    #: Every browser we open takes an *exclusive* lock on the profile, so a
+    #: second cannot start while the first is alive. Retrying cannot close it.
+    Trouble.BUSY: (
+        "Another browser window opened by this app is still using the browser "
+        "profile, so a new page cannot be opened. Tell the user to close the "
+        "extra browser window — the one left over from connecting a site — and "
+        "that reading will work again straight away. Do not retry this call: "
+        "retrying cannot close that window, and it will fail the same way."),
 
-#: The **recoverable** one, and the reason it needs its own words.
-#:
-#: "Target page, context or browser has been closed" is not a browser that will
-#: not start. It is a browser that was alive and is not any more — and the usual
-#: cause is us: connecting a site opens a browser and closes it again when the
-#: user presses Done, and while the profile is shared that ends whatever page an
-#: agent had open. Chromium hands a second launch on the same profile to the
-#: first process ("Opening in existing browser session"), so the two are one
-#: browser and closing either closes both.
-#:
-#: Reported as "the browser could not be started, do not retry", it was the
-#: exact inversion of the truth: this is the one failure retrying *does* fix,
-#: and the agent was told the one thing that stopped it fixing itself.
-BROWSER_CLOSED = (
-    "The browser window that had this page open was closed — connecting a site "
-    "opens and closes one, which ends any page already open. Nothing is wrong "
-    "with the sign-in, the site or the permission. Call this again once and a "
-    "fresh browser will start; only tell the user if the second attempt fails "
-    "too."
-)
+    #: The **recoverable** one. "Target page, context or browser has been
+    #: closed" is not a browser that will not start; it is one that was alive
+    #: and is not any more, and the usual cause is us — connecting a site opens
+    #: a browser and closes it on Done, which ends any page an agent had open.
+    #: Reported as "could not be started, do not retry" it was the exact
+    #: inversion of the truth: this is the one failure retrying *does* fix.
+    Trouble.CLOSED: (
+        "The browser window that had this page open was closed — connecting a "
+        "site opens and closes one, which ends any page already open. Nothing "
+        "is wrong with the sign-in, the site or the permission. Call this again "
+        "once and a fresh browser will start; only tell the user if the second "
+        "attempt fails too."),
 
-#: Playwright's name for "another Chromium already holds this profile". Matched
-#: as a fragment because the rest of that message is a path and a paragraph of
-#: advice aimed at whoever wrote the code, not at this user.
-_PROFILE_LOCKED = "processsingleton"
+    #: The one the fall-through used to lie about. A navigation that ran out of
+    #: time is not a browser that would not start — it was running, and still
+    #: was the next day — and the user was told *"the browser itself failed to
+    #: start"* and the agent was told not to retry. **Open it again**, not
+    #: `browse_wait`: a navigation that raised never reached `Session._land`, so
+    #: there is no snapshot and `browse_read` would answer "No page is open yet."
+    Trouble.SLOW: (
+        "That page did not finish loading in time. The browser is running and "
+        "nothing is wrong with the sign-in, the site or the permission — the "
+        "page was just slow, which a big web app often is the first time it is "
+        "opened. Open the same address again: it is usually quick the second "
+        "time. Only tell the user if that attempt fails too, and say the site "
+        "was slow rather than blaming the browser."),
 
-#: How Playwright says "the thing you were driving is gone". Matched on the
-#: phrase rather than an exception type because it arrives as a plain message
-#: from the browser thread, already turned into a `BrowserError` by `_call`.
-_CLOSED = ("has been closed", "target closed", "target page, context or browser")
+    #: One browser means one window, and while a sign-in is live there is a
+    #: person typing a password into it. A wait, not a refusal.
+    Trouble.SIGNING_IN: (
+        "The user is signing in to a site in the browser window right now, so "
+        "it cannot be used for anything else until they finish. Do not retry "
+        "in this turn — tell them you will read it once they are done."),
+
+    #: Deliberately vague, because it is the case we have no name for. It must
+    #: not claim to know which component failed — that claim is what produced
+    #: the reported bug.
+    Trouble.UNKNOWN: (
+        "The browser could not do that, and the reason is not one this app "
+        "recognises. Tell the user plainly, without blaming their sign-in or "
+        "their settings. Try once more at most."),
+}
 
 
 def _browser_failed(exc: Exception) -> ToolResult:
-    """Turn a browser that will not start into something an agent can act on.
+    """Turn a browser failure into something an agent can act on.
+
+    Three steps, and only the middle one is this module's: `trouble.classify`
+    names the failure, `chromium.recover_from` puts right whatever it left
+    broken, and `FOR_AGENT` says it in words written for a model.
 
     Never the exception's own text. `/CLAUDE.md`: no stack traces and no
     internals in anything user-facing, and a tool result is user-facing by the
-    time a model has repeated it back to somebody.
-
-    `BrowserNotReadyError` is the exception, and it is one on purpose: its
-    message is already written for a person — "choose Set up browsing" — so it
-    is passed through rather than replaced by something vaguer.
+    time a model has repeated it back to somebody. `NOT_SET_UP` is the one
+    exception and it is a deliberate one — its message is already written for a
+    person ("choose Set up browsing"), so replacing it would lose the single
+    instruction that works.
     """
-    from ..browser.chromium import BrowserNotReadyError
+    from ..browser import chromium, trouble
 
     if isinstance(exc, _SigningInError):
         # Not logged as a browser problem, because it is not one — somebody is
         # using the window for exactly what it is for.
-        return ToolResult.failed(SIGN_IN_IN_PROGRESS)
-    log.warning("browser unavailable for an agent: %s", str(exc)[:200])
-    detail = str(exc).lower()
-    if isinstance(exc, BrowserNotReadyError):
-        return ToolResult.failed(f"{exc} Tell the user that, and do not retry.")
-    if any(phrase in detail for phrase in _CLOSED):
-        # **Dropped, not kept — and dropped in both places.** A driver's thread
-        # outlives its browser, so `_ensure_started` sees it alive and returns
-        # without relaunching: a stale handle is one that looks healthy and
-        # answers nothing. Clearing the session alone is not enough, because the
-        # next one would be handed the same dead driver from `shared_driver()`.
-        # Clearing both is what makes "call this again once" true.
-        from ..browser import chromium
+        return ToolResult.failed(FOR_AGENT[Trouble.SIGNING_IN])
 
+    found = trouble.classify(exc)
+    log.warning("browser trouble for an agent (%s): %s",
+                found.trouble.value, str(exc)[:200])
+    # **Before the wording, not after.** A driver's thread outlives its browser,
+    # so `_ensure_started` sees it alive and never relaunches: telling an agent
+    # to "call this again" without dropping the dead handle first is advice that
+    # cannot work. `chromium` owns the shared browser so it owns this; the
+    # session is ours, so that half is here.
+    if found.stale:
         set_session(None)
-        chromium.reset_shared()
-        return ToolResult.failed(BROWSER_CLOSED)
-    if _PROFILE_LOCKED in detail or "already in use" in detail:
-        return ToolResult.failed(BROWSER_BUSY)
-    return ToolResult.failed(BROWSER_UNAVAILABLE)
-
-
-#: Said when the user is part-way through connecting a site.
-#:
-#: One browser for the whole app means one window, and while a sign-in is live
-#: that window has a person typing a password into it. Navigating it out from
-#: under them would lose the sign-in and look like the app fighting them. This
-#: is a wait, not a refusal, and it ends when they press Done or Cancel.
-SIGN_IN_IN_PROGRESS = (
-    "The user is signing in to a site in the browser window right now, so it "
-    "cannot be used for anything else until they finish. Do not retry in this "
-    "turn — tell them you will read it once they are done."
-)
+        chromium.recover_from(found)
+    if found.trouble is Trouble.NOT_SET_UP:
+        return ToolResult.failed(
+            f"{found.for_person} Tell the user that, and do not retry.")
+    return ToolResult.failed(FOR_AGENT[found.trouble])
 
 
 class _SigningInError(RuntimeError):
-    """Not a browser failure: the browser is busy being used by a person."""
+    """Not a browser failure: the browser is busy being used by a person.
+
+    One browser for the whole app means one window, and while a sign-in is live
+    that window has somebody typing a password into it. Navigating it out from
+    under them would lose the sign-in and look like the app fighting them. A
+    wait, not a refusal, and it ends at Done or Cancel.
+    """
 
 
 def _refuse_while_signing_in() -> None:
@@ -212,7 +242,7 @@ def _refuse_while_signing_in() -> None:
     from ..browser import signin
 
     if signin.status().get("connecting"):
-        raise _SigningInError(SIGN_IN_IN_PROGRESS)
+        raise _SigningInError(FOR_AGENT[Trouble.SIGNING_IN])
 
 
 def browser_trouble(exc: Exception) -> str:
@@ -227,9 +257,13 @@ def browser_trouble(exc: Exception) -> str:
 
 
 def _browser_errors() -> tuple:
-    """The two ways asking for a browser can raise, as one `except` clause."""
-    from ..browser.chromium import BrowserNotReadyError
-    from ..browser.driver import BrowserError
+    """Every way asking for a browser can raise, as one `except` clause.
+
+    Both exception types come from `browser.trouble` now — they moved down with
+    the vocabulary, so that the module which has to *recognise* a browser
+    failure does not have to import a driver to do it.
+    """
+    from ..browser.trouble import BrowserError, BrowserNotReadyError
 
     return (BrowserError, BrowserNotReadyError, _SigningInError)
 
@@ -560,6 +594,69 @@ def browse_submit(ref: str = "", label: str = "") -> ToolResult:
     return _change("submit", ref=ref, label=label)
 
 
+def browse_select(option: str, ref: str = "", label: str = "") -> ToolResult:
+    """Choose an option in a dropdown on the page that is open.
+
+    The form control an agent could not touch at all, which made every page
+    built around one — a date, a country, a category — a page it could read and
+    then stall on.
+    """
+    if not str(option or "").strip():
+        return ToolResult.failed("There is no option named to choose.")
+    return _change("select", ref=ref, label=label, text=option)
+
+
+def browse_press(key: str, ref: str = "", label: str = "") -> ToolResult:
+    """Send one named key to an element — Escape, Tab, an arrow.
+
+    Bounded by `driver.NAMED_KEYS` rather than taking whatever string arrives: a
+    free-text key is a keyboard-shaped way around everything else here, because
+    a modifier chord reaches the browser's own menus.
+    """
+    return _change("press", ref=ref, label=label, text=key)
+
+
+def browse_reveal(ref: str = "", label: str = "") -> ToolResult:
+    """Scroll one element into view, so a long list draws more of itself.
+
+    **A read, not a change**, and gated as one — see `driver.CHANGING_ACTS`. A
+    chat list, a mail list and a feed each render roughly a screenful, so
+    without this an agent could see thirty rows and genuinely not reach the
+    thirty-first: it would report the thing as absent, which to a user whose
+    chat is plainly there reads as the app being broken.
+    """
+    return _change("reveal", ref=ref, label=label)
+
+
+def browse_back() -> ToolResult:
+    """Go back one page, and read where that landed.
+
+    `Session.back` has existed since the package did and nothing could call it,
+    so an agent that followed a link into a dead end had to re-navigate from the
+    top — and on a site where the way back is a link rather than an address,
+    could not get back at all. The landing is checked exactly as it is for any
+    other navigation: going back is still arriving somewhere.
+    """
+    refused = _may_look()
+    if refused:
+        return refused
+    try:
+        _refuse_while_signing_in()
+        return _answer(get_session().back())
+    except _browser_errors() as exc:
+        return _browser_failed(exc)
+
+
+#: Which gate each page verb passes. Derived from `driver.CHANGING_ACTS` so that
+#: adding a verb cannot quietly add an ungated tool — the failure this has to be
+#: safe against is a new act arriving with nobody remembering the floor under
+#: it, and a frozen list repeated here is exactly how that happens.
+def _gate_for(kind: str):
+    from ..browser.driver import CHANGING_ACTS
+
+    return _may_change if kind in CHANGING_ACTS else _may_look
+
+
 def _may_spend(session: Session, kind: str, ref: str,
                label: str) -> ToolResult | None:
     """The gate that is about the BASKET rather than about the site.
@@ -575,11 +672,21 @@ def _may_spend(session: Session, kind: str, ref: str,
     so an agent (or something that wrote the page the agent just read) cannot
     talk its way past this by describing the order button as something else.
 
+    **Every changing verb, derived — never a list of the ones that looked
+    dangerous.** This started as `click` and `submit`, which was already wrong
+    by the time it landed beside `press`: *Enter* on a focused "Place your
+    order" is the same event as clicking it, and a gate naming verbs one at a
+    time is a gate with a hole in it the next verb wide. `CHANGING_ACTS` is what
+    `_gate_for` already derives from, so a new act is covered here the moment it
+    exists rather than when somebody remembers. `reveal` is outside it and stays
+    free: scrolling the order button into view is reading.
+
     Returns None to go ahead, which is the common answer — adding to a basket,
     opening a product, typing in a search box are all untouched.
     """
     from ..browser import page as pagemod
     from ..browser import purchase
+    from ..browser.driver import CHANGING_ACTS
 
     snap = session.snapshot
     if snap is None:
@@ -590,7 +697,7 @@ def _may_spend(session: Session, kind: str, ref: str,
 
     if kind == "type" and purchase.asks_for_a_secret(name):
         return ToolResult.failed(SECRETS_ARE_THE_USERS)
-    if kind in ("click", "submit"):
+    if kind in CHANGING_ACTS:
         text, _ = pagemod.render(snap)
         if purchase.commits_a_purchase(
                 name, at_checkout=purchase.is_payment_page(snap.url, text)):
@@ -602,7 +709,7 @@ def _may_spend(session: Session, kind: str, ref: str,
 
 def _change(kind: str, *, ref: str = "", label: str = "",
             text: str = "") -> ToolResult:
-    refused = _may_change()
+    refused = _gate_for(kind)()
     if refused is not None:
         return refused
     if kind == "type" and not str(text or "").strip():

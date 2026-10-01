@@ -334,6 +334,10 @@ TOOL_IMPLS = {
     "browse_click": browse_tools.browse_click,
     "browse_type": browse_tools.browse_type,
     "browse_submit": browse_tools.browse_submit,
+    "browse_select": browse_tools.browse_select,
+    "browse_press": browse_tools.browse_press,
+    "browse_reveal": browse_tools.browse_reveal,
+    "browse_back": browse_tools.browse_back,
     "browse_sites": browse_tools.browse_sites,
     "what_i_looked_at": browse_record.what_i_looked_at,
     "list_routines": automation_tools.list_routines,
@@ -895,6 +899,65 @@ TOOL_DEFS: dict[str, Tool] = {
                       "description": "Its name exactly as the page gave it"}},
             "required": ["ref"]},
     ),
+    "browse_select": Tool(
+        name="browse_select",
+        description=(
+            "Choose an option in a dropdown on the open page, by the option's "
+            "visible text. Only works on sites the user has allowed changes on, "
+            "and never when nobody is watching."
+        ),
+        parameters={"type": "object", "properties": {
+            "option": {"type": "string",
+                       "description": "The option's text, exactly as shown"},
+            "ref": {"type": "string",
+                    "description": "The reference from your last read, e.g. e7"},
+            "label": {"type": "string",
+                      "description": "Its name exactly as the page gave it"}},
+            "required": ["option", "ref"]},
+    ),
+    "browse_press": Tool(
+        name="browse_press",
+        description=(
+            "Send one key to something on the open page — Escape to close a "
+            "dialog, Tab to move on, ArrowDown to walk a list of suggestions. "
+            "Only works on sites the user has allowed changes on, and never "
+            "when nobody is watching."
+        ),
+        parameters={"type": "object", "properties": {
+            "key": {"type": "string",
+                    "description": ("One of: Enter, Escape, Tab, Backspace, "
+                                    "Delete, ArrowUp, ArrowDown, ArrowLeft, "
+                                    "ArrowRight, Home, End, PageUp, PageDown")},
+            "ref": {"type": "string",
+                    "description": "The reference from your last read, e.g. e7"},
+            "label": {"type": "string",
+                      "description": "Its name exactly as the page gave it"}},
+            "required": ["key", "ref"]},
+    ),
+    "browse_reveal": Tool(
+        name="browse_reveal",
+        description=(
+            "Scroll something on the open page into view so the site draws more "
+            "around it. Use it when a list looks cut off — chats, messages, "
+            "search results — by revealing the last row you can see, then "
+            "reading again. This only looks; it needs no permission beyond "
+            "reading the site."
+        ),
+        parameters={"type": "object", "properties": {
+            "ref": {"type": "string",
+                    "description": "The reference from your last read, e.g. e7"},
+            "label": {"type": "string",
+                      "description": "Its name exactly as the page gave it"}},
+            "required": ["ref"]},
+    ),
+    "browse_back": Tool(
+        name="browse_back",
+        description=(
+            "Go back one page in the browser and read where that landed. Use it "
+            "after following a link that was a dead end."
+        ),
+        parameters={"type": "object", "properties": {}},
+    ),
     "browse_wait": Tool(
         name="browse_wait",
         description=(
@@ -902,8 +965,10 @@ TOOL_DEFS: dict[str, Tool] = {
             "the moment a page looks half-loaded — a spinner, 'loading', "
             "'downloading', an empty list — instead of reporting it as empty "
             "or asking the user to wait and tell you to try again. Say what "
-            "you are waiting to SEE in `until`; with nothing named it waits "
-            "for the page to change, which is what you want after clicking."
+            "you are waiting to SEE in `until` — a name, a heading, a button. "
+            "With nothing named it waits for any further change, which is "
+            "rarely what you want after clicking: clicking already tells you "
+            "whether the page moved, so read it instead."
         ),
         parameters={"type": "object", "properties": {
             "until": {"type": "string",

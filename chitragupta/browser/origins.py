@@ -275,6 +275,13 @@ def matching_grant(url: str) -> Grant | None:
     return best
 
 
+#: The two capabilities a grant can carry, named so that a refusal can say which
+#: one it wanted. Strings rather than an enum because they cross into JSON for
+#: the UI and into a tool result for a model, and both read them as words.
+READ = "read"
+CHANGE = "change"
+
+
 @dataclass(frozen=True)
 class Verdict:
     """Whether a URL may be reached, and what to tell the user if not."""
@@ -284,10 +291,19 @@ class Verdict:
     #: offer that exact site rather than asking the user to type it.
     grantable: str | None = None
     reason: str = ""
+    #: **Which capability that grant would have to carry.** `grantable` alone
+    #: was not enough and quietly produced the worst kind of dead end: acting on
+    #: an allowed site refused with *"Changing anything on {host} needs your
+    #: approval"*, `grantable` left at `None`, and an approval card that had
+    #: been removed a release earlier. So the agent had no route to a fix, the
+    #: UI had no site to offer, and the sentence told the user to wait for a tap
+    #: that was never coming. A refusal that a grant would fix must name the
+    #: grant; naming only the site is how it came to name the wrong one.
+    needs: str = READ
 
     def as_dict(self) -> dict:
         return {"allowed": self.allowed, "grantable": self.grantable,
-                "reason": self.reason}
+                "reason": self.reason, "needs": self.needs}
 
 
 def may_read(url: str) -> Verdict:
@@ -316,6 +332,7 @@ def may_read(url: str) -> Verdict:
     return Verdict(True)
 
 
+
 def may_act(url: str) -> Verdict:
     """May an agent *change* something at this URL?
 
@@ -329,10 +346,30 @@ def may_act(url: str) -> Verdict:
     """
     read = may_read(url)
     if not read.allowed:
-        return read
+        # **Re-stamped as the capability that was asked for.** Returning the
+        # read verdict verbatim loses the question: the caller wanted to
+        # *change* something, and a refusal offering a read-only grant is a
+        # one-press control that takes two presses — allow the site, then
+        # discover changing is still off. The site and the sentence are the read
+        # check's, because an address nobody allowed is refused for the same
+        # reason either way; only `needs` differs, and it is the half that tells
+        # the layers above which switch to offer.
+        if read.grantable is None:
+            return read
+        return Verdict(False, read.grantable, read.reason, needs=CHANGE)
     found = matching_grant(url)
     if found is None or not found.may_act:
         host = found.host if found else url
-        return Verdict(False, None,
-                       f"Changing anything on {host} needs your approval.")
+        # **Grantable, and named as the change it is.** This used to answer
+        # `Verdict(False, None, "...needs your approval")`, which was wrong
+        # twice over: there has been no approval card for a page change since
+        # consent moved to the origin, so the sentence pointed at a tap that
+        # never arrives; and `grantable=None` meant nothing above could offer
+        # the one control that does fix it. An agent asked to send a message got
+        # a refusal with no route out of it, which reads to a user as the
+        # feature not existing.
+        return Verdict(False, found.origin if found else normalise(url),
+                       f"{host} is allowed for reading, but changing anything "
+                       "on it is turned off.",
+                       needs=CHANGE)
     return Verdict(True)

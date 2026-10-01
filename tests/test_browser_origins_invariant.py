@@ -126,26 +126,64 @@ def test_anything_allowed_is_https(url):
         assert origins.normalise(url).startswith("https://")
 
 
+#: Both ways of asking, because the invariant below is about the *shape* of a
+#: refusal and not about reading. It was written for `may_read` alone, and
+#: `may_act` spent a release returning `grantable=None` with a sentence naming
+#: an approval card that had been removed — a dead end this parametrisation
+#: would have caught on the day it shipped.
+ASKERS = {"read": origins.may_read, "change": origins.may_act}
+
+
 @pytest.mark.parametrize("url", CANDIDATES)
-def test_a_refusal_never_offers_a_site_it_would_then_refuse(url):
+@pytest.mark.parametrize("capability", sorted(ASKERS))
+def test_a_refusal_never_offers_a_site_it_would_then_refuse(capability, url):
     """`grantable` drives a one-click "Allow this site" button.
 
     If granting the offered origin would not actually unblock the URL the agent
-    was trying to read, that button is a control that cannot work — the failure
+    was trying to use, that button is a control that cannot work — the failure
     `/CLAUDE.md` names first, and here it would also teach the user that the
     allow-list is unreliable.
+
+    The grant is made with exactly the capability the refusal asked for, which
+    is the other half: an offer that names the site but not the permission sends
+    the user to turn on something that is already on.
     """
-    verdict = origins.may_read(url)
+    ask = ASKERS[capability]
+    verdict = ask(url)
     if verdict.allowed or not verdict.grantable:
         return
 
-    origins.grant(verdict.grantable)
+    origins.grant(verdict.grantable,
+                  may_act=verdict.needs == origins.CHANGE)
     try:
-        assert origins.may_read(url).allowed, (
-            f"offered to allow {verdict.grantable!r} for {url!r}, "
-            "and it was still refused afterwards")
+        assert ask(url).allowed, (
+            f"offered to allow {verdict.grantable!r} ({verdict.needs}) for "
+            f"{url!r}, and it was still refused afterwards")
     finally:
         origins.revoke(verdict.grantable)
+
+
+@pytest.mark.parametrize("url", CANDIDATES)
+@pytest.mark.parametrize("capability", sorted(ASKERS))
+def test_a_refusal_a_grant_would_fix_always_names_the_grant(capability, url):
+    """The dead end, stated as a rule rather than as one case.
+
+    A refusal carrying no `grantable` is saying "nothing you can do changes
+    this", and that has to be true: a bad address is genuinely ungrantable, a
+    site merely not on the list is not. Anything that a grant *would* fix has to
+    name both the site and the capability, or the layers above have nothing to
+    offer and word it by guessing.
+    """
+    verdict = ASKERS[capability](url)
+    if verdict.allowed:
+        return
+    if verdict.grantable is None:
+        # Then granting must genuinely be powerless here. The only such case is
+        # an address we would never accept in the first place.
+        with pytest.raises(origins.BadOriginError):
+            origins.normalise(url)
+        return
+    assert verdict.needs in (origins.READ, origins.CHANGE), verdict
 
 
 @pytest.mark.parametrize("url", CANDIDATES)

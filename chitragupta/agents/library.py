@@ -60,12 +60,25 @@ _BROWSE = ["browse_sites", "browse_open", "browse_read", "browse_find",
            # Waiting, so a half-loaded page is something an agent can
            # sit through rather than hand back to the user.
            "browse_wait",
+           # Getting around a site rather than only at it. `browse_back` is
+           # how an agent leaves a dead end on a site whose way back is a link
+           # rather than an address; `browse_reveal` is how it reaches row
+           # thirty-one of a list that draws thirty. Both only look, so both
+           # are gated as reads — asking a user to allow *changes* before an
+           # agent may scroll would be asking them about something other than
+           # what happens.
+           "browse_back", "browse_reveal",
            # Changing a page, gated twice: the user turns acting on for that
            # site, and `permissions.NEVER_UNATTENDED_TOOLS` keeps them out of
            # any run nobody is watching. Offered to every agent for the same
            # reason the read tools are — one that cannot see them tells the
            # user it cannot do something it can.
+           #
+           # `select` and `press` are here because a page is not only buttons
+           # and boxes: a form with a dropdown, or a dialog that closes on
+           # Escape, used to be a page an agent could read and then stall on.
            "browse_click", "browse_type", "browse_submit",
+           "browse_select", "browse_press",
            # A read is not an action, so nothing logged it and the work
            # simply vanished. This is where it is read back.
            "what_i_looked_at"]

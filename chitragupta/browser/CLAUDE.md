@@ -14,6 +14,7 @@ holds.
 | `signin.py` | connecting a site once, and what a lapsed session looks like |
 | `driver.py` | a real Chromium: ARIA snapshots, parsed, on a thread of its own |
 | `purchase.py` | **what on a page spends money, and what asks for a secret** |
+| `trouble.py` | **what a browser failure is called, and what to say about it** |
 | `live.py` | the one browser the app is driving — a leaf, so the tool half and the action half can both reach it |
 
 - **The unit of consent is the origin**, granted per capability. A browser has no
@@ -70,10 +71,41 @@ holds.
 - **Disconnect ends the session, not just the permission.** `forget_site()`
   clears that host's cookies; a grant dropped while the user stays signed in is
   a lie about what the button did.
+- **A refusal a grant would fix names the grant — the site *and* the
+  capability.** `Verdict.grantable` alone produced the worst dead end in the
+  package: acting on a readable site refused with *"Changing anything on {host}
+  needs your approval"*, `grantable=None`, and an approval card that had been
+  removed a release earlier. So the agent had no route out, nothing above had a
+  site to offer, and the sentence told the user to wait for a tap that was never
+  coming. `Verdict.needs` is `READ` or `CHANGE`, it survives `may_act`
+  delegating to `may_read` (or the offer is a one-press control that takes two
+  presses), and `tests/test_browser_origins_invariant.py` runs the "granting
+  what was offered actually unblocks it" check over **both** capabilities —
+  which is what caught the delegation losing it.
+- **What a verb is allowed to do is decided by `driver.ACTS`, and nothing
+  restates it.** It is a dispatch table, not an `if` chain and not a tuple of
+  names: adding a verb used to mean editing the list of what is allowed, the
+  code that did it, the tool, the unattended floor and a test, and the first two
+  could silently disagree. `CHANGING_ACTS` is the split that everything above
+  derives from — `Session.act` picks which origin check to run from it, and
+  `permissions.NEVER_UNATTENDED_TOOLS` is *generated* from it rather than typed
+  out three files away. A new act is therefore gated the moment it exists, which
+  is the direction this has to fail in.
+- **`reveal` is a read, and that is deliberate.** Scrolling an element into view
+  sends nothing and presses nothing; the only state it changes is a list
+  deciding to draw more of itself, which is reading. Gating it as a write would
+  mean a user had to allow *changes* before an agent could read past the first
+  screenful — and the thing they were agreeing to would not be the thing they
+  were being asked about. Without it an agent sees thirty rows of a hundred and
+  reports the thirty-first as absent.
+- **`press` takes a key off `NAMED_KEYS` and never a free string.** A string
+  Chromium interprets is a keyboard-shaped way around everything else here:
+  `Control+V` is a paste and a modifier chord reaches the browser's own menus.
+  The list is the keys that navigate and dismiss, and nothing on it composes.
 - **Acting is one decision per site, not one per keystroke.** `origins.may_act`
   is off until the user turns it on for that host, and that press *is* the
-  consent — after it, `browse_click` / `browse_type` / `browse_submit` run
-  without asking again. They shipped as approval-card actions and it was
+  consent — after it, every changing verb (`browse_click`, `browse_type`,
+  `browse_submit`, `browse_select`, `browse_press`) runs without asking again. They shipped as approval-card actions and it was
   unusable: one WhatsApp reply is find → click the chat → type → send, so a
   person said yes four times for one sentence, and `/CLAUDE.md` already knows
   what that costs — *"a tap nobody reads by the fourth time is not consent."*
@@ -156,28 +188,59 @@ holds.
   it to `signin.PARKED` so it is not left on somebody's feed. Closing is the
   app's decision — teardown, or the user deleting the profile — never a caller's,
   because one caller finishing must not end everybody else's page.
+- **A sign-in that could not open its window says so, and lets go.**
+  `signin.begin` navigated under `suppressed`, so a failure left the card
+  reading *"A browser window is open at {host}… press Done"* over nothing, and
+  `_state.current` still set — which refused the retry as "already signing in".
+  The user was told to do something impossible and then stopped from trying
+  again.
 - **One browser is one window, and a person may be in it.** While a sign-in is
-  live, `browse_tools` refuses agent reads with `SIGN_IN_IN_PROGRESS` rather
-  than navigating the window somebody is typing a password into. It is a wait,
+  live, `browse_tools` refuses agent reads with `FOR_AGENT[Trouble.SIGNING_IN]`
+  rather than navigating the window somebody is typing a password into. It is a wait,
   not a refusal, and it ends at Done or Cancel.
-- **"Closed" and "would not start" are different failures with opposite
-  advice.** A locked profile cannot be fixed by retrying; a browser that *was*
-  alive and has been closed is fixed by nothing else. And we are the usual cause
-  of the second — connecting a site opens a browser and closes it on Done, and
-  Chromium hands a second launch on the same profile to the first process
-  ("Opening in existing browser session"), so the two are one browser and
-  closing either closes both. Reporting that as "could not be started, do not
-  retry" told the agent the one thing that stopped it healing. `browse_tools`
-  also **drops the cached session** there: a driver's thread outlives its
-  browser, `_ensure_started` finds it alive and never relaunches, so without
-  that the session stays broken for the life of the app.
-- **A browser that will not start is explained, never dumped.** Playwright's
-  *"Failed to create a ProcessSingleton for your profile directory"* used to
-  travel through `tools.run_tool`'s catch-all straight to the model, which
-  turned it into "the browser session closed unexpectedly" and offered to try
-  again — twice, identically. `browse_tools.BROWSER_BUSY` names the extra window
-  and says not to retry. A tool result is user-facing by the time a model has
-  repeated it back.
+- **A browser failure is named in exactly one place: `trouble.py`.** That
+  question used to have four answers — `browse_tools` had a string-matching
+  table and wording for a model, `api/routes/browser` had three
+  `raise HTTPException(..., str(exc))`, `signin.begin` swallowed it under
+  `suppressed` and then reported success, and the Browser screen's stale-handle
+  case had nothing at all. Three of the four were wrong about at least one
+  failure, and the cost was measured: a navigation that timed out was reported
+  to a user as *"the browser itself failed to start"* when the browser was
+  running and stayed running for another day. Fixing that in `browse_tools` left
+  the HTTP route still printing *"Page.goto: Timeout 20000ms exceeded. Call
+  log…"* for the identical failure, because the rule lived in two places and
+  only one of them got edited.
+  `classify()` returns a `Diagnosis`: which `Trouble` it is, whether the cached
+  handle is **stale**, and whether retrying **could** work. Those are facts
+  about the browser and do not vary by audience. Only the wording does —
+  `trouble.for_person` for a human, `browse_tools.FOR_AGENT` for a model — and
+  both select on the same `Trouble`, so a failure nobody has words for cannot
+  reach only one of them.
+  **It is a leaf and must stay one.** `tests/test_import_layering.py` freezes
+  the `browser` cycle at `{chromium, session, signin}`; `trouble` imports
+  nothing from this package, which is why `BrowserError` and
+  `BrowserNotReadyError` live there now and `driver`/`chromium` re-export them.
+  Recovery is **not** there: dropping the shared browser is `chromium`'s,
+  because `chromium` owns it — `chromium.recover_from(diagnosis)`.
+- **"Closed" and "would not start" and "slow" are three failures with three
+  different answers**, and collapsing any two inverts the advice. A locked
+  profile cannot be fixed by retrying. A browser that *was* alive is fixed by
+  nothing else — and its dead handle must be dropped first, because a driver's
+  thread outlives its browser and `_ensure_started` finds it alive and never
+  relaunches. A slow page is neither: the browser is fine, the session is fine,
+  and throwing either away would lose an agent its refs for nothing.
+  We are the usual cause of the middle one: connecting a site opens a browser
+  and closes it on Done, and Chromium hands a second launch on the same profile
+  to the first process ("Opening in existing browser session"), so the two are
+  one browser and closing either closes both.
+- **A navigation arrives at `driver.ARRIVED`, never at `load`.** `load` waits
+  for every avatar, font and thumbnail an app pulls in. Measured on WhatsApp Web
+  with a signed-in profile: `domcontentloaded` 0.8s cold, `load` 5.7s cold on a
+  fast link and past `TIMEOUT_MS` on a real user's. Nothing downstream wanted
+  `load` — `settle` guards the redirect, `_land` re-checks the origin on every
+  read, and "the app has not drawn itself yet" belongs to
+  `browse_tools._unready_hint` and `browse_wait`, which were unreachable while
+  the navigation itself was failing.
 - **The browser's own window is minimised, and the app shows the page.** The
   picture is polled as JPEG frames by `web/webscreen.js` through
   `/api/browser/view`, and clicks and keys go back through `/view/input` —

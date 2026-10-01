@@ -24,6 +24,7 @@ from chitragupta import actions
 from chitragupta.action_phrasing import describe
 from chitragupta.agents import browse_tools, library, permissions, prompt, tools
 from chitragupta.browser import live, origins, purchase
+from chitragupta.browser.driver import CHANGING_ACTS
 from chitragupta.browser.page import Node
 from chitragupta.browser.session import Session
 
@@ -179,13 +180,67 @@ def test_the_gate_reads_the_page_not_the_agents_word_for_the_control(shop):
 
 
 def test_submitting_a_form_cannot_route_around_the_click_gate(shop):
-    """Three tools change a page and only one of them was clicking. A gate on
-    `browse_click` alone is a gate with two doors beside it."""
+    """Several tools change a page and only one of them was clicking. A gate on
+    `browse_click` alone is a gate with doors beside it."""
     out = browse_tools.browse_submit(ref=_ref("Place your order"),
                                      label="Place your order")
 
     assert out.ok is False
     assert shop.acted == []
+
+
+def test_pressing_a_key_on_the_order_button_is_refused_too(shop):
+    """`browse_press` arrived after this gate did, which is exactly the case it
+    has to survive: *Enter* on a focused "Place your order" is the same event as
+    clicking it, and a gate that named `click` and `submit` by hand would have
+    gained a hole the moment a verb was added."""
+    out = browse_tools.browse_press("Enter", ref=_ref("Place your order"),
+                                    label="Place your order")
+
+    assert out.ok is False
+    assert shop.acted == []
+
+
+#: Every changing verb, driven rather than named. A first version of the test
+#: below read `_may_spend`'s source for the string "CHANGING_ACTS" and passed
+#: while `press` was walking straight through the gate — the import line
+#: mentioned it. Driving each verb is the only version that can see the hole.
+def _drive(kind: str, ref: str, label: str):
+    if kind == "type":
+        return browse_tools.browse_type("x", ref=ref, label=label)
+    if kind == "select":
+        return browse_tools.browse_select("x", ref=ref, label=label)
+    if kind == "press":
+        return browse_tools.browse_press("Enter", ref=ref, label=label)
+    if kind == "submit":
+        return browse_tools.browse_submit(ref=ref, label=label)
+    return browse_tools.browse_click(ref=ref, label=label)
+
+
+@pytest.mark.parametrize("kind", sorted(CHANGING_ACTS))
+def test_every_verb_that_changes_a_page_passes_the_purchase_gate(kind, shop):
+    """The shape, driven against the table the verbs are declared in.
+
+    `driver.CHANGING_ACTS` is what `_gate_for` already derives the unattended
+    floor from, and this gate reads the same set — so a verb added tomorrow is
+    covered the day it exists rather than the day somebody remembers. This test
+    goes red for a new verb that nobody taught `_drive`, which is the right
+    way round: the reminder arrives with the verb.
+    """
+    out = _drive(kind, _ref("Place your order"), "Place your order")
+
+    assert out.ok is False, f"{kind} reached the order button"
+    assert shop.acted == []
+
+
+def test_scrolling_the_order_button_into_view_is_still_free(shop):
+    """`reveal` is a read: it sends nothing and presses nothing. An agent that
+    could not scroll to the thing it is about to tell the user about would
+    report a basket it cannot see."""
+    out = browse_tools.browse_reveal(ref=_ref("Place your order"),
+                                     label="Place your order")
+
+    assert out.ok is True
 
 
 # ── secrets the agent must never hold ───────────────────────────────────────
