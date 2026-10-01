@@ -287,6 +287,14 @@ even when every test is green. Reasoning and measurements:
   readable site refused with *"needs your approval"*, no site offered, pointing
   at an approval card deleted a release earlier. The capability survives
   `may_act` delegating to `may_read`, or the one-press control takes two.
+- **A failure that an agent can act on beats one it has to discover.** A click
+  blocked by a modal used to arrive as a bare timeout and get the *navigation*
+  advice — "open the same address again" — which brings the modal back; the
+  reason Playwright gave was truncated away at 300 characters when it began at
+  495. Now: the reason survives (`driver.summarise`), a blocked click is its
+  own `Trouble`, a dialog is named on the read before anything fails, and a
+  dialog has a ref so Escape has a target. Under all of it, a tool that fails
+  the same way twice says so and tells the agent to stop.
 - **`driver.ACTS` is the one list of what may be done to a page, and
   `CHANGING_ACTS` the one split between looking and changing.**
   `permissions.NEVER_UNATTENDED_TOOLS` is *derived* from it rather than retyped,
@@ -448,9 +456,9 @@ In order: **the focused test → the subsystem's suite → `pytest` →
 `ruff check chitragupta tests` → `mypy chitragupta` → the `tests/js/` harnesses if
 the frontend changed → `chitragupta app` opens and renders.**
 
-Baseline, measured 2026-10-01: **5619 passed, 32 skipped**, ruff clean, mypy
+Baseline, measured 2026-10-01: **5636 passed, 32 skipped**, ruff clean, mypy
 clean over 218 files. With `PLAYWRIGHT_BROWSERS_PATH` pointed at the managed
-browser the same run is **5631 passed, 20 skipped in ~7min15** — the twelve are
+browser the same run is **5648 passed, 20 skipped in ~7min10** — the twelve are
 `tests/test_browser_driver.py`'s real-Chromium tests, which skip when there is
 no browser to find. Worth setting: they are the only tests that drive a real
 page, and one of them is the regression for a navigation that used to hang.

@@ -210,3 +210,118 @@ def test_the_agent_wording_agrees_with_the_verdict_about_retrying():
             continue
         assert refuses is not trouble.classify(Exception(sample)).may_retry, (
             f"{name.value}: the words and the verdict disagree about retrying")
+
+
+# ── a modal, and the loop it used to cause ───────────────────────────────
+#
+# From a real transcript, trying to send one WhatsApp message:
+#
+#   "I'll try opening WhatsApp Web again to send the message."
+#   "Closing the open calls dialog first, then opening that chat."
+#   "Trying to click directly on the Tushar Bhaiya chat row instead."
+#   "The calls dialog is still blocking interaction."
+#   "I've tried multiple times… I don't want to keep retrying blindly."
+#   "Could you dismiss that calls popup on your end?"
+#
+# Three things made that inevitable. A blocked click arrived as a bare timeout,
+# so it was handed the *navigation* advice — "open the same address again" —
+# which is the one action guaranteed to bring the modal back. The reason
+# Playwright gave was thrown away before anything could read it: its message is
+# 520 characters, "intercepts pointer events" starts at 495, and the driver
+# truncated at 300. And a dialog had no ref, so the agent could see the thing
+# in its way and had no means of addressing it.
+BLOCKED_CLICK = ("Locator.click: Timeout 20000ms exceeded. — "
+                 "intercepts pointer events")
+HIDDEN_CONTROL = ("Locator.click: Timeout 20000ms exceeded. — "
+                  "element is not visible")
+
+
+def test_a_blocked_click_is_its_own_failure_not_a_slow_page():
+    assert trouble.classify(Exception(BLOCKED_CLICK)).trouble is Trouble.BLOCKED
+
+
+def test_an_element_that_never_became_usable_is_not_a_slow_page_either():
+    """The page arrived. This one control did not, and the address has nothing
+    to do with it."""
+    found = trouble.classify(Exception(HIDDEN_CONTROL))
+
+    assert found.trouble is Trouble.ELEMENT_UNUSABLE
+    assert found.may_retry is False
+
+
+def test_a_navigation_timeout_is_still_a_slow_page():
+    """The distinction has to cut both ways, or fixing the click breaks the
+    page."""
+    found = trouble.classify(Exception("Page.goto: Timeout 20000ms exceeded."))
+
+    assert found.trouble is Trouble.SLOW
+    assert found.may_retry is True
+
+
+@pytest.mark.parametrize("message", [BLOCKED_CLICK, HIDDEN_CONTROL])
+def test_nothing_that_failed_on_an_element_says_to_open_the_page_again(message):
+    """The sentence that caused the loop. Re-opening the page restores whatever
+    was covering it, so this advice cannot be right for either of these and was
+    being given for both."""
+    from chitragupta.agents.browse_tools import FOR_AGENT
+
+    said = FOR_AGENT[trouble.classify(Exception(message)).trouble].lower()
+
+    assert "open the same address again" not in said
+    assert "will not help" in said or "do not open the page again" in said
+
+
+def test_a_blocked_click_names_the_way_out():
+    """"Something is in the way" with no next step is how an agent ends up
+    asking the user to close a popup by hand."""
+    from chitragupta.agents.browse_tools import FOR_AGENT
+
+    said = FOR_AGENT[Trouble.BLOCKED].lower()
+
+    assert "escape" in said and "close" in said
+    assert "tell the user" in said      # and when to give up
+
+
+# ── the reason has to survive the trip off the browser thread ────────────
+def test_the_reason_a_click_failed_is_not_truncated_away():
+    """Measured, not assumed. `str(exc)[:300]` kept the retry log and dropped
+    the answer, so every blocked click reached `classify` as a generic
+    timeout."""
+    from chitragupta.browser.driver import summarise
+
+    raw = ("Locator.click: Timeout 20000ms exceeded.\nCall log:\n"
+           + "  - waiting for element to be visible, enabled and stable\n" * 8
+           + '  - <p>x</p> from <div role="dialog">…</div> subtree '
+             "intercepts pointer events")
+
+    assert len(raw) > 300
+    assert "intercepts pointer events" not in raw[:300], "premise changed"
+
+    short = summarise(Exception(raw))
+
+    assert "intercepts pointer events" in short
+    assert trouble.classify(Exception(short)).trouble is Trouble.BLOCKED
+
+
+def test_summarising_costs_less_than_truncating_did():
+    """It is also the cheaper option, which matters: this string is sent to a
+    model on every failure."""
+    from chitragupta.browser.driver import summarise
+
+    raw = ("Locator.click: Timeout 20000ms exceeded.\nCall log:\n"
+           + "  - waiting for element to be visible, enabled and stable\n" * 8
+           + "  - subtree intercepts pointer events")
+
+    assert len(summarise(Exception(raw))) < 150
+
+
+def test_a_failure_with_no_stated_reason_still_keeps_its_first_line():
+    """Most failures do not name one, and losing the API and the budget would
+    leave `classify` nothing at all to go on."""
+    from chitragupta.browser.driver import summarise
+
+    short = summarise(Exception("Page.goto: Timeout 20000ms exceeded.\nCall "
+                                "log:\n  - navigating to \"https://x.test/\""))
+
+    assert short.startswith("Page.goto: Timeout 20000ms exceeded.")
+    assert "navigating" not in short

@@ -439,7 +439,9 @@ class PlaywrightDriver:
             try:
                 command.reply.put((True, self._do(page, command)))
             except Exception as exc:
-                command.reply.put((False, str(exc)[:300]))
+                # Summarised, not truncated — see `summarise`. Cutting this at
+                # 300 characters removed the reason and kept the retry log.
+                command.reply.put((False, summarise(exc)))
 
     def _do(self, page: Any, command: _Command) -> Any:  # pragma: no cover
         if command.name == "goto":
@@ -639,6 +641,48 @@ def locate(page: Any, handle: str, kind: str, text: str = "") -> None:
     # more often than not — one visible, one in a hidden menu — and a strict
     # locator raises where a person would simply use the one on screen.
     doing(target.first, text)
+
+
+#: Phrases Playwright writes into a call log to say *why* something failed.
+#:
+#: These are the only part of that log worth keeping. The rest is a retry
+#: trace — "waiting for element to be visible, enabled and stable" four times
+#: over — which is both useless to a model and expensive to send it.
+_WHY = (
+    # Something is on top of it. Overwhelmingly a modal, and the reason this
+    # list exists: it is the single most actionable thing a page can tell us.
+    "intercepts pointer events",
+    "element is not visible",
+    "element is not enabled",
+    "element is not stable",
+    "element is outside of the viewport",
+    "not attached to the dom",
+    "element is not editable",
+)
+
+
+def summarise(exc: BaseException, limit: int = 200) -> str:
+    """A browser failure as one short line that still says why.
+
+    **`str(exc)[:300]` threw the answer away and kept the noise.** Measured on a
+    real blocked click: Playwright's message is 520 characters, the words
+    `intercepts pointer events` begin at character 495, and the first 300 are
+    its retry log. So the one fact that identifies the failure never reached
+    `trouble.classify`, every blocked click looked like a generic timeout, and
+    an agent told "open the same address again" did exactly that — which is the
+    loop this function exists to end.
+
+    Keeps the first line, which carries the API that failed and its budget, plus
+    the reason if Playwright named one. Around eighty characters instead of
+    three hundred, and the eighty are the useful ones.
+    """
+    text = str(exc)
+    head = text.split("\n", 1)[0].strip() or text.strip()
+    low = text.lower()
+    for phrase in _WHY:
+        if phrase in low:
+            return f"{head} — {phrase}"[:limit]
+    return head[:limit]
 
 
 def read_windows(context: Any) -> list[tuple[str, str]]:

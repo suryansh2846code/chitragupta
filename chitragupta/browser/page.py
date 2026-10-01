@@ -80,6 +80,16 @@ INTERACTIVE_ROLES = frozenset({
     # right about what we had shown it and wrong about the page.
     "listitem", "row", "gridcell", "cell", "treeitem", "article",
     "menuitemcheckbox", "menuitemradio",
+    # ── and the thing that stops every other one working ────────────────
+    #
+    # A modal is not a control, but it is the control you need when one is
+    # open: everything behind it is unclickable, and the way out is Escape
+    # *sent to it*. Without a ref there was nothing to send Escape to — an
+    # agent could see `dialog: View recent calls…`, correctly work out that it
+    # was in the way, and have no means of addressing it. It reported
+    # *"a dialog keeps blocking the page and won't close"* and handed the
+    # problem back.
+    "dialog", "alertdialog",
 })
 
 
