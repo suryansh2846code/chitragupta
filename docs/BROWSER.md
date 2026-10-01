@@ -277,6 +277,19 @@ current build cannot serve:
 * **LinkedIn** — read messages, connections and posts; drafts, never sends.
 * **Shopping** — builds a cart from what the user asked for and stops at the
   order button, which is a single, legible tap.
+
+  > **Built**, and the stopping is a gate rather than a habit. `browser/purchase.py`
+  > recognises the control that commits a purchase and `browse_click` refuses
+  > it; `place_order` is the way through — RED, never promotable, never
+  > unattended, with every item and the shop's own total on one card. Two
+  > things were learned writing it. **The second factor has to be narrow:**
+  > widening "commits at checkout" to include *Continue* and *Next* would have
+  > put a card on every step of a checkout, which is the tap-nobody-reads
+  > failure this project already has a rule about. And **the card has to be
+  > re-checked, not just approved:** a basket moves — a price changes, delivery
+  > lands, something goes out of stock — so the total is compared against the
+  > page at the moment Confirm is pressed, and a disagreement refuses the order
+  > rather than buying the new number.
 * **Statements** — logs into the portals the user granted and files payslips,
   invoices and bills into a folder they opened. Read-and-download only; it never
   needs the act permission at all.

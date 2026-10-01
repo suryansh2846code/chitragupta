@@ -197,6 +197,21 @@ browser_act (Phase 5)
 No grant promotes these. No routine may take them unattended — this is what
 `permissions.NEVER_UNATTENDED` becomes, with the reasoning it already has.
 
+> **`make_purchase` shipped as `place_order`, and stayed exactly here.** It is
+> the clearest case the tier test has: there is no key an allow-list could hold
+> that makes *"always allow buying things"* a sentence anybody should be
+> offered, and we cannot un-buy anything, so it carries no `undo` either.
+>
+> The interesting part is not the tier, it is **where the gate sits**. Acting on
+> a website is a per-site decision (`origins.may_act`), and once a shop is
+> allowed an agent can click anything on it — which includes the button that
+> charges a card. A tier on the action would have been decorative while the
+> tool could do the same thing unasked. So `browser/purchase.py` recognises the
+> commit control and `browse_click` refuses it: the action is not merely the
+> *preferred* route to an order, it is the only one. Filling the basket stays a
+> free click, because the alternative is a tap per item and that is the same
+> consent failure read from the other end.
+
 > The whole point: **AI that acts without becoming scary.** Green is where the
 > unattended value lives; red is where the fear lives; the design job is keeping
 > them from touching.

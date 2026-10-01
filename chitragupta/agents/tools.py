@@ -805,8 +805,10 @@ TOOL_DEFS: dict[str, Tool] = {
         description=(
             "Open a page on a website the user has allowed you to read, and get "
             "back what is on it. You can only reach sites on their list — call "
-            "browse_sites to see which. You can read and report; you cannot "
-            "click, type or buy anything."
+            "browse_sites to see which. On a site they have also allowed "
+            "changes on you can click and type too; the one control that is "
+            "refused is the one that places an order, which goes to the user "
+            "as a card instead."
         ),
         parameters={"type": "object", "properties": {
             "url": {"type": "string",
@@ -847,7 +849,11 @@ TOOL_DEFS: dict[str, Tool] = {
             "Click something on the open page — a button, a link, or a row such "
             "as a chat or a search result. Only works on sites the user has "
             "allowed changes on, and never when nobody is watching. Read the "
-            "page again afterwards: you will be told whether it changed."
+            "page again afterwards: you will be told whether it changed.\n"
+            "Adding things to a basket is an ordinary click and needs no "
+            "approval. The control that PLACES an order is refused here on "
+            "purpose — propose a place_order action instead, so the user "
+            "approves the basket and the total once."
         ),
         parameters={"type": "object", "properties": {
             "ref": {"type": "string",
@@ -862,7 +868,9 @@ TOOL_DEFS: dict[str, Tool] = {
             "Type into a box on the open page. Replaces whatever is in it. Only "
             "works on sites the user has allowed changes on, and never when "
             "nobody is watching. Most message boxes send with browse_submit "
-            "afterwards rather than a separate click."
+            "afterwards rather than a separate click.\n"
+            "Card numbers, PINs, passwords and one-time codes are refused — "
+            "those are the user's to type, and you must never ask for one."
         ),
         parameters={"type": "object", "properties": {
             "text": {"type": "string",

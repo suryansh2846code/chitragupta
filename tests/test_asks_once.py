@@ -197,17 +197,23 @@ def test_taking_it_back_makes_it_ask_again(
 
 # ── and what a grant must never be able to silence ───────────────────────
 def test_an_action_that_cannot_name_who_it_reaches_still_asks_every_time():
-    """`update_event`, `cancel_event`, `mail_triage`, `create_routine`.
+    """`update_event`, `cancel_event`, `mail_triage`, `create_routine`,
+    `place_order`.
 
     Not an oversight and not a gap to close later. The people a moved meeting
     reaches are on the existing event, not in the params — so there is no key
     for a user to read, and "always allow" would be a button that agreed to
     something nobody could show them.
 
+    `place_order` is here for the plainest version of the same test: the key an
+    allow-list would have to hold is *this basket at this total*, which exists
+    for exactly one order and is therefore not a standing grant at all. A shop
+    is not the key either — "always allow buying things on amazon.in" is the
+    sentence this tier exists so that nobody is ever offered.
     """
     unpromotable = {n for n, s in REGISTRY.items() if s.risk is Risk.RED}
-    assert unpromotable == {"update_event", "cancel_event",
-                            "mail_triage", "create_routine"}
+    assert unpromotable == {"update_event", "cancel_event", "mail_triage",
+                            "create_routine", "place_order"}
 
     for action_type in unpromotable:
         verdict = permissions.check(action_type, {})

@@ -58,6 +58,18 @@ def describe(action_type: str, params: dict) -> str:
             bits.append("change who is coming")
         what = ", ".join(bits) or "change it"
         return f"Meeting — {what} (everybody in it is told)"
+    if action_type == "place_order":
+        # The total is the decision. "Place an order" in the log a week later
+        # tells a person nothing about which one or what it cost, and this is a
+        # row somebody reads precisely when they are checking a bank statement
+        # against it.
+        basket = params.get("items") or []
+        count = sum(int(i.get("qty") or 1) for i in basket
+                    if isinstance(i, dict)) or len(basket)
+        where = str(params.get("site") or "").strip()
+        return (f"Order {count} item{'' if count == 1 else 's'}"
+                + (f" from {where}" if where else "")
+                + f" — {params.get('total') or 'an unknown total'}")
     if action_type == "cancel_event":
         return "Cancel a meeting — everybody in it is told"
     if action_type == "create_routine":

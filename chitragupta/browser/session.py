@@ -160,6 +160,25 @@ class Session:
                 return node
         return None
 
+    def control_name(self, ref: str, label: str = "") -> str:
+        """What the PAGE calls the element a tool is about to act on.
+
+        The one question a gate above this layer has to ask before pressing
+        something, and it has to be answered from the snapshot rather than from
+        whatever the caller said the control was. A model that names the button
+        decides what the button is, and *"click the Continue button"* over a
+        control reading **Place your order** is the one sentence an injected
+        page would most like to be believed about.
+
+        Resolved exactly as `act` resolves it, so the name returned is the name
+        of the element that would actually be pressed — a gate reading a
+        different element from the one that acts is a gate with a gap in it.
+        """
+        if self._snapshot is None:
+            return ""
+        node = self._resolve(ref, label)
+        return node.name if node is not None else ""
+
     def act(self, kind: str, ref: str, text: str = "", label: str = "") -> Reading:
         """Click, type into, or submit one element of the page that is open.
 

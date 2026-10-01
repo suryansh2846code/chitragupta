@@ -541,6 +541,14 @@ def parse_actions(text: str) -> list[dict]:
             if blocks is None:
                 continue
             a["params"]["blocks"] = blocks
+        elif t == "place_order":
+            # A basket does not fit in flat attributes — the same reason
+            # `mail_triage` and `log_workout` put theirs in the body, parsed by
+            # the same rules so a model does not have to learn a third shape.
+            basket = _items(inner)
+            if basket is None:
+                continue
+            a["params"]["items"] = basket
         elif t == "mail_triage":
             # A list of messages will not fit in flat attributes either, so the
             # body is JSON here too — `{"items": [...]}` or the bare list.
@@ -1764,6 +1772,128 @@ def _undo_drive_share(params: dict, result: dict) -> dict:
                         str(result.get("id") or ""))
 
 
+# ── ordering something ───────────────────────────────────────────────────
+#
+# **The one action whose card is a readback rather than a draft.**
+#
+# Every other action on this registry is something the agent composed: an email
+# it wrote, an event it proposed, a session it understood. The user corrects the
+# text and the handler sends what the card says. An order is the opposite — the
+# items, the prices and the total are the *shop's* numbers, read off a page, and
+# the only honest thing a card can do with them is show them. Correcting a total
+# here would change the card and not the charge, which is why none of these
+# fields is typeable (`NOT_TYPEABLE` in `web/chat.js`).
+#
+# What makes the card true at the moment it runs is the opposite check: the page
+# is re-read when Confirm is pressed, and the order is **refused** if the total
+# the user approved is no longer the total on the page. A basket moves
+# underneath a card — a price changes, delivery lands, something goes out of
+# stock — and buying the new number because the old one was approved is the
+# failure this whole action exists to prevent.
+
+
+def _place_order(params: dict) -> dict:
+    """Press the button that places an order, after the user has seen it.
+
+    Runs from here rather than from a tool for one reason: `browse_click`
+    refuses this control outright (`browser/purchase.py`), so the only way an
+    order is ever placed is through a card somebody tapped. The browser's own
+    gates all still apply underneath — `session.act` re-checks `origins.may_act`
+    on the address the browser is actually on, and the landing check runs after.
+    """
+    from .browser import live, purchase
+
+    items = params.get("items")
+    if not isinstance(items, list) or not items:
+        return {"ok": False, "error": "say what is being ordered"}
+    total = str(params.get("total") or "").strip()
+    if not total:
+        return {"ok": False, "error": "say what the order comes to"}
+    control = str(params.get("control") or "").strip()
+    if not control:
+        return {"ok": False, "error": "say which control places the order"}
+
+    session = live.current()
+    if session is None or session.snapshot is None:
+        # Never `live.get_session()`: starting a browser here would open a
+        # blank one and then fail to find a basket in it, minutes after the
+        # agent read a page that no longer exists.
+        return {"ok": False, "error": (
+            "The browser is no longer on the basket, so nothing was ordered. "
+            "Ask the agent to open it again.")}
+
+    reading = session.read()
+    if not reading.ok:
+        return {"ok": False, "error":
+                reading.reason or "The basket page could not be read again."}
+
+    if not purchase.page_still_says(total, reading.text):
+        # **The check that makes the card worth having.** Approving ₹2,480 is
+        # not approving whatever the page says by the time it is pressed.
+        return {"ok": False, "error": (
+            f"The page no longer shows {total}, so nothing was ordered — the "
+            "basket has changed since this was proposed. Ask the agent to read "
+            "it again and propose the order fresh.")}
+
+    done = session.act("click", str(params.get("ref") or ""), label=control)
+    if not done.ok:
+        return {"ok": False, "error": done.reason or "The order was not placed."}
+    return {"ok": True, "total": total, "count": len(items), "url": done.url,
+            "detail": f"Ordered {len(items)} item(s) — {total}"}
+
+
+#: What a shop says once it has the order. Deliberately short and deliberately
+#: not clever: a page that says none of these is a page we decline to *claim*
+#: succeeded, which is a different statement from reporting it as failed. The
+#: click happened either way; `verified` is the stronger thing we only say when
+#: the shop said it first.
+ORDER_CONFIRMED = (
+    "order placed", "order confirmed", "thank you for your order",
+    "thanks for your order", "your order has been placed", "order received",
+    "payment successful", "order number", "order id", "purchase complete",
+)
+
+
+def _verify_order(params: dict, result: dict) -> dict:
+    """Did the shop actually say it took the order?
+
+    Rung 5, and the action where "we clicked and nothing raised" is least worth
+    trusting: a checkout that declines a card answers with a page, not an error.
+    So the page is read back and checked for the shop saying so itself.
+    """
+    from datetime import UTC, datetime
+
+    from .browser import live
+
+    session = live.current()
+    if session is None:
+        return {}
+    reading = session.read()
+    if not reading.ok:
+        return {}
+    low = reading.text.lower()
+    if any(phrase in low for phrase in ORDER_CONFIRMED):
+        return {"verified": True, "at": datetime.now(UTC).isoformat()}
+    return {}
+
+
+def _remember_order(params: dict, result: dict) -> None:
+    """Into the brain, where every agent can see it.
+
+    Not into the ordering agent's conversation. *"Did I already order the oats"*
+    is asked of whichever agent is open, and an order recorded in one chat is an
+    order the next agent cheerfully places a second time.
+    """
+    names = [str((it or {}).get("name") or "").strip()
+             for it in (params.get("items") or []) if isinstance(it, dict)]
+    named = ", ".join(n for n in names if n)[:300]
+    where = str(params.get("site") or "").strip()
+    _record(f"Ordered {named or 'items'}"
+            + (f" from {where}" if where else "")
+            + f" for {params.get('total')}.",
+            title="An order was placed")
+
+
 def _truthy(value: object) -> bool:
     """A model writes `anyone="true"` in an XML attribute, not a bool."""
     if isinstance(value, bool):
@@ -2107,6 +2237,35 @@ REGISTRY: dict[str, ActionSpec] = {
         always_ask_when=_public_share_asks,
         verify=_verify_share,
         undo=_undo_drive_share, undo_label="Take access back",
+    ),
+
+    # ── spending the user's money ────────────────────────────────────────
+    #
+    # `docs/ACTION-COVERAGE.md` has listed `make_purchase` in red since it was
+    # written. This is it, and the tier is not a judgement call: we cannot take
+    # an order back, the amount is the whole of what is being agreed to, and
+    # there is no key an allow-list could hold that would make "always allow
+    # buying things" a sentence anybody should be offered.
+    "place_order": ActionSpec(
+        required=("items", "total", "control"),
+        # What survives a correction — and nothing on this card can be
+        # corrected, so the pair that names this order is the pair that names
+        # the basket it was read off.
+        identity=("total", "control"),
+        handler=_place_order, label="Place an order",
+        # No connector: this is a browser the user is signed in to, not an
+        # account we hold a token for. The capability floor has nothing to
+        # check, and the tier below is stricter than anything it would impose.
+        fields=["site", "items", "total", "control"],
+        risk=Risk.RED,
+        always_ask_because=(
+            "Spending your money always needs your approval — every time, and "
+            "there is no setting that changes it."),
+        verify=_verify_order,
+        remember=_remember_order,
+        # **No undo, and no button pretending otherwise.** A placed order is
+        # cancelled on the shop's terms, in the shop's own pages, and a button
+        # here that quietly did nothing would be the worst version of that.
     ),
 }
 

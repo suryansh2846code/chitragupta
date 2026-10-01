@@ -275,6 +275,18 @@ even when every test is green. Reasoning and measurements:
   then run without asking again. The floor is `NEVER_UNATTENDED_TOOLS` — no
   site setting lets an unwatched run touch a page — and a target must be on the
   snapshot the model was shown.
+- **Spending money is the one press that decision cannot contain.** "Yes, act
+  on this shop" is something a person can mean about a site; "yes, buy this
+  basket at this total" is not something anybody can mean in advance. So
+  `browser/purchase.py` recognises the control that places an order,
+  `browse_click` refuses it, and the order runs as `place_order` — RED, one
+  card carrying every item and the shop's own total, re-checked against the
+  page at the moment Confirm is pressed and **refused** when the basket has
+  moved. Filling a basket stays a free click, or an agent needs a tap per bag
+  of oats and nobody uses it twice. The gate reads the name the **page** gave
+  the control (`Session.control_name`), never the caller's word for it. Card
+  numbers, PINs, passwords and one-time codes are refused outright: we do not
+  hold one and must never ask for one.
 
 **Frontend — `web/`**
 - **Every agent has a face, and it is never blank.** `character.js` composes one
@@ -421,8 +433,8 @@ In order: **the focused test → the subsystem's suite → `pytest` →
 `ruff check chitragupta tests` → `mypy chitragupta` → the `tests/js/` harnesses if
 the frontend changed → `chitragupta app` opens and renders.**
 
-Baseline, measured 2026-09-30: **5455 passed, 32 skipped in ~7min05**, ruff
-clean, mypy clean over 217 files, coverage 82%. Locally the split differs — some
+Baseline, measured 2026-10-01: **5543 passed, 32 skipped in ~7min06**, ruff
+clean, mypy clean over 219 files. Locally the split differs — some
 tests skip when a provider is genuinely connected on the machine. Run tests when
 stuck or finishing, not after every edit. Details:
 [`tests/CLAUDE.md`](tests/CLAUDE.md).

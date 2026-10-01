@@ -9,6 +9,15 @@ nobody is watching (`permissions.NEVER_UNATTENDED_TOOLS`): a routine reads text 
 stranger wrote, and that is the one caller that must never click inside somebody's
 logged-in accounts.
 
+**Changing has one exception, and it is money.** A per-site decision can mean
+"fill a basket here"; it cannot mean "and buy whatever you decide, at whatever
+it comes to". So `_may_spend` refuses the control that commits a purchase —
+recognised by `browser/purchase.py` from the name the *page* gave it — and the
+order goes through the `place_order` action instead: one card, every item, the
+shop's own total, and a tap that is asked for every single time. The boxes that
+want a card number, a PIN, a password or a one-time code are refused in the same
+place and for a simpler reason: we do not hold one and must never ask for one.
+
 `browse_wait` is here because a page that is still loading is neither a failure
 nor a refusal, and an agent with no way to wait did the only thing left — it
 handed the waiting back to the user and asked to be told when to try again.
@@ -29,33 +38,24 @@ from __future__ import annotations
 
 import time
 
-from ..browser import origins
+from ..browser import live, origins
 from ..browser.session import Reading, Session
 from ..log import get_logger
 from .results import ToolResult
 
 log = get_logger(__name__)
 
-#: The live session, built on first use. One browser per app, not per agent: two
-#: agents driving two Chromiums against the same profile would fight over the
-#: cookie jar, and the profile is the thing that makes a site "signed in".
-_session: Session | None = None
-
-
-def get_session() -> Session:
-    """The shared browser session, started if it is not already running."""
-    global _session
-    if _session is None:
-        from ..browser.chromium import open_session
-
-        _session = open_session()
-    return _session
-
-
-def set_session(session: Session | None) -> None:
-    """Replace the shared session. For tests, and for a reset after a crash."""
-    global _session
-    _session = session
+#: The live session lives in `browser/live.py`, and these two are the names
+#: every caller and every test already reaches for.
+#:
+#: It moved **down**, not away. Placing an order runs from `actions.py` after
+#: the user presses Confirm, and `actions` → `agents` → `actions` is a cycle —
+#: `agents/permissions.py` reads the action registry at import time. A leaf both
+#: halves can read is the first of the three ways out `/CLAUDE.md` names; these
+#: delegations are what keep the move invisible to anything that was already
+#: holding this module.
+get_session = live.get_session
+set_session = live.set_session
 
 
 def _remember(reading: Reading) -> None:
@@ -480,6 +480,45 @@ NO_BROWSING = (
 )
 
 
+#: Said when the control about to be pressed is the one that charges the card.
+#:
+#: **Not a permission failure, and it must not read as one.** Allowing changes
+#: on a site is a real decision the user made and it still holds — this is the
+#: one thing inside it that is decided per basket rather than per site, because
+#: "yes, act on amazon.in" is not something anybody can mean about a total they
+#: have not seen. An agent told "you lack permission" here goes looking for a
+#: setting to ask for, and there is none; an agent told to read the basket and
+#: propose it does the thing that actually gets the order placed.
+#:
+#: Written to be true for every agent, including one with no `place_order` of
+#: its own: both ways out are named, so the agent that cannot propose says so
+#: instead of silently emitting a tag nothing will run.
+BUYING_WAITS_FOR_A_TAP = (
+    "That control places an order, so it is not something to press directly — "
+    "spending the user's money always waits for them, however the site is set "
+    "up. Nothing was clicked and the basket is untouched. Read the page, then "
+    "propose it as a `place_order` action carrying the items, the exact total "
+    "the page shows, and this control's name, so they get one card and one "
+    "tap. If you cannot propose that action, say the basket is ready and that "
+    "they press the button themselves — do not press it for them."
+)
+
+#: Said when the box about to be typed into wants a secret.
+#:
+#: Absolute, and not tied to acting on a site: the gate above decides whether
+#: an agent may type HERE, and this decides whether it may type THIS. We do not
+#: hold a card number or a one-time code, we must never ask for one, and an
+#: agent that filled a CVV box with a guess would be an agent failing a payment
+#: in a way the user finds out about from their bank.
+SECRETS_ARE_THE_USERS = (
+    "That box wants a card number, a PIN, a password or a one-time code. Those "
+    "are the user's to type and never yours — nothing was typed. If the "
+    "checkout needs one, say which box is waiting and let them fill it in; a "
+    "saved payment method is the only way you can get through one of these. "
+    "Never ask the user to tell you the number so you can type it."
+)
+
+
 def _may_look() -> ToolResult | None:
     """The one gate every page tool passes through — reading included.
 
@@ -521,6 +560,46 @@ def browse_submit(ref: str = "", label: str = "") -> ToolResult:
     return _change("submit", ref=ref, label=label)
 
 
+def _may_spend(session: Session, kind: str, ref: str,
+               label: str) -> ToolResult | None:
+    """The gate that is about the BASKET rather than about the site.
+
+    Every other check in `_may_change` answers *"may this agent act here"*, and
+    they all still run first. This one answers *"is this particular press the
+    one that spends money"*, which a per-site decision cannot contain: the user
+    allowed changes on a shop so an agent could fill a basket, and nobody means
+    "and buy whatever you decide" by that.
+
+    **The name comes off the snapshot, never off the call.** `session.control_name`
+    resolves the same element `act` would and returns the name the page gave it,
+    so an agent (or something that wrote the page the agent just read) cannot
+    talk its way past this by describing the order button as something else.
+
+    Returns None to go ahead, which is the common answer — adding to a basket,
+    opening a product, typing in a search box are all untouched.
+    """
+    from ..browser import page as pagemod
+    from ..browser import purchase
+
+    snap = session.snapshot
+    if snap is None:
+        return None                      # `act` will say there is no page open
+    name = session.control_name(ref, label)
+    if not name:
+        return None                      # not on the page; `act` says so better
+
+    if kind == "type" and purchase.asks_for_a_secret(name):
+        return ToolResult.failed(SECRETS_ARE_THE_USERS)
+    if kind in ("click", "submit"):
+        text, _ = pagemod.render(snap)
+        if purchase.commits_a_purchase(
+                name, at_checkout=purchase.is_payment_page(snap.url, text)):
+            log.info("refused a purchase control %r at %s — it needs a card",
+                     name[:80], snap.url)
+            return ToolResult.failed(BUYING_WAITS_FOR_A_TAP)
+    return None
+
+
 def _change(kind: str, *, ref: str = "", label: str = "",
             text: str = "") -> ToolResult:
     refused = _may_change()
@@ -532,6 +611,9 @@ def _change(kind: str, *, ref: str = "", label: str = "",
 
     try:
         session = get_session()
+        refused = _may_spend(session, kind, ref, label)
+        if refused is not None:
+            return refused
         was = pagemod.digest(session.snapshot) if session.snapshot else ""
         reading = session.act(kind, ref, text, label=label)
     except _browser_errors() as exc:

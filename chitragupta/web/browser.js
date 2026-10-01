@@ -154,8 +154,16 @@ function renderSiteShelf(grants) {
           + "press its buttons while you are here, without asking each time — "
           + "so approve it for a site you would be comfortable watching them "
           + "work in.\n\n"
-          + "Automations are never allowed to do this, whatever you set here. "
-          + "You can turn it back off at any time.")) return;
+          // **The exception has to be in the sentence that grants it.** On a
+          // shop this is the thing somebody is actually worried about, and a
+          // person who reads "press its buttons without asking each time" and
+          // is not told about the order button will either refuse a permission
+          // that is safe or accept one they have misread. Neither is consent.
+          + "Placing an order still comes to you as a card showing what is in "
+          + "the basket and what it costs — that one never runs on its own, "
+          + "and nothing here changes it.\n\n"
+          + "Automations are never allowed to do any of this, whatever you set "
+          + "here. You can turn it back off at any time.")) return;
       b.disabled = true;
       try {
         await api(`/api/browser/sites/${encodeURIComponent(host)}/acting`,

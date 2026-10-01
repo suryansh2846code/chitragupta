@@ -32,7 +32,12 @@ KNOWN_ACTIONS = ("create_draft", "send_email", "create_event", "update_event",
                  # absent: all three are reached through `mcp_action` against
                  # the vendor's own server, which is one route rather than
                  # two. See `docs/ACTION-COVERAGE.md`.
-                 "drive_create_doc", "drive_share")
+                 "drive_create_doc", "drive_share",
+                 # Buying something, which no agent could do at all: the write
+                 # tools could click, and `browse_click` refuses the one
+                 # control that charges a card. This is the way through, and
+                 # it is one card with the basket and the total on it.
+                 "place_order")
 
 #: Argument names listed per connector tool. Enough for a model to fill a call
 #: in correctly; few enough that twenty tools do not become the system prompt.
@@ -347,6 +352,23 @@ _BLOCKS: dict[str, str] = {
         "action per message. Use send_email for email; this is not that.\n"
         "For a time they named, add `at=\"6pm\"` and it waits until then - "
         "never send now and mention the time in the message instead."
+    ),
+    "place_order": (
+        "To ORDER something from a shop the user has allowed you to change:\n"
+        '<action type="place_order" site="shop.example" total="₹2,480" '
+        'control="Place your order" ref="e31">\n'
+        '{"items": [\n'
+        '  {"name": "Rolled oats 1kg", "qty": 1, "price": "₹249"},\n'
+        '  {"name": "Peanut butter 500g", "qty": 2, "price": "₹398"}\n'
+        "]}\n"
+        "</action>\n"
+        "`total` must be the total the PAGE shows, copied exactly — not one you "
+        "added up. `control` is the name of the button that places the order, "
+        "exactly as the page gave it, and `ref` is its ref from your last read. "
+        "Fill the basket first with `browse_click`; it will refuse the order "
+        "button itself, which is not a failure — it is this card's turn.\n"
+        "Never propose this from prices you remember or estimated. Open the "
+        "basket, read it, and propose what is on it."
     ),
     "mail_triage": (
         "To CHANGE emails — archive, label, mark read — propose ONE action "
@@ -720,6 +742,52 @@ def _attach_recipe(tools: list[str] | None, actions: list[str]) -> str:
     return _ATTACH_RECIPE
 
 
+#: How an order actually gets built, for an agent that can both browse and buy.
+#:
+#: The sequence is the whole content, and the absence of it is what the
+#: screenshot was: an agent with every tool it needed decided the capability did
+#: not exist, wrote the shopping list out as text, and asked the user to paste
+#: it into Amazon themselves. Having the tools is not knowing they compose.
+#:
+#: Step 6 is written as *expected* rather than as a failure on purpose. An agent
+#: that reads "refused" as "I cannot do this" reports the whole job as blocked,
+#: which is a worse outcome than not trying — the basket is already full.
+_ORDER_RECIPE = (
+    "ORDERING SOMETHING, step by step. Do not tell the user to order it "
+    "themselves, and do not paste a shopping list for them to retype — you can "
+    "do this, in this order:\n"
+    "1. `browse_sites`. If the shop is not on the list, say which one to add "
+    "and stop. You cannot add it yourself.\n"
+    "2. `browse_open` the shop, then search for the first item — "
+    "`browse_find` the search box, `browse_type` into it, `browse_submit`.\n"
+    "3. Read the results. Pick on what the page actually says — name, size, "
+    "price — and say which one you picked when you report back. `browse_click` "
+    "Add to cart. Adding to a basket needs no approval; that is the point.\n"
+    "4. Repeat for each item. If something is not there, leave it out and say "
+    "so rather than substituting silently.\n"
+    "5. Open the basket and READ it. The items and the total on that page are "
+    "the only numbers you may use.\n"
+    "6. `browse_find` the button that places the order, then propose "
+    "`place_order` with the items, the exact total, and that button's name. "
+    "Pressing it yourself is refused — the user taps once, on a card showing "
+    "what they are buying.\n"
+    "A refusal at step 6 is the system working. Say the basket is ready and "
+    "what it comes to; never report an order as placed before the card has run."
+)
+
+
+def _order_recipe(tools: list[str] | None, allowed: list[str]) -> str:
+    """Only for an agent that can both drive a page and propose an order.
+
+    Either half alone makes the recipe a lie: one that can browse and not buy
+    would be told to propose an action nothing will run, and one that can buy
+    with no browser has no basket to read a total off.
+    """
+    if "place_order" not in allowed or "browse_click" not in (tools or []):
+        return ""
+    return _ORDER_RECIPE
+
+
 def _calendar_recipe(tools: list[str] | None, actions: list[str]) -> str:
     """Only for an agent that can both see the calendar and change it."""
     if "calendar_lookup" not in set(tools or []):
@@ -1002,7 +1070,8 @@ def build(*, name: str, role: str, system_prompt: str,
                        _message_recipe(tools, allowed),
                        _followup_recipe(tools, allowed),
                        _calendar_recipe(tools, allowed),
-                       _attach_recipe(tools, allowed)):
+                       _attach_recipe(tools, allowed),
+                       _order_recipe(tools, allowed)):
             if recipe:
                 lines.append(recipe)
         parts.append("\n".join(lines))

@@ -13,6 +13,8 @@ holds.
 | `chromium.py` | the profile, the one-time download, cleaning up what we spawn |
 | `signin.py` | connecting a site once, and what a lapsed session looks like |
 | `driver.py` | a real Chromium: ARIA snapshots, parsed, on a thread of its own |
+| `purchase.py` | **what on a page spends money, and what asks for a secret** |
+| `live.py` | the one browser the app is driving — a leaf, so the tool half and the action half can both reach it |
 
 - **The unit of consent is the origin**, granted per capability. A browser has no
   recipient to check the way an email does, so `agents/permissions.py`'s
@@ -77,6 +79,28 @@ holds.
   what that costs — *"a tap nobody reads by the fourth time is not consent."*
   `docs/BROWSER.md` §5 had it right: an origin is promoted to "act freely",
   per site, having seen it work.
+- **Spending money is the one thing per-site consent cannot contain.**
+  `purchase.py` recognises the control that places an order and `browse_click`
+  refuses it; the order goes through the `place_order` action instead — RED, one
+  card, every time. "Yes, act on this shop" is a decision somebody can make
+  about a *site*; "yes, buy this basket at this total" is not a thing anybody
+  can mean in advance, and it is the one sentence a card has to show them.
+  Filling the basket stays free, deliberately: an agent that needs a tap per bag
+  of oats is an agent the user does the shopping for. Two factors decide —
+  the unmistakable verbs anywhere, the bare ones only on a page already showing
+  a total *and* a way to pay — and the navigation words are kept out of the
+  second list because three cards on the way to the checkout teach the fourth
+  one away.
+- **The gate reads the page's name for a control, never the caller's.**
+  `Session.control_name` resolves exactly what `act` would and returns the
+  accessible name off the snapshot. A model naming the order button "Continue"
+  is the shape an injection takes, and a gate that believed it would be
+  decorative.
+- **A card number, a PIN, a password or a one-time code is never typed by us.**
+  We do not hold one and must never ask for one — the user's saved payment
+  method is the only honest way through a checkout, and an agent that asks
+  somebody to paste a card number into a chat has taught them to do it
+  somewhere worse.
 - **They are tools, and the floor under them is `NEVER_UNATTENDED_TOOLS`.**
   That list is the tool-side twin of `permissions.NEVER_UNATTENDED`, which is
   derived from the action registry and has nowhere to name a tool. A routine

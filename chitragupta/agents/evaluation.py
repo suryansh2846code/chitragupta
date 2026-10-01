@@ -795,6 +795,32 @@ def run(*, include_slow: bool = True) -> Scorecard:
                     "AND uri LIKE 'https://scorecard.test/%'").fetchall():
                 _store.delete(_row[0])
 
+        # ── ordering something, which is two facts and not one ───────────
+        #
+        # The capability only works if BOTH halves are true at once, and each
+        # one alone is a different product. An agent that cannot fill a basket
+        # without asking is one the user does the shopping for; an agent that
+        # can press the order button is one that spends money nobody approved.
+        #
+        # Scored against `browser/purchase.py` rather than by driving a page,
+        # because the page is the easy half — what is worth pinning is that the
+        # line between the two is in one place and still falls where it did.
+        from ..actions import REGISTRY as _ACTIONS
+        from ..actions import Risk as _Risk
+        from ..browser import purchase as _purchase
+
+        check("a_basket_is_filled_without_asking",
+              "Adding to a basket is an ordinary click, not an approval")(
+            _purchase.commits_a_purchase("Add to cart") is False
+            and _purchase.commits_a_purchase("Proceed to checkout") is False,
+            "filling a basket now costs a tap per item")
+        check("an_order_is_never_placed_by_an_agent",
+              "The button that charges the card goes to the user, every time")(
+            _purchase.commits_a_purchase("Place your order")
+            and _purchase.commits_a_purchase("Buy now")
+            and _ACTIONS["place_order"].risk is _Risk.RED,
+            "an agent can reach the order button on its own")
+
         # ── renaming and moving, with both ends inside a granted folder ──
         check("move_file",
               "A file can be renamed or moved, and never out of the sandbox")(

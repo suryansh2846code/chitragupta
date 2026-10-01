@@ -218,6 +218,20 @@ function parseActions(text) {
         a.params.blocks = blocks;
       } catch { return ""; }
     }
+    else if (a.type === "place_order") {
+      // A basket does not fit in flat attributes either. Same body-as-JSON
+      // rule, same shape, parsed the same way on both sides — a card that
+      // disagreed with the server about what is in the basket would be a card
+      // asking for approval of something else.
+      try {
+        let body = inner.trim();
+        if (body.startsWith("```")) body = body.replace(/^```[a-z]*\n?/i, "").replace(/```$/, "").trim();
+        const parsed = body ? JSON.parse(body) : null;
+        const items = Array.isArray(parsed) ? parsed : (parsed && parsed.items);
+        if (!Array.isArray(items) || !items.length) return "";
+        a.params.items = items;
+      } catch { return ""; }
+    }
     else if (a.type === "mail_triage") {
       // A list of emails does not fit in flat attributes either, so the body is
       // JSON — `{items: [...]}` or the bare list. Mirrors `actions._items`.
@@ -412,7 +426,17 @@ const NOT_TYPEABLE = new Set(["items", "blocks", "arguments", "agent_id",
                               // the card whose whole job is saying what is about
                               // to happen. It is a sentence now; see
                               // `actionFace`.
-                              "anyone"]);
+                              "anyone",
+                              // **An order card is a READBACK, not a draft.**
+                              // These three are the shop's numbers, read off
+                              // the basket — a box around the total would let
+                              // somebody edit a figure that changes the card
+                              // and not the charge, which is the one lie a
+                              // card may never tell. The handler re-reads the
+                              // page at Confirm and refuses when the total has
+                              // moved, so an edited one could only ever block
+                              // the order it was meant to describe.
+                              "total", "control", "site"]);
 
 //: A one-line input for a short field, a textarea for the long ones. The body
 //: of an email is the field most worth fixing and the one least suited to a
@@ -441,6 +465,7 @@ const CARD_KIND = {
   log_workout: "Training",
   drive_create_doc: "Document", drive_share: "Document",
   mcp_action: "Connector",
+  place_order: "Order",
 };
 
 function cardKind(type) {
@@ -610,6 +635,29 @@ function triageSummary(items) {
   return parts.join(", ") || "Change your inbox";
 }
 
+//: How many items of a basket get their own row. Past this the card stops
+//: being something anybody reads, which is the failure a card exists to avoid.
+const BASKET_NAMED_MAX = 12;
+
+/** "3 items" / "1 item" — counted by quantity, not by row.
+ *
+ *  Two bags of oats on one line is two things arriving, and a card that says
+ *  "1 item" over them is wrong about the only number somebody skims for.
+ */
+function basketCount(items) {
+  const n = (Array.isArray(items) ? items : []).reduce(
+    (sum, it) => sum + (Number(it && it.qty) || 1), 0);
+  return `${n} item${n === 1 ? "" : "s"}`;
+}
+
+/** One basket line: what it is, and how many, with no price — that is the
+ *  row's value and belongs on the right where the total lines up under it. */
+function basketLine(it) {
+  const name = String((it && it.name) || "Something").slice(0, 120);
+  const qty = Number(it && it.qty) || 1;
+  return qty > 1 ? `${name} × ${qty}` : name;
+}
+
 /** The files a message would carry, by name — never by path.
  *
  *  The path says where it is on disk, which the user already knows and which
@@ -643,6 +691,8 @@ function actionSummary(step) {
     case "create_routine": return `Automation “${p.name || "untitled"}” — ${
       proposedWhen(p)}`;
     case "mail_triage": return triageSummary(p.items);
+    case "place_order": return `Order ${basketCount(p.items)} from ${
+      p.site || "a shop"} — ${p.total || "an unknown total"}`;
     case "mcp_action": return humanAction(p.tool, p.connector || p.server_id);
     default: return String(step.type || "an action").replace(/_/g, " ");
   }
@@ -1537,6 +1587,27 @@ function actionFace(type, params) {
         : rowOf("With", p.email || p.to || "", { owns: ["email"] }),
       rowOf("Access", p.role || "reader", { owns: ["role"] }),
     ];
+  } else if (type === "place_order") {
+    // **The one card where the rows ARE the decision.** Everywhere else the
+    // user is checking something the agent wrote and can fix; here they are
+    // checking a basket against their own intention, so every item is named
+    // with its quantity and its price and the total is last, where the eye
+    // lands. The registry fallback would have rendered `items` as a line of
+    // JSON — which is a card asking to be trusted rather than read.
+    const items = Array.isArray(p.items) ? p.items : [];
+    title = `Order ${basketCount(items)}${p.site ? " from " + p.site : ""}`;
+    verb = "place the order";
+    const named = items.slice(0, BASKET_NAMED_MAX);
+    rows = named.map((it) => rowOf(
+      basketLine(it), String((it && it.price) || "")));
+    const rest = items.length - named.length;
+    if (rest > 0) rows.push(noteOf(`and ${rest} more`));
+    // Live is wrong here and a plain row is right: this total is the shop's,
+    // not a sum of the rows, and recomputing it would quietly replace the
+    // number the user is being asked to approve with one of ours.
+    rows.push(rowOf("Total", p.total || ""));
+    rows.push(noteOf("This is what the basket page says. If it has changed by "
+                     + "the time you confirm, nothing is ordered."));
   } else if (type === "create_event") {
     title = "Create calendar event"; verb = "create";
     rows = [

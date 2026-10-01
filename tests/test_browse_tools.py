@@ -23,7 +23,7 @@ from pathlib import Path
 import pytest
 
 from chitragupta.agents import browse_tools, permissions, tools
-from chitragupta.browser import origins
+from chitragupta.browser import live, origins
 from chitragupta.browser.page import Node
 from chitragupta.browser.session import Session
 
@@ -497,7 +497,7 @@ def test_a_closed_browser_is_thrown_away_so_the_next_call_gets_a_new_one():
 
     browse_tools.browse_open("https://payroll.example.com/payslips")
 
-    assert browse_tools._session is None, "the dead session was kept"
+    assert live.current() is None, "the dead session was kept"
 
 
 def test_a_browser_that_would_not_start_keeps_its_session():
@@ -508,7 +508,7 @@ def test_a_browser_that_would_not_start_keeps_its_session():
 
     browse_tools.browse_open("https://payroll.example.com/payslips")
 
-    assert browse_tools._session is not None
+    assert live.current() is not None
 
 
 # ── one browser means one window, and a person may be using it ───────────

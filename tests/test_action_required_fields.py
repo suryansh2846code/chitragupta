@@ -71,6 +71,14 @@ COMPLETE: dict[str, dict] = {
     # from a missing fixture.
     "drive_share": {"file_id": "f1", "email": "a@b.test", "role": "reader",
                     "anyone": "true"},
+    # With no browser open the baseline is "the browser is no longer on the
+    # basket" — which is the point: each blanked field has to produce a
+    # *different* sentence, and all three are refused before the session is
+    # ever asked for. An order that got as far as looking for a page without
+    # knowing its total would be the bug this walk exists to find.
+    "place_order": {"items": [{"name": "Rolled oats 1kg", "qty": 1}],
+                    "total": "₹2,480", "control": "Place your order",
+                    "site": "shop.example"},
 }
 
 #: What "blank" means for a field that is not a string. `""` where a list

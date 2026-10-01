@@ -123,9 +123,16 @@ def test_the_tiers_hold_exactly_the_actions_they_are_meant_to():
       £4,000* are the same call — so the consent is the **site**, granted once
       in Connectors, and the floor is `permissions.NEVER_UNATTENDED_TOOLS`,
       which no grant can lift.
+    * `place_order` is RED, and it is the one action where that is not a close
+      call: we cannot un-buy anything, and there is no key an allow-list could
+      hold that would make *"always allow buying things"* a sentence worth
+      offering anybody. It is also the exception that proves the bullet above
+      — the per-site consent genuinely cannot contain the button that charges
+      a card, so `browser/purchase.py` refuses that one control at the tool and
+      this action is the only route to it.
     """
     never = frozenset({"create_routine", "mail_triage",
-                       "update_event", "cancel_event"})
+                       "update_event", "cancel_event", "place_order"})
     outbound = frozenset({"send_email", "create_event", "message_send",
                           "mcp_action", "drive_share"})
 
