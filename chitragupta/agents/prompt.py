@@ -1036,6 +1036,60 @@ def _teammates(agent_id: str, tools: list[str] | None) -> str:
 _CLOSING = "Be concise and act like a capable teammate."
 
 
+#: What an agent is told about the things it has NOT been given.
+#:
+#: **A withheld tool is invisible, and invisible is why it guesses.** Asked
+#: whether it could post to a site, an agent answered: *"You haven't enabled
+#: browser access for this agent yet. To turn it on: Settings → Agents & tools →
+#: Social Media Manager."* Nothing had told it that. It could not see the
+#: browser tools, could not tell "never granted" from "does not exist", and
+#: filled the gap from general knowledge — including a settings path it had no
+#: way to check.
+#:
+#: Handing it the thirty withheld tool definitions would fix the knowledge and
+#: cost thirty schemas on every single turn, for capabilities it cannot use.
+#: This is one sentence naming the *groups*, which is what a person switches
+#: anyway — and it sits in the stable prefix, so it is cached rather than
+#: re-billed per round.
+_WITHHELD = (
+    "WHAT YOU HAVE NOT BEEN GIVEN\n"
+    "You do not currently have: {missing}.\n"
+    "These exist and work — they are simply not switched on for you, and you "
+    "cannot switch them on yourself. If a task needs one, say plainly which "
+    "one and what you would do with it, and tell the user it is theirs to turn "
+    "on under Settings → Agents & tools. Never guess at a different route, and "
+    "never say a capability does not exist when it is only withheld."
+)
+
+
+def _withheld(tools: list[str] | None) -> str:
+    """Name the groups this agent has none of, so it stops inventing routes.
+
+    Grouped rather than listed: an agent that is told it lacks `browse_select`
+    reports that it cannot choose from a dropdown, which is true and useless.
+    Told it lacks *Websites*, it says the thing a person can act on.
+    """
+    # `tool_facts`, never `tools`. The table is a leaf precisely so this module
+    # can read it; importing `tools` here grew the frozen `agents_tools` cycle
+    # by five modules, which `tests/test_import_layering.py` caught on the spot.
+    from .tool_facts import GROUPS, builtin_names, tool_group
+
+    builtins = builtin_names()
+    held = {t for t in (tools or []) if t in builtins}
+    missing = []
+    for group in GROUPS:
+        if group.always:
+            continue
+        if any(tool_group(t) == group.key for t in held):
+            continue
+        if not any(tool_group(t) == group.key for t in builtins):
+            continue        # nothing in it to be given
+        missing.append(group.label.lower())
+    if not missing:
+        return ""
+    return _WITHHELD.format(missing="; ".join(missing))
+
+
 def build(*, name: str, role: str, system_prompt: str,
           actions: list[str] | None = None,
           tools: list[str] | None = None,
@@ -1087,6 +1141,10 @@ def build(*, name: str, role: str, system_prompt: str,
     connectors = _connector_actions(tools)
     if connectors:
         parts.append(connectors)
+
+    withheld = _withheld(tools)
+    if withheld:
+        parts.append(withheld)
 
     parts.append(_CLOSING)
     return "\n\n".join(parts)

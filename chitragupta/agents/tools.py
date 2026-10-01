@@ -9,6 +9,10 @@ from __future__ import annotations
 from typing import Any
 
 from ..brain import get_brain
+
+# The one capability vocabulary. `connectors/` owns it because that is where it
+# was needed first, not because it is only about connectors — every built-in
+# declares itself in it too, so that one gate can reason about them together.
 from ..models.base import Tool
 from . import (
     automation_tools,
@@ -1294,121 +1298,29 @@ def build_tools(names: list[str], *, self_id: str | None = None,
     return tools
 
 
-# ── what a person calls each tool ──────────────────────────────────────────
-# `name` is the id the model calls and the agent stores. It is not a label: a
-# user reading "whats_true_about_me" is reading our variable name, and a list
-# of thirty-two of them is a wall nobody can choose from.
+# ── what a person calls each tool, and what it costs ───────────────────────
 #
-# So every built-in carries ONE WORD and a category. One word because the
-# category already says the subject — under Memory, "Search" needs no further
-# qualification, and "Search your brain" only repeats the heading. The category
-# is what turns thirty-two rows into nine short lists.
-#
-# Lives here, not in the UI. A label table in the frontend would be a name
-# chain — exactly what a consumer must never grow — and the same names are
-# wanted by anything else that lists tools.
-_LABELS: dict[str, tuple[str, str]] = {
-    # Memory — the brain, and what it believes about the user
-    "search_brain":             ("Search",    "Memory"),
-    "who_is":                   ("People",    "Memory"),
-    "whats_true_about_me":      ("Profile",   "Memory"),
-    "timeline":                 ("Timeline",  "Memory"),
-    "why_do_you_think_that":    ("Evidence",  "Memory"),
-    "check_for_contradictions": ("Conflicts", "Memory"),
-    "correct_fact":             ("Correct",   "Memory"),
-    "forget_fact":              ("Forget",    "Memory"),
-    "remember":                 ("Remember",  "Memory"),
-    "list_entities":            ("Topics",    "Memory"),
-    # Tasks — things to do, and commitments still open
-    "add_task":                 ("Add",       "Tasks"),
-    "list_tasks":               ("List",      "Tasks"),
-    "complete_task":            ("Done",      "Tasks"),
-    "create_open_loop":         ("Track",     "Tasks"),
-    "list_open_loops":          ("Pending",   "Tasks"),
-    "awaiting_reply":           ("Waiting on", "Tasks"),
-    "needs_reply":              ("Owed",      "Email"),
-    "meeting_prep":             ("Prep",      "Calendar"),
-    "what_i_did":               ("History",   "Automations"),
-    "complete_open_loop":       ("Close",     "Tasks"),
-    # The things it can reach
-    "gmail_search":             ("Search",    "Email"),
-    "list_mail":                ("List",      "Email"),
-    "read_thread":              ("Read",      "Email"),
-    "whats_tracked":            ("Check",     "Measurements"),
-    "measurement_history":      ("Trend",     "Measurements"),
-    "log_measurement":          ("Record",    "Measurements"),
-    "forget_measurement":       ("Correct",   "Measurements"),
-    "list_exercises":           ("Lifts",     "Training"),
-    "lift_progress":            ("Progress",  "Training"),
-    "training_load":            ("Load",      "Training"),
-    "list_chats":               ("List",      "Messages"),
-    "read_chat":                ("Read",      "Messages"),
-    "calendar_lookup":          ("Schedule",  "Calendar"),
-    "find_time":                ("Find a time", "Calendar"),
-    "web_search":               ("Search",    "Web"),
-    # Websites the user has allowed. Their own group rather than folded into
-    # "Web": a search returns public results, and these read pages the user is
-    # signed in to — which is a different thing to hand an agent, and the person
-    # ticking the box should see it as one.
-    "browse_open":              ("Open page", "Websites you allow"),
-    "browse_read":              ("Re-read",   "Websites you allow"),
-    "browse_find":              ("Find on page", "Websites you allow"),
-    "browse_wait":              ("Wait for page", "Websites you allow"),
-    "browse_click":             ("Click",      "Websites you allow"),
-    "browse_type":              ("Type",       "Websites you allow"),
-    "browse_submit":            ("Send",       "Websites you allow"),
-    "browse_select":            ("Choose",     "Websites you allow"),
-    "browse_press":             ("Key",        "Websites you allow"),
-    "browse_reveal":            ("Scroll",     "Websites you allow"),
-    "browse_back":              ("Back",       "Websites you allow"),
-    "browse_sites":             ("Which sites", "Websites you allow"),
-    "what_i_looked_at":         ("History",    "Websites you allow"),
-    # Your Mac — the powers worth naming as a group, because they are the ones
-    # a person wants to see gathered before deciding
-    "list_dir":                 ("Browse",    "Your Mac"),
-    "find_file":                ("Find",      "Your Mac"),
-    "read_file":                ("Read",      "Your Mac"),
-    "write_file":               ("Write",     "Your Mac"),
-    "edit_file":                ("Edit",      "Your Mac"),
-    "move_file":                ("Move",      "Your Mac"),
-    "run_python":               ("Run",       "Your Mac"),
-    # Agents — asking the rest of the team, and thinking out loud
-    "ask_agent":                ("Ask",       "Agents"),
-    "ask_agents":               ("Survey",    "Agents"),
-    "update_plan":              ("Plan",      "Agents"),
-    # Automations — work that runs without being asked
-    "list_routines":            ("List",      "Automations"),
-    "pause_routine":            ("Pause",     "Automations"),
-    "list_scheduled":           ("Queued",    "Automations"),
-    "list_pending_approvals":   ("Approvals", "Automations"),
-    # Connectors — the deep sources, as opposed to an MCP server's own tools
-    "sync_source":              ("Sync",      "Connectors"),
-    "search_source":            ("Search",    "Connectors"),
-}
+# The table itself lives in `tool_facts`, a leaf. It was here, and `prompt.py`
+# could not read it without growing the `agents_tools` import cycle by five
+# modules — which `tests/test_import_layering.py` caught on the commit that
+# tried. Re-exported rather than relocated-and-renamed so that every existing
+# caller of `tool_label` keeps working.
+from .tool_facts import (
+    ALWAYS,
+    GROUPS,
+    TOOL_CATEGORIES,
+    Group,
+    granted_by_default,
+    permission_groups,
+    tool_access,
+    tool_capability,
+    tool_group,
+    tool_label,
+)
 
-#: The order the categories read in. Memory first because it is what makes an
-#: agent know the user at all; the two that reach outside the app last, because
-#: they are the ones worth pausing over.
-#:
-#: **A second hand-kept list that had already drifted.** "Websites you allow"
-#: was in `_LABELS` and missing from here, so the panel rendered it *after*
-#: "Other" — below the bucket meant for things nobody had got round to naming.
-#: `tests/test_tool_labels.py` now fails if the two disagree in either
-#: direction, because the drift is silent and shows up only as a screen that
-#: reads oddly.
-TOOL_CATEGORIES = ("Memory", "Tasks", "Messages", "Email", "Calendar",
-                   "Measurements", "Training", "Web", "Agents", "Automations",
-                   "Connectors", "Websites you allow", "Your Mac")
-
-
-def tool_label(name: str) -> tuple[str, str]:
-    """`(label, category)` for a built-in, falling back to its own name.
-
-    A tool added without an entry still renders — under "Other", with its id as
-    the label, which is ugly on purpose: it is visible enough to be fixed and
-    not so broken that the screen fails.
-    """
-    return _LABELS.get(name, (name, "Other"))
+__all__ = ["ALWAYS", "GROUPS", "TOOL_CATEGORIES", "Group", "granted_by_default",
+           "permission_groups", "tool_access", "tool_capability", "tool_group",
+           "tool_label"]
 
 
 def describe_tools() -> list[dict[str, str]]:

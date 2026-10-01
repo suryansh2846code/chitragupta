@@ -80,6 +80,12 @@ class Verb(StrEnum):
     DELETE = "delete"
     CANCEL = "cancel"
     MERGE = "merge"
+    #: Runs code we did not write. Grouped with the destructive verbs rather
+    #: than with the writes, and deliberately: what it does is unbounded, so
+    #: there is no inverse to describe. The practical effect is that it can
+    #: never be folded into a "let it change things" grant — the tier is what
+    #: `agents/tools.py` reads to decide a built-in may not be granted in bulk.
+    EXECUTE = "execute"
 
 
 class Resource(StrEnum):
@@ -128,6 +134,28 @@ class Resource(StrEnum):
 
     USER = "user"
 
+    # ── what the app's own tools act on ─────────────────────────────────
+    #
+    # This vocabulary was written for connectors and is now also what the
+    # built-in tools declare themselves in, so that one gate can reason about
+    # both. The alternative was a second taxonomy in `agents/`, which is two
+    # vocabularies for one question — and the panel showing sixty-four raw
+    # tool names is what you get when nothing can reason about them at all.
+
+    #: The on-device brain. Distinct from NOTE and from RECORD because the
+    #: whole product claim is that this one never leaves the machine, and a
+    #: tier that cannot see that distinction cannot act on it.
+    MEMORY = "memory"
+    #: A page in a browser the user has allowed. Not PAGE, which is a
+    #: document in somebody's workspace.
+    WEBPAGE = "webpage"
+    #: Another agent on the user's own roster.
+    AGENT = "agent"
+    #: An automation — a routine, a schedule, a queued approval.
+    ROUTINE = "routine"
+    #: Code running on the user's machine. Only ever paired with EXECUTE.
+    PROCESS = "process"
+
 
 class Access(StrEnum):
     """How much permission a capability needs. Ordered: later is stronger."""
@@ -175,6 +203,7 @@ _TIER: dict[Verb, Access] = {
     Verb.DELETE: Access.DESTRUCTIVE,
     Verb.CANCEL: Access.DESTRUCTIVE,
     Verb.MERGE: Access.DESTRUCTIVE,
+    Verb.EXECUTE: Access.DESTRUCTIVE,
 }
 
 
