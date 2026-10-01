@@ -40,6 +40,7 @@ budget runs out.
 from __future__ import annotations
 
 import time
+from typing import Any
 
 from ..browser import live, origins
 from ..browser.session import Reading, Session
@@ -49,17 +50,89 @@ from .results import ToolResult
 
 log = get_logger(__name__)
 
-#: The live session lives in `browser/live.py`, and these two are the names
-#: every caller and every test already reaches for.
+#: The live session lives in `browser/live.py`, and these are the names every
+#: caller and every test already reaches for.
 #:
 #: It moved **down**, not away. Placing an order runs from `actions.py` after
 #: the user presses Confirm, and `actions` → `agents` → `actions` is a cycle —
 #: `agents/permissions.py` reads the action registry at import time. A leaf both
-#: halves can read is the first of the three ways out `/CLAUDE.md` names; these
-#: delegations are what keep the move invisible to anything that was already
-#: holding this module.
+#: halves can read is the first of the three ways out `/CLAUDE.md` names; this
+#: delegation is what keeps the move invisible to anything already holding this
+#: module.
 get_session = live.get_session
-set_session = live.set_session
+
+
+def set_session(session: Session | None) -> None:
+    """Replace the shared session. For tests, and for a reset after a crash.
+
+    A function rather than a second alias, because it does one thing more than
+    `live.set_session`: it clears the repeat counter below. A new browser is a
+    fresh start, and whatever was failing before belongs to a session that no
+    longer exists — carrying that count across would spend an agent's first
+    real attempt on the new page telling it to stop repeating itself.
+    """
+    live.set_session(session)
+    _worked()
+
+
+# ── not letting an agent repeat itself ───────────────────────────────────
+#
+# From a real transcript, trying to send one WhatsApp message: *"Closing the
+# calls dialog first"* → *"Trying to click directly on the chat row instead"*
+# → *"the calls dialog is still blocking"* → *"Let me close that dialog
+# first"* → *"I've tried multiple times… I don't want to keep retrying
+# blindly."* Four round trips, a full page snapshot on each, and the user was
+# asked to close a popup by hand at the end of it.
+#
+# Better wording on the failure is most of the answer and is why `FOR_AGENT`
+# exists. This is the floor under it: a model that is going to repeat itself
+# anyway should be told so by the second time, in the tool result, where it
+# cannot be missed. Two is the threshold because the first repeat is often
+# reasonable — a page really can settle between tries — and the third is
+# where this stops being a retry and starts being a loop.
+STOP_AFTER = 2
+
+#: The last call that failed, and how many times running. One slot, not a
+#: history: the question is only ever "again?", and a dict keyed by every
+#: failed call would be a leak nobody ever reads.
+_REPEATED: dict[str, Any] = {"key": "", "count": 0}
+
+
+def _worked() -> None:
+    """Anything succeeding clears the count. Progress is not a loop."""
+    _REPEATED["key"], _REPEATED["count"] = "", 0
+
+
+def _again(key: str) -> str:
+    """Count one identical failure, and say so once it is a loop."""
+    if key != _REPEATED["key"]:
+        _REPEATED["key"], _REPEATED["count"] = key, 1
+        return ""
+    _REPEATED["count"] += 1
+    if _REPEATED["count"] < STOP_AFTER:
+        return ""
+    return (
+        f"\n\nYou have now tried this exact thing {_REPEATED['count']} times "
+        "and it has failed the same way each time. Stop repeating it. Either "
+        "do something different — read the page and work from what is "
+        "actually on it — or tell the user what is blocking you, what you "
+        "already tried, and what you need from them. Do not call this again.")
+
+
+def _stuck(result: ToolResult, key: str) -> ToolResult:
+    """Tag a failure with a nudge if it is the same one as last time.
+
+    Wraps the *result*, not the call, so every way a page tool can fail — a
+    browser error, a refusal, an element that is not there any more — is
+    counted by the same thing. Counting only browser errors would have missed
+    the transcript this exists for, where half the attempts failed on a refusal
+    rather than on an exception.
+    """
+    if result.ok:
+        _worked()
+        return result
+    note = _again(key)
+    return ToolResult.failed(str(result) + note) if note else result
 
 
 def _remember(reading: Reading) -> None:
@@ -172,6 +245,35 @@ FOR_AGENT: dict[Trouble, str] = {
         "time. Only tell the user if that attempt fails too, and say the site "
         "was slow rather than blaming the browser."),
 
+    #: The loop this whole entry exists to end. A click that could not land
+    #: used to arrive as a bare timeout and be handed `SLOW`'s advice — *"open
+    #: the same address again"* — so the agent re-opened the page, met the same
+    #: modal, and tried again. The transcript reads: *"I'll try opening
+    #: WhatsApp Web again"*, then *"the calls dialog is still blocking"*, then
+    #: *"I've tried multiple times… I don't want to keep retrying blindly."*
+    #:
+    #: So: say what is in the way, say the two ways through it, and say plainly
+    #: that re-opening the page is the one thing that cannot work — because
+    #: whatever is covering the page will be there again when it reloads.
+    Trouble.BLOCKED: (
+        "Something on the page is covering what you tried to use — nearly "
+        "always a popup, dialog or notice that opened over it. Do NOT open the "
+        "page again: it will come back exactly the same. Read the page, find "
+        "the thing that is in the way, and get rid of it first — its own Close "
+        "or dismiss button if it has one, otherwise browse_press Escape on the "
+        "dialog itself. Then do what you were doing. If it will not go after "
+        "one attempt at each, stop and tell the user what the popup says."),
+
+    #: Not a slow *page*. The page arrived; this one control did not become
+    #: usable. Re-opening the address is unrelated to it, and the thing that
+    #: helps is looking again at what is actually on screen.
+    Trouble.ELEMENT_UNUSABLE: (
+        "That element never became usable — it may be hidden, switched off, or "
+        "the page may still be drawing it. The browser and the page are both "
+        "fine, so opening the address again will not help. Read the page "
+        "again: either pick the control that is really there now, or use "
+        "browse_wait if it looks half-drawn. Do not repeat this same call."),
+
     #: One browser means one window, and while a sign-in is live there is a
     #: person typing a password into it. A wait, not a refusal.
     Trouble.SIGNING_IN: (
@@ -275,13 +377,13 @@ def browse_open(url: str) -> ToolResult:
         return refused
     try:
         _refuse_while_signing_in()
-        return _answer(get_session().open(url))
+        return _stuck(_answer(get_session().open(url)), f"open:{url}")
     except _browser_errors() as exc:
         # Whether the session survives is decided in `_browser_failed`, by which
         # failure it was: a browser that would not *start* leaves the page an
         # agent holds refs into alone, a browser that has been *closed* has no
         # page left to protect and has to be replaced.
-        return _browser_failed(exc)
+        return _stuck(_browser_failed(exc), f"open:{url}")
 
 
 def browse_read(since: str | None = None) -> ToolResult:
@@ -364,19 +466,54 @@ def _looks_unready(text: str) -> bool:
     return "progressbar:" in low or any(w in low for w in LOADING_WORDS)
 
 
-def _unready_hint(reading: Reading) -> str:
-    """One line on a read, when the page looks like it has not finished.
+#: How a snapshot announces a modal. `render` prints the role, and a modal is
+#: the one page state that makes every *other* element unusable.
+_MODAL_ROLES = ("dialog:", "alertdialog:")
 
-    Advice, appended outside the quarantine fence the way the page-version is —
-    it is ours, not the site's. Without it an agent reads a loading screen,
-    concludes the site is broken or empty, and says so to the user; the fix is
-    always the same five seconds and it had no way to know that.
+
+def _looks_blocked(text: str) -> bool:
+    """Is something modal open over this page?"""
+    low = (text or "").lower()
+    return any(role in low for role in _MODAL_ROLES)
+
+
+def _hints(reading: Reading) -> str:
+    """Everything worth telling an agent about the *state* of a page it just read.
+
+    **One place, because advice about page state is one kind of thing.** It was
+    a single function about loading, and the second kind of advice — a modal
+    sitting over everything — would otherwise have arrived as a second function
+    called from the same two places, which is how the loading hint came to be
+    on `browse_read` and not on `browse_open`.
+
+    Appended outside the quarantine fence, the way the page-version is: this is
+    ours, not the site's. Each line is one sentence and only appears when it is
+    true, because the point is to save an agent a wasted round trip rather than
+    to spend tokens describing pages that are fine.
     """
-    if not _looks_unready(reading.text):
-        return ""
-    return ("\n[This page looks like it is still loading. Call browse_wait "
-            "with what you are waiting to see, rather than reporting it as "
-            "empty or asking the user to wait.]")
+    lines = []
+    if _looks_unready(reading.text):
+        lines.append(
+            "This page looks like it is still loading. Call browse_wait with "
+            "what you are waiting to see, rather than reporting it as empty or "
+            "asking the user to wait.")
+    if _looks_blocked(reading.text):
+        # **Said before anything fails, which is the whole value.** An agent
+        # that learns this by having three clicks time out has spent three
+        # round trips and sixty seconds finding out what one sentence could
+        # have told it — and the transcript that prompted this shows it then
+        # gave up and asked the user to close the popup by hand.
+        lines.append(
+            "A dialog is open on this page. While it is, clicks on anything "
+            "behind it will not register — close it FIRST, using its own "
+            "close or dismiss button, or browse_press Escape on the dialog "
+            "itself.")
+    return "".join(f"\n[{line}]" for line in lines)
+
+
+def _unready_hint(reading: Reading) -> str:
+    """Kept as the name the two call sites use. See `_hints`."""
+    return _hints(reading)
 
 
 def browse_wait(until: str = "", seconds: float = 15.0) -> ToolResult:
@@ -716,6 +853,7 @@ def _change(kind: str, *, ref: str = "", label: str = "",
         return ToolResult.failed("There is nothing to type.")
     from ..browser import page as pagemod
 
+    key = f"{kind}:{label or ref}:{text}"
     try:
         session = get_session()
         refused = _may_spend(session, kind, ref, label)
@@ -724,10 +862,11 @@ def _change(kind: str, *, ref: str = "", label: str = "",
         was = pagemod.digest(session.snapshot) if session.snapshot else ""
         reading = session.act(kind, ref, text, label=label)
     except _browser_errors() as exc:
-        return _browser_failed(exc)
+        return _stuck(_browser_failed(exc), key)
 
     if not reading.ok:
-        return _answer(reading)
+        return _stuck(_answer(reading), key)
+    _worked()
     _remember(reading)
     # **Say whether anything happened.** "Done" on a page that had not moved is
     # how an agent came to report that a chat had opened when it had not, and

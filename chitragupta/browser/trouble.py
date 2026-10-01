@@ -83,6 +83,14 @@ class Trouble(Enum):
     CLOSED = "closed"
     #: The page, or the browser thread, ran out of time. Nothing is broken.
     SLOW = "slow"
+    #: Something on the page is on top of the thing we tried to use — almost
+    #: always a modal. Its own failure because its answer is the opposite of
+    #: every other timeout's: re-opening the page brings the modal back, and an
+    #: agent told to do that loops until somebody stops it.
+    BLOCKED = "blocked"
+    #: The control never became usable — hidden, disabled, never stable. Not a
+    #: slow *page*: the page arrived, and this one element did not.
+    ELEMENT_UNUSABLE = "element_unusable"
     #: A person is using the one window to sign in to a site.
     SIGNING_IN = "signing_in"
     #: Anything we have no name for yet.
@@ -104,6 +112,17 @@ _CLOSED = ("has been closed", "target closed", "target page, context or browser"
 #: words its own wedged-thread failure to match, so one fragment covers a slow
 #: page and a slow browser alike.
 _SLOW = ("timeout", "timed out")
+
+#: Playwright names the API that failed at the front of its message, so this is
+#: how an element failure is told apart from a navigation one. The distinction
+#: is the whole point: *"open the same address again"* is right for a slow page
+#: and is the exact wrong answer for a click that could not land, because the
+#: page was never the problem and re-opening it restores the thing in the way.
+_ELEMENT_API = ("locator.", "elementhandle.", "frame.click", "frame.fill",
+                "frame.press", "frame.select_option")
+
+#: What Playwright says when something is on top of the target.
+_BLOCKED = "intercepts pointer events"
 
 
 @dataclass(frozen=True)
@@ -149,6 +168,13 @@ _FOR_PERSON: dict[Trouble, str] = {
         "That page took too long to load. The browser is fine and so is your "
         "sign-in — big sites are often slow the first time. Try it again; it is "
         "usually quick the second time."),
+    Trouble.BLOCKED: (
+        "Something on that page is sitting on top of what was clicked — "
+        "usually a popup or a notice. Close it on the page and the rest will "
+        "work."),
+    Trouble.ELEMENT_UNUSABLE: (
+        "That part of the page could not be used — it may be hidden, switched "
+        "off, or still being drawn. The browser and the site are both fine."),
     Trouble.SIGNING_IN: (
         "You are part-way through signing in to a site in the browser window. "
         "Finish there, or press Cancel, and this will be free again."),
@@ -185,10 +211,25 @@ def classify(exc: BaseException) -> Diagnosis:
     if any(phrase in detail for phrase in _BUSY):
         return Diagnosis(Trouble.BUSY, stale=False, may_retry=False,
                          for_person=_FOR_PERSON[Trouble.BUSY])
+    if _BLOCKED in detail:
+        # Checked before the timeout it arrives as. Something covering the
+        # target is a far more specific answer than "that took too long", and
+        # it is the one an agent can act on without being told anything else.
+        return Diagnosis(Trouble.BLOCKED, stale=False, may_retry=False,
+                         for_person=_FOR_PERSON[Trouble.BLOCKED])
     if any(phrase in detail for phrase in _SLOW):
-        # **Not stale.** The browser is alive and whatever page an agent already
-        # had is still open; dropping the session would turn a slow navigation
-        # into a lost set of refs for nothing.
+        # **Not stale**, either way. The browser is alive and whatever page an
+        # agent already had is still open; dropping the session would turn one
+        # slow step into a lost set of refs for nothing.
+        #
+        # Which timeout, though, decides the advice. A navigation that ran out
+        # of time is fixed by trying it again on a warm cache; an element that
+        # never became usable is not fixed by anything to do with the address,
+        # and saying so is what sent an agent round the same loop three times.
+        if any(api in detail for api in _ELEMENT_API):
+            return Diagnosis(Trouble.ELEMENT_UNUSABLE, stale=False,
+                             may_retry=False,
+                             for_person=_FOR_PERSON[Trouble.ELEMENT_UNUSABLE])
         return Diagnosis(Trouble.SLOW, stale=False, may_retry=True,
                          for_person=_FOR_PERSON[Trouble.SLOW])
     return Diagnosis(Trouble.UNKNOWN, stale=False, may_retry=True,

@@ -1086,3 +1086,123 @@ def test_the_unattended_floor_is_derived_from_the_verbs_not_retyped():
         f"browse_{act}" for act in CHANGING_ACTS) == permissions.NEVER_UNATTENDED_TOOLS
     assert "browse_press" in permissions.NEVER_UNATTENDED_TOOLS
     assert "browse_reveal" not in permissions.NEVER_UNATTENDED_TOOLS
+
+
+# ── telling an agent about a modal before it wastes four turns on one ────
+#
+# The transcript this exists for spent four round trips — a full page snapshot
+# on each — discovering by failure what one sentence on the first read could
+# have told it, and then asked the user to close the popup by hand.
+BLOCKED_PAGE = {
+    "https://payroll.example.com/app": ("App", [
+        Node(role="gridcell", name="Tushar Bhaiya",
+             handle="gridcell\x1fTushar Bhaiya"),
+        Node(role="dialog", name="Recent calls", handle="dialog\x1fRecent calls"),
+    ]),
+}
+
+
+def test_a_page_with_a_modal_says_so_on_the_very_first_read():
+    """Before anything fails, which is the whole value — an agent that learns
+    this by having three clicks time out has spent three round trips and sixty
+    seconds finding out what one sentence could have told it."""
+    origins.grant("payroll.example.com")
+    browse_tools.set_session(Session(FakeDriver(BLOCKED_PAGE)))
+
+    out = browse_tools.browse_open("https://payroll.example.com/app")
+
+    said = str(out).lower()
+    assert "dialog is open" in said
+    assert "escape" in said and "close it first" in said
+
+
+def test_a_dialog_can_actually_be_addressed():
+    """The hint tells an agent to press Escape on the dialog, so the dialog has
+    to have a ref. It did not: `dialog` was missing from INTERACTIVE_ROLES, so
+    an agent could see the thing blocking it, correctly work out what to do,
+    and have nothing to do it to."""
+    origins.grant("payroll.example.com")
+    browse_tools.set_session(Session(FakeDriver(BLOCKED_PAGE)))
+    browse_tools.browse_open("https://payroll.example.com/app")
+
+    assert "dialog: Recent calls" in str(browse_tools.browse_find("Recent calls"))
+
+
+def test_an_ordinary_page_is_not_told_a_dialog_is_open():
+    """Every hint costs tokens on every read. They only appear when true."""
+    origins.grant("payroll.example.com")
+
+    out = browse_tools.browse_open("https://payroll.example.com/payslips")
+
+    assert "dialog is open" not in str(out).lower()
+
+
+# ── and the floor under all of it: not repeating yourself ────────────────
+class _AlwaysBlocked(FakeDriver):
+    def act(self, kind, handle, text=""):
+        from chitragupta.browser.trouble import BrowserError
+        raise BrowserError("Locator.click: Timeout 20000ms exceeded. — "
+                           "intercepts pointer events")
+
+
+def _blocked_session():
+    browse_tools.set_session(Session(_AlwaysBlocked(BLOCKED_PAGE)))
+    origins.grant("payroll.example.com", may_act=True)
+    browse_tools.browse_open("https://payroll.example.com/app")
+
+
+def test_the_same_failing_call_twice_is_called_out():
+    """Wording is most of the answer; this is the floor under it. A model that
+    is going to repeat itself anyway gets told so in the tool result, where it
+    cannot be missed."""
+    _blocked_session()
+
+    first = str(browse_tools.browse_click(label="Tushar Bhaiya"))
+    second = str(browse_tools.browse_click(label="Tushar Bhaiya"))
+
+    assert "tried this exact thing" not in first
+    assert "tried this exact thing" in second
+    assert "Do not call this again" in second
+
+
+def test_trying_something_different_is_not_a_loop():
+    """The count is per call, not a global strike counter — an agent working
+    through a page and failing on different things is making progress."""
+    _blocked_session()
+
+    browse_tools.browse_click(label="Tushar Bhaiya")
+    other = str(browse_tools.browse_click(label="Recent calls"))
+
+    assert "tried this exact thing" not in other
+
+
+def test_anything_working_clears_the_count():
+    """Two failures either side of a success are not a loop, and treating them
+    as one would nag an agent that had already recovered."""
+    origins.grant("payroll.example.com", may_act=True)
+    browse_tools.set_session(Session(_AlwaysBlocked(BLOCKED_PAGE)))
+    browse_tools.browse_open("https://payroll.example.com/app")
+    browse_tools.browse_click(label="Tushar Bhaiya")
+
+    browse_tools.set_session(Session(FakeDriver(BLOCKED_PAGE)))   # a fresh, working page
+    origins.grant("payroll.example.com", may_act=True)
+    assert browse_tools.browse_open("https://payroll.example.com/app").ok
+
+    browse_tools.set_session(Session(_AlwaysBlocked(BLOCKED_PAGE)))
+    browse_tools.browse_open("https://payroll.example.com/app")
+    again = str(browse_tools.browse_click(label="Tushar Bhaiya"))
+
+    assert "tried this exact thing" not in again
+
+
+def test_a_repeated_refusal_counts_too_not_only_a_browser_error():
+    """Half the attempts in the reported transcript failed on a refusal rather
+    than an exception. Counting only exceptions would have missed them."""
+    origins.grant("payroll.example.com")          # read-only: changing is refused
+    browse_tools.set_session(Session(FakeDriver(BLOCKED_PAGE)))
+    browse_tools.browse_open("https://payroll.example.com/app")
+
+    browse_tools.browse_click(label="Tushar Bhaiya")
+    second = str(browse_tools.browse_click(label="Tushar Bhaiya"))
+
+    assert "tried this exact thing" in second

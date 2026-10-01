@@ -98,6 +98,32 @@ holds.
   screenful — and the thing they were agreeing to would not be the thing they
   were being asked about. Without it an agent sees thirty rows of a hundred and
   reports the thirty-first as absent.
+- **A modal is the one page state that makes every other element unusable, so
+  it is said on the read and not discovered by failing.** `_hints` puts one
+  sentence on any page carrying a `dialog`, and `dialog`/`alertdialog` are in
+  `INTERACTIVE_ROLES` so there is something to send Escape *to*. Without both,
+  an agent could see `dialog: View recent calls…`, correctly work out it was in
+  the way, and have no means of addressing it — the reported transcript spent
+  four round trips and a full snapshot each discovering by failure what one
+  line could have told it, then asked the user to close the popup by hand.
+- **A click that could not land is not a slow page, and the advice is the
+  opposite.** `Trouble.BLOCKED` and `ELEMENT_UNUSABLE` exist because both used
+  to arrive as a bare timeout and be handed `SLOW`'s *"open the same address
+  again"* — the one action that guarantees the modal comes back. Playwright
+  names the API at the front of its message (`Locator.click:` versus
+  `Page.goto:`), which is how the two are told apart.
+- **`driver.summarise`, never `str(exc)[:300]`.** Measured on a real blocked
+  click: the message is 520 characters, `intercepts pointer events` begins at
+  495, and the truncation cut at 300 — so the one fact identifying the failure
+  never reached `classify`, and what did reach it was 300 characters of retry
+  log. Keeping the first line plus the named reason is both the useful part and
+  the cheap one: 67 characters instead of 300.
+- **An agent that repeats itself is told so, by the second time.**
+  `browse_tools._stuck` wraps every page-tool *result* — not just the browser
+  errors, because half the attempts in the reported transcript failed on a
+  refusal — and after `STOP_AFTER` identical failures the result says to stop
+  and tell the user. Better wording is most of the answer; this is the floor
+  under it, for the turn where the model was going to loop anyway.
 - **`press` takes a key off `NAMED_KEYS` and never a free string.** A string
   Chromium interprets is a keyboard-shaped way around everything else here:
   `Control+V` is a paste and a modifier chord reaches the browser's own menus.

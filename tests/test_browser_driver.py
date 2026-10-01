@@ -596,3 +596,47 @@ def test_a_wedged_browser_thread_is_a_timeout_not_an_empty_message():
         drivermod.TIMEOUT_MS, drivermod.REPLY_GRACE_SECONDS = budget
 
     assert "timeout" in str(raised.value).lower()
+
+
+def test_the_browser_thread_sends_back_the_reason_not_the_retry_log():
+    """`summarise` being right is not enough — `_serve` has to use it.
+
+    This is the wiring, and it was the whole defect: the function that turned a
+    browser failure into a string kept the first 300 characters, and the reason
+    Playwright gave began at character 495. So the summariser can be perfect and
+    a blocked click still reaches `classify` as a generic timeout.
+    """
+    import queue
+    import threading
+
+    from chitragupta.browser import driver as drivermod
+
+    raw = ("Locator.click: Timeout 20000ms exceeded.\n Call log:\n"
+           + "  - waiting for element to be visible, enabled and stable\n" * 8
+           + '  - <p>x</p> from <div role="dialog">…</div> subtree '
+             "intercepts pointer events")
+    assert "intercepts pointer events" not in raw[:300], "premise changed"
+
+    class _Page:
+        def click(self, *_a, **_k):
+            raise RuntimeError(raw)
+
+        def get_by_role(self, *_a, **_k):
+            return self
+
+        @property
+        def first(self):
+            return self
+
+    made = drivermod.PlaywrightDriver(None, "/nowhere")
+    reply: queue.Queue = queue.Queue(maxsize=1)
+    made._commands.put(drivermod._Command("act", ("click", "button␟x", ""), reply))
+    made._commands.put(None)
+    threading.Thread(target=made._serve, args=(_Page(),), daemon=True).start()
+
+    ok, payload = reply.get(timeout=5)
+
+    assert ok is False
+    assert "intercepts pointer events" in payload, (
+        "the reason did not survive the trip off the browser thread")
+    assert len(payload) < 200, "the retry log came with it"
