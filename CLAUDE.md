@@ -378,6 +378,21 @@ Many users, many machines. Do not bake in anything specific to one of either.
 
 ## Conventions
 
+- **A tool declares a `verb:resource` capability, and the permission screen is
+  derived from it.** `connectors/capability.py` is the one vocabulary —
+  connectors, actions and now built-ins all speak it, so one gate reasons about
+  all three. The tier comes from the verb (`tool_access`), the grouping from the
+  resource, and **unknown fails closed**: a tool that declares nothing is
+  destructive, not harmless. Sixty-four switches became six, and the group that
+  cannot leave this machine is granted at creation rather than ticked.
+  `agents/tool_facts.py` holds it and is a **leaf** — `prompt.py` reads it, and
+  importing it from `tools.py` grew the frozen `agents_tools` cycle to ten
+  modules the first time it was tried.
+- **A withheld capability is named, never silent.** An agent cannot see the
+  tools it lacks, so it cannot tell "never granted" from "does not exist" — and
+  one asked about posting to a site invented a Settings path nothing had told
+  it. `prompt._withheld` names the groups, says they are the user's to grant,
+  and gives the real route.
 - **The LLM provider is chosen client-side** and stored in localStorage
   (`chitragupta_provider`, `chitragupta_model`). Any endpoint that calls an LLM for
   the UI (`chat`, `welcome`, `digest`) accepts `provider`/`model` in the body and
@@ -468,8 +483,8 @@ In order: **the focused test → the subsystem's suite → `pytest` →
 `ruff check chitragupta tests` → `mypy chitragupta` → the `tests/js/` harnesses if
 the frontend changed → `chitragupta app` opens and renders.**
 
-Baseline, measured 2026-10-01: **5861 passed, 33 skipped in ~7min12**, ruff
-clean, mypy clean over 220 files. With `PLAYWRIGHT_BROWSERS_PATH` pointed at the managed
+Baseline, measured 2026-10-01: **6019 passed, 33 skipped in ~7min12**, ruff
+clean, mypy clean over 221 files. With `PLAYWRIGHT_BROWSERS_PATH` pointed at the managed
 browser the same run adds twelve more — `tests/test_browser_driver.py`'s
 real-Chromium tests, which skip when there is
 no browser to find. Worth setting: they are the only tests that drive a real

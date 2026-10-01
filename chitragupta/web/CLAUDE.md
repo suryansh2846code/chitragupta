@@ -206,6 +206,27 @@ script out of eleven does not fail; it passes.
   "Email", "Calendar" — beside the status. A conversation fills with cards that
   look alike, and a settled one has lost its buttons, so there is *less* left to
   recognise it by. A word, never the action id.
+- **The tools panel shows what a group IS, not what every tool is.** It was
+  sixty-four switches under thirteen headings, all of them asked before the
+  user had sent the agent a message. Now: four groups (what a tool touches)
+  with a switch per tier inside each (what it does to it), both derived
+  server-side from the capability each tool declares and sent on the row —
+  `group` and `access`. The screen renders them and decides nothing; a consumer
+  that re-derived which tools are dangerous is the name chain this file carries
+  three other warnings about.
+  **`access` is the server's word and the switch label is the person's**, and
+  they are not the same word. Comparing the UI labels straight against `access`
+  matched neither `write` nor `destructive`, so the Change and Irreversible
+  switches rendered as nothing while their tools sat in the disclosure below,
+  switched on — a panel omitting a switch for something an agent can do is
+  worse than the sixty-four it replaced. `bucketOf` is the mapping.
+  **A group switch is one PATCH.** Looping the per-tool toggle would send one
+  request per tool, each carrying the whole list, and whichever replied last
+  would win — so turning a group on could land half on, depending on the
+  network. The per-tool rows stay, folded into a disclosure: the complaint was
+  that per-tool control was the only thing on offer, not that it should go. A
+  group somebody part-granted that way says "3 of 7 on" rather than showing a
+  plain off over four live tools.
 - **Every left-nav item opens a screen.** The slide-over drawer is gone:
   `tasks` moved into Inbox and `tools` became the Agents & tools panel, and
   those were its only two occupants. `openDrawer()` kept its name — four call

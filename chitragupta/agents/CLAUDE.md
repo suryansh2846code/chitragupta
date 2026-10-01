@@ -49,6 +49,35 @@ permissions — and `library.py`, which is what Chitragupta *offers*.
 - A routine pre-authorises the routine, not the stranger who wrote the email it
   read. Outbound actions need a recipient on the explicit allow-list; everything
   else queues for one tap. Interactive chat is deliberately not gated.
+- **A built-in tool declares its own tier too, in the same vocabulary.**
+  `tool_facts._FACTS` carries a `verb:resource` capability per tool — the one
+  `connectors/capability.py` defines and every connector and action already
+  uses — and `tool_access` derives the tier from the verb rather than storing
+  it. Two tables would be a gate giving different answers about the same act.
+  **Unknown fails closed**: a tool that declares nothing is DESTRUCTIVE, not
+  READ, because the tempting default files the unclassified thing as harmless.
+  `execute:process` is its own tier for that reason — `run_python` is unbounded,
+  so there is no inverse to describe, and filing it as a write would let it ride
+  along on "let it change things".
+- **The permission screen is derived, not arranged.** Crossing what a tool
+  touches with what it does gives four groups and a switch per tier inside each
+  — six decisions instead of sixty-four, each a sentence a person can weigh.
+  The group that cannot leave this machine is granted at creation and is not a
+  switch at all: an agent that cannot read its own memory is not a safer agent,
+  and ten boxes to get there teaches somebody the screen is a formality before
+  they reach the boxes that matter.
+  **`tool_facts` is a leaf and must stay one.** `prompt.py` reads it, and
+  importing it from `tools.py` grew the frozen `agents_tools` cycle from five
+  modules to ten the first time it was tried.
+- **An agent is told what it has NOT been given.** A withheld tool is simply
+  absent from its list, so it cannot tell "never granted" from "does not exist"
+  — asked whether it could post to a site, one answered *"You haven't enabled
+  browser access for this agent yet. To turn it on: Settings → Agents & tools →
+  Social Media Manager"*, a path nothing had told it. `prompt._withheld` names
+  the **groups** it lacks, says they exist and are the user's to grant, and
+  gives the real route. Groups rather than tool names, for `NEEDS_PERMISSION`'s
+  reason — and one sentence in the cached prefix rather than thirty tool
+  schemas per turn for capabilities it cannot use.
 - **An action declares its own tier, in one place.** `actions.ActionSpec.risk`
   is green (reaches nobody — runs unattended), amber (reaches someone — needs a
   permitted recipient) or red (never unattended, never promotable). The tier
