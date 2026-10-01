@@ -1674,6 +1674,29 @@ textarea.ac-field-wide { resize: vertical; min-height: 58px; line-height: 1.45; 
 .at-toggle:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--north-dim); }
 .at-toggle.is-busy { opacity: .6; cursor: progress; }
 
+/* ── setting the whole lot at once ──────────────────────────────────────
+   Six decisions beats sixty-four and is still six. Most of the time the
+   answer is "this one is mine, let it do everything" or "let it look and
+   nothing else", so those are one press above the switches rather than four. */
+.at-presets { display: grid; gap: 8px; margin: 0 0 20px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+.at-preset { display: flex; flex-direction: column; gap: 3px; text-align: left;
+  padding: 11px 13px; border-radius: 12px; cursor: pointer;
+  background: var(--panel); border: 1px solid var(--line);
+  transition: border-color .14s, background .14s; }
+.at-preset:hover { border-color: var(--north-track); background: var(--panel-2); }
+.at-preset:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--north-dim); }
+.at-preset.is-busy { opacity: .6; cursor: progress; }
+.at-preset-nm { font-size: 13.5px; font-weight: 600; color: var(--text); }
+/* The part people skim, and the reason it is on the button rather than in a
+   tooltip: "Allow everything" includes running code, and a control that hid
+   that would be the tap-nobody-reads failure at the worst possible scale. */
+.at-preset-ds { font-size: 11.5px; color: var(--muted); line-height: 1.4; }
+
+/* Per group, because the real answer is usually about one of them: let it
+   have websites, leave the Mac alone. */
+.at-all { margin-left: auto; }
+
 /* ── what a group IS, and the switches that set it ──────────────────────
    The panel used to be sixty-four rows under thirteen headings. The decision
    lives up here now: a sentence saying what the group is, then one switch per

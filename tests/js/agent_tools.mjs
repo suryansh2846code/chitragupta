@@ -54,7 +54,8 @@ const box = makeEl();
 const parsedButtons = () => {
   // Parse the rendered HTML for the controls, and hand back live objects whose
   // clicks run the handlers the renderer bound.
-  const out = { "[data-tool]": [], "[data-bulk]": [], "[data-tool-fix]": [], ".at-err": [] };
+  const out = { "[data-tool]": [], "[data-bulk]": [], "[data-preset]": [],
+                "[data-tool-fix]": [], ".at-err": [] };
   for (const m of box.innerHTML.matchAll(/data-tool="([^"]*)"[^>]*data-on="([^"]*)"/g)) {
     const b = makeEl("button");
     b._sel = "[data-tool]";
@@ -77,13 +78,20 @@ const parsedButtons = () => {
     b.closest = () => section;
     out["[data-bulk]"].push(b);
   }
+  for (const m of box.innerHTML.matchAll(/data-preset="([^"]*)"/g)) {
+    const b = makeEl("button");
+    b._sel = "[data-preset]";
+    b.dataset = { preset: m[1] };
+    out["[data-preset]"].push(b);
+  }
   for (const _ of box.innerHTML.matchAll(/data-tool-fix="1"/g)) {
     const b = makeEl("button"); b._sel = "[data-tool-fix]";
     out["[data-tool-fix]"].push(b);
   }
   return out;
 };
-let buttons = { "[data-tool]": [], "[data-bulk]": [], "[data-tool-fix]": [] };
+let buttons = { "[data-tool]": [], "[data-bulk]": [], "[data-preset]": [],
+                "[data-tool-fix]": [] };
 box.querySelectorAll = (sel) => buttons[sel] || [];
 
 const registry = new Map();
@@ -133,7 +141,8 @@ globalThis.__spyConnectors(() => { openedConnectors += 1; });
 
 const agent = JSON.parse(JSON.stringify(input.agent));
 const specs = input.groups || [];
-globalThis.__render(box, { agent, tools: input.tools, connectors: input.connectors, categories: input.categories, specs });
+const presets = input.presets || [];
+globalThis.__render(box, { agent, tools: input.tools, connectors: input.connectors, categories: input.categories, specs, presets });
 const firstHtml = box.innerHTML;
 buttons = parsedButtons();
 
@@ -141,7 +150,18 @@ buttons = parsedButtons();
 // first pass produced. Do NOT re-parse afterwards: fresh objects would be
 // unbound, which is the harness losing the handlers rather than the app
 // failing to set them.
-globalThis.__render(box, { agent, tools: input.tools, connectors: input.connectors, categories: input.categories, specs });
+globalThis.__render(box, { agent, tools: input.tools, connectors: input.connectors, categories: input.categories, specs, presets });
+
+let presetUsed = null;
+if (input.preset) {
+  const btn = buttons["[data-preset]"].find((b) => b.dataset.preset === input.preset);
+  if (btn && typeof btn.onclick === "function") {
+    await btn.onclick();
+    const patch = calls.filter((c) => c.method === "PATCH").pop();
+    presetUsed = { sent: patch ? patch.body : null,
+                   patches: calls.filter((c) => c.method === "PATCH").length };
+  }
+}
 
 let bulked = null;
 if (input.bulk) {
@@ -182,7 +202,7 @@ if (input.clickFix && buttons["[data-tool-fix]"].length) {
 
 process.stdout.write(JSON.stringify({
   html: firstHtml,
-  bulked,
+  bulked, presetUsed,
   groups: globalThis.__groups(input.tools, input.connectors, input.agent.tools, input.categories, specs)
     .map((g) => ({ name: g.name, kind: g.kind, tools: g.tools.map((t) => t.row.name) })),
   toggled, rowError, openedConnectors,

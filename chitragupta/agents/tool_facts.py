@@ -318,6 +318,52 @@ def tools_for(group: str, level: str) -> list[str]:
     return []
 
 
+# ── setting the whole lot at once ────────────────────────────────────────
+#
+# Six decisions is better than sixty-four and it is still six, and the common
+# case is not six decisions — it is "this one is mine, let it do everything" or
+# "let it look and nothing else". A screen that compacts the list and still
+# makes you set every switch has only done half the job.
+#
+# Each preset says what it includes in its own words, including the part people
+# skim: `all` carries running code, and a button that quietly included that
+# would be the "a tap nobody reads" failure at the worst possible scale. This
+# is also the right screen for it — `ASKABLE` deliberately refuses to let an
+# agent ask for that from a card, because a tap given to unblock a task is not
+# the same decision as one given here, reading this sentence.
+PRESETS: tuple[dict[str, str], ...] = (
+    {"key": "all", "label": "Allow everything",
+     "blurb": "Every group, including changing websites and files, and "
+              "running code on this Mac."},
+    {"key": "read", "label": "Read only",
+     "blurb": "It can look at everything and change nothing — no clicking, "
+              "typing, writing or running."},
+    {"key": "none", "label": "Nothing yet",
+     "blurb": "Only its own memory and your day. It can still think, "
+              "remember and plan; it reaches nothing outside this machine."},
+)
+
+
+def preset_tools(key: str) -> list[str]:
+    """The built-ins one preset grants, or [] for a key nobody recognises.
+
+    **Built-ins only, and the caller must keep the rest.** The save is the whole
+    tool list, so a preset that answered with its own names alone would silently
+    drop the connector sentinel and every connector tool the agent had — an
+    "allow everything" button that took Notion away is the worst possible
+    version of this control. `api/routes/agents` merges; the test says so.
+    """
+    always = set(granted_by_default())
+    if key == "none":
+        return sorted(always)
+    if key == "all":
+        return sorted(_FACTS)
+    if key == "read":
+        reading = {n for n in _FACTS if tool_access(n) is Access.READ}
+        return sorted(always | reading)
+    return []
+
+
 def permission_groups() -> list[dict[str, Any]]:
     """The permission screen, derived rather than hand-arranged.
 

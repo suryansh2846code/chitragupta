@@ -358,11 +358,16 @@ def available_tools():
     # see `agents/tool_facts.py`. Sent alongside `categories` rather than
     # instead of it, because removing a field a consumer reads is a separate
     # landing from adding the one that replaces it.
-    from ...agents.tool_facts import permission_groups
+    from ...agents.tool_facts import PRESETS, permission_groups
     from ...agents.tools import TOOL_CATEGORIES, describe_tools
 
     return {"tools": describe_tools(), "categories": list(TOOL_CATEGORIES),
-            "groups": permission_groups()}
+            "groups": permission_groups(),
+            # Setting the whole lot at once. The tool names a preset covers are
+            # deliberately NOT sent: a preset is resolved server-side at the
+            # moment it is applied, so a screen left open while a tool was
+            # added cannot grant yesterday's idea of "everything".
+            "presets": [dict(p) for p in PRESETS]}
 
 
 @router.get("/api/agents/connector-gaps")
@@ -457,6 +462,15 @@ class AgentTools(BaseModel):
 
     tools: list[str] = Field(default_factory=list, max_length=200)
 
+    #: Apply a named preset instead, resolved here rather than sent as names.
+    #:
+    #: "Allow everything" has to mean everything *now*. A screen that was open
+    #: while a tool shipped would otherwise send its own stale idea of the word
+    #: and quietly withhold the new one, which is the failure `grants.py`
+    #: already documents for connectors: the option did not exist to tick at
+    #: build time, and nothing ever told anyone to go back.
+    preset: str = ""
+
 
 @router.patch("/api/agents/{agent_id}/tools")
 def set_agent_tools(agent_id: str, body: AgentTools):
@@ -468,14 +482,29 @@ def set_agent_tools(agent_id: str, body: AgentTools):
     live catalog here.
     """
     from ...agents.presets import get_agent
+    from ...agents.tool_facts import builtin_names, preset_tools
     from ...agents.tool_overrides import get_tool_overrides
 
     try:
-        get_agent(agent_id)
+        agent = get_agent(agent_id)
     except KeyError:
         raise HTTPException(404, f"unknown agent '{agent_id}'") from None
 
-    get_tool_overrides().set(agent_id, body.tools)
+    wanted = list(body.tools)
+    if body.preset:
+        chosen = preset_tools(body.preset)
+        if not chosen:
+            raise HTTPException(400, f"unknown preset '{body.preset}'")
+        # **The preset decides the built-ins and nothing else.** Everything the
+        # agent holds that is not a built-in — the connector sentinel, a named
+        # connector tool — is kept, because the save is the whole list and a
+        # preset that answered with its own names alone would be an "allow
+        # everything" button that silently took Notion away.
+        builtins = builtin_names()
+        kept = [t for t in (agent.tools or []) if t not in builtins]
+        wanted = sorted({*chosen, *kept})
+
+    get_tool_overrides().set(agent_id, wanted)
     # Return the agent as it now is, so the client renders what was actually
     # stored rather than what it hoped it sent.
     agent = get_agent(agent_id)

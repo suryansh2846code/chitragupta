@@ -227,6 +227,22 @@ script out of eleven does not fail; it passes.
   that per-tool control was the only thing on offer, not that it should go. A
   group somebody part-granted that way says "3 of 7 on" rather than showing a
   plain off over four live tools.
+- **Compacting the list is half the job; the other half is setting it in one
+  press.** Six decisions beats sixty-four and is still six, and the common
+  answer is "this one is mine, let it do everything" or "let it look and
+  nothing else". So: three presets above the groups, and `Allow all` on each
+  group heading — not on the always-on one, where there is nothing to allow and
+  a button that changed nothing would teach that buttons change nothing.
+  **A preset sends its NAME, never a list of tools.** "Allow everything" has to
+  mean everything *now*; a screen left open while a tool shipped would send its
+  own stale idea of the word and quietly withhold the new one — the failure
+  `agents/grants.py` records for connectors, where the option did not exist to
+  tick at build time and nothing ever told anyone to go back. The server
+  resolves it and **keeps what the preset has no opinion about**, or "allow
+  everything" would also be "and forget the connectors".
+  **The blurb is on the button, not in a tooltip.** "Allow everything" includes
+  running code, and a control that hid that is the tap-nobody-reads failure at
+  the worst possible scale.
 - **Every left-nav item opens a screen.** The slide-over drawer is gone:
   `tasks` moved into Inbox and `tools` became the Agents & tools panel, and
   those were its only two occupants. `openDrawer()` kept its name — four call

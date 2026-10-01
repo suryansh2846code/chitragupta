@@ -162,6 +162,47 @@ let AGENT_TOOLS_FOR = "";
 //: second click cannot race the first.
 const _toolSaving = new Set();
 
+//: Setting the whole lot at once, which is the common case.
+//:
+//: Six decisions beats sixty-four and is still six. Most of the time the answer
+//: is "this one is mine, let it do everything" or "let it look and nothing
+//: else", and a screen that compacts the list and still makes somebody set
+//: every switch has done half the job.
+//:
+//: The buttons carry the server's words, including the part people skim —
+//: "Allow everything" says it includes running code, because a control that
+//: quietly included that would be the tap-nobody-reads failure at the worst
+//: possible scale.
+//: "Allow all" for one group — every switch in it, in one press.
+//:
+//: Per group rather than only a global preset, because the real answer is
+//: usually about one of them: let it have websites, leave the Mac alone. The
+//: global row sets all four; this sets one.
+//:
+//: Absent on the always-on group (nothing to allow) and while a connector is
+//: unreachable (a control that cannot work is not shown as a control).
+function groupAllButton(g, why) {
+  if (why || !g.spec || g.spec.always) return "";
+  const names = g.tools.map(({ row }) => (row && row.name) || "").filter(Boolean);
+  if (!names.length) return "";
+  const allOn = g.tools.every(({ on }) => on);
+  return `<button type="button" class="tiny at-all"
+    data-bulk="${esc(names.join(" "))}" data-on="${allOn ? "1" : ""}"
+    >${allOn ? "Turn all off" : "Allow all"}</button>`;
+}
+
+function presetRow(presets) {
+  const list = Array.isArray(presets) ? presets : [];
+  if (!list.length) return "";          // an older server: the switches remain
+  return `<div class="at-presets">`
+    + list.map((p) => `<button type="button" class="at-preset"
+         data-preset="${esc(p.key)}" title="${esc(p.blurb || "")}">
+         <span class="at-preset-nm">${esc(p.label)}</span>
+         <span class="at-preset-ds">${esc(p.blurb || "")}</span>
+       </button>`).join("")
+    + `</div>`;
+}
+
 //: The sentence under a group heading, saying what the whole group IS.
 //:
 //: Sixty-four switches had sixty-four descriptions and no answer to "what am I
@@ -315,7 +356,7 @@ function toolBlockedReason(group) {
   return "";
 }
 
-function renderAgentTools(boxEl, { agent, tools, connectors, categories, specs }) {
+function renderAgentTools(boxEl, { agent, tools, connectors, categories, specs, presets }) {
   if (!boxEl) return;
   const groups = agentToolGroups(tools, connectors, agent && agent.tools, categories, specs);
   const usable = groups.reduce((n, g) =>
@@ -336,7 +377,8 @@ function renderAgentTools(boxEl, { agent, tools, connectors, categories, specs }
     return;
   }
 
-  boxEl.innerHTML = `<p class="at-summary">${esc((agent && agent.name) || "This agent")}
+  boxEl.innerHTML = presetRow(presets)
+    + `<p class="at-summary">${esc((agent && agent.name) || "This agent")}
     can use <b>${usable}</b> of ${groups.reduce((n, g) => n + g.tools.length, 0)} tools.</p>`
     + groups.map((g) => {
     const why = toolBlockedReason(g);
@@ -373,6 +415,7 @@ function renderAgentTools(boxEl, { agent, tools, connectors, categories, specs }
       <div class="at-group-head">
         <h3 class="at-group-nm">${esc(g.name)}</h3>
         ${why ? `<span class="at-group-why">${esc(why)}</span>${fix}` : ""}
+        ${groupAllButton(g, why)}
       </div>
       ${groupBlurb(g)}
       ${groupSwitches(g, why)}
@@ -398,6 +441,9 @@ function wireAgentToolActions(boxEl, agent) {
   boxEl.querySelectorAll("[data-bulk]").forEach((b) => {
     b.onclick = () => toggleToolBucket(agent, b);
   });
+  boxEl.querySelectorAll("[data-preset]").forEach((b) => {
+    b.onclick = () => applyPreset(agent, b);
+  });
 }
 
 //: One switch, every tool in a bucket. The whole point of the compaction.
@@ -406,6 +452,36 @@ function wireAgentToolActions(boxEl, agent) {
 //: because N tools must be **one** PATCH: looping would fire seven requests
 //: that each send the whole list, and whichever replied last would win — so
 //: turning a group on could land as a group half on, depending on the network.
+//: Hand a preset NAME to the server, never a list of tools.
+//:
+//: "Allow everything" has to mean everything *now*. A screen open while a tool
+//: shipped would otherwise send its own stale idea of the word and quietly
+//: withhold the new one — the failure `agents/grants.py` already records for
+//: connectors, where the option did not exist to tick at build time and
+//: nothing ever told anyone to go back.
+async function applyPreset(agent, btn) {
+  const key = btn.dataset.preset;
+  if (!agent || !key || btn.classList.contains("is-busy")) return;
+  btn.classList.add("is-busy");
+  try {
+    const saved = await api(`/api/agents/${encodeURIComponent(agent.id)}/tools`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ preset: key }),
+    });
+    agent.tools = saved.tools || agent.tools;
+    const inList = agents.find((a) => a.id === agent.id);
+    if (inList) inList.tools = agent.tools;
+    // A preset moves every switch on the screen, so this one IS a re-render —
+    // unlike a single bucket, where patching the rows in place keeps the
+    // disclosures the user opened.
+    loadAgentTools(agent.id);
+  } catch (e) {
+    toast("Couldn't save that — try again.");
+  } finally {
+    btn.classList.remove("is-busy");
+  }
+}
+
 async function toggleToolBucket(agent, btn) {
   const names = (btn.dataset.bulk || "").split(" ").filter(Boolean);
   if (!agent || !names.length) return;
@@ -502,11 +578,12 @@ async function loadAgentTools(agentId) {
   const id = agentId || AGENT_TOOLS_FOR || current;
   AGENT_TOOLS_FOR = id;
   box.innerHTML = `<div class="at-empty">Loading…</div>`;
-  let tools = [], categories = [], specs = [];
+  let tools = [], categories = [], specs = [], presets = [];
   try {
     const got = await api("/api/agents/tools");
     ({ tools, categories } = got);
     specs = got.groups || [];
+    presets = got.presets || [];
   }
   catch (e) { box.innerHTML = `<div class="at-empty">Couldn't load the tool list.</div>`; return; }
   if (AGENT_TOOLS_FOR !== id) return;      // the user switched while we waited
@@ -514,14 +591,14 @@ async function loadAgentTools(agentId) {
   const agent = (agents || []).find((a) => a.id === id);
   if (!agent) { box.innerHTML = `<div class="at-empty">Pick an agent.</div>`; return; }
 
-  renderAgentTools(box, { agent, tools, connectors: CONNECTORS, categories, specs });
+  renderAgentTools(box, { agent, tools, connectors: CONNECTORS, categories, specs, presets });
   if (!CONNECTORS.length) {
     // /api/connectors starts every added server to answer honestly, so it is
     // far too slow to block a panel on. Render what we know, then sharpen.
     try {
       const { connectors } = await api("/api/connectors");
       CONNECTORS = connectors;
-      if (AGENT_TOOLS_FOR === id) renderAgentTools(box, { agent, tools, connectors, categories, specs });
+      if (AGENT_TOOLS_FOR === id) renderAgentTools(box, { agent, tools, connectors, categories, specs, presets });
     } catch (_) { /* the tools are on screen; health is a bonus */ }
   }
 }

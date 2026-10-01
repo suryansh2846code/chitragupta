@@ -148,3 +148,93 @@ def test_an_older_server_without_groups_still_renders():
 
     assert out["html"].strip(), "the panel went blank"
     assert 'data-tool="search_brain"' in out["html"]
+
+
+# ── giving the lot, in one press ─────────────────────────────────────────
+#
+# "categorise the permission in more briefer and compact category AND give
+# option to select and give all the permission" — the first half shipped and
+# the second did not, so the screen compacted the list and still made somebody
+# set every switch.
+PRESETS = [
+    {"key": "all", "label": "Allow everything",
+     "blurb": "Every group, including running code on this Mac."},
+    {"key": "read", "label": "Read only",
+     "blurb": "It can look at everything and change nothing."},
+    {"key": "none", "label": "Nothing yet",
+     "blurb": "Only its own memory and your day."},
+]
+
+
+@pytest.fixture(scope="module")
+def withpresets() -> dict:
+    return run(["search_brain", "remember"], GROUPED, [], groups=SPECS,
+               presets=PRESETS)
+
+
+def test_the_presets_are_offered_above_the_switches(withpresets):
+    for key in ("all", "read", "none"):
+        assert f'data-preset="{key}"' in withpresets["html"]
+
+
+def test_each_preset_says_what_it_includes_on_the_button(withpresets):
+    """On the button, not in a tooltip. "Allow everything" includes running
+    code, and a control that hid that would be the worst possible version of
+    this control."""
+    assert "running code on this Mac" in withpresets["html"]
+    assert "change nothing" in withpresets["html"]
+
+
+def test_every_group_offers_allow_all(withpresets):
+    """Per group, because the real answer is usually about one of them: let it
+    have websites, leave the Mac alone."""
+    assert withpresets["html"].count("Allow all") >= 2
+
+
+def test_the_always_on_group_offers_no_allow_all(withpresets):
+    """There is nothing to allow — it is already on, and a button that changed
+    nothing would teach that buttons change nothing."""
+    start = withpresets["html"].index("Its own memory and your day")
+    end = withpresets["html"].index("Websites")
+
+    assert "Allow all" not in withpresets["html"][start:end]
+
+
+def test_a_preset_sends_its_NAME_not_a_list_of_tools():
+    """"Allow everything" has to mean everything *now*. A screen open while a
+    tool shipped would otherwise send its own stale idea of the word and
+    quietly withhold the new one."""
+    out = run(["search_brain"], GROUPED, [], groups=SPECS, presets=PRESETS,
+              preset="all")
+
+    assert out["presetUsed"], "the preset button never ran"
+    assert out["presetUsed"]["sent"] == {"preset": "all"}
+    assert "tools" not in out["presetUsed"]["sent"]
+
+
+def test_a_preset_is_one_request():
+    out = run(["search_brain"], GROUPED, [], groups=SPECS, presets=PRESETS,
+              preset="read")
+
+    assert out["presetUsed"]["patches"] == 1
+
+
+def test_allow_all_on_a_group_turns_on_everything_in_it():
+    """It reuses the bucket switch, so it is one PATCH for the whole group
+    rather than one per tool."""
+    out = run(["search_brain"], GROUPED, [], groups=SPECS, presets=PRESETS,
+              bulk="browse_open browse_read browse_click")
+
+    assert out["bulked"]["patches"] == 1
+    assert set(out["bulked"]["sent"]) >= {"browse_open", "browse_read",
+                                          "browse_click"}
+
+
+def test_an_older_server_without_presets_still_renders():
+    """Additive. A panel that went blank because a field was absent would be a
+    worse failure than the one being fixed."""
+    out = run(["search_brain"], GROUPED, [], groups=SPECS, presets=[])
+
+    assert out["html"].strip()
+    assert "data-preset" not in out["html"]
+    assert 'data-tool="search_brain"' in out["html"]
