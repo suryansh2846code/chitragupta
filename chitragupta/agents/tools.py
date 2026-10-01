@@ -1349,13 +1349,19 @@ _LABELS: dict[str, tuple[str, str]] = {
     "browse_click":             ("Click",      "Websites you allow"),
     "browse_type":              ("Type",       "Websites you allow"),
     "browse_submit":            ("Send",       "Websites you allow"),
+    "browse_select":            ("Choose",     "Websites you allow"),
+    "browse_press":             ("Key",        "Websites you allow"),
+    "browse_reveal":            ("Scroll",     "Websites you allow"),
+    "browse_back":              ("Back",       "Websites you allow"),
     "browse_sites":             ("Which sites", "Websites you allow"),
+    "what_i_looked_at":         ("History",    "Websites you allow"),
     # Your Mac — the powers worth naming as a group, because they are the ones
     # a person wants to see gathered before deciding
     "list_dir":                 ("Browse",    "Your Mac"),
     "find_file":                ("Find",      "Your Mac"),
     "read_file":                ("Read",      "Your Mac"),
     "write_file":               ("Write",     "Your Mac"),
+    "edit_file":                ("Edit",      "Your Mac"),
     "move_file":                ("Move",      "Your Mac"),
     "run_python":               ("Run",       "Your Mac"),
     # Agents — asking the rest of the team, and thinking out loud
@@ -1373,10 +1379,18 @@ _LABELS: dict[str, tuple[str, str]] = {
 }
 
 #: The order the categories read in. Memory first because it is what makes an
-#: agent know the user at all; "Your Mac" last because it is the one worth
-#: pausing over.
-TOOL_CATEGORIES = ("Memory", "Tasks", "Email", "Calendar", "Web",
-                   "Agents", "Automations", "Connectors", "Your Mac")
+#: agent know the user at all; the two that reach outside the app last, because
+#: they are the ones worth pausing over.
+#:
+#: **A second hand-kept list that had already drifted.** "Websites you allow"
+#: was in `_LABELS` and missing from here, so the panel rendered it *after*
+#: "Other" — below the bucket meant for things nobody had got round to naming.
+#: `tests/test_tool_labels.py` now fails if the two disagree in either
+#: direction, because the drift is silent and shows up only as a screen that
+#: reads oddly.
+TOOL_CATEGORIES = ("Memory", "Tasks", "Messages", "Email", "Calendar",
+                   "Measurements", "Training", "Web", "Agents", "Automations",
+                   "Connectors", "Websites you allow", "Your Mac")
 
 
 def tool_label(name: str) -> tuple[str, str]:

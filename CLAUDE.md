@@ -456,9 +456,9 @@ In order: **the focused test → the subsystem's suite → `pytest` →
 `ruff check chitragupta tests` → `mypy chitragupta` → the `tests/js/` harnesses if
 the frontend changed → `chitragupta app` opens and renders.**
 
-Baseline, measured 2026-10-01: **5636 passed, 32 skipped**, ruff clean, mypy
+Baseline, measured 2026-10-01: **5767 passed, 32 skipped**, ruff clean, mypy
 clean over 218 files. With `PLAYWRIGHT_BROWSERS_PATH` pointed at the managed
-browser the same run is **5648 passed, 20 skipped in ~7min10** — the twelve are
+browser the same run is **5779 passed, 20 skipped in ~7min05** — the twelve are
 `tests/test_browser_driver.py`'s real-Chromium tests, which skip when there is
 no browser to find. Worth setting: they are the only tests that drive a real
 page, and one of them is the regression for a navigation that used to hang.
