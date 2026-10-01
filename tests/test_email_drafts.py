@@ -291,15 +291,25 @@ def test_a_message_with_no_thread_carries_no_threading_headers(gmail):
     assert fake.sent[0]["headers"] == {}
 
 
-def test_a_thread_whose_headers_cannot_be_read_still_sends(gmail):
-    """Losing the nicety must not lose the mail."""
+def test_a_thread_whose_headers_cannot_be_read_still_sends(gmail, monkeypatch):
+    """Losing the nicety must not lose the mail.
+
+    **The `monkeypatch` fixture, not a `MonkeyPatch()` of its own.** This built
+    one inline and never undid it — nothing calls `.undo()` on a hand-made one
+    and pytest does not manage it — so `actions._writer` stayed replaced with
+    this deliberately broken Gmail for the rest of the session. Every later test
+    that reached a real action handler got it: `tests/test_action_required_fields`
+    failed six ways with *"'Broken' object has no attribute 'cancel_event'"*,
+    but only when it happened to run after this file, so the suite was green in
+    alphabetical order and red under `pytest $(ls tests/test_*.py | shuf)` —
+    which `tests/CLAUDE.md` calls part of finishing, for exactly this.
+    """
     class Broken(FakeGmail):
         def thread_headers(self, thread_id, interactive=False):
             raise RuntimeError("network")
 
     fake = Broken()
-    import pytest as _p
-    _p.MonkeyPatch().setattr(actions, "_writer", lambda s, c: fake)
+    monkeypatch.setattr(actions, "_writer", lambda s, c: fake)
     out = actions.run_now("send_email", {"to": "r@w.test", "subject": "P",
                                          "body": "x", "thread_id": "t7"})
     assert out["ok"]
