@@ -56,7 +56,7 @@ class FakeDriver:
 #: set is written down so the gate below can watch for them arriving.
 _WRITE_TOOLS = frozenset({
     "browse_click", "browse_type", "browse_select", "browse_submit",
-    "browse_download",
+    "browse_press", "browse_download",
 })
 
 PAGES = {
@@ -825,3 +825,264 @@ def test_the_loading_guess_is_only_ever_advice(text, unready):
     """It is allowed to be wrong — the last case is — because being wrong costs
     one appended sentence. It never refuses a read and never decides anything."""
     assert browse_tools._looks_unready(text) is unready
+
+
+# ── the page that was slow, reported as the browser that would not start ──
+#
+# From a real log. The browser launched at 20:12:10 and was still running the
+# next afternoon; at 20:12:30 `Page.goto` gave up on web.whatsapp.com and the
+# user was told *"The browser itself failed to start — not a sign-in or
+# permission issue on your end."*
+#
+# Three things wrong, all of them this module's: it named the wrong component,
+# it was false about a browser that was plainly alive, and the advice ended the
+# turn — `BROWSER_UNAVAILABLE` says not to retry, and retrying is exactly what
+# works here. The fall-through had words for a locked profile and for a closed
+# browser and treated everything else as "would not start".
+SLOW = ('Page.goto: Timeout 20000ms exceeded.\nCall log:\n  - navigating to '
+        '"https://web.whatsapp.com/", waiting until "load"')
+
+
+def test_a_slow_page_is_not_reported_as_a_browser_that_would_not_start():
+    """The lie, and the whole reason this case exists."""
+    origins.grant("payroll.example.com")
+    _wont_start(SLOW)
+
+    out = browse_tools.browse_open("https://payroll.example.com/payslips")
+
+    assert out.ok is False
+    assert "could not be started" not in out.lower()
+    assert "failed to start" not in out.lower()
+
+
+def test_a_slow_page_is_told_to_try_again_rather_than_to_give_up():
+    """The advice has to be the opposite of the locked-profile case. Opening it
+    again lands on a warm cache; being told not to retry is what left the user
+    with nothing."""
+    origins.grant("payroll.example.com")
+    _wont_start(SLOW)
+
+    out = browse_tools.browse_open("https://payroll.example.com/payslips")
+
+    assert "again" in out.lower()
+    assert "do not retry" not in out.lower()
+
+
+def test_a_slow_page_says_which_thing_was_slow():
+    """"It is the browser rather than their sign-in" was wrong about the
+    browser. It was the page."""
+    origins.grant("payroll.example.com")
+    _wont_start(SLOW)
+
+    out = browse_tools.browse_open("https://payroll.example.com/payslips")
+
+    assert "page" in out.lower()
+    assert "20000ms" not in out and "Page.goto" not in out
+
+
+def test_a_browser_that_went_away_mid_navigation_is_still_the_closed_case():
+    """A closed browser times out too, and "call this again once and a fresh
+    browser will start" is the more useful of the two answers. Order, not
+    wording — which is why it is a test and not a comment."""
+    origins.grant("payroll.example.com")
+    _wont_start("Timeout 20000ms exceeded: Target page, context or browser "
+                "has been closed")
+
+    out = browse_tools.browse_open("https://payroll.example.com/payslips")
+
+    assert "closed" in out.lower()
+    assert browse_tools._session is None
+
+
+def test_a_slow_page_keeps_the_session_the_agent_already_had():
+    """Unlike the closed case. The browser is alive and whatever page was open
+    still is, so throwing the refs away would cost the agent its place for
+    nothing."""
+    origins.grant("payroll.example.com")
+    _wont_start(SLOW)
+    held = browse_tools._session
+
+    browse_tools.browse_open("https://payroll.example.com/payslips")
+
+    assert browse_tools._session is held
+
+
+# ── the hint that was written on one read and not the other ──────────────
+#
+# `_unready_hint` exists because an agent that reads a loading screen concludes
+# the site is broken or empty and says so to the user. It was appended in
+# `browse_read` and nowhere else — so the *first* look at a page, which is the
+# one most likely to be early, was the one without it. Opening WhatsApp Web
+# returns "Your messages are downloading" and four nodes for several seconds.
+#
+# The shape, not the instance: `_answer` is what every other tool returns
+# through, and its own first line says it is the one place a `Reading` becomes
+# what the model sees.
+STILL_LOADING = {
+    "https://payroll.example.com/app": ("WhatsApp", [
+        Node(role="heading", name="WhatsApp"),
+        Node(role="text", name="Your messages are downloading."),
+    ]),
+}
+
+
+def test_opening_a_page_that_is_still_loading_says_so():
+    """The gap. `browse_open` is the first look at a freshly navigated page and
+    was the one read with no hint on it."""
+    origins.grant("payroll.example.com")
+    browse_tools.set_session(Session(FakeDriver(STILL_LOADING)))
+
+    out = browse_tools.browse_open("https://payroll.example.com/app")
+
+    assert out.ok is True
+    assert "browse_wait" in str(out)
+
+
+def test_re_reading_a_page_that_is_still_loading_still_says_so():
+    """The case that already worked, kept — the fix moved the hint up rather
+    than across."""
+    origins.grant("payroll.example.com")
+    browse_tools.set_session(Session(FakeDriver(STILL_LOADING)))
+    browse_tools.browse_open("https://payroll.example.com/app")
+
+    assert "browse_wait" in str(browse_tools.browse_read())
+
+
+def test_a_finished_page_is_not_told_it_is_loading():
+    """The hint only ever advises, and advising wrongly on every page would
+    make it worth nothing."""
+    origins.grant("payroll.example.com")
+
+    out = browse_tools.browse_open("https://payroll.example.com/payslips")
+
+    assert out.ok is True
+    assert "browse_wait" not in str(out)
+
+
+# ── the verbs a page needs that an agent did not have ────────────────────
+#
+# "Read it and then stall" was the shape of the gap. A form with a dropdown, a
+# dialog that closes on Escape, and a list that draws thirty rows of a hundred
+# were each a page an agent could see perfectly and not get through.
+SELECTABLE = {
+    "https://payroll.example.com/form": ("Form", [
+        Node(role="combobox", name="Year", handle="combobox\x1fYear"),
+        Node(role="textbox", name="Search", handle="textbox\x1fSearch"),
+        Node(role="gridcell", name="Row 30", handle="gridcell\x1fRow 30"),
+    ]),
+}
+
+
+class _Recorder(FakeDriver):
+    """Remembers the verb and text that reached the driver."""
+
+    def __init__(self, pages):
+        super().__init__(pages)
+        self.acted = []
+
+    def act(self, kind, handle, text=""):
+        self.acted.append((kind, handle, text))
+        return self._page(self._at)
+
+
+def _on_form(*, may_act=True):
+    driver = _Recorder(SELECTABLE)
+    browse_tools.set_session(Session(driver))
+    origins.grant("payroll.example.com", may_act=may_act)
+    browse_tools.browse_open("https://payroll.example.com/form")
+    return driver
+
+
+def test_a_dropdown_can_be_chosen_from():
+    """The form control nothing could touch. A page built around one was a page
+    an agent read and then stalled on."""
+    driver = _on_form()
+
+    out = browse_tools.browse_select("2026", label="Year")
+
+    assert out.ok is True, str(out)
+    assert driver.acted == [("select", "combobox\x1fYear", "2026")]
+
+
+def test_a_key_can_be_sent_to_something_on_the_page():
+    """Walking a list of suggestions, dismissing what is open, moving on — the
+    things a page expects a keyboard for and a click cannot express."""
+    driver = _on_form()
+
+    out = browse_tools.browse_press("ArrowDown", label="Search")
+
+    assert out.ok is True, str(out)
+    assert driver.acted == [("press", "textbox\x1fSearch", "ArrowDown")]
+
+
+def test_only_named_keys_may_be_sent():
+    """`press` takes a string Chromium interprets, and the unbounded version is
+    a keyboard-shaped hole in everything else here: a modifier chord reaches the
+    browser's own menus, and `Control+V` is a paste."""
+    from chitragupta.browser.driver import NAMED_KEYS, locate
+    from chitragupta.browser.trouble import BrowserError
+
+    assert "Control+A" not in NAMED_KEYS
+    # Refused before anything is resolved, so nothing on a logged-in page is
+    # even located for a key we would not send.
+    with pytest.raises(BrowserError, match="not a key"):
+        locate(object(), "button\x1fx", "press", "Control+A")
+
+
+def test_revealing_a_row_only_needs_permission_to_read():
+    """The whole reason `reveal` is not a write. Asking a user to allow
+    *changes* on a site before an agent may scroll it would be asking them about
+    something other than what happens — and refusing it means an agent reports
+    row thirty-one as absent on a page where it is plainly there."""
+    driver = _on_form(may_act=False)
+
+    out = browse_tools.browse_reveal(label="Row 30")
+
+    assert out.ok is True, str(out)
+    assert driver.acted == [("reveal", "gridcell\x1fRow 30", "")]
+
+
+def test_changing_something_still_needs_permission_to_change():
+    """The other half of that split, so `reveal` cannot be read as a loosening."""
+    _on_form(may_act=False)
+
+    assert browse_tools.browse_select("2026", label="Year").ok is False
+    assert browse_tools.browse_press("ArrowDown", label="Search").ok is False
+
+
+def test_going_back_reads_where_it_landed():
+    """`Session.back` existed since the package did and nothing could call it,
+    so an agent that followed a link into a dead end had to start again from the
+    top — and on a site whose way back is a link, could not get back at all."""
+    browse_tools.set_session(Session(FakeDriver(PAGES)))
+    origins.grant("payroll.example.com")
+    browse_tools.browse_open("https://payroll.example.com/payslips")
+
+    out = browse_tools.browse_back()
+
+    assert out.ok is True, str(out)
+    assert "Your payslips" in str(out)
+
+
+@pytest.mark.parametrize("name", [
+    "browse_select", "browse_press", "browse_reveal", "browse_back"])
+def test_every_new_verb_is_a_tool_an_agent_can_actually_reach(name):
+    """A tool nobody registered is a capability that does not exist, and an
+    agent that cannot see it tells the user it cannot do the thing."""
+    from chitragupta.agents import library
+
+    assert name in tools.TOOL_IMPLS
+    assert name in tools.TOOL_DEFS
+    assert name in library._BROWSE
+
+
+def test_the_unattended_floor_is_derived_from_the_verbs_not_retyped():
+    """It was three names typed into `permissions.py`, three files from where
+    anybody adding a verb was working. A verb added to `ACTS` must be gated the
+    moment it exists, not in whichever commit somebody remembers."""
+    from chitragupta.browser.driver import CHANGING_ACTS
+
+    assert frozenset(
+        f"browse_{act}" for act in CHANGING_ACTS) == permissions.NEVER_UNATTENDED_TOOLS
+    assert "browse_press" in permissions.NEVER_UNATTENDED_TOOLS
+    assert "browse_reveal" not in permissions.NEVER_UNATTENDED_TOOLS

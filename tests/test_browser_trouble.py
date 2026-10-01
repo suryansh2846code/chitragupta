@@ -163,3 +163,50 @@ def test_the_exception_types_are_the_same_objects_everywhere():
     assert driver.BrowserError is trouble.BrowserError
     assert chromium.BrowserNotReadyError is trouble.BrowserNotReadyError
 
+
+# ── every audience reads the same verdict ────────────────────────────────
+#
+# The reason this file exists. Four modules answered "why did the browser not
+# work" and three of them were wrong about at least one failure; fixing the
+# agent side left the HTTP side still handing Playwright's paragraphs to a
+# person. These are the tests that would have caught that, and they are written
+# over *all* the consumers rather than one of them.
+def test_the_agent_table_covers_every_failure_the_classifier_can_produce():
+    """Both tables select on the same `Trouble`, which is the point: a failure
+    nobody has words for cannot reach only one of them. `NOT_SET_UP` is handled
+    by passing the exception's own sentence through, so it needs no entry."""
+    from chitragupta.agents.browse_tools import FOR_AGENT
+
+    missing = {t for t in Trouble if t is not Trouble.NOT_SET_UP} - set(FOR_AGENT)
+
+    assert not missing, f"{sorted(t.value for t in missing)} has no agent wording"
+
+
+@pytest.mark.parametrize("message", [SLOW, LOCKED, GONE])
+def test_the_agent_is_never_handed_an_internal_either(message):
+    """Same rule, other audience. A tool result is user-facing by the time a
+    model has repeated it back to somebody."""
+    from chitragupta.agents.browse_tools import FOR_AGENT
+
+    said = FOR_AGENT[trouble.classify(Exception(message)).trouble]
+
+    for leak in ("Playwright", "ProcessSingleton", "Page.goto", "20000ms"):
+        assert leak not in said
+
+
+def test_the_agent_wording_agrees_with_the_verdict_about_retrying():
+    """Prose and fact, kept in step. The reported inversion — "do not retry" on
+    the one failure retrying fixes — was prose disagreeing with reality, and
+    nothing was comparing them."""
+    from chitragupta.agents.browse_tools import FOR_AGENT
+
+    for name, said in FOR_AGENT.items():
+        if name is Trouble.SIGNING_IN:
+            continue        # a wait, and the advice is to stop rather than retry
+        refuses = "do not retry" in said.lower()
+        sample = {Trouble.BUSY: LOCKED, Trouble.CLOSED: GONE,
+                  Trouble.SLOW: SLOW}.get(name)
+        if sample is None:
+            continue
+        assert refuses is not trouble.classify(Exception(sample)).may_retry, (
+            f"{name.value}: the words and the verdict disagree about retrying")

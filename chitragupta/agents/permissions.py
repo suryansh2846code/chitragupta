@@ -122,6 +122,18 @@ RECIPIENT_KINDS = {
 NEVER_UNATTENDED = frozenset(
     name for name, spec in REGISTRY.items() if spec.risk is Risk.RED)
 
+def _changing_acts() -> frozenset[str]:
+    """The page verbs that change something, from the one place that knows.
+
+    A function rather than a plain import so that importing permissions does not
+    drag the browser package in at module-import time — the tool floor is needed
+    by every turn, and the browser by very few of them.
+    """
+    from ..browser.driver import CHANGING_ACTS
+
+    return CHANGING_ACTS
+
+
 #: Tools an unattended agent may never call, whatever it has been granted.
 #:
 #: The twin of `NEVER_UNATTENDED` on the other side of the seam, and it has to
@@ -138,9 +150,17 @@ NEVER_UNATTENDED = frozenset(
 #: themselves. A routine triggered by `new_email` is reading text a stranger
 #: wrote; an instruction in that text plus a click is an agent acting inside
 #: accounts the user is signed in to, with nobody watching.
-NEVER_UNATTENDED_TOOLS = frozenset({
-    "browse_click", "browse_type", "browse_submit",
-})
+#: **Derived, not listed.** It was three names typed out here, which is the
+#: shape that rots: a verb is added to the browser, a tool is written for it,
+#: and the one list that keeps it away from an unwatched run is three files from
+#: where anybody was working. `browser/driver.CHANGING_ACTS` already has to be
+#: right — it is what `Session.act` checks the origin against — so this reads it
+#: rather than agreeing with it by hand, and a new act is gated the moment it
+#: exists. `tests/test_browse_tools.py` still enumerates the names
+#: independently, because a guard derived from the thing it guards proves
+#: nothing.
+NEVER_UNATTENDED_TOOLS = frozenset(
+    f"browse_{act}" for act in _changing_acts())
 
 #: Is the turn running right now one nobody is watching?
 #:
