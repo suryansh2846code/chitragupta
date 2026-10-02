@@ -640,3 +640,92 @@ def test_the_browser_thread_sends_back_the_reason_not_the_retry_log():
     assert "intercepts pointer events" in payload, (
         "the reason did not survive the trip off the browser thread")
     assert len(payload) < 200, "the retry log came with it"
+
+
+# ── bringing the real window back, which is two things not one ───────────
+#
+# `Browser.setWindowBounds` takes the window out of the Dock and leaves it
+# exactly where it was in the stacking order — behind the window that asked for
+# it, every time, because that is the window the user is looking at. A window
+# restored behind the app is a window that did not appear, which is how a
+# sign-in card came to say *"a browser window is open, sign in there"* over
+# nothing anybody could find.
+#
+# Offline on purpose: this is CDP bookkeeping, and a test that needs a real
+# Chromium to assert it is a test that mostly skips.
+class _FakeCdp:
+    def __init__(self):
+        self.sent = []
+
+    def send(self, method, params=None):
+        self.sent.append((method, params or {}))
+        return {"windowId": 7}
+
+
+class _FakePage:
+    def __init__(self):
+        self.raised = 0
+
+    def bring_to_front(self):
+        self.raised += 1
+
+
+def _driver_with_cdp():
+    from chitragupta.browser.driver import PlaywrightDriver
+
+    driver = PlaywrightDriver(None, "/nonexistent/profile")
+    driver._cdp = _FakeCdp()
+    return driver
+
+
+def test_showing_the_window_un_minimises_it_and_raises_it():
+    from chitragupta.browser.driver import SHOWN
+
+    driver, page = _driver_with_cdp(), _FakePage()
+
+    driver._set_window(SHOWN, page)
+
+    bounds = [p for m, p in driver._cdp.sent if m == "Browser.setWindowBounds"]
+    assert bounds and bounds[0]["bounds"]["windowState"] == "normal"
+    assert page.raised == 1, "restored into the Dock-shaped void behind the app"
+
+
+def test_a_restored_window_comes_back_with_a_size():
+    """A window that comes back at whatever it was minimised from can come back
+    at nothing."""
+    from chitragupta.browser.driver import SHOWN
+
+    driver = _driver_with_cdp()
+
+    driver._set_window(SHOWN, _FakePage())
+
+    bounds = next(p for m, p in driver._cdp.sent
+                  if m == "Browser.setWindowBounds")["bounds"]
+    assert bounds["width"] > 0 and bounds["height"] > 0
+
+
+def test_hiding_the_window_never_raises_it():
+    """The opposite press. Putting it away and then pulling it to the front
+    would be the two halves cancelling out."""
+    from chitragupta.browser.driver import HIDDEN
+
+    driver, page = _driver_with_cdp(), _FakePage()
+
+    driver._set_window(HIDDEN, page)
+
+    assert page.raised == 0
+
+
+def test_a_window_that_will_not_raise_is_not_a_failed_start():
+    """Best-effort, like the bounds call beside it. A browser whose window will
+    not move still reads pages perfectly well, and trading the feature for the
+    decoration is the wrong way round."""
+    from chitragupta.browser.driver import SHOWN
+
+    class _Stubborn:
+        def bring_to_front(self):
+            raise RuntimeError("no window server")
+
+    driver = _driver_with_cdp()
+
+    driver._set_window(SHOWN, _Stubborn())      # must not raise

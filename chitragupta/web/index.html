@@ -704,6 +704,12 @@
             </div>
           </div>
           <div id="webConnectErr" class="cn-web-err" hidden></div>
+          <!-- The one sign-in failure the user can fix from here: the browser
+               is set to run with no window, so there is nowhere to type a
+               password. Directions to a switch on another screen is the dead
+               end this package already paid for once — the route out is the
+               control itself. Hidden until the server says so. -->
+          <button id="webConnectWindow" class="tiny" hidden>Show the browser window</button>
         </div>
         <button id="webForget" class="tiny ghost" hidden>Forget every sign-in</button>
       </section>

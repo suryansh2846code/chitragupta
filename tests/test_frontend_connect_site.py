@@ -217,3 +217,59 @@ def test_a_sign_in_survives_a_refresh():
     src = (WEB / "browser.js").read_text()
     loader = src.split("async function loadBrowserSites()", 1)[1].split("\n}", 1)[0]
     assert "loadConnectState()" in loader
+
+
+# ── a browser with no window, and the one press that fixes it ────────────
+#
+# Reported as "it opens the browser but no window pops up where I can sign in".
+# Two things were true at once: the shared browser rests minimised and the
+# sign-in flow never raised it, and on the machine it was reported from the
+# browser was set to run with no window at all — `chromium.runs_hidden()`, a
+# switch on the Browser screen, turned on weeks earlier. The card promised "a
+# separate window, not part of this app" either way.
+#
+# The server now refuses instead of promising, and the refusal carries
+# `needs_window` so the card can offer the switch. Directions to a control on
+# another screen is the dead end this package already paid for once.
+NO_WINDOW = {"ok": False, "needs_window": True,
+             "error": "The browser is set to run with no window on this "
+                      "machine, so there is nowhere for you to sign in. "
+                      "Give it a window and try again."}
+
+
+def test_a_browser_with_no_window_offers_the_switch():
+    out = drive([IDLE], ["go"], replies={"/api/browser/connect": NO_WINDOW})
+
+    frame = out["frames"][-1]
+    assert frame["error"] == NO_WINDOW["error"]
+    assert frame["fixHidden"] is False, "the user was told to go and find it"
+
+
+def test_an_ordinary_refusal_offers_nothing_to_press():
+    """Only the failure the button actually fixes. A press that does something
+    unrelated to the sentence above it is worse than no press."""
+    out = drive([IDLE], ["go"], replies={
+        "/api/browser/connect": {"ok": False, "error": "Already signing in."}})
+
+    assert out["frames"][-1]["fixHidden"] is True
+
+
+def test_the_switch_gives_the_browser_a_window_and_tries_again():
+    """One press, both halves. Turning the window back on and leaving the user
+    to press Connect again is the same walk, one screen shorter."""
+    out = drive([IDLE, IDLE], ["go", "fix"], typed="linkedin.com", replies={
+        "/api/browser/connect": [NO_WINDOW, {"ok": True, "host": "linkedin.com"}]})
+
+    assert posts(out, "/api/browser/hidden") == [{"hidden": False}]
+    assert posts(out, "/api/browser/connect") == [
+        {"url": "linkedin.com"}, {"url": "linkedin.com"}], "it never retried"
+
+
+def test_the_switch_goes_away_once_it_has_been_used():
+    """A press offered for a refusal that is no longer on screen does something
+    the user is no longer being told about."""
+    out = drive([IDLE, IDLE], ["go", "fix"], replies={
+        "/api/browser/connect": [NO_WINDOW, {"ok": True}]})
+
+    assert out["frames"][-1]["fixHidden"] is True
+    assert out["frames"][-1]["error"] == ""

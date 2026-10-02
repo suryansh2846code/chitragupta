@@ -163,7 +163,19 @@ have not earned.
 * **No third-party broker.** Credentials do not leave the machine.
 * **No reading another browser's profile.** Forbidden by `/CLAUDE.md`, and it is
   the shape of malware.
-* **The sign-in window is visible, always.** It is where two-factor happens, and
-  a user who can watch is a user who can stop it.
+* **The sign-in window is visible, always** — and *visible* means raised, not
+  merely un-minimised. The shared browser rests minimised so a second
+  application does not sit on top of the user's work, and the page is shown
+  inside the app instead; signing in is the one thing that cannot work that
+  way, because the password goes into a window the *site* owns. `signin.begin`
+  therefore brings the real window forward and `_clear` puts it back. Two
+  halves: `Browser.setWindowBounds` takes it out of the Dock, `Page.bringToFront`
+  raises it — bounds alone leaves it behind the app that asked for it, which is
+  a window that did not appear as far as anybody looking at the screen is
+  concerned. And a browser set to run with no window at all
+  (`chromium.runs_hidden`) refuses the flow rather than promising one: there is
+  nowhere to type a password, so the card would wait forever.
+  It is where two-factor happens, and a user who can watch is a user who can
+  stop it.
 * **We never type the password.** The user types it, into the real site.
 * **Disconnect clears cookies**, not just the grant.

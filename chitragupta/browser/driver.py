@@ -410,12 +410,22 @@ class PlaywrightDriver:
                 with suppressed("closing the browser context"):
                     context.close()
 
-    def _set_window(self, state: str) -> None:    # pragma: no cover - needs a browser
-        """Put the OS window away, or bring it back.
+    def _set_window(self, state: str, page: Any = None) -> None:  # pragma: no cover - needs a browser
+        """Put the OS window away, or bring it back where a person can use it.
 
         Best-effort on purpose. A browser whose window will not move is still a
         browser that reads pages perfectly well, and failing the whole start
         over a cosmetic bounds call would trade the feature for the decoration.
+
+        **Showing is two things, and the second one is not decoration.**
+        `Browser.setWindowBounds` takes the window out of the Dock and leaves it
+        exactly where it was in the stacking order — which is behind the window
+        that asked for it, every time, because the window that asked for it is
+        the one the user is looking at. A window restored behind the app reads
+        as a window that never opened, and that is the whole failure: a sign-in
+        card saying *"a browser window is open, sign in there"* over nothing a
+        person can find. `Page.bringToFront` is the half that raises it, and it
+        is the only half macOS lets us ask for.
         """
         cdp = getattr(self, "_cdp", None)
         if cdp is None:
@@ -430,6 +440,9 @@ class PlaywrightDriver:
                               height=VIEWPORT["height"] + 90)
             cdp.send("Browser.setWindowBounds",
                      {"windowId": window_id, "bounds": bounds})
+        if state == SHOWN and page is not None:
+            with suppressed("raising the browser's own window"):
+                page.bring_to_front()
 
     def _serve(self, page: Any) -> None:          # pragma: no cover - needs a browser
         while True:
@@ -483,7 +496,7 @@ class PlaywrightDriver:
                 raise BrowserError(f"unknown input {kind!r}")
             return None
         elif command.name == "window":
-            self._set_window(SHOWN if command.args[0] else HIDDEN)
+            self._set_window(SHOWN if command.args[0] else HIDDEN, page)
             return None
         elif command.name == "windows":
             context = getattr(self, "_context", None)

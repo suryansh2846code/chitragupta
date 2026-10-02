@@ -220,6 +220,27 @@ holds.
   `_state.current` still set — which refused the retry as "already signing in".
   The user was told to do something impossible and then stopped from trying
   again.
+- **A sign-in raises the real window, because the card promises one.** The
+  shared browser rests minimised and the app shows the page — but a password
+  goes into a window the *site* owns, which is what makes two-factor work and
+  what the card says ("it is a separate window, not part of this app"). Nothing
+  in the flow ever un-minimised it, so the sign-in ran with no window on screen
+  at all and the only control that would have brought one back was "Open
+  window" on the Browser screen, which is not where somebody signing in is
+  looking. `signin.begin` shows it *before* navigating, `signin._clear` puts it
+  back on every exit — finished, cancelled, or a navigation that never arrived.
+  **Showing is two CDP calls, not one**: `Browser.setWindowBounds` takes the
+  window out of the Dock and leaves it exactly where it was in the stacking
+  order, which is behind the window that asked for it. `Page.bringToFront` is
+  the half that raises it, and `driver._set_window` owns both so the Browser
+  screen's "Open window" cannot be the one that remembers.
+- **A browser with no window refuses the sign-in rather than promising one.**
+  `chromium.runs_hidden()` means headless, and headless has nowhere to type a
+  password. The refusal carries `needs_window`, so the card can offer the
+  switch as a press rather than describing where it lives — the same dead end
+  `Verdict.grantable` without `needs` produced, one screen further away. A
+  control that cannot work is bad; one that cannot work with no way back is
+  worse.
 - **One browser is one window, and a person may be in it.** While a sign-in is
   live, `browse_tools` refuses agent reads with `FOR_AGENT[Trouble.SIGNING_IN]`
   rather than navigating the window somebody is typing a password into. It is a wait,

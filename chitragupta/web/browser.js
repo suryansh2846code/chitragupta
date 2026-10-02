@@ -521,7 +521,14 @@ function stopConnectPoll() {
 
 {
   const err = $("#webConnectErr");
-  const show = (m) => { if (err) { err.hidden = !m; err.textContent = m || ""; } };
+  const fix = $("#webConnectWindow");
+  // Every message clears the fix button with it. A press offered for a refusal
+  // that is no longer on screen is a button that does something the user is no
+  // longer being told about.
+  const show = (m) => {
+    if (err) { err.hidden = !m; err.textContent = m || ""; }
+    if (fix) fix.hidden = true;
+  };
 
   const input = $("#webConnectInput");
   if (input) input.oninput = renderConnectRisk;
@@ -538,8 +545,14 @@ function stopConnectPoll() {
       // The endpoint answers `{ok: false, error}` rather than raising, so a
       // refusal has to be read out of the body — awaiting it and assuming
       // success is how "already signing in to X" became a silent no-op.
-      if (r && r.ok === false) show(r.error || "Could not open that site.");
-      else if (input) input.value = "";
+      if (r && r.ok === false) {
+        show(r.error || "Could not open that site.");
+        // The browser is running with no window, so there is nowhere to sign
+        // in — and that is a switch, which means the honest answer is to offer
+        // it rather than to describe where it lives. Flagged by the server:
+        // matching on the sentence would make the wording load-bearing.
+        if (r.needs_window && fix) fix.hidden = false;
+      } else if (input) input.value = "";
     } catch (e) {
       show(String(e).replace(/^Error:\s*/, ""));
     }
@@ -572,6 +585,25 @@ function stopConnectPoll() {
     done.disabled = false;
     await loadConnectState();
     loadBrowserSites();
+  };
+
+  // Give the browser a window back, then try the same address again — one
+  // press, not "go to the Browser screen and find Show in Dock". The browser
+  // restarts to take the change, which `chromium.set_hidden` owns; nothing is
+  // signing in at this point, because the attempt that raised this was refused
+  // before anything started.
+  if (fix) fix.onclick = async () => {
+    fix.disabled = true;
+    try {
+      await api("/api/browser/hidden", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ hidden: false }) });
+      show("");
+      if (go && typeof go.onclick === "function") await go.onclick();
+    } catch (e) {
+      show(String(e).replace(/^Error:\s*/, ""));
+    }
+    fix.disabled = false;
   };
 
   const cancel = $("#webConnectCancel");

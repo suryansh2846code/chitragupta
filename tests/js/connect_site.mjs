@@ -48,7 +48,13 @@ const ctx = {
       stateIdx += 1;
       return s;
     }
-    return (input.replies || {})[path] ?? { ok: true };
+    // An array means successive answers to the same path — the refusal, then
+    // what happens after the user has pressed the thing that fixes it. One
+    // fixed reply cannot express "and now it works", which is the half of a
+    // one-press route out that is worth testing.
+    const reply = (input.replies || {})[path];
+    if (Array.isArray(reply)) return reply.length > 1 ? reply.shift() : reply[0];
+    return reply ?? { ok: true };
   },
   toast: (m) => calls.push({ toast: m }),
   setInterval: () => 1,
@@ -59,6 +65,10 @@ const ctx = {
 // Everything from the connect section down — the flow and the block that wires
 // it, in the order the browser evaluates them.
 const block = SRC.slice(SRC.indexOf("// ── connecting a site"));
+// The fix button starts hidden in the markup, and the harness's fake elements
+// start visible. A test that found it already on screen would be testing the
+// fake rather than the code that reveals it.
+el("webConnectWindow").hidden = true;
 const run = new Function(...Object.keys(ctx),
   block + "\nreturn { renderConnect, connectRisk, renderConnectRisk, loadConnectState, els: null };");
 const api = run(...Object.values(ctx));
@@ -70,6 +80,7 @@ const snap = () => ({
   message: el("webConnectMsg").textContent,
   doneLabel: el("webConnectDone").textContent,
   error: el("webConnectErr").hidden ? "" : el("webConnectErr").textContent,
+  fixHidden: el("webConnectWindow").hidden,
   risk: el("webConnectRisk").hidden ? "" : el("webConnectRisk").textContent,
 });
 
@@ -92,7 +103,7 @@ try {
       // first, exactly as a person would.
       if (step === "go") el("webConnectInput").value = input.typed ?? "example.com";   // ?? so "" is honoured
       const btn = { go: "webConnectGo", done: "webConnectDone",
-                    cancel: "webConnectCancel" }[step];
+                    cancel: "webConnectCancel", fix: "webConnectWindow" }[step];
       if (typeof el(btn).onclick === "function") await el(btn).onclick();
     }
     report.frames.push({ step, ...snap() });

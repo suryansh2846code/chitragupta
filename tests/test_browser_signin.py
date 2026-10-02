@@ -41,6 +41,13 @@ class FakeDriver:
         #: Windows this browser has open besides the one it is driving —
         #: `[(url, title)]`. A real "Continue with Google" opens one.
         self.popups = []
+        #: Every `window(visible)` this browser was asked for, in order. The
+        #: real one starts minimised, so this is the record of whether anybody
+        #: ever took it back out of the Dock.
+        self.window_calls = []
+
+    def window(self, visible):
+        self.window_calls.append(bool(visible))
 
     def windows(self):
         return [(self.url, self.title), *self.popups]
@@ -734,11 +741,15 @@ class _CannotOpen:
     def __init__(self, message):
         self.message = message
         self.went = []
+        self.window_calls = []
 
     def goto(self, url):
         from chitragupta.browser.trouble import BrowserError
         self.went.append(url)
         raise BrowserError(self.message)
+
+    def window(self, visible):
+        self.window_calls.append(bool(visible))
 
     def close(self):
         pass
@@ -793,3 +804,160 @@ def test_a_sign_in_grants_nothing_when_the_window_never_opened(monkeypatch):
     signin.begin("https://payroll.example.com")
 
     assert origins.matching_grant("https://payroll.example.com") is None
+
+
+# ── the window the card promises ─────────────────────────────────────────
+#
+# The one bug this section exists for, and it made the whole feature look dead:
+# the shared browser starts **minimised** (`driver.HIDDEN`), so a second
+# application does not land on top of the user's work — and nothing in the
+# sign-in flow ever took it back out. Chromium started, the page loaded, the
+# card said *"A browser window is open at amazon.in. Sign in there — it is a
+# separate window, not part of this app"*, and there was no window anywhere on
+# screen to sign in to. The only control that un-minimised it was "Open window"
+# on the Browser screen, which is not where somebody signing in is looking.
+#
+# Reported as "it is opening the browser but no window is getting popped",
+# which is exactly what it was.
+def test_signing_in_brings_the_real_window_forward(driver):
+    """The card tells the user to go and type into a window. There has to be
+    one."""
+    signin.begin("https://www.linkedin.com")
+
+    assert driver.window_calls, "the window was never taken out of the Dock"
+    assert driver.window_calls[0] is True
+
+
+def test_the_window_is_up_before_the_page_is_asked_for(driver):
+    """A site that takes ten seconds must not be ten seconds of empty desktop.
+
+    Ordering, not decoration: the window appears and *then* loads, which is
+    what a person expects a browser to do.
+    """
+    order = []
+    driver.window = lambda visible: order.append(("window", visible))
+    original = driver.goto
+    driver.goto = lambda url: (order.append(("goto", url)), original(url))[1]
+
+    signin.begin("https://www.linkedin.com")
+
+    assert order[0] == ("window", True), order
+
+
+def test_finishing_puts_the_window_back(driver):
+    """Minimised is where the browser rests — the app shows the page. A
+    Chromium left in front of everything after the sign-in is over is the thing
+    minimising it was for."""
+    signin.begin("https://www.linkedin.com")
+    driver.url, driver.title = "https://www.linkedin.com/feed/", "Feed"
+
+    signin.finish()
+
+    assert driver.window_calls[-1] is False
+
+
+def test_cancelling_puts_the_window_back(driver):
+    """Anything the user starts, they can stop — including the window."""
+    signin.begin("https://www.linkedin.com")
+
+    signin.cancel()
+
+    assert driver.window_calls[-1] is False
+
+
+def test_a_sign_in_that_could_not_open_puts_the_window_back(monkeypatch):
+    """The window was raised for a sign-in that is not happening. Leaving it up
+    over a page that never loaded is the failed-navigation card all over again,
+    in window form."""
+    broken = _cannot_open(monkeypatch)
+
+    signin.begin("https://payroll.example.com")
+
+    assert broken.window_calls[-1] is False
+
+
+def test_a_driver_that_cannot_move_its_window_still_signs_in(driver):
+    """Same rule as `windows()`: the four-method `Driver` seam in `session.py`
+    is deliberate, and a driver with no window behaves the way it did before
+    any of this existed."""
+    driver.window = None                      # not callable
+
+    assert signin.begin("https://www.linkedin.com")["ok"] is True
+    driver.url, driver.title = "https://www.linkedin.com/feed/", "Feed"
+    assert signin.finish()["ok"] is True
+
+
+def test_a_browser_with_no_window_refuses_rather_than_promising_one(
+        driver, monkeypatch):
+    """`chromium.runs_hidden()` is the user saying the browser should not exist
+    as an application here, and hidden means headless — no window, nowhere to
+    type a password. Offering the flow anyway is the same lie with no way to
+    even notice it: the card would wait forever on a window that was never
+    going to appear.
+
+    `/CLAUDE.md`: never show a control that cannot work.
+    """
+    from chitragupta.browser import chromium
+
+    monkeypatch.setattr(chromium, "runs_hidden", lambda: True)
+
+    out = signin.begin("https://www.linkedin.com")
+
+    assert out["ok"] is False
+    assert driver.went_to == [], "it started signing in anyway"
+    assert signin.status()["connecting"] is False
+    # The route out, and it is a press rather than directions to one. The card
+    # reads the flag and offers the switch; the sentence still stands alone for
+    # anything that only has the text.
+    assert out["needs_window"] is True
+    assert "window" in out["error"]
+
+
+# ── the window is the first thing that touches the browser ───────────────
+#
+# So it is the first thing that finds out the browser could not start, and
+# swallowing that is how a locked profile came back as the wrong failure
+# entirely. Measured on a real machine: Chromium answered *"Failed to create a
+# ProcessSingleton for your profile directory… already in use"* — which
+# `trouble` classifies as `BUSY`, cannot be retried, and has a sentence of its
+# own — and the user was shown *"That page took too long to load. The browser
+# is fine and so is your sign-in… try it again"*, thirty seconds later, because
+# the raise was suppressed and the navigation that followed queued a command at
+# a thread that had already died.
+class _ProfileLocked:
+    """A browser that cannot start at all. Every command says the same thing."""
+
+    def __init__(self):
+        self.went_to = []
+
+    def _die(self):
+        from chitragupta.browser.trouble import BrowserError
+        raise BrowserError(
+            "BrowserType.launch_persistent_context: Failed to create a "
+            "ProcessSingleton for your profile directory. This usually means "
+            "that the profile is already in use by another instance of Chromium.")
+
+    def window(self, visible):
+        self._die()
+
+    def goto(self, url):
+        self.went_to.append(url)
+        self._die()
+
+    def close(self):
+        pass
+
+
+def test_a_browser_that_cannot_start_is_named_not_swallowed(monkeypatch):
+    from chitragupta.browser import chromium
+
+    locked = _ProfileLocked()
+    monkeypatch.setattr(chromium, "shared_driver", lambda: locked)
+
+    out = signin.begin("https://www.linkedin.com")
+
+    assert out["ok"] is False
+    assert "too long to load" not in out["error"], "the wrong failure entirely"
+    assert "still using" in out["error"] or "already" in out["error"], out["error"]
+    assert locked.went_to == [], "it navigated a browser that had not started"
+    assert signin.status()["connecting"] is False

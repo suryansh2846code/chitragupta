@@ -1,10 +1,21 @@
 """Signing in to a site once, so an agent can read it as the user afterwards.
 
-The browser already keeps a **persistent** profile and already opens
-**visible** — `chromium.open_session()` says why: a user who can watch is a user
-who can stop, and MFA needs a window a person can actually reach. So "sign in
-once and stay signed in" is not a new mechanism. What was missing is the moment
-that starts it and the grant that comes out of it.
+The browser already keeps a **persistent** profile, so "sign in once and stay
+signed in" is not a new mechanism. What was missing is the moment that starts it
+and the grant that comes out of it.
+
+**And the window.** This file used to open with "the browser already opens
+visible", and that sentence was true when it was written and quietly stopped
+being true: the shared browser now starts *minimised*, so a second application
+does not land on top of the user's work, and the Browser screen shows the page
+inside the app instead. Nothing here took it back out of the Dock — so Chromium
+started, the page loaded, and the card said *"A browser window is open at
+{host}. Sign in there — it is a separate window, not part of this app"* over a
+window nobody could find. Signing in is the one thing the in-app view cannot
+do: the password goes into the site, in a window the site owns, which is what
+the card promises and what makes two-factor work at all. So `begin` raises the
+real window and `_clear` puts it back, and a browser configured to have no
+window at all (`chromium.runs_hidden`) is told so instead of being promised one.
 
 Three rules shape this, and each rules out an easier design:
 
@@ -183,6 +194,27 @@ def begin(url: str) -> dict[str, Any]:
     except origins.BadOriginError as exc:
         return {"ok": False, "error": str(exc)}
 
+    # **No window, no sign-in.** `chromium.runs_hidden()` is the user saying the
+    # browser should not exist as an application on this machine, and headless
+    # is what that means — so there is nothing to bring forward and nothing to
+    # type a password into. Promising a window anyway is the same lie the card
+    # told for every sign-in before this: *"a browser window is open at {host}"*
+    # over a window that was never going to appear. Said before anything is
+    # started.
+    #
+    # `needs_window` is what makes it a press rather than directions to one.
+    # This package already learned that lesson expensively — `Verdict.grantable`
+    # without `needs` refused with "that needs your approval" and pointed at a
+    # card that no longer existed — and sending somebody to a different screen
+    # to find a button called "Show in Dock" is the same dead end with a longer
+    # walk. The sentence stands on its own for anything that only reads the
+    # text; the flag is for the card, which can simply offer the switch.
+    if chromium.runs_hidden():
+        return {"ok": False, "needs_window": True,
+                "error": "The browser is set to run with no window on this "
+                         "machine, so there is nowhere for you to sign in. "
+                         "Give it a window and try again."}
+
     with _state.lock:
         if _state.current is not None:
             return {"ok": False,
@@ -202,6 +234,22 @@ def begin(url: str) -> dict[str, Any]:
         _state.session = driver
         _state.current = Connecting(host=host, url=origin)
 
+    # **The window comes out of the Dock here, and this is the whole feature.**
+    # The shared browser starts minimised — `driver.HIDDEN`, so a second
+    # application does not land on top of the user's work — and nothing in this
+    # flow ever took it back out. So Chromium started, the page loaded, the card
+    # said *"A browser window is open at {host}. Sign in there — it is a
+    # separate window, not part of this app"*, and there was no window anywhere
+    # on screen. The only control that un-minimised it was "Open window" on the
+    # Browser screen, which is not where anybody signing in is looking.
+    #
+    # Before the navigation, not after: the window appearing and then loading
+    # the site is what a person expects, and a site that takes ten seconds
+    # otherwise leaves them staring at an empty desktop wondering what to click.
+    # Inside the same `try`, because raising a window is the first thing that
+    # touches the browser and therefore the first thing to find out it could not
+    # start.
+    #
     # Outside the lock: navigating can take a while, and holding the lock
     # across it would make `status()` hang for whoever is polling it.
     #
@@ -214,13 +262,16 @@ def begin(url: str) -> dict[str, Any]:
     # leaves work running is a lie, and so is a card that reports a window it
     # could not open.
     try:
+        _show_window(driver, True)
         driver.goto(origin)
     except Exception as exc:
         found = trouble.classify(exc)
         log.warning("browser sign-in could not open %s (%s)",
                     host, found.trouble.value)
-        # Put the state back before answering. Leaving it set is what turned one
-        # failed navigation into a sign-in nobody could start again.
+        # Put the state back before answering, and the window with it. Leaving
+        # the state set is what turned one failed navigation into a sign-in
+        # nobody could start again; leaving the window up would park a Chromium
+        # in front of the app for a sign-in that is not happening.
         _clear(close_browser=False)
         chromium.recover_from(found)
         return {"ok": False, "error": found.for_person}
@@ -393,6 +444,41 @@ def _open_windows(driver: Any) -> list[tuple[str, str]]:
     return []
 
 
+def _show_window(driver: Any, visible: bool) -> None:
+    """Bring the real browser window forward, or put it back in the Dock.
+
+    The shared browser lives minimised — a second application appearing over
+    somebody's work is what `driver.HIDDEN` exists to prevent, and the Browser
+    screen shows the page inside the app instead. Signing in is the one thing
+    that cannot be done that way: the password goes into the site, in a window
+    the site owns, which is the promise on the card and the reason two-factor
+    works at all.
+
+    Asked for with `getattr`, like `_open_windows` and for the same reason — the
+    four-method `Driver` seam in `session.py` is deliberate, and a driver that
+    has no window behaves the way it did before this existed.
+
+    **It raises, and the caller decides.** The cosmetic half is already
+    swallowed a layer down — `PlaywrightDriver._set_window` gives up quietly on
+    a bounds call that will not land, because a browser whose window will not
+    move still reads pages perfectly well. What reaches here is the other kind:
+    the browser could not start at all. Wrapping that in `suppressed` turned a
+    locked profile — *"Failed to create a ProcessSingleton… already in use"*,
+    which `trouble` classifies as `BUSY` and knows cannot be retried — into a
+    swallowed error, a command queued at a thread that had already died, and
+    thirty seconds later *"That page took too long to load. The browser is
+    fine… try it again."* Three things wrong in one sentence. `begin` raises
+    the window inside the same `try` as the navigation for exactly this reason;
+    `_clear` is the one that cannot afford to care, and says so at its call.
+    """
+    if driver is None:
+        return
+    move = getattr(driver, "window", None)
+    if not callable(move):
+        return
+    move(bool(visible))
+
+
 #: Where the browser is left once a sign-in ends. Not closed — the browser is
 #: shared, and closing it is how a finished sign-in used to kill the page an
 #: agent had open. Navigated away instead, so it is not sitting on somebody's
@@ -413,6 +499,18 @@ def _clear(*, close_browser: bool) -> None:
         session = _state.session
         _state.current = None
         _state.session = None
+    # **Whatever ends a sign-in also puts the window back.** Finished,
+    # cancelled, or a navigation that never arrived — in all three the window
+    # was brought forward for a job that is over, and leaving a Chromium sitting
+    # in front of the app is the thing minimising it was for. Unconditional on
+    # `close_browser`: the failed-navigation path passes `False` because the
+    # browser must keep whatever page it already had, and that says nothing
+    # about a window nobody is signing in to any more.
+    #
+    # Suppressed here and nowhere else: a sign-in that is over has nothing left
+    # to report, and a browser that died is exactly when `_clear` runs.
+    with suppressed("putting the browser window back after a sign-in"):
+        _show_window(session, False)
     if close_browser and session is not None:
         with suppressed("parking the browser after a sign-in"):
             session.goto(PARKED)
