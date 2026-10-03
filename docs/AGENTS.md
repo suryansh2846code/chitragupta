@@ -168,6 +168,60 @@ where it sits:
   the user says this turn will contradict each other eventually, and without a
   stated rule the model picks whichever it read last.
 
+### How a note gets written
+
+Nobody approves one. `memory.md` fills itself from the conversation, through the
+post-turn learner that already existed — `runtime._learn_from_turn`, run by
+`background.after_turn` once the user has their answer.
+
+**One model call, three destinations.** The learner used to ask for `facts` and
+file them in the brain. It now asks for `facts` *and* `notes` in the same call,
+and most turns produce neither — the prompt says so, because a learner that
+feels obliged to find something will.
+
+| | goes to | because |
+|---|---|---|
+| a fact about the user's life | the shared brain | every agent needs it, and a later claim supersedes it |
+| how this agent should work | `memory.md` | one agent needs it, on every turn, and recall should not pay for it |
+| everything else | nowhere | the common case |
+
+**The gate had a hole and that is what this closed.** `_DISCLOSURE` matches
+somebody talking about themselves (`i am`, `my `, `i prefer`), so *"never reply
+to recruiters"* matched nothing, **no call was made at all**, and the
+instruction was dropped on the floor rather than filed anywhere. `_INSTRUCTION`
+is the second half: the cues of somebody correcting or directing the agent. The
+gate is still the only thing between this and a model call on every turn.
+
+**No heuristic fallback for notes.** When there is no model to ask, facts fall
+back to the user's own disclosing sentence — it is a sentence they wrote, and
+the brain supersedes it if it is wrong. A standing instruction guessed from a
+regex is a rule the agent follows on every turn, written to a file, derived
+from nothing. The honest answer there is that nothing was learned.
+
+**Every exclusion is also code.** `notes.rejected` repeats what the prompt asks
+for, because a prompt is not a guarantee: a measurement is refused (*a number
+over time is not a memory* — that is `metrics.py`, where it is a series with a
+unit), anything `core/redact.py` recognises is refused outright rather than
+stored as a redacted husk, and a note too short to be an instruction or too
+long to be one is refused.
+
+**Deleting a note makes it stay deleted.** This is the rule the whole design
+hangs on — a learner that puts back what you just removed is worse than one
+that never learned. There is no "rejected" button and a hand-edit would not
+press one anyway, so it is derived: `agent_note_writes` records every note
+written, and a note that **was written before and is not in the file now** was
+removed by the user. It is never written again. Hand-edit, API and a future
+delete button all leave the same evidence.
+
+The rest is restraint. At most three notes per turn; a supersede replaces the
+old line rather than leaving two instructions that contradict; and a file at
+its cap **refuses** the new note rather than evicting an old one, because the
+note it would drop is something the user is relying on.
+
+What is *not* here yet: the note is written after the turn has returned, so the
+turn's own trace cannot name it. Seeing what an agent just learned is the
+profile screen's job.
+
 ## Delegation
 
 `ask_agent(agent_id, question)` lets any agent put a focused question to any

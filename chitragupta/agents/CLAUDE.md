@@ -140,6 +140,23 @@ permissions — and `library.py`, which is what Chitragupta *offers*.
   deliberately emptied); and **deleting an agent deletes its directory**,
   because ids are slugs and the collision is therefore deterministic — notes
   are prose the next agent with that name would act on.
+- **`memory.md` fills itself, on the call that already ran.** The post-turn
+  learner asks for `facts` and `notes` together and routes three ways — brain,
+  this agent, or nowhere, which is most turns. **No second model call**, and no
+  heuristic fallback for notes: a fact guessed from a regex is a sentence the
+  user wrote and the brain can supersede it; a standing instruction guessed
+  from a regex is a rule followed every turn, derived from nothing. The gate
+  grew a second cue because `_DISCLOSURE` only matches somebody talking about
+  *themselves* — *"never reply to recruiters"* matched nothing, so no call was
+  made and the instruction was dropped rather than filed. **Every exclusion in
+  the prompt is repeated in `notes.rejected`**, because a prompt is not a
+  guarantee and the two worth paying twice for are a credential and a reading.
+- **A note the user deleted is never relearned**, and it is derived rather than
+  declared: `agent_note_writes` records what was written, and a note that was
+  written before and is not in the file now was taken out. A hand-edit leaves
+  the same evidence a delete button would, which is why there is no button.
+  A full file **refuses** a new note rather than evicting one — the note that
+  would go is a standing instruction somebody is relying on.
 - **`memory.md` rides in the system message, so it is capped.** It is the same
   on every round of a turn, which is why it belongs in the cached prefix rather
   than beside recall — and why an uncapped one is a turn that costs more every

@@ -22,7 +22,9 @@ from . import (
     delegation,
     entry,
     grounding,
+    notes,
     planning,
+    profile_files,
 )
 from .agent import Agent, AgentMemory
 from .context import build_history
@@ -103,13 +105,43 @@ class TurnResult:
 
 
 
+#: One call, three destinations: the shared brain, this agent's own notes, or
+#: nothing at all — which is the answer for most messages and is said so.
+#:
+#: **The split is the whole point.** A fact about the user's life belongs in the
+#: brain, where every agent can reach it and where a later claim supersedes it.
+#: An instruction about how to do *this* job belongs in `memory.md`, where it
+#: reaches one agent on every turn without costing recall anything. Putting
+#: either in the other's place is a quiet failure: a life fact filed as a note
+#: is invisible to the other agents and will never be corrected, and a working
+#: instruction filed as a fact makes every agent pay to retrieve something only
+#: one of them can use.
+#:
+#: The exclusions are repeated as code in `notes.rejected`, because a prompt is
+#: not a guarantee and these two are the ones worth paying twice for.
 _LEARN_SYS = (
-    "From the user's message, extract ONLY durable facts they revealed about "
-    "themselves, their work, people, preferences, or plans — things worth "
-    "remembering long-term. Ignore questions, commands, and small talk. "
-    'Return STRICT JSON: {"facts": ["...", "..."]}. Empty list if nothing durable. '
-    "Write each fact as a standalone third-person statement (e.g. 'The user "
-    "prefers X')."
+    "You are filing what the user just said. There are two destinations, and "
+    "for most messages the answer is neither — say so by returning empty "
+    "lists, which is the common case and not a failure.\n"
+    "1) `facts` — durable facts about the USER'S LIFE: who they are, their "
+    "work, the people around them, their plans and preferences. Write each as "
+    "a standalone third-person statement (e.g. 'The user prefers X').\n"
+    "2) `notes` — standing instructions about HOW THIS AGENT SHOULD DO ITS "
+    "JOB: a correction they made to your work, a rule to follow from now on, "
+    "or something you found out about doing the work. Write each as one short "
+    "sentence about the work.\n"
+    "NEVER put a fact about their life in `notes`, and never put an "
+    "instruction about your work in `facts`.\n"
+    "File NOTHING at all for: a one-off request that applies only to this "
+    "turn, a question, small talk, a measurement or reading (weight, distance, "
+    "reps, calories — those are tracked elsewhere and must never become a "
+    "note), or anything containing a password, code, card number or key.\n"
+    "If one of the agent's existing notes is now wrong or superseded, set "
+    "`replaces` to its id — do not leave two notes that contradict.\n"
+    "`heading` must be one of: "
+    + "; ".join(notes.HEADINGS) + ".\n"
+    'Return STRICT JSON: {"facts": ["..."], "notes": [{"heading": "...", '
+    '"note": "...", "replaces": ""}]}.'
 )
 
 # first-person cues that suggest the user is disclosing something durable
@@ -119,33 +151,101 @@ _DISCLOSURE = re.compile(
     re.I,
 )
 
+#: The other half of the gate, and the reason it had to grow.
+#:
+#: `_DISCLOSURE` is tuned for someone talking about themselves, so *"never
+#: reply to recruiters"* matched nothing and **no model call was made at all**
+#: — the instruction was dropped on the floor rather than filed anywhere. These
+#: are the cues of somebody correcting or directing the agent, which is exactly
+#: the material `memory.md` exists to hold.
+#:
+#: The example matters more than it looks. *"Don't sign off with **my** full
+#: name"* is the obvious one to reach for and is **not** a case this fixes —
+#: `my ` is a disclosure cue, so that sentence always got through. A test
+#: written against it passes without any of this existing, which is what the
+#: first draft of `test_agent_learns_its_job.py` did.
+_INSTRUCTION = re.compile(
+    r"\b(don'?t|do not|never|always|stop|instead|rather than|from now on|"
+    r"next time|going forward|in future|make sure|no need to|keep it|"
+    r"too long|too short|too formal|shorter|briefer|use .{0,20}\bnot\b)\b",
+    re.I,
+)
 
-def _auto_learn(user_text: str, provider) -> int:
-    text = user_text.strip()
-    # cheap gate: skip pure questions / anything with no self-disclosure
-    if text.endswith("?") and not _DISCLOSURE.search(text):
-        return 0
-    if not _DISCLOSURE.search(text):
-        return 0
 
-    facts: list[str] = []
+def _note_context(agent_id: str) -> str:
+    """The agent's existing notes, numbered, so the model can supersede one.
+
+    Ids are positional and valid only for this read — `notes.record` resolves
+    them against the same parse, and a note the model names that is no longer
+    there simply does not match.
+    """
+    existing = notes.parse(profile_files.read(agent_id, profile_files.MEMORY) or "")
+    if not existing:
+        return ""
+    lines = "\n".join(f"{n.id} [{n.heading}] {n.text}" for n in existing)
+    return "\n\nNOTES THIS AGENT ALREADY KEEPS:\n" + lines
+
+
+def _extract(user_text: str, agent_id: str, provider) -> tuple[list[str], list[dict]]:
+    """The one model call. Returns `(facts, notes)`, either of which may be empty.
+
+    **There is no heuristic fallback for notes**, unlike the facts below. A
+    fact guessed from a regex is a sentence the user actually wrote, and the
+    brain supersedes it later if it is wrong. A standing instruction guessed
+    from a regex is a rule this agent follows on every turn, written into a
+    file, derived from nothing — so when there is no model to ask, the honest
+    answer is that nothing was learned.
+    """
     ready, _ = provider.is_ready()
-    if provider.name != "mock" and ready:
-        try:
-            res = provider.chat(
-                [Message(role="system", content=_LEARN_SYS),
-                 Message(role="user", content=text[:1500])],
-                temperature=0, max_tokens=300,
-            )
-            raw = res.text
-            raw = raw[raw.find("{"): raw.rfind("}") + 1]
-            facts = [f for f in json.loads(raw).get("facts", []) if f.strip()]
-        except Exception:
-            facts = []
+    if provider.name == "mock" or not ready:
+        return [], []
+    try:
+        res = provider.chat(
+            [Message(role="system", content=_LEARN_SYS),
+             Message(role="user",
+                     content=user_text[:1500] + _note_context(agent_id))],
+            temperature=0, max_tokens=500,
+        )
+        raw = res.text
+        raw = raw[raw.find("{"): raw.rfind("}") + 1]
+        parsed = json.loads(raw)
+    except Exception:
+        return [], []
+    facts = [f for f in parsed.get("facts", [])
+             if isinstance(f, str) and f.strip()]
+    notes_out = [n for n in parsed.get("notes", []) if isinstance(n, dict)]
+    return facts, notes_out
+
+
+def _auto_learn(agent_id: str, user_text: str, provider) -> int:
+    text = user_text.strip()
+    # The cheap gate, and the only thing standing between this and a model call
+    # on every single turn. Either cue is enough: one is the user talking about
+    # themselves, the other is the user telling the agent how to work.
+    if not (_DISCLOSURE.search(text) or _INSTRUCTION.search(text)):
+        return 0
+    # There was a second check here — "a question with no disclosure is
+    # skipped" — which could never fire, because the line above had already
+    # returned for exactly that case. It is not reinstated with the new cue
+    # for the same reason: a guard that cannot run reads as protection that
+    # is not there.
+
+    facts, proposals = _extract(text, agent_id, provider)
     if not facts:
-        # heuristic fallback: store the disclosing sentence itself
+        # Heuristic fallback, facts only — see `_extract`. Restricted to
+        # `_DISCLOSURE` sentences on purpose: a sentence that matched only
+        # `_INSTRUCTION` is an instruction, and storing it as a fact about the
+        # user is precisely the misfiling this whole split exists to prevent.
         facts = [s.strip() for s in re.split(r"(?<=[.!?])\s+", text)
                  if _DISCLOSURE.search(s)][:3]
+
+    if proposals:
+        # Suppressed, not because a failure is expected, but because this runs
+        # after the user has their answer: a note that could not be written is
+        # not their problem and has nowhere to be reported. The brain half
+        # below must still happen.
+        with suppressed("recording what this agent learned about its job"):
+            notes.record(agent_id, proposals)
 
     brain = get_brain()
     stored = 0
@@ -155,14 +255,18 @@ def _auto_learn(user_text: str, provider) -> int:
     return stored
 
 
-def _learn_from_turn(user_text: str, reply: str, provider) -> None:
+def _learn_from_turn(agent_id: str, user_text: str, reply: str, provider) -> None:
     """Grow the brain from a finished turn. Runs after the user has their answer.
 
     Two steps, in order: raw-memory capture, which is the searchable evidence,
     then canonical curation, which is the durable versioned model of the user.
     The second is allowed to fail without disturbing the first.
+
+    The first step also files anything the user said about how *this* agent
+    should work into its own `memory.md` — same call, same gate, so learning to
+    do the job better costs nothing beyond what growing the brain already did.
     """
-    _auto_learn(user_text, provider)
+    _auto_learn(agent_id, user_text, provider)
     with suppressed("from ..brain.canonical import get_canonical …"):
         from ..brain.canonical import get_canonical
         get_canonical().learn_from_conversation(user_text, reply, provider=provider)
@@ -760,7 +864,7 @@ def run_turn(agent_id: str, user_text: str, *,
     # saying why. See `background.py`.
     trace.append(TraceStep(kind="tool_result", name="auto_learn",
                            result="learning from this turn in the background"))
-    background.after_turn(_learn_from_turn, user_text, reply, provider)
+    background.after_turn(_learn_from_turn, agent.id, user_text, reply, provider)
     return TurnResult(
         agent_id=agent.id, reply=reply, trace=trace,
         provider=provider.name, model=provider.model,

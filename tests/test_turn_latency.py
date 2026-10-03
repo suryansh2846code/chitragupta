@@ -55,13 +55,18 @@ def test_the_turn_returns_without_waiting_for_learning(scripted, monkeypatch):
 def test_the_learning_still_happens(scripted, monkeypatch):
     """Off the critical path, not dropped."""
     seen = {}
-    monkeypatch.setattr(runtime, "_learn_from_turn",
-                        lambda user, reply, provider: seen.update(user=user))
+    monkeypatch.setattr(
+        runtime, "_learn_from_turn",
+        lambda agent_id, user, reply, provider: seen.update(agent=agent_id,
+                                                            user=user))
     scripted([], final_answer="ok")
 
     runtime.run_turn("research", "I use Ollama locally")
     assert background.wait_for_idle(timeout=10)
     assert seen.get("user") == "I use Ollama locally"
+    # Which agent said it, not just what was said: notes are per agent, so a
+    # learner that does not know who it is learning for cannot file one.
+    assert seen.get("agent") == "research"
 
 
 def test_a_failure_in_the_background_never_reaches_the_user(scripted, monkeypatch):
