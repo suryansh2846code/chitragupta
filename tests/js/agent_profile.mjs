@@ -147,6 +147,7 @@ new Function(`${appSource(WEB)}
   ;globalThis.__openProfile = openAgentProfile;
   ;globalThis.__setToolLoader = (fn) => { loadAgentTools = fn; };
   ;globalThis.__setAppearanceDirty = (on) => { markAppearanceDirty(on); };
+  ;globalThis.__profTab = () => profTab;
 `)();
 
 const out = {};
@@ -164,6 +165,18 @@ const findBy = (root, pred) => {
 const button = (label) => findBy(pane(), (n) => n.tag === "button" && n._text === label);
 
 try {
+  // The avatar editor needs a real browser — native colour inputs, pointer
+  // capture, `createElementNS`. `appearance_screen.mjs` makes the same trade
+  // and for the same reason: standing it up here would be testing the fake DOM.
+  // Installed before ANYTHING opens the popup: Appearance is the tab it opens
+  // on, so the very first open mounts the editor.
+  const mounted = [];
+  globalThis.Character.mountEditor = (container, opts) => {
+    mounted.push({ container, hasDocument: !!opts.document });
+    return { destroy() {}, getDocument: () => opts.document, setDocument() {},
+             on: () => () => {} };
+  };
+
   // 1. The markup is in the page, not injected — the focus observer and the
   //    Escape handler in app.js bind to .modal-bg once, at load.
   out.markupInPage = /id="agentProfile"[^>]*class="modal-bg"/.test(PAGE);
@@ -179,17 +192,11 @@ try {
     title: el("#profTitle").textContent,
     tabs: el("#profTabs").children.length,
     firstPaneDrawn: pane().children.length > 0,
-  };
-
-  // The avatar editor needs a real browser — native colour inputs, pointer
-  // capture, `createElementNS`. `appearance_screen.mjs` makes the same trade
-  // and for the same reason: standing it up here would be testing the fake DOM.
-  // Installed BEFORE the tab loop below, which renders the Appearance tab too.
-  const mounted = [];
-  globalThis.Character.mountEditor = (container, opts) => {
-    mounted.push({ container, hasDocument: !!opts.document });
-    return { destroy() {}, getDocument: () => opts.document, setDocument() {},
-             on: () => () => {} };
+    // Opened with no tab named: which one it landed on, and which one the rail
+    // shows first. They are the same list, so they cannot disagree — this is
+    // what pins that.
+    landedOn: globalThis.__profTab(),
+    firstTabLabel: (el("#profTabs").children[0] || {}).textContent,
   };
 
   // 3. Every tab draws something. A tab that renders an empty pane is the
