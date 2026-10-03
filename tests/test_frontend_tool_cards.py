@@ -316,3 +316,25 @@ def test_there_is_no_preset_row_and_no_allow_all():
     assert "data-preset" not in out["html"]
     assert "Allow all" not in out["html"]
     assert "Allow everything" not in out["html"]
+
+
+# ── the bulk switch really does patch the rows under it ──────────────────
+#
+# This passed for weeks without running. `toggleToolBucket` builds its selector
+# with `CSS.escape`, which exists in every browser and in no harness — so the
+# line threw, inside the `try`, and the catch reverted the switch and showed a
+# toast. Every assertion about the REQUEST still held, because the request had
+# already gone. A harness that does not define what the page defines is a
+# harness testing a different program.
+
+def test_a_tier_switch_leaves_the_rows_under_it_showing_the_same_thing():
+    """The screen must not argue with itself, and the half that patches the
+    rows is the half the harness was skipping."""
+    out = run(["search_brain"], GROUPED, [], apps=APPS,
+              bulk="browse_open browse_read")
+
+    assert out["bulked"]["onAfter"] is True, (
+        "the switch reverted — the renderer threw after the save")
+    rows = {r["bulk"]: r for r in out["groupAfter"]}
+    reading = rows["browse_open browse_read"]
+    assert reading["on"] is True and reading["part"] == ""

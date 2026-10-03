@@ -561,9 +561,8 @@ In order: **the focused test → the subsystem's suite → `pytest` →
 `ruff check chitragupta tests` → `mypy chitragupta` → the `tests/js/` harnesses if
 the frontend changed → `chitragupta app` opens and renders.**
 
-Baseline, measured 2026-10-04: **6390 passed, 36 skipped in ~8min**, ruff
-clean, mypy clean over 228 files. One further test is **time-of-day
-dependent** and was red in that run — see the rules below.
+Baseline, measured 2026-10-04: **6395 passed, 36 skipped in ~7min40**, ruff
+clean, mypy clean over 228 files.
 **The count is the number to compare against,
 never the clock** — the same suite took 11min10 earlier the same day while it
 shared the machine with another session's run. See the shared-machine rules at
@@ -585,20 +584,14 @@ baseline" stopped meaning anything.
 Five rules, each bought the hard way:
 
 - **A test that builds a timestamp from `now()` is an order test with a clock
-  in it.** `test_yesterday_is_spelled_out` asks for `now(UTC) - 26h` and expects
-  the word "yesterday". Run at 00:37 local, that lands **two** calendar days
-  back — the offset crosses two local midnights — so it fails for roughly the
-  two hours after midnight and passes the rest of the day, in a file nobody
-  touched. Same shape as the shuffled-run rule below: the failure is real, it is
-  in the test, and the fix is to pin the clock rather than to widen the
-  assertion.
-- **A suite that dies with no failures printed was killed, not broken.**
-  `exit code 144` and a run that stops mid-progress-bar reads exactly like a
-  flaky suite and is not one: another session tidying up with `pkill -f pytest`
-  before its own run took this one out twice, at 55% and 67%. That is the
-  machine-is-shared rule at the top of this file, and this is where it is
-  cheapest to learn — check for another session's run before you go hunting a
-  test bug that does not exist.
+  in it.** `test_yesterday_is_spelled_out` asked for `now(UTC) - 26h` and
+  expected the word "yesterday". Run at 00:37 local that lands **two** calendar
+  days back — the offset crosses two local midnights, and the row renders in
+  the browser's zone rather than UTC — so it failed for the hours after
+  midnight and passed the rest of the day, in a file nobody had touched. Fixed
+  by pinning the clock, which is the fix; widening the assertion would have
+  been the other one. Same shape as the shuffled-run rule below: the failure
+  was real and it was in the test.
 - **Never weaken a test to get green**, never delete one that exposes an
   inconvenient architecture problem, never skip the regression test on a fix.
 - **A bug fix ships with a test that fails without it — and you must watch it

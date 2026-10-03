@@ -268,10 +268,21 @@ script out of eleven does not fail; it passes.
   by hand. `reachFor` slices the one list by the card it is drawn on — by
   **server id** for a connector, never by label, because a rename must not
   change which permissions look like its — and each grant gets the one control
-  a standing permission needs: take it back. Making one is deliberately absent:
-  that happens on the approval card that was asking, while somebody is reading
-  what it would do. The link out survives only where `ask.addable` says a
-  person could type the next entry.
+  a standing permission needs: take it back. Adding one is a box on the card
+  too, where `ask.addable` says a person could name the next entry in advance;
+  the first fix made it *Allow someone new*, which opened the same list on the
+  same screen under a better label. A connector key is minted by the call it
+  describes, so there is no box for one — and no grant is ever *made* here from
+  nothing: that happens on the approval card that was asking, while somebody is
+  reading what it would do.
+- **Leaving this panel means leaving the profile it is a tab inside.** Every
+  button that opens another screen used to navigate **behind** the dialog: the
+  page changed, the modal stayed up, and the user was looking at a profile over
+  a screen they had just been sent to. One of the five closed first — the one
+  written last — and the other four did not, which is a fix applied per case
+  rather than to the shape. `goElsewhere` is the seam now, and it returns
+  whether it actually left: `closeAgentProfile` asks before discarding unsaved
+  changes, so "close then go" navigated anyway when the user said no.
 - **Nothing on this screen may be a control that does nothing — in either
   direction.** Three permissions had a working endpoint and nothing in the app
   that called it: `/api/agents/folders`, `/api/agents/{id}/connectors`, and the

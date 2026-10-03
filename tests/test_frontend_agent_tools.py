@@ -297,13 +297,43 @@ def test_a_grant_can_be_taken_back_from_the_card():
     assert 'data-reach-kind="email_recipient"' in out["html"]
 
 
-def test_only_a_list_you_could_type_into_offers_a_way_in():
-    """"Allow someone new" on a connector card would open a box for a key
-    nobody can know in advance."""
+def test_only_a_list_you_could_type_into_offers_a_box():
+    """A connector key is minted by the call it describes, so there is nothing
+    anybody could type into a box for one."""
     out = run(["notion__search"], [*BUILTIN, CATEGORY, NOTION_TOOL], [READY],
               panel={"reach": []})
-    assert 'data-screen="allowlist"' in _card(out["html"], "Gmail")
-    assert 'data-screen="allowlist"' not in _card(out["html"], "Notion")
+    assert "data-reach-add" in _card(out["html"], "Gmail")
+    assert "data-reach-add" not in _card(out["html"], "Notion")
+
+
+def test_a_new_recipient_is_added_on_the_card_not_on_another_screen():
+    """The first fix replaced the dead button with "Allow someone new", which
+    still opened the Actions screen — the same trip to the same list under a
+    better label. The card already knows which list this app is judged
+    against, so there is nothing to go and find."""
+    out = run(["gmail_search"], BUILTIN, [], panel={"reach": []},
+              addReach={"card": "gmail", "value": "dana@acme.com"})
+    assert "Allow someone new" not in out["html"]
+    assert out["reachAdded"], "the box did not reach the endpoint"
+    assert out["reachAdded"]["path"] == "/api/agents/permissions"
+    assert out["reachAdded"]["body"] == {
+        "value": "dana@acme.com", "kind": "email_recipient", "note": ""}
+
+
+def test_the_box_asks_for_what_that_list_actually_stores():
+    """A placeholder reading "someone" over a box that needs `telegram:12345`
+    is a box somebody fills in wrong once and then stops trusting."""
+    apps = [{"key": "messages", "label": "Messages", "blurb": "Chats.",
+             "always": False, "read": [], "change": [], "run": [],
+             "write_label": "Write", "run_label": "",
+             "ask": {"label": "Send", "blurb": "Asks first.",
+                     "kind": "chat_recipient", "addable": True}}]
+    rows = [{"name": "list_chats", "label": "List", "category": "Messages",
+             "description": "List chats.", "source": "builtin", "connector": "",
+             "app": "messages", "access": "read"}]
+    out = run(["list_chats"], rows, [], apps=apps, panel={"reach": []})
+    assert "telegram:12345" in out["html"]
+    assert "someone@example.com" not in out["html"]
 
 
 def test_nothing_is_claimed_about_grants_before_the_answer_is_back():
@@ -660,3 +690,20 @@ def test_an_empty_roster_is_not_pick_an_agent_over_an_empty_picker():
     assert "data-open-library" in body, "an empty roster must lead somewhere"
     assert "roster.find((a) => a.id === id) || roster[0]" in body, (
         "an unresolvable id must fall back rather than refuse")
+
+
+# ── leaving this panel means leaving the profile it is a tab inside ───────
+
+def test_opening_another_screen_closes_the_profile_first():
+    """Every button here that opens another screen used to navigate *behind*
+    the profile: the page changed, the modal stayed up, and the user was
+    looking at a dialog over a screen they had just been sent to. One of the
+    five closed first — the one written last — and the other four did not,
+    which is a fix applied per case rather than to the shape."""
+    out = run(["search_brain"], BUILTIN, [], clickScreen="connectors")
+
+    assert out["screenClicked"], "the button did not run"
+    assert out["screenClicked"]["profileStillOpen"] is False, (
+        "the screen opened behind the dialog")
+    assert out["screenClicked"]["closedAfter"] is True
+    assert out["openedConnectors"] >= 1, "it closed and went nowhere"

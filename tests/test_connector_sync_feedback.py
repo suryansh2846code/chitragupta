@@ -209,6 +209,31 @@ def _iso(**delta):
     return (datetime.now(UTC) - timedelta(**delta)).isoformat()
 
 
+def _yesterday_at_noon() -> str:
+    """A time that is genuinely yesterday, whatever o'clock it is now.
+
+    Two things made the old `_iso(days=1, hours=2)` wrong, and only the second
+    one is obvious once the first is fixed:
+
+    * **Twenty-six hours ago is only yesterday after 02:00.** Before that it is
+      the day before yesterday. Run at half past midnight the test fails, which
+      is how this was found.
+    * **The day it has to be yesterday *in* is the browser's, not UTC.** The
+      formatter renders in local time, so a fixture built from `now(UTC)` is
+      off by the offset — five and a half hours of it here, which is enough to
+      land on a different date for a quarter of the day.
+
+    A relative offset cannot express "yesterday". Noon on yesterday's local
+    date can, and noon is far enough from both midnights to survive a DST
+    shift.
+    """
+    from datetime import datetime, time, timedelta
+
+    here = datetime.now().astimezone()
+    day = (here - timedelta(days=1)).date()
+    return datetime.combine(day, time(12, 0), tzinfo=here.tzinfo).isoformat()
+
+
 def test_a_recent_sync_is_said_in_minutes():
     """A source on a 30-minute timer is asked "is it current", and a date cannot
     answer that — "synced 26 Sep" is the same sentence five minutes and twenty
@@ -235,7 +260,7 @@ def test_a_sync_earlier_today_shows_the_clock_time():
 
 
 def test_yesterday_is_spelled_out():
-    found = run(when={"y": _iso(days=1, hours=2)})
+    found = run(when={"y": _yesterday_at_noon()})
 
     assert found["when"]["y"].startswith("yesterday "), found["when"]["y"]
 
