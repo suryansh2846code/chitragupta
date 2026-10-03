@@ -1390,6 +1390,14 @@ textarea.ac-field-wide { resize: vertical; min-height: 58px; line-height: 1.45; 
 .cmp-auto-blurb { font-size: 11.5px; color: var(--muted); line-height: 1.45; }
 
 
+.am-next { font-size: 11.5px; color: var(--muted); }
+
+/* Icon and word on the two buttons that take an agent away. */
+.prof-act { display: inline-flex; align-items: center; gap: 6px; }
+.prof-act-ic { display: inline-flex; line-height: 0; }
+.prof-act-ic svg { width: 14px; height: 14px; }
+
+
 /* ── the persona picker ─────────────────────────────────────────────────
    Chips rather than a blank box: the question is "which of these", and a
    textarea asking for a system prompt is a question most people decline. */

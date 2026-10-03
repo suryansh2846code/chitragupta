@@ -884,8 +884,18 @@ $("#amCreate").onclick = async () => {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ name, role: $("#amRole").value.trim(),
       system_prompt: $("#amPrompt").value.trim(), tools: chosen }) });
-  $("#agentModal").hidden = true; toast("Agent created");
-  await loadAgents(); selectAgent(a.id);
+  $("#agentModal").hidden = true;
+  await loadAgents();
+  selectAgent(a.id);
+  // Straight into its profile, on the face. Building an agent does not end at
+  // a name — it has a look, a way of working, a model and a memory — and every
+  // one of those already has a screen. Opening it here means creating and
+  // changing an agent are the SAME screen rather than two that drift: a second
+  // persona picker and a second avatar editor inside this modal is exactly the
+  // duplication `web/CLAUDE.md` records for the tool list, which is why that
+  // one is `renderAgentTools` above rather than a copy.
+  if (typeof openAgentProfile === "function") openAgentProfile(a.id);
+  else toast("Agent created");
 };
 
 // ── onboarding ───────────────────────────────────────────────────────────

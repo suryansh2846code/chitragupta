@@ -174,6 +174,20 @@ def test_create_sends_the_form_and_the_switches(opened):
     assert opened["posted"]["system_prompt"] == "be helpful"
 
 
+def test_creating_an_agent_hands_over_to_its_profile(opened):
+    """Building one does not end at a name — it has a face, a way of working,
+    a model and a memory, and every one of those already has a screen.
+
+    Opening that screen means creating and changing an agent are the SAME
+    screen rather than two that drift. A second persona picker and a second
+    avatar editor inside the builder is exactly the duplication this file's
+    own tool-list tests exist to prevent.
+    """
+    handed = opened["handedOff"]
+    assert handed, "creating an agent went nowhere"
+    assert handed["id"] == "new", "it opened somebody else's profile"
+
+
 # ── the selectors that caused it ──────────────────────────────────────────
 def test_the_field_rule_cannot_reach_a_tool_row():
     """`.am-body input` matched every checkbox in the tool list. Scoped to the

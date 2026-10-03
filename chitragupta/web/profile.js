@@ -298,7 +298,7 @@ function renderProfileDanger(pane, a) {
     loadAgents();
   };
 
-  const row = (title, desc, label, danger, run) => {
+  const row = (title, desc, label, icon, danger, run) => {
     const wrap = document.createElement("div");
     wrap.className = "set-row";
     const main = document.createElement("div");
@@ -308,8 +308,18 @@ function renderProfileDanger(pane, a) {
     const ctl = document.createElement("div");
     ctl.className = "set-ctl";
     const btn = document.createElement("button");
-    btn.className = "tiny ghost" + (danger ? " is-danger" : "");
-    btn.textContent = label;
+    btn.className = "tiny ghost prof-act" + (danger ? " is-danger" : "");
+    // Icon and word, never the icon alone: a bin on its own is a guess, and
+    // these two must be impossible to mistake for each other. Two different
+    // drawings rather than one in two colours, because colour alone is not
+    // something everybody can read.
+    const ic = document.createElement("span");
+    ic.className = "prof-act-ic";
+    ic.setAttribute("aria-hidden", "true");
+    ic.innerHTML = IC[icon] || "";
+    const tx = document.createElement("span");
+    tx.textContent = label;
+    btn.append(ic, tx);
     btn.onclick = () => run(btn);
     ctl.appendChild(btn);
     wrap.append(main, ctl);
@@ -320,7 +330,7 @@ function renderProfileDanger(pane, a) {
       custom
         ? "Takes it off the rail. Its memory, its persona and its conversation are all kept, and you can bring it back from the Agent Library."
         : "Takes it out of your team. Everything it learned is kept, and you can add it again from the Agent Library.",
-      "Retire", false,
+      "Retire", "archive", false,
       (btn) => leave(
         btn,
         custom ? `/api/agents/custom/${encodeURIComponent(a.id)}/retire`
@@ -337,7 +347,7 @@ function renderProfileDanger(pane, a) {
       custom
         ? "Destroys it, along with its persona, everything it has learned, and your conversation. This cannot be undone, and it will not be in the Library."
         : "Erases your conversation, everything it learned, the persona you chose and the face you gave it, and takes it off the team. You can add it again from the Library — as a new agent, with none of that.",
-      custom ? "Delete permanently" : "Delete", true,
+      custom ? "Delete permanently" : "Delete", "trash", true,
       (btn) => leave(
         btn,
         custom ? `/api/agents/custom/${encodeURIComponent(a.id)}`

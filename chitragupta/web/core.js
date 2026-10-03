@@ -262,6 +262,16 @@ const IC = {
   //: beside every other mark in the list.
   undo: _S('<path d="M3 7.5h6.2a3.3 3.3 0 0 1 0 6.6H6"/><path d="M5.6 4.1L2.8 7.5l2.8 3"/>', 14),
   warn: _S('<path d="M8 2.6l6 10.8H2z"/><path d="M8 6.6v3.1"/><circle cx="8" cy="11.6" r=".6" fill="currentColor" stroke="none"/>', 14),
+  // Putting an agent away and destroying one. Two icons rather than one with a
+  // colour, because the pair has to be told apart at a glance and colour alone
+  // is not something everybody can read: a lid closing over a box, and a bin.
+  archive: _S('<rect x="2.4" y="3" width="11.2" height="3" rx="1"/>'
+            + '<path d="M3.4 6.3v5.9a1.3 1.3 0 0 0 1.3 1.3h6.6a1.3 1.3 0 0 0 1.3-1.3V6.3"/>'
+            + '<path d="M6.5 8.8h3"/>', 14),
+  trash: _S('<path d="M3.2 4.6h9.6"/>'
+          + '<path d="M4.5 4.6v7.7a1.3 1.3 0 0 0 1.3 1.3h4.4a1.3 1.3 0 0 0 1.3-1.3V4.6"/>'
+          + '<path d="M6.4 4.6V3.4a.9.9 0 0 1 .9-.9h1.4a.9.9 0 0 1 .9.9v1.2"/>'
+          + '<path d="M6.8 7v4M9.2 7v4"/>', 14),
   external: _S('<path d="M6.5 3.5H3.4v9.1h9.1V9.5"/><path d="M9.2 3.5h3.3v3.3M12.5 3.5L7.4 8.6"/>', 13),
   folder: _S('<path d="M2 4.6h4l1.2 1.6h6.8v6.4a1.2 1.2 0 0 1-1.2 1.2H3.2A1.2 1.2 0 0 1 2 12.6z"/>', 13),
   chevronDown: _S('<path d="M4 6.2L8 10l4-3.8"/>', 12),

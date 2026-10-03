@@ -193,7 +193,12 @@ const findBy = (root, pred) => {
   };
   return walk(root);
 };
-const button = (label) => findBy(pane(), (n) => n.tag === "button" && n._text === label);
+// Matched on `textContent`, not `_text`: a button with an icon beside its word
+// has the word in a child span, so the own-text property is empty — which is
+// what a browser would NOT see, and the difference is the whole reason these
+// stopped being found the moment the two acts got icons.
+const button = (label) =>
+  findBy(pane(), (n) => n.tag === "button" && n.textContent === label);
 
 try {
   // The avatar editor needs a real browser — native colour inputs, pointer

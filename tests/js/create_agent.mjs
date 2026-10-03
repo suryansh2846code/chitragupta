@@ -135,7 +135,12 @@ try {
     "\nselectAgent = async () => {};" +
     "\nCONNECTORS = globalThis.__connectors;" +
     "\nglobalThis.__open = openAgentModal;" +
-    "\nglobalThis.__create = () => document.getElementById('amCreate').onclick();"
+    "\nglobalThis.__create = () => document.getElementById('amCreate').onclick();" +
+    // Creating an agent hands over to its profile — the same screen that
+    // changes it later. Recorded rather than run: the profile needs a DOM this
+    // harness does not stand up, and WHICH agent it was handed is the part
+    // this file owns.
+    "\nopenAgentProfile = (id, tab) => { globalThis.__handedOff = { id, tab }; };"
   ).call(globalThis);
 
   await globalThis.__open();
@@ -179,6 +184,7 @@ try {
   el("#amPrompt").value = "be helpful";
   await globalThis.__create();
   report.posted = posted;
+  report.handedOff = globalThis.__handedOff || null;
 } catch (e) {
   error = String((e && e.stack) || e);
 }

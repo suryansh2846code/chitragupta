@@ -362,6 +362,13 @@ script out of eleven does not fail; it passes.
   `openToolsScreen` and `openAppearanceScreen` survive as redirects into the
   profile, because four call sites and two old nav names still reach for them
   and a link that lands nowhere is worse than one that lands near.
+- **Creating an agent hands over to its profile.** Building one does not end
+  at a name — it has a face, a way of working, a model and a memory, and every
+  one of those already has a screen. `#amCreate` opens that screen, so creating
+  and changing an agent are the SAME screen rather than two that drift. A
+  persona picker or an avatar editor inside the builder would be the second
+  drawing this file's agent-builder entry already warns about, which is why the
+  tool list there is `renderAgentTools` and not a copy of it.
 - **The mode pill and the Persona tab are one setting.** Both read the levels
   from `GET /api/agents/{id}/persona` and write with `PUT` — a mode set in the
   composer and a mode set in the profile that disagreed would be two settings
