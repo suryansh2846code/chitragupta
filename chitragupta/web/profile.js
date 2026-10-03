@@ -20,21 +20,32 @@
 
 //: Which agent is open, which tab, and whether there is unsaved prose in it.
 let profAgentId = null;
-let profTab = "profile";
+let profTab = "appearance";   // see PROF_DEFAULT_TAB below
 let profDirty = false;
 
 //: The file metadata from `/api/agents/{id}/files`, so the Memory tab can show
 //: how full it is without fetching the file to measure it.
 let profFiles = {};
 
+//: The tabs, in the order they are shown. **The first one is what the popup
+//: opens on** — `PROF_DEFAULT_TAB` is read off this list rather than written
+//: out again, so reordering the rail cannot leave the landing tab behind.
+//:
+//: Appearance leads because it is the one tab that is about *this agent* at a
+//: glance rather than about its settings: you press the dots on a face, and
+//: the face is what you get. Everything after it is in the order you would
+//: reach for it — who it is, what it runs on, what it has learned, what powers
+//: it, what it may touch.
 const PROF_TABS = [
+  { key: "appearance", label: "Appearance", icon: "appearance" },
   { key: "profile", label: "Profile", icon: "account" },
   { key: "persona", label: "Persona", icon: "pencil" },
   { key: "memory", label: "Memory", icon: "brain" },
   { key: "model", label: "Model", icon: "model" },
   { key: "permissions", label: "Permissions", icon: "shield" },
-  { key: "appearance", label: "Appearance", icon: "appearance" },
 ];
+
+const PROF_DEFAULT_TAB = PROF_TABS[0].key;
 
 /**
  * Is there unsaved work anywhere in the open tab?
@@ -59,7 +70,7 @@ function openAgentProfile(id, tab) {
   if (!bg) return;
   if (!id) return;
   profAgentId = id;
-  profTab = tab || "profile";
+  profTab = tab || PROF_DEFAULT_TAB;
   profDirty = false;
   profFiles = {};
   bg.hidden = false;

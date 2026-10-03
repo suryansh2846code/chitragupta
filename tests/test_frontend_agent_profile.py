@@ -44,6 +44,18 @@ def test_the_row_control_opens_the_profile(report):
     assert opened["firstPaneDrawn"], "the dialog opened on an empty pane"
 
 
+def test_it_opens_on_appearance(report):
+    """Press the dots on a face and the face is what you get.
+
+    The landing tab is read off `PROF_TABS[0]` rather than written out a second
+    time, so the tab the rail shows first and the tab the popup opens on are
+    the same fact — reordering the rail cannot leave the landing tab behind.
+    """
+    opened = report["opened"]
+    assert opened["landedOn"] == "appearance"
+    assert opened["firstTabLabel"] == "Appearance"
+
+
 def test_every_tab_draws_something(report):
     """A tab that renders an empty pane looks fine in review and is a dead
     screen in the app. Parametrised over the whole set rather than the one
