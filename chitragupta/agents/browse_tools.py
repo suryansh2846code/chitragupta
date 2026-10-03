@@ -183,11 +183,17 @@ def _answer(reading: Reading) -> ToolResult:
         site = reading.grantable.split("://")[-1]
         wanted = ("read it" if reading.needs == origins.READ
                   else "change things on it")
+        # **Where the control actually is.** This said "on the Browser screen",
+        # and the Browser screen is the live page an agent is driving — the
+        # per-site switch is on Connectors, under Websites. So an agent refused
+        # on a site sent the user to a screen that does not hold the control,
+        # which is the same dead end the Agents & tools panel used to be: every
+        # switch on, still refused, and nothing naming the list that decides it.
         return ToolResult.failed(
             f"{reading.reason} Tell the user they can turn that on for {site} "
-            f"on the Browser screen if they want you to {wanted}. You cannot "
-            "turn it on yourself. Do not try other addresses for the same "
-            "thing.")
+            f"under Connectors → Websites if they want you to {wanted}. You "
+            "cannot turn it on yourself. Do not try other addresses for the "
+            "same thing.")
     return ToolResult.failed(reading.reason)
 
 

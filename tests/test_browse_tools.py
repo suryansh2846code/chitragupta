@@ -104,6 +104,18 @@ def test_a_refusal_tells_the_agent_who_can_fix_it():
     assert "the user" in out.lower()
 
 
+def test_a_refusal_names_the_screen_that_actually_holds_the_switch():
+    """It said "on the Browser screen", and the Browser screen is the live page
+    an agent is driving — the per-site switch is on Connectors, under Websites.
+    So an agent refused on a site sent the user somewhere that does not hold the
+    control, which is how a person ends up reporting that the permission does
+    not exist."""
+    out = browse_tools.browse_open("https://payroll.example.com/payslips")
+
+    assert "Connectors" in out, out
+    assert "Browser screen" not in out, out
+
+
 def test_a_refusal_tells_the_agent_not_to_go_hunting():
     """Without this an agent tries the www, then the apex, then a guess — each
     one a refusal, and the last thing a user wants is an agent probing addresses
