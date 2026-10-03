@@ -211,6 +211,14 @@ def _build() -> tuple[dict[str, Tool], list[dict[str, str]]]:
         rows.append({"name": name, "description": built[name].description,
                      "label": str(getattr(ref, "tool", "") or name),
                      "source": "mcp", "connector": label,
+                     # **Read, and said so rather than left blank.** Every tool
+                     # that reaches this list passed `_readable()`, so a write
+                     # cannot be here at all — but the panel groups its switches
+                     # by `access`, and a row carrying none fell into no tier
+                     # and got no switch. Twenty-five Notion tools, one at a
+                     # time, is the wall that screen exists to remove. The fact
+                     # belongs here, where the filter that makes it true is.
+                     "access": "read",
                      # The id, beside the label. Permission is decided against
                      # the id — a label is what a person reads and a user can
                      # rename, and a rename must not change who may use what.
@@ -306,4 +314,8 @@ def describe() -> list[dict[str, str]]:
         # to tell it apart instead of inventing a group to put it in.
         "source": "category",
         "connector": "",
+        # The same reason as the rows below it: this grants what the user's
+        # connectors can READ and nothing else, so it belongs under the card's
+        # read switch rather than in no tier at all.
+        "access": "read",
     }, *[dict(r) for r in rows]]

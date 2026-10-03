@@ -276,3 +276,72 @@ def test_a_group_with_nowhere_else_to_go_names_no_screen():
     mac = next(g for g in tools.permission_groups() if g["key"] == "mac")
 
     assert "more" not in mac
+
+
+# ── the screen's axis, over the same table ────────────────────────────────
+#
+# `tool_group` answers how far a capability reaches — the gate's question.
+# `tool_app` answers which app a person sets it on. One table, one derivation,
+# two questions; a second taxonomy is the drift this file exists to catch.
+
+def test_every_built_in_lands_on_exactly_one_card():
+    """A tool on no card cannot be granted from the screen at all, and a tool
+    on two is a switch that disagrees with another switch."""
+    from chitragupta.agents.tool_facts import builtin_names, permission_apps
+
+    seen: list[str] = []
+    for app in permission_apps():
+        seen += app["read"] + app["change"] + app["run"]
+
+    assert sorted(seen) == sorted(builtin_names()), (
+        f"orphaned: {sorted(set(builtin_names()) - set(seen))}; "
+        f"duplicated: {sorted({n for n in seen if seen.count(n) > 1})}")
+
+
+def test_a_cards_tier_lists_agree_with_what_each_tool_declared():
+    """The split is derived, never arranged here — the same rule
+    `permission_groups` is held to."""
+    from chitragupta.connectors.capability import Access
+
+    from chitragupta.agents.tool_facts import permission_apps, tool_access
+
+    for app in permission_apps():
+        for name in app["read"]:
+            assert tool_access(name) is Access.READ, name
+        for name in app["run"]:
+            assert tool_access(name) is Access.DESTRUCTIVE, name
+        for name in app["change"]:
+            assert tool_access(name) not in (Access.READ, Access.DESTRUCTIVE), name
+
+
+def test_a_card_with_no_tools_is_not_offered():
+    """A heading nobody can switch anything on teaches that the screen is
+    decorative, before they reach the switches that matter."""
+    from chitragupta.agents.tool_facts import APPS, permission_apps
+
+    shown = {a["key"] for a in permission_apps()}
+    assert shown <= {a.key for a in APPS}
+    for app in permission_apps():
+        assert app["read"] or app["change"] or app["run"], app["key"]
+
+
+def test_the_two_axes_are_derived_from_the_same_table():
+    """Not a second taxonomy. Every tool the gate knows about is a tool the
+    screen knows about, and neither has an entry the other lacks."""
+    from chitragupta.agents.tool_facts import builtin_names, tool_app, tool_group
+
+    for name in builtin_names():
+        assert tool_group(name), name
+        assert tool_app(name), name
+
+
+def test_only_the_card_with_three_tiers_names_a_third_switch():
+    """`CLAUDE.md` forbids folding `destructive` into "write": running code is
+    its own decision, and the word on the switch is the half a person sees."""
+    from chitragupta.agents.tool_facts import permission_apps
+
+    for app in permission_apps():
+        if app["run"]:
+            assert app["run_label"], f"{app['key']} runs code and does not say so"
+        else:
+            assert not app["run_label"], f"{app['key']} names a switch it has no tools for"
