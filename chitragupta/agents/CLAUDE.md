@@ -59,16 +59,35 @@ permissions — and `library.py`, which is what Chitragupta *offers*.
   `execute:process` is its own tier for that reason — `run_python` is unbounded,
   so there is no inverse to describe, and filing it as a write would let it ride
   along on "let it change things".
-- **The permission screen is derived, not arranged.** Crossing what a tool
-  touches with what it does gives four groups and a switch per tier inside each
-  — six decisions instead of sixty-four, each a sentence a person can weigh.
+- **The permission screen is derived, not arranged — and it asks a different
+  question from the gate.** Crossing what a tool touches with what it does
+  gives four *groups* and a switch per tier inside each: six decisions instead
+  of sixty-four. That is `tool_group`, and it is the **gate's** axis —
+  `request_permission`, `prompt._withheld` and `tool_snapshot` all reason in
+  it. It is the wrong axis for a settings screen, because four reach classes
+  put Gmail, the calendar, Telegram, Notion and Linear in one group and nobody
+  can say *read GitHub, leave my mail alone*. So `tool_app` asks the same
+  resource a second question — which app — and `permission_apps()` derives the
+  cards from it, each carrying the word its own changes actually are. One
+  table, one derivation, two questions; a second taxonomy is the drift this
+  file keeps warning about, and `tests/test_tool_permissions.py` fails if a
+  built-in lands on no card or in a tier that disagrees with what it declared.
   The group that cannot leave this machine is granted at creation and is not a
-  switch at all: an agent that cannot read its own memory is not a safer agent,
-  and ten boxes to get there teaches somebody the screen is a formality before
-  they reach the boxes that matter.
+  switch at all — not in the card and not in the list folded under it: an agent
+  that cannot read its own memory is not a safer agent, and ten boxes to get
+  there teaches somebody the screen is a formality before they reach the boxes
+  that matter.
   **`tool_facts` is a leaf and must stay one.** `prompt.py` reads it, and
   importing it from `tools.py` grew the frozen `agents_tools` cycle from five
   modules to ten the first time it was tried.
+- **A stored tool list is a choice made from a menu, and `tool_snapshot` stores
+  the menu with it.** Without that, a capability shipped later is
+  indistinguishable from one the user turned down, so nothing could ever reach
+  an agent again — six agents on one machine, one browser, and it was the only
+  agent never edited. A tool that was not on the recorded menu is *undecided*
+  and takes the default for its bucket; one that was on it and left out stays
+  out. Both stores go through the same two helpers, or the column means one
+  thing in `tool_overrides.py` and another in `custom.py`.
 - **An agent is told what it has NOT been given.** A withheld tool is simply
   absent from its list, so it cannot tell "never granted" from "does not exist"
   — asked whether it could post to a site, one answered *"You haven't enabled
