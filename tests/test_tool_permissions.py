@@ -301,9 +301,8 @@ def test_every_built_in_lands_on_exactly_one_card():
 def test_a_cards_tier_lists_agree_with_what_each_tool_declared():
     """The split is derived, never arranged here — the same rule
     `permission_groups` is held to."""
-    from chitragupta.connectors.capability import Access
-
     from chitragupta.agents.tool_facts import permission_apps, tool_access
+    from chitragupta.connectors.capability import Access
 
     for app in permission_apps():
         for name in app["read"]:

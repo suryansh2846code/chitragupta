@@ -338,6 +338,22 @@ even when every test is green. Reasoning and measurements:
   hold one and must never ask for one.
 
 **Frontend — `web/`**
+- **A turn belongs to its agent, not to the window.** `busy` was one boolean,
+  one AbortController and one turn id for the whole workspace, so one agent
+  thinking was the whole workspace thinking: every other agent went unusable and
+  `selectAgent` refused outright. A team of agents sharing one brain was one
+  agent at a time. `TURNS` in `chat.js` is keyed by agent id, and nothing inside
+  a turn may read `current` — the user is free to walk away mid-reply, and a
+  turn that read the global finished by writing its answer into whichever
+  conversation they walked to. A reply for an agent that is off screen is
+  **flagged, never drawn**: it is already stored server-side, so `LANDED` only
+  tells the rail there is something to come back to. The server never had the
+  limit — `MODEL_CALLS` is a lane of eight.
+- **Whatever destroys a node tells whoever is holding it.** `renderHistory`
+  assigns `innerHTML`, which orphaned the running turn's indicator while its
+  `view` kept the handle — so re-attaching returned early and drew nothing, and
+  a working agent you came back to looked idle. The indicator is state with a
+  view, not a node with closures over it.
 - **Every agent has a face, and it is never blank.** `character.js` composes one
   from the agent's id, so a first launch with an empty database still shows a
   full roster. A stored avatar is an *override*; deleting it returns the agent to
@@ -506,7 +522,7 @@ In order: **the focused test → the subsystem's suite → `pytest` →
 `ruff check chitragupta tests` → `mypy chitragupta` → the `tests/js/` harnesses if
 the frontend changed → `chitragupta app` opens and renders.**
 
-Baseline, measured 2026-10-03: **6149 passed, 36 skipped in ~8min07**, ruff
+Baseline, measured 2026-10-03: **6167 passed, 36 skipped in ~7min31**, ruff
 clean, mypy clean over 222 files. With `PLAYWRIGHT_BROWSERS_PATH` pointed at the managed
 browser the same run adds twelve more — `tests/test_browser_driver.py`'s
 real-Chromium tests, which skip when there is

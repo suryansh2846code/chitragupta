@@ -141,3 +141,37 @@ source that was just added.
 Nothing is broken today: `library.BASE_TOOLS` gives every new agent the
 connector sentinel, so the gap it reports is rare and shrinking. Worth doing
 when the Connectors screen is next opened up, not before.
+
+**And it is now the cheap one of the two.** The measurement below puts
+`/api/agents/{id}/connectors` at 4.5 seconds. The Agents & tools panel asks for
+it once per open, after the switches are already drawn — but if that endpoint
+is ever made to answer quickly, this note and the one under it are the same
+piece of work.
+
+## `selectAgent` fires a 4.5s connector probe per switch, and never cancels one
+
+Measured on a real machine, 2026-10-03:
+
+| endpoint | time |
+|---|---|
+| `/api/agents/{id}/history` | 0.00s |
+| `/api/agents/{id}/cards` | 0.00s |
+| `/api/agents/{id}/connectors` | **4.53s** |
+| `/api/connectors` | **9.83s** |
+
+`loadConnectorNames()` runs on every `selectAgent`, un-awaited and with nothing
+dropping the previous one. Switching between two agents four times left **three**
+`/api/agents/health/connectors` and two for the other agent still in flight, plus
+`/api/connectors` — six requests, which is exactly Chrome's per-host connection
+limit over HTTP/1.1. Everything behind them queues: the real-browser run had
+`/api/agents/{id}/history` waiting on a socket for seconds.
+
+Found while making agents run concurrently, and it is why the composer and the
+draft are now painted *before* the first await rather than after the transcript
+arrives — the symptom was an idle agent whose input stayed disabled by the agent
+you had just left. That removed the user-visible half. The cause is still here:
+two slow endpoints on a path a user now takes freely and often.
+
+The fix is not a frontend one alone. `/api/connectors` is the shape to look at
+first — it is nine seconds of provider probing on a page load, and the labels the
+`@` picker wants out of it do not change between two switches a second apart.
