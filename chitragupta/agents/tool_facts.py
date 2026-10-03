@@ -450,6 +450,24 @@ class App:
     ask_label: str = ""
     ask_blurb: str = ""
 
+    #: Which allow-list the cards for this app are judged against, so the row
+    #: can show **this app's** standing grants rather than sending somebody to
+    #: a screen holding everybody's. The value is `ActionSpec.recipient_kind`.
+    #:
+    #: Declared beside the two strings above rather than derived from the
+    #: action registry: `tool_facts` is a leaf and importing `actions` here
+    #: would grow the frozen `agents_tools` cycle — the thing this module was
+    #: extracted to stop. `tests/test_tool_permissions.py` pins each one
+    #: against what the registry actually says.
+    ask_kind: str = ""
+
+    #: Can a person type a new entry for that list? An email address and a chat
+    #: id are things somebody can name in advance. A connector key
+    #: (`server:tool@scope`) is not — it is minted by the call it describes and
+    #: only ever granted from the card that was asking. Offering a box for one
+    #: would be a control nobody could fill in.
+    ask_addable: bool = False
+
     #: True for the surface that cannot leave this machine — granted at
     #: creation, never shown as a switch. Same meaning as `Group.always`.
     always: bool = False
@@ -470,12 +488,16 @@ APPS: tuple[App, ...] = (
         ask_label="Send", ask_blurb=(
             "Sending or drafting mail always comes to you as a card you "
             "confirm, whatever is switched on here."),
+        ask_kind="email_recipient", ask_addable=True,
         more_screen="connectors", more_label="Connect an account"),
     App("calendar", "Calendar",
         "Reading what is in the day, and finding a time that works.",
         ask_label="Add or change", ask_blurb=(
             "Creating, moving or cancelling an event always comes to you as a "
             "card you confirm."),
+        # The same list as Gmail, and that is not a mistake: what an event
+        # reaches is the people it invites.
+        ask_kind="email_recipient", ask_addable=True,
         more_screen="connectors", more_label="Connect an account"),
     App("messages", "Messages",
         "Reading the chats in an app you connected — Telegram, Slack, "
@@ -483,6 +505,9 @@ APPS: tuple[App, ...] = (
         ask_label="Send", ask_blurb=(
             "Sending a message always comes to you as a card you confirm, and "
             "an agent running on its own may only reach a chat you allowed."),
+        # Its own list, keyed `app:chat`. A chat id means nothing outside the
+        # app it came from, so it is never judged against the email one.
+        ask_kind="chat_recipient", ask_addable=True,
         more_screen="connectors", more_label="Connect an account"),
     App("contacts", "Contacts", "People from an account you connected.",
         more_screen="connectors", more_label="Connect an account"),
@@ -558,7 +583,8 @@ def permission_apps() -> list[dict[str, Any]]:
             "write_label": app.write_label, "run_label": app.run_label,
         }
         if app.ask_label:
-            row["ask"] = {"label": app.ask_label, "blurb": app.ask_blurb}
+            row["ask"] = {"label": app.ask_label, "blurb": app.ask_blurb,
+                          "kind": app.ask_kind, "addable": app.ask_addable}
         if app.more_screen:
             row["more"] = {"screen": app.more_screen, "label": app.more_label}
         out.append(row)
