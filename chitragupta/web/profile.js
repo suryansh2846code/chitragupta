@@ -33,7 +33,21 @@ const PROF_TABS = [
   { key: "memory", label: "Memory", icon: "brain" },
   { key: "model", label: "Model", icon: "model" },
   { key: "permissions", label: "Permissions", icon: "shield" },
+  { key: "appearance", label: "Appearance", icon: "appearance" },
 ];
+
+/**
+ * Is there unsaved work anywhere in the open tab?
+ *
+ * Two different flags, because the avatar editor is `appearance.js`'s and
+ * tracks its own `apDirty`. Asking only about `profDirty` would let somebody
+ * close the dialog on a half-built character without being asked — the one
+ * tab where the work is hardest to redo.
+ */
+function profileHasUnsaved() {
+  if (profDirty) return true;
+  return profTab === "appearance" && typeof apDirty !== "undefined" && apDirty;
+}
 
 function profAgent() {
   return (agents || []).find((a) => a.id === profAgentId) || null;
@@ -63,7 +77,7 @@ function openAgentProfile(id, tab) {
  * handler of its own would be a second rule covering one of the two ways out.
  */
 function closeAgentProfile() {
-  if (profDirty &&
+  if (profileHasUnsaved() &&
       !confirm("You have unsaved changes to this agent. Close and lose them?")) {
     return;
   }
@@ -117,7 +131,7 @@ function renderProfileTabs() {
     b.appendChild(lb);
     b.onclick = () => {
       if (t.key === profTab) return;
-      if (profDirty &&
+      if (profileHasUnsaved() &&
           !confirm("You have unsaved changes here. Leave them?")) return;
       profDirty = false;
       profTab = t.key;
@@ -138,6 +152,25 @@ function renderProfilePane() {
   if (profTab === "memory") return renderProfileDoc(pane, a, "memory");
   if (profTab === "model") return renderProfileModel(pane, a);
   if (profTab === "permissions") return renderProfilePermissions(pane, a);
+  if (profTab === "appearance") return renderProfileAppearance(pane, a);
+}
+
+function renderProfileAppearance(pane, a) {
+  const head = document.createElement("div");
+  head.innerHTML =
+    `<h2>What ${esc(a.name)} looks like</h2>
+     <p class="ms-sub">Used everywhere this agent appears. Every agent starts
+       with a face generated from its own id — change anything and save to make
+       it yours.</p>`;
+  pane.appendChild(head);
+
+  const box = document.createElement("div");
+  box.id = "profAppearance";
+  pane.appendChild(box);
+  // `appearance.js` builds its own markup in there and wires its own buttons:
+  // every function in that file reaches its parts by id, so assembling them
+  // here would be a second copy of its contract living outside it.
+  if (typeof mountAppearanceFor === "function") mountAppearanceFor(box, a.id);
 }
 
 // ── Profile: what it is called, and the way out ────────────────────────────

@@ -39,6 +39,10 @@ function makeEl(tag = "div") {
       contains(c) { return this._set.has(c); },
     },
     appendChild(child) { el.children.push(child); return child; },
+    // `mountAppearanceFor` builds its footer with `append(save, reset)`. A stub
+    // with only `appendChild` throws halfway through the mount, which looks
+    // like the editor failing rather than the fake DOM being short of a method.
+    append(...nodes) { for (const n of nodes) el.children.push(n); },
     insertBefore(child) { el.children.unshift(child); return child; },
     removeChild(child) { el.children = el.children.filter((c) => c !== child); },
     setAttribute(k, v) { el._attrs[k] = String(v); },
@@ -134,6 +138,8 @@ globalThis.fetch = async (url, opts) => {
 globalThis.__AGENTS = AGENTS;
 new Function(`${appSource(WEB)}
   ;agents = globalThis.__AGENTS; current = "launch";
+  ;globalThis.__openProfile = openAgentProfile;
+  ;globalThis.__apSave = () => apSaveBtn;
 `)();
 
 const out = { opened: null, roster: null, picked: null, saved: null, error: null };
@@ -147,37 +153,24 @@ try {
     return { destroy() {}, getDocument: () => opts.document, setDocument() {}, on: () => () => {} };
   };
 
-  // 1. The settings-rail item routes somewhere.
-  const rail = railItems.find((b) => b.dataset.msnav === "appearance");
-  if (!rail) throw new Error("index.html has no Appearance item in the settings rail");
-  if (typeof rail.onclick !== "function") throw new Error("the Appearance rail item is unbound");
-  el("#modelScreen").hidden = true;
-  panels.forEach((p) => { p.hidden = true; });
-  rail.onclick();
-  const shown = panels.filter((p) => p.hidden === false).map((p) => p.dataset.sp);
-  out.opened = { screen: el("#modelScreen").hidden === false, panel: shown };
+  // 1. The avatar editor is reached through the agent profile now — the
+  //    settings screen it used to have, with a roster of every agent across
+  //    the top, is gone. The roster only ever answered "which agent am I
+  //    editing", and the profile has answered that before this is called.
+  globalThis.__openProfile("launch", "appearance");
+  out.opened = { editorMounted: mounted.length === 1 };
 
-  // 2. Every agent got a card, and every card got a face.
-  const roster = el("#apRoster");
-  out.roster = {
-    cards: roster.children.length,
-    // The avatar is drawn into the first child of each card. A card with no
-    // `<svg>` is an agent with no face, which is the whole point of the screen.
-    withFaces: roster.children.filter((c) => (c.children[0] || {}).innerHTML.includes("<svg")).length,
-    names: roster.children.map((c) => (c.children[1] || {}).textContent),
-  };
-
-  // 3. It opened on the agent being talked to, not on an empty frame.
+  // 2. The editor was handed THAT agent's document, not whichever was last.
   out.picked = { mounts: mounted.length, name: mounted[0] && mounted[0].name,
                  storageKey: mounted[0] && mounted[0].storageKey };
 
-  // 4. Picking another agent hands the editor that agent's document.
-  roster.children[0].onclick();
+  // 3. Opening another agent's profile hands it that agent's document.
+  globalThis.__openProfile("research", "appearance");
   out.picked.afterClick = mounted[mounted.length - 1].name;
 
-  // 5. Save sends the document on screen to the endpoint that stores it.
+  // 4. Save sends the document on screen to the endpoint that stores it.
   requests.length = 0;
-  const save = el("#apSave");
+  const save = globalThis.__apSave();
   if (typeof save.onclick !== "function") throw new Error("Save is unbound");
   await save.onclick();
   const put = requests.find((r) => r.method === "PUT");

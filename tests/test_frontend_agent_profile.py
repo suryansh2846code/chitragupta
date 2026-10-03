@@ -104,6 +104,33 @@ def test_closing_with_unsaved_work_stops_to_ask(report):
     assert guard["closedWhenAllowed"]
 
 
+def test_the_avatar_editor_mounts_into_the_popup(report):
+    """Not into the settings panel it used to live in, which no longer exists.
+    `appearance.js` reached its parts by id while there was exactly one of each
+    on the page; they are built per pane now, so it holds them instead."""
+    ap = report["appearance"]
+    assert ap["mounted"], "the editor was never mounted"
+    assert ap["gotADocument"], "the editor was mounted without a character"
+    assert ap["insidePane"]
+
+
+def test_an_unsaved_avatar_is_defended_on_close(report):
+    """The editor tracks its own `apDirty`, which is a different flag from the
+    profile's. Asking only about the profile's would let somebody close the
+    dialog on a half-built character — the tab where the work is hardest to
+    redo."""
+    assert report["appearance"]["guarded"]
+
+
+def test_the_settings_rail_no_longer_offers_either_of_them(report):
+    """Both are tabs in the profile now. A rail item and a tab for the same
+    thing is the duplication this move exists to remove — and the panel left
+    behind would be the copy that drifts."""
+    removed = report["removed"]
+    assert removed["toolsNav"] and removed["toolsPanel"]
+    assert removed["appearanceNav"] and removed["appearancePanel"]
+
+
 def test_permissions_draws_into_the_popups_own_container(report):
     """Handing `renderAgentTools` the Settings panel's `#agentToolList` reads
     identically and renders nothing inside the dialog."""

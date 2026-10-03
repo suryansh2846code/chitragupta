@@ -1,11 +1,16 @@
 /**
- * The Appearance screen — what each agent looks like.
+ * What one agent looks like — the Appearance tab of the agent profile.
  *
- * A roster of every agent drawn as its own character, and below it the editor
- * from `character.js` bound to whichever one is selected. Picking an agent
- * swaps the document in the editor; Save writes it to
- * `PUT /api/agents/{id}/avatar`, and "Use the generated one" deletes the
- * override so that agent goes back to the character composed from its id.
+ * The editor from `character.js`, bound to the agent whose profile is open.
+ * Save writes it to `PUT /api/agents/{id}/avatar`, and "Use the generated one"
+ * deletes the override so that agent goes back to the character composed from
+ * its id.
+ *
+ * This was a settings screen with a roster of every agent along the top. The
+ * roster existed only to answer "which agent am I editing", and the profile has
+ * already answered that — so it went with the screen, and `mountAppearanceFor`
+ * is what the profile calls instead. The endpoint work, the dirty tracking and
+ * the two buttons are unchanged; only the question of *which agent* moved.
  *
  * **Nothing here knows what a character is.** No shapes, no palettes, no
  * schema. This file moves documents between an editor, an endpoint and the
@@ -27,62 +32,90 @@ let apDoc = null;
 let apDirty = false;
 let apEditor = null;
 
-function openAppearanceScreen() {
-  const m = $("#modelScreen");
-  if (!m) return;
-  m.hidden = false;
-  showSettingsPanel("appearance");
-  renderAppearanceRoster();
-  // Opening straight onto the agent you are talking to, rather than onto an
-  // empty frame that asks you to pick one first.
-  if (!apAgent) selectAppearanceAgent(current || (agents[0] && agents[0].id));
-}
+//: The parts `mountAppearanceFor` built, held rather than looked up again.
+//:
+//: They used to be markup in `index.html` reached by id, which worked because
+//: there was exactly one of each and it was always on the page. Now they are
+//: created per pane, and `$("#apEditor")` from here is a claim about markup
+//: made from a handler — the shape `web/CLAUDE.md` records for `syncConn`,
+//: where every guarded line silently did nothing once the markup moved.
+let apBox = null;
+let apSaveBtn = null;
+let apResetBtn = null;
+let apNameEl = null;
+let apNoteEl = null;
 
 /**
- * The roster.
+ * Kept, and now a redirect — the screen it opened no longer exists.
  *
- * Static characters, not live ones: this is a row of every agent, and thirty
- * springs integrating behind a settings screen is a lot of work to make
- * thumbnails wobble. The one in the editor below follows the cursor, which is
- * where a person is actually looking.
+ * It was a settings page with a roster of every agent across the top, which
+ * existed only to answer "which agent am I editing". The agent profile has
+ * already answered that, so this opens it on the Appearance tab.
  */
-function renderAppearanceRoster() {
-  const box = $("#apRoster");
-  if (!box) return;
-  box.textContent = "";
-  if (!agents.length) {
-    const empty = document.createElement("p");
-    empty.className = "ms-sub";
-    empty.textContent = "Add an agent from the Library and it will appear here.";
-    box.appendChild(empty);
-    return;
+function openAppearanceScreen() {
+  const id = current || (agents[0] && agents[0].id);
+  if (id && typeof openAgentProfile === "function") {
+    openAgentProfile(id, "appearance");
   }
-  for (const a of agents) {
-    const card = document.createElement("button");
-    card.type = "button";
-    card.className = "ap-card" + (a.id === apAgent ? " is-on" : "");
-    card.setAttribute("aria-pressed", String(a.id === apAgent));
+}
 
-    const slot = document.createElement("span");
-    slot.className = "ap-card-orb";
-    card.appendChild(slot);
-    paintAvatar(slot, a.id, { size: 72, title: a.name });
 
-    const name = document.createElement("span");
-    name.className = "ap-card-name";
-    name.textContent = a.name;
-    card.appendChild(name);
+/**
+ * Draw the whole editor for one agent into `container`.
+ *
+ * This was a settings screen with a roster of every agent along the top and the
+ * editor underneath. The roster only existed to answer "which agent am I
+ * editing" — a question the agent profile has already answered by the time this
+ * is reached, so what is left is the editor and its two buttons.
+ *
+ * **The markup is built here, not in `profile.js`.** Everything below works on
+ * these exact elements, so building them is part of this file's job; a caller
+ * assembling them would be a second copy of that arrangement living in a file
+ * that does not use it. The ids are kept for the devtools inspector and for
+ * styling — nothing in this file looks anything up by them any more.
+ */
+function mountAppearanceFor(container, agentId) {
+  if (!container) return;
+  container.textContent = "";
 
-    if (AGENT_AVATARS.has(a.id)) {
-      const tag = document.createElement("span");
-      tag.className = "ap-card-tag";
-      tag.textContent = "Custom";
-      card.appendChild(tag);
-    }
+  const name = document.createElement("div");
+  name.id = "apEditingName";
+  name.className = "ap-editing-name";
+  const note = document.createElement("p");
+  note.id = "apEditingNote";
+  note.className = "ms-sub";
+  const box = document.createElement("div");
+  box.id = "apEditor";
+  box.className = "ap-editor";
 
-    card.onclick = () => selectAppearanceAgent(a.id);
-    box.appendChild(card);
-  }
+  const foot = document.createElement("div");
+  foot.className = "profile-foot";
+  const save = document.createElement("button");
+  save.id = "apSave";
+  save.className = "tiny";
+  save.textContent = "Save";
+  save.hidden = true;
+  save.onclick = saveAppearance;
+  const reset = document.createElement("button");
+  reset.id = "apReset";
+  reset.className = "tiny ghost";
+  reset.textContent = "Use the generated one";
+  reset.hidden = true;
+  reset.onclick = resetAppearance;
+  foot.append(save, reset);
+
+  container.append(name, note, box, foot);
+  apBox = box; apSaveBtn = save; apResetBtn = reset;
+  apNameEl = name; apNoteEl = note;
+
+  // A fresh pane is a fresh mount, even for the agent that was open last time:
+  // `selectAppearanceAgent` returns early when the id has not changed, which
+  // would leave the editor unmounted in a container that was just emptied.
+  // Clearing `apDirty` with it is safe because the pane cannot be rebuilt
+  // without going through the profile's own unsaved-work guard first.
+  apAgent = null;
+  apDirty = false;
+  selectAppearanceAgent(agentId);
 }
 
 function selectAppearanceAgent(id) {
@@ -94,13 +127,11 @@ function selectAppearanceAgent(id) {
   apDoc = JSON.parse(JSON.stringify(agentScene(id)));
 
   const a = agents.find((x) => x.id === id);
-  const nameEl = $("#apEditingName");
-  if (nameEl) nameEl.textContent = a ? a.name : id;
+  if (apNameEl) apNameEl.textContent = a ? a.name : id;
   renderAppearanceNote();
 
   mountAppearanceEditor();
   markAppearanceDirty(false);
-  renderAppearanceRoster();
 }
 
 /**
@@ -112,15 +143,14 @@ function selectAppearanceAgent(id) {
  * the save landed.
  */
 function renderAppearanceNote() {
-  const noteEl = $("#apEditingNote");
-  if (!noteEl) return;
-  noteEl.textContent = AGENT_AVATARS.has(apAgent)
+  if (!apNoteEl) return;
+  apNoteEl.textContent = AGENT_AVATARS.has(apAgent)
     ? "You made this one. It is used everywhere this agent appears."
     : "Generated from this agent. Change anything and save to make it yours.";
 }
 
 function mountAppearanceEditor() {
-  const box = $("#apEditor");
+  const box = apBox;
   if (!box) return;
   if (typeof Character === "undefined" || !Character.mountEditor) {
     box.textContent = "The avatar editor could not be loaded.";
@@ -142,9 +172,9 @@ function mountAppearanceEditor() {
 
 function markAppearanceDirty(on) {
   apDirty = on;
-  const save = $("#apSave");
+  const save = apSaveBtn;
   if (save) { save.hidden = !apAgent; save.disabled = !on; }
-  const reset = $("#apReset");
+  const reset = apResetBtn;
   // Only offered when there is something to go back from. A control that
   // cannot do anything is worse than one that is not there.
   if (reset) reset.hidden = !apAgent || !AGENT_AVATARS.has(apAgent);
@@ -152,7 +182,7 @@ function markAppearanceDirty(on) {
 
 async function saveAppearance() {
   if (!apAgent || !apDoc) return;
-  const btn = $("#apSave");
+  const btn = apSaveBtn;
   if (btn) btn.disabled = true;
   try {
     await api(`/api/agents/${apAgent}/avatar`, {
@@ -200,12 +230,8 @@ function repaintAgentAvatars() {
   if (chOrb && current) paintAvatar(chOrb, current, { live: true });
   const ctxOrb = $("#ctxOrb");
   if (ctxOrb && current) paintAvatar(ctxOrb, current, { size: 96 });
-  renderAppearanceRoster();
-}
-
-{
-  const save = $("#apSave");
-  if (save) save.onclick = saveAppearance;
-  const reset = $("#apReset");
-  if (reset) reset.onclick = resetAppearance;
+  // And the one in the profile's own header, which is the avatar the person is
+  // looking straight at when they press Save.
+  const profOrb = $("#profOrb");
+  if (profOrb && apAgent) paintAvatar(profOrb, apAgent, { live: true });
 }

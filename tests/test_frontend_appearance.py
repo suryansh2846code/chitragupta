@@ -1,10 +1,14 @@
-"""The Appearance screen, clicked rather than read.
+"""The Appearance tab of the agent profile, clicked rather than read.
 
 `tests/js/appearance_screen.mjs` evaluates the workspace against a small DOM,
-clicks the settings-rail item, reads the roster it drew, picks an agent and
-presses Save. Source-order assertions cannot see any of that: the routing is one
-delegation among five, the roster is built element by element, and the avatar is
-drawn by a package loaded from another `<script>` tag entirely.
+opens an agent's profile on that tab, opens another agent's, and presses Save.
+Source-order assertions cannot see any of that: the editor is mounted by a
+package loaded from another `<script>` tag entirely, and which agent's document
+it was handed is decided at call time.
+
+This was a settings screen of its own until the agent profile existed. What it
+tested that no longer exists — a rail item, a panel, a roster of every agent —
+went with it; what it tested that still happens is below, reached the new way.
 
 The renderer's own behaviour is not retested here — it has 31 tests of its own
 in `character/test/`. This is about the seam between it and the app.
@@ -21,7 +25,6 @@ ROOT = Path(__file__).resolve().parents[1]
 WEB = ROOT / "chitragupta" / "web"
 HARNESS = ROOT / "tests" / "js" / "appearance_screen.mjs"
 
-AGENTS = ["Inbox", "Launch", "Research"]
 
 
 @pytest.fixture(scope="module")
@@ -38,44 +41,28 @@ def test_the_harness_ran_clean(report):
     assert report["error"] is None, report["error"]
 
 
-def test_the_settings_rail_item_opens_the_appearance_panel(report):
-    """Every left-nav item opens a screen — including the newest one.
+def test_the_editor_is_reached_through_the_agent_profile(report):
+    """It was a settings screen with a roster of every agent across the top.
 
-    The rail routes by a chain of `if (to === …)`, and a new item with no branch
-    falls through to `closeModelScreen()`: the screen shuts and nothing opens,
-    which reads as a dead button rather than as an error.
+    The roster only ever answered "which agent am I editing", and the profile
+    has answered that before the tab is drawn — so the screen, the rail item
+    and the roster all went, and this is what replaced them. That the rail no
+    longer offers either removed panel is asserted in
+    `test_frontend_agent_profile.py`, next to the rest of the popup.
     """
-    assert report["opened"]["screen"] is True
-    # Exactly one panel visible. Two means a panel was left showing underneath,
-    # which is how a "page" quietly becomes two pages stacked.
-    assert report["opened"]["panel"] == ["appearance"]
+    assert report["opened"]["editorMounted"] is True
 
 
-def test_every_agent_gets_a_card_and_every_card_gets_a_face(report):
-    """Nobody should ever see an empty avatar slot.
-
-    No agent in this fixture has a saved avatar, so all three faces come from
-    the generated character. A card with no `<svg>` in it is the whole feature
-    failing silently — the screen would still look populated.
-    """
-    assert report["roster"]["cards"] == len(AGENTS)
-    assert report["roster"]["withFaces"] == len(AGENTS)
-    assert report["roster"]["names"] == AGENTS
-
-
-def test_it_opens_on_the_agent_being_talked_to(report):
-    """Not on an empty frame that asks you to pick someone first."""
+def test_it_opens_on_the_agent_whose_profile_it_is(report):
+    """Not on an empty frame, and not on whichever agent was open last."""
     assert report["picked"]["mounts"] == 1
     assert report["picked"]["name"] == "launch"
 
 
-def test_picking_an_agent_hands_the_editor_that_agent(report):
-    """The bug this guards against is one editor showing another agent's face.
-
-    Clicking the first card must load *its* document, not re-mount whatever was
-    already open.
-    """
-    assert report["picked"]["afterClick"] == "inbox"
+def test_opening_another_agent_hands_the_editor_that_agent(report):
+    """The bug this guards against is one editor showing another agent's face —
+    it used to be a click on the roster, and it is a different profile now."""
+    assert report["picked"]["afterClick"] == "research"
 
 
 def test_saved_presets_are_shared_across_agents(report):
@@ -84,7 +71,8 @@ def test_saved_presets_are_shared_across_agents(report):
 
 
 def test_save_sends_the_document_to_that_agent_s_endpoint(report):
-    """The agent in the URL is the agent that was picked, and a scene goes with it."""
+    """The agent in the URL is the agent whose profile is open, and a scene
+    goes with it."""
     assert report["saved"] is not None, "Save sent no request"
-    assert report["saved"]["url"] == "/api/agents/inbox/avatar"
+    assert report["saved"]["url"] == "/api/agents/research/avatar"
     assert report["saved"]["hasScene"] is True

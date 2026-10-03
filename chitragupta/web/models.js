@@ -956,14 +956,19 @@ async function openActionsScreen() {
   try { await loadReminders(); } catch (_) {}
   try { await loadActionLog(); } catch (_) {}
 }
+/**
+ * Kept, and now a redirect.
+ *
+ * "Agents & tools" was a settings panel with an agent dropdown on it — one
+ * screen you had to tell which agent you meant, every time. It is the agent
+ * profile's Permissions tab now, which already knows. The function stays
+ * because four call sites and an old nav name still reach for it, and a link
+ * that lands nowhere is worse than one that lands somewhere near.
+ */
 async function openToolsScreen() {
-  const m = $("#modelScreen"); if (!m) return;
-  m.hidden = false;
-  showSettingsPanel("tools");
-  // The picker needs the agent list; the list needs the picker to know which
-  // agent it is for. Both come from `agents`, already loaded at startup.
-  try { renderAgentToolPicker(); } catch (_) {}
-  try { await loadAgentTools(); } catch (_) {}
+  if (typeof openAgentProfile === "function" && (current || (agents || [])[0])) {
+    openAgentProfile(current || agents[0].id, "permissions");
+  }
 }
 async function openConnectorsScreen() {
   const m = $("#modelScreen"); if (!m) return;
@@ -1013,6 +1018,10 @@ document.querySelectorAll(".ms-nav-item").forEach((b) => {
     if (to === "connectors") return openConnectorsScreen();
     if (to === "inbox") return openInboxScreen();
     if (to === "actions") return openActionsScreen();
+    // `tools` and `appearance` are no longer panels in this shell — both are
+    // tabs in the agent profile, which is a dialog rather than a screen. The
+    // rail items are gone; these two arms survive for anything still naming
+    // them, and each opens the profile on the right tab.
     if (to === "tools") return openToolsScreen();
     if (to === "appearance") return openAppearanceScreen();
     // Leaves the app entirely, so nothing after it runs and the screen does not

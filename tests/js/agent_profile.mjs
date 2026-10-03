@@ -146,6 +146,7 @@ new Function(`${appSource(WEB)}
   ;globalThis.__loadAgents = loadAgents;
   ;globalThis.__openProfile = openAgentProfile;
   ;globalThis.__setToolLoader = (fn) => { loadAgentTools = fn; };
+  ;globalThis.__setAppearanceDirty = (on) => { markAppearanceDirty(on); };
 `)();
 
 const out = {};
@@ -180,10 +181,22 @@ try {
     firstPaneDrawn: pane().children.length > 0,
   };
 
+  // The avatar editor needs a real browser — native colour inputs, pointer
+  // capture, `createElementNS`. `appearance_screen.mjs` makes the same trade
+  // and for the same reason: standing it up here would be testing the fake DOM.
+  // Installed BEFORE the tab loop below, which renders the Appearance tab too.
+  const mounted = [];
+  globalThis.Character.mountEditor = (container, opts) => {
+    mounted.push({ container, hasDocument: !!opts.document });
+    return { destroy() {}, getDocument: () => opts.document, setDocument() {},
+             on: () => () => {} };
+  };
+
   // 3. Every tab draws something. A tab that renders an empty pane is the
   //    failure this loop exists for — it looks fine until you click it.
   out.tabs = {};
-  for (const tab of ["profile", "persona", "memory", "model", "permissions"]) {
+  for (const tab of ["profile", "persona", "memory", "model", "permissions",
+                     "appearance"]) {
     globalThis.__openProfile("inbox", tab);
     await tick(); await tick();
     out.tabs[tab] = pane().children.length;
@@ -248,8 +261,38 @@ try {
   el("#profClose").onclick();
   out.guard.closedWhenAllowed = el("#agentProfile").hidden === true;
 
-  // 8. Permissions draws into the profile's own container, never the Settings
-  //    panel's — the mistake that renders nothing and reads fine.
+  // 8. Appearance mounts the real editor, into the profile's own container,
+  //    and the profile's guard sees ITS dirty flag — a second flag, owned by
+  //    appearance.js, which the close guard would otherwise not know about.
+  mounted.length = 0;
+  globalThis.__openProfile("inbox", "appearance");
+  await tick(); await tick();
+  out.appearance = {
+    mounted: mounted.length === 1,
+    gotADocument: !!(mounted[0] && mounted[0].hasDocument),
+    // Mounted inside the pane, not into the deleted settings panel.
+    insidePane: !!(mounted[0] && mounted[0].container.id === "apEditor"),
+  };
+  // Drag a slider: the editor reports a change, and closing must now ask.
+  globalThis.__setAppearanceDirty(true);
+  confirmAnswer = false; confirmsAsked.length = 0;
+  el("#profClose").onclick();
+  out.appearance.guarded = confirmsAsked.length === 1 &&
+    el("#agentProfile").hidden === false;
+  confirmAnswer = true;
+  el("#profClose").onclick();
+
+  // 9. The settings rail no longer offers either of them, and nothing in the
+  //    page still declares the panels they used to open.
+  out.removed = {
+    toolsNav: !/data-msnav="tools"/.test(PAGE),
+    appearanceNav: !/data-msnav="appearance"/.test(PAGE),
+    toolsPanel: !/data-sp="tools"/.test(PAGE),
+    appearancePanel: !/data-sp="appearance"/.test(PAGE),
+  };
+
+  // 10. Permissions draws into the profile's own container, never the Settings
+  //     panel's — the mistake that renders nothing and reads fine.
   let toolBox = null;
   globalThis.__setToolLoader((id, box) => { toolBox = box; });
   globalThis.__openProfile("inbox", "permissions");

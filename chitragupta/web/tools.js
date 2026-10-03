@@ -629,8 +629,12 @@ function wireAgentToolActions(boxEl, agent) {
   boxEl.querySelectorAll("[data-bulk]").forEach((b) => {
     b.onclick = () => toggleToolBucket(agent, b);
   });
+  // `boxEl` is carried, not re-derived: a preset re-renders the whole list,
+  // and it has to re-render into the container it was pressed in. Looking it
+  // up again would find the Settings panel's — which is the one container that
+  // is not on screen when this is pressed inside the agent profile.
   boxEl.querySelectorAll("[data-preset]").forEach((b) => {
-    b.onclick = () => applyPreset(agent, b);
+    b.onclick = () => applyPreset(agent, b, boxEl);
   });
   // Where the other half of a permission is set. The group named the screen;
   // `screenOpener` is what decides there is one to open.
@@ -698,7 +702,7 @@ function syncGroupSwitches(section, agent) {
 //: withhold the new one — the failure `agents/grants.py` already records for
 //: connectors, where the option did not exist to tick at build time and
 //: nothing ever told anyone to go back.
-async function applyPreset(agent, btn) {
+async function applyPreset(agent, btn, boxEl) {
   const key = btn.dataset.preset;
   if (!agent || !key || btn.classList.contains("is-busy")) return;
   // A draft has nothing to PATCH. The preview moves the switches so the button
@@ -725,7 +729,7 @@ async function applyPreset(agent, btn) {
     // A preset moves every switch on the screen, so this one IS a re-render —
     // unlike a single bucket, where patching the rows in place keeps the
     // disclosures the user opened.
-    loadAgentTools(agent.id);
+    loadAgentTools(agent.id, boxEl);
   } catch (e) {
     toast("Couldn't save that — try again.");
   } finally {
@@ -880,11 +884,7 @@ async function loadAgentTools(agentId, boxEl) {
   }
 }
 
-function renderAgentToolPicker() {
-  const sel = $("#agentToolPicker"); if (!sel) return;
-  const id = AGENT_TOOLS_FOR || current;
-  sel.innerHTML = (agents || []).map((a) =>
-    `<option value="${esc(a.id)}"${a.id === id ? " selected" : ""}>${esc(a.name)}</option>`).join("");
-  sel.onchange = () => loadAgentTools(sel.value);
-}
+// `renderAgentToolPicker` lived here: a dropdown asking which agent the panel
+// was about. It went with the panel. The agent profile is opened *from* an
+// agent, so the question no longer exists — which is the point of moving it.
 

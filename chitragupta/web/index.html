@@ -491,7 +491,6 @@
         <button class="ms-nav-item" data-msnav="inbox"><span class="ms-nav-ic" aria-hidden="true"></span><span>Inbox</span></button>
         <button class="ms-nav-item" data-msnav="actions"><span class="ms-nav-ic" aria-hidden="true"></span><span>Actions</span></button>
         <button class="ms-nav-item" data-msnav="brain"><span class="ms-nav-ic" aria-hidden="true"></span><span>Brain</span></button>
-        <button class="ms-nav-item" data-msnav="tools"><span class="ms-nav-ic" aria-hidden="true"></span><span>Agents &amp; tools</span></button>
         <button class="ms-nav-item" data-msnav="library"><span class="ms-nav-ic" aria-hidden="true"></span><span>Agent Library</span></button>
       </nav>
       <div class="ms-nav-label">Settings</div>
@@ -499,7 +498,6 @@
         <button class="ms-nav-item" data-msnav="account"><span class="ms-nav-ic" aria-hidden="true"></span><span>Account</span></button>
         <button class="ms-nav-item" data-msnav="connectors"><span class="ms-nav-ic" aria-hidden="true"></span><span>Connectors</span></button>
         <button class="ms-nav-item is-active" data-msnav="model" aria-current="page"><span class="ms-nav-ic" aria-hidden="true"></span><span>Model</span></button>
-        <button class="ms-nav-item" data-msnav="appearance"><span class="ms-nav-ic" aria-hidden="true"></span><span>Appearance</span></button>
         <!-- Leaves the app rather than showing a panel, so it is last and it
              says so on hover. -->
         <button class="ms-nav-item" data-msnav="onboarding" title="Re-experience the onboarding (won't wipe your brain)"><span class="ms-nav-ic" aria-hidden="true"></span><span>Replay onboarding</span></button>
@@ -606,25 +604,6 @@
         <div id="actionLog" class="alog"></div>
         <div id="actionLogEmpty" class="ib-empty">Nothing yet. Actions appear here the moment one runs.</div>
       </section>
-    </div>
-
-    <!-- ── panel: agents & tools ───────────────────────────────────────
-         What one agent may use, what it could be given, and what it cannot
-         have with the reason. The screen that did not exist when an agent
-         silently had no connector access and said the connector was still
-         syncing. -->
-    <div class="ms-body sp" data-sp="tools" hidden>
-      <div class="at-head">
-        <div>
-          <h1 class="ms-h1" style="margin-bottom:6px">Agents &amp; tools</h1>
-          <p class="ms-sub">What each agent may use. Changes apply from its next question — nothing to restart.</p>
-        </div>
-        <label class="at-pick">
-          <span class="at-pick-lb">Agent</span>
-          <select id="agentToolPicker" class="set-select" aria-label="Which agent"></select>
-        </label>
-      </div>
-      <div id="agentToolList" class="at-list"></div>
     </div>
 
     <!-- ── panel: connectors ───────────────────────────────────────────── -->
@@ -908,34 +887,6 @@
       </section>
     </div>
 
-    <!-- ── panel: appearance ───────────────────────────────────────────────
-         What each agent looks like. Every agent already has a character —
-         `character.js` composes one from its id — so this screen is never
-         empty and never asks anyone to make one before they can see anything.
-         Picking an agent swaps the editor beneath the roster; the editor
-         itself is mounted by `appearance.js` into #apEditor. -->
-    <div class="ms-body sp" data-sp="appearance" hidden>
-      <h1 class="ms-h1">Appearance</h1>
-      <p class="ms-sub" style="margin-bottom:26px">Give each of your agents a face. Pick one to edit — it follows your cursor while you work.</p>
-
-      <section class="ms-sec">
-        <div id="apRoster" class="ap-roster"></div>
-      </section>
-
-      <section class="ms-sec">
-        <div class="ap-head">
-          <div>
-            <h2 class="ms-h2" id="apEditingName">Choose an agent</h2>
-            <p class="ms-sub" id="apEditingNote">Its character is used everywhere that agent appears.</p>
-          </div>
-          <div class="ap-head-actions">
-            <button id="apReset" class="tiny ghost" hidden>Use the generated one</button>
-            <button id="apSave" class="tiny" hidden>Save</button>
-          </div>
-        </div>
-        <div id="apEditor" class="ap-editor"></div>
-      </section>
-    </div>
     </div>
   </div>
 

@@ -28,11 +28,11 @@ read before its definition is a temporal dead-zone `ReferenceError` that
 | `brain-screen.js` | the full-screen canvas view |
 | `usage.js` | the token meter and enrichment progress |
 | `library.js` | the Agent Library screen — templates, shelves, the roster |
-| `tools.js` | the Agents & tools panel — what one agent may use, with switches |
+| `tools.js` | what one agent may use, with switches — drawn into the profile's Permissions tab and into the agent builder |
 | `diagnostics.js` | *What just happened* — the log, read-only |
 | `browser.js` | websites agents may read, on the Connectors screen |
 | `webscreen.js` | the browser itself, shown and driven inside the app |
-| `appearance.js` | the Appearance screen — what each agent looks like |
+| `appearance.js` | what one agent looks like — the profile's Appearance tab |
 | `profile.js` | the agent profile popup — one agent's identity, files, model and permissions |
 | `app.js` | the shell: state, chrome, agent rail, nav, keyboard, boot |
 
@@ -290,8 +290,19 @@ script out of eleven does not fail; it passes.
   declares `apAgent`, `apDoc`, `apDirty` and `apEditor` at the top level of this
   shared scope, and redeclaring one with `let` is a SyntaxError that kills the
   whole file — the symptom being a ⋯ that does nothing.
+- **Agents & tools and Appearance are tabs, not screens.** Both were settings
+  pages with "which agent?" on them — a dropdown on one, a roster of every agent
+  on the other — and both questions are already answered by the time a profile
+  is open. The panels, the rail items, the dropdown and the roster are all gone;
+  `loadAgentTools(id, box)` and `mountAppearanceFor(box, id)` are what is left.
+  `openToolsScreen` and `openAppearanceScreen` survive as redirects into the
+  profile, because four call sites and two old nav names still reach for them
+  and a link that lands nowhere is worse than one that lands near.
 - **Hold the element, do not re-query it.** The profile's Save button is kept in
-  `profSaveEl` by whichever pane built it. `$("#profSave")` from a handler is the
+  `profSaveEl` by whichever pane built it, and `appearance.js` keeps its five
+  parts in `apBox` / `apSaveBtn` / `apResetBtn` / `apNameEl` / `apNoteEl` for
+  the same reason: those ids were safe only while the markup was in
+  `index.html` and there was exactly one of each. They are built per pane now. `$("#profSave")` from a handler is the
   selector-as-a-claim-about-markup failure this file already records for
   `syncConn`, and a fake DOM is exactly where it shows up first: the lookup
   returned a different element and Save stayed dead after an edit.

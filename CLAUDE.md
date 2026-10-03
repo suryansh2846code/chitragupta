@@ -506,10 +506,11 @@ In order: **the focused test → the subsystem's suite → `pytest` →
 `ruff check chitragupta tests` → `mypy chitragupta` → the `tests/js/` harnesses if
 the frontend changed → `chitragupta app` opens and renders.**
 
-Baseline, measured 2026-10-03: **6247 passed, 34 skipped**, ruff clean, mypy
-clean over 224 files. That run took 11min10 because it shared the machine with
-another session's suite; alone it is ~7min40. **The count is the number to
-compare against, never the clock** — see the shared-machine rules at the top.
+Baseline, measured 2026-10-03: **6249 passed, 34 skipped in ~8min**, ruff
+clean, mypy clean over 224 files. **The count is the number to compare against,
+never the clock** — the same run took 11min10 earlier the same day while it
+shared the machine with another session's suite. See the shared-machine rules
+at the top.
 
 With `PLAYWRIGHT_BROWSERS_PATH` pointed at the managed browser the same run
 adds twelve more — `tests/test_browser_driver.py`'s real-Chromium tests, which
