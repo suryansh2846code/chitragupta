@@ -243,6 +243,35 @@ script out of eleven does not fail; it passes.
   **The blurb is on the button, not in a tooltip.** "Allow everything" includes
   running code, and a control that hid that is the tap-nobody-reads failure at
   the worst possible scale.
+- **The agent BUILDER is this panel, not a second drawing of it.**
+  `openAgentModal` calls `renderAgentTools` with a **draft** agent — `draft:
+  true`, its tools in the object on screen, nothing sent until Create — so the
+  presets, the group sentences, "Allow all" and the disclosures cannot land on
+  one screen and not the other. They had not: the builder was still arranging
+  itself by the thirteen category headings, with no presets and no "allow all",
+  two releases after the panel had all four. A draft preset previews from
+  `presets[].tools` and Create still sends the **name**, so the server resolves
+  it there; a switch pressed afterwards clears the name, or the server would
+  re-grant everything and throw the change away.
+- **The screen must not argue with itself in either direction.** A bucket switch
+  patches the rows under it, and `syncGroupSwitches` brings the switches *above*
+  a row with it — turning one browser tool on inside the disclosure used to
+  leave the switch over it reading a plain "off" over a live tool, and the
+  group's "Allow all" still offering to allow what was already allowed. The
+  `.at-part` count is always in the markup and empty when there is nothing to
+  say, because an element rendered only when it has content cannot be filled in
+  the one case it exists for.
+- **A repaint must not undo what the user opened.** A preset repaints the whole
+  panel; `_openGroups` is what stops that closing every disclosure somebody had
+  opened to decide with. `loadAgentTools` only paints "Loading…" over an empty
+  panel or a switch to a *different* agent — otherwise a preset press is a flash
+  of nothing in the middle of reading.
+- **A group says where the rest of its permission is set.** Turning *change
+  websites* on grants nothing by itself: which sites is a list on the Connectors
+  screen, and a user who turned everything on here and was still refused had no
+  way to learn that from this panel. The group names a screen id (`more`);
+  `screenOpener` resolves it, and an id the frontend does not have draws no
+  button — never a control that goes nowhere.
 - **Every left-nav item opens a screen.** The slide-over drawer is gone:
   `tasks` moved into Inbox and `tools` became the Agents & tools panel, and
   those were its only two occupants. `openDrawer()` kept its name — four call

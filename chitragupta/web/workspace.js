@@ -777,6 +777,13 @@ $("#rmCreate").onclick = async () => {
 
 //: What a new agent starts with.
 //:
+//: Everything that cannot leave this machine, because the panel tells the user
+//: that group is **always on** — and a builder that granted three of its ten
+//: made that sentence false: an agent created here could not say who somebody
+//: was while the screen promised it always could. Derived from the group each
+//: tool declares rather than listed by name, so a tool added to that group is
+//: included without this line being edited.
+//:
 //: The category row is checked, and that is a bug fix rather than a
 //: preference: every preset ships with it, and an agent built in the app did
 //: not — so an agent the user made was born unable to see any connector they
@@ -786,62 +793,64 @@ $("#rmCreate").onclick = async () => {
 //: Asked of the ROW, not of a list of names, so the category is recognised by
 //: what the API says it is. The row only exists when there is a connector
 //: behind it, so this cannot check a box that grants nothing.
+//:
+//: `NEW_AGENT_TOOLS` is the fallback for a server that sends no group specs:
+//: without them there is no way to ask what stays on this machine, and a new
+//: agent with nothing at all would be worse than the three it used to get.
 const NEW_AGENT_TOOLS = ["search_brain", "remember", "web_search"];
-function newAgentDefault(t) {
-  return isCategoryRow(t) || NEW_AGENT_TOOLS.includes((t && t.name) || "");
+function newAgentDefault(t, specs) {
+  if (isCategoryRow(t)) return true;
+  if (NEW_AGENT_TOOLS.includes((t && t.name) || "")) return true;
+  const spec = (specs || []).find((g) => g && g.key === ((t && t.group) || ""));
+  return !!(spec && spec.always);
 }
 
-//: Thirty-two tools in one flat list of pills is a wall, so this borrows the
-//: grouping the Agents & tools panel already uses — connectors first, then the
-//: built-ins under the headings the API names. Creating an agent and editing
-//: one afterwards then look like the same screen, because they are the same
-//: list; the only difference is that nothing is saved until Create.
+//: The agent being built. It is a DRAFT — `renderAgentTools` reads the flag and
+//: keeps every switch in this object instead of PATCHing it, so the builder and
+//: the Agents & tools panel are one screen with one renderer rather than two
+//: designs of the same list that drift apart. They had: the builder was still
+//: on the thirteen category headings, with no group sentences, no presets and
+//: no "allow all", long after the panel had all four.
+let NEW_AGENT = null;
+
+//: Creating an agent and editing one afterwards are the same list, so they are
+//: the same render. The only difference is that nothing here is saved until
+//: Create — and that the presets apply to a draft, which is what makes
+//: "Allow everything" one press at the moment it is most wanted.
 async function openAgentModal() {
   const box = $("#amTools");
   $("#amName").value = ""; $("#amRole").value = ""; $("#amPrompt").value = "";
   $("#agentModal").hidden = false;
   box.innerHTML = `<p class="am-tools-loading">Loading what it could use…</p>`;
 
-  let tools = [], categories = [];
-  try { ({ tools, categories } = await api("/api/agents/tools")); }
+  let tools = [], categories = [], specs = [], presets = [];
+  try {
+    const got = await api("/api/agents/tools");
+    tools = got.tools || []; categories = got.categories || [];
+    specs = got.groups || []; presets = got.presets || [];
+  }
   catch (e) { box.innerHTML = `<p class="am-tools-loading">Couldn't load the tool list.</p>`; return; }
 
-  // `on` here is the DEFAULT for a new agent, not something already saved.
-  const preset = tools.filter(newAgentDefault).map((t) => t.name);
-  const groups = agentToolGroups(tools, CONNECTORS, preset, categories);
-
-  box.innerHTML = groups.map((g) => {
-    const why = toolBlockedReason(g);
-    const rows = g.tools.map(({ row, on }) => {
-      const name = (row && row.name) || "";
-      // Never a control that cannot work: a blocked group says why instead.
-      const control = why
-        ? `<span class="am-blocked">${esc(why)}</span>`
-        : `<button type="button" role="switch" aria-checked="${on}"
-             class="am-toggle${on ? " is-on" : ""}" data-tool="${esc(name)}"
-             data-on="${on ? "1" : ""}"><span class="am-knob"></span></button>`;
-      return `<div class="am-row">
-        <span class="am-text">
-          <span class="am-nm">${esc(toolLabel(row))}</span>
-          <span class="am-ds">${esc(toolBlurb(row))}</span>
-        </span>${control}</div>`;
-    }).join("");
-    return `<section class="am-group${why ? " is-blocked" : ""}">
-      <h4 class="am-group-nm">${esc(g.name)}</h4>
-      <div class="am-card">${rows}</div>
-    </section>`;
-  }).join("");
-
-  // A switch is the user's action; it flips on click and is read back off the
-  // DOM at Create, so nothing here talks to the server.
-  box.querySelectorAll("[data-tool]").forEach((b) => b.onclick = () => {
-    const on = b.dataset.on !== "1";
-    b.dataset.on = on ? "1" : "";
-    b.classList.toggle("is-on", on);
-    b.setAttribute("aria-checked", String(on));
+  NEW_AGENT = { id: "", name: "", draft: true, preset: "",
+                tools: tools.filter((t) => newAgentDefault(t, specs)).map((t) => t.name) };
+  const draw = () => {
+    renderAgentTools(box, { agent: NEW_AGENT, tools, connectors: CONNECTORS,
+                            categories, specs, presets });
     updateAgentToolCount();
-  });
-  updateAgentToolCount();
+  };
+  draw();
+
+  if (!CONNECTORS.length) {
+    // /api/connectors starts every added server to answer honestly, so it is
+    // far too slow to block the modal on. Draw what we know, then sharpen —
+    // and redraw from the DRAFT, so a switch the user has already flipped
+    // survives the second pass.
+    try {
+      const { connectors } = await api("/api/connectors");
+      CONNECTORS = connectors;
+      if (!$("#agentModal").hidden) draw();
+    } catch (_) { /* the tools are on screen; health is a bonus */ }
+  }
 }
 
 //: What this agent will be able to do, said before it exists. Without it the
@@ -858,12 +867,21 @@ $("#amClose").onclick = () => $("#agentModal").hidden = true;
 $("#amCreate").onclick = async () => {
   const name = $("#amName").value.trim();
   if (!name) { toast("Name required"); return; }
-  const chosen = [...document.querySelectorAll('#amTools [data-tool][data-on="1"]')]
-    .map((b) => b.dataset.tool);
+  // The draft is the answer. Reading the switches back out of the DOM would be
+  // a second source of truth for the same fact, and the two can only agree
+  // until one of them is patched in place.
+  const chosen = (NEW_AGENT && NEW_AGENT.tools)
+    || [...document.querySelectorAll('#amTools [data-tool][data-on="1"]')].map((b) => b.dataset.tool);
+  // A preset still pressed is sent by NAME, and the server resolves it at that
+  // moment: "allow everything" has to mean everything now, not everything as
+  // of whenever this modal was opened. The list rides along because only the
+  // screen knows which connectors the user has — no preset can name one.
+  const preset = (NEW_AGENT && NEW_AGENT.preset) || "";
   const a = await api("/api/agents/custom", {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ name, role: $("#amRole").value.trim(),
-      system_prompt: $("#amPrompt").value.trim(), tools: chosen }) });
+      system_prompt: $("#amPrompt").value.trim(), tools: chosen,
+      ...(preset ? { preset } : {}) }) });
   $("#agentModal").hidden = true; toast("Agent created");
   await loadAgents(); selectAgent(a.id);
 };

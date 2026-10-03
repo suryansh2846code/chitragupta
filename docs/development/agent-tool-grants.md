@@ -216,6 +216,74 @@ written with `PATCH`, rather than a read here and a write somewhere else.
 
 ---
 
+## 3b. Setting the whole lot in one press
+
+Two controls do this, and they answer different questions. **Allow all** on a
+group heading is one group; the **presets** above the groups are every group at
+once. Both exist because six decisions beats sixty-four and is still six, and
+the common answer is not six decisions — it is *"this one is mine, let it do
+everything"* or *"let it look and nothing else"*.
+
+### A preset is sent by NAME, and resolved at the moment it is applied
+
+```jsonc
+PATCH /api/agents/chotu/tools   { "preset": "all" }
+POST  /api/agents/custom        { "name": "Sales", "preset": "all",
+                                  "tools": ["mcp", "notion__search"] }
+```
+
+* **The built-ins come from the key, never from a list on the wire.** "Allow
+  everything" has to mean everything *now*; a screen left open while a tool
+  shipped would otherwise send its own stale idea of the word and quietly
+  withhold the new one — the failure `agents/grants.py` already records for
+  connectors, where the option did not exist to tick at build time and nothing
+  ever told anyone to go back.
+* **Everything that is not a built-in survives.** No preset can name a
+  connector tool: they do not exist until the user adds one. `_preset_merge` in
+  `api/routes/agents.py` is the one place that merge happens, used by both
+  endpoints — two copies of it is how one of them ends up being an "allow
+  everything" button that silently drops Notion.
+* The two differ only in **where the rest comes from**: `PATCH` keeps what the
+  agent already holds, and `POST` takes it from `tools`, because there is no
+  agent yet and only the screen knows which connectors exist.
+* An unrecognised key is a **400**, on both. It arrives from a client, and
+  returning "everything" for a typo is the worst possible failure mode for this
+  particular control.
+
+### `GET /api/agents/tools` carries a preview, and it is only a preview
+
+```jsonc
+"presets": [
+  { "key": "all", "label": "Allow everything", "blurb": "…",
+    "tools": ["add_task", "browse_click", …] }   // PREVIEW. Not what is sent.
+]
+```
+
+The agent **builder** is a screen with no agent behind it: nothing to PATCH, and
+nothing to read a saved answer back from. `tools` is what lets it show what the
+button will do to the draft on screen. What Create sends is still the key, so a
+stale screen shows yesterday's preview and grants today's definition — which is
+the right way round.
+
+### A group says where the other half of its permission is set
+
+```jsonc
+{ "key": "websites", "label": "Websites and the browser", "blurb": "…",
+  "more": { "screen": "connectors", "label": "Choose which sites" } }
+```
+
+Turning *change websites* on grants an agent nothing by itself: **which** sites
+it may touch is a per-site list on the Connectors screen. A user who turned
+every switch on here and was still refused had no way to learn that from this
+panel — and an agent asked about it invented a Settings path, because the screen
+it was pointed at did not contain the control it described.
+
+`screen` is an id the frontend resolves to its own opener, and one it does not
+recognise draws no button — so naming a new destination here can never produce a
+control that goes nowhere. `more` is absent when there is nothing else to open.
+
+---
+
 ## 4. `GET /api/agents` gains one field
 
 ```jsonc

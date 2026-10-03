@@ -238,3 +238,41 @@ def test_the_table_stays_a_leaf():
         if isinstance(node, ast.ImportFrom) and node.level:
             assert node.module == "connectors.capability", (
                 f"tool_facts imports {node.module!r} — it must stay a leaf")
+
+
+# ── where the rest of a permission is set ────────────────────────────────
+#
+# "there is no option where i can give access to browser in agent and tools
+# section" — there was, under a heading reading "Websites", and turning it on
+# still would not have been enough: WHICH sites an agent may touch is a list
+# kept on another screen, and nothing on this one said so.
+def test_the_browser_group_is_named_so_somebody_looking_for_it_finds_it():
+    """A person hunting for "browser access" searched this screen for the word
+    and it was not on it."""
+    websites = next(g for g in tools.permission_groups() if g["key"] == "websites")
+
+    assert "browser" in f"{websites['label']} {websites['blurb']}".lower()
+
+
+def test_a_group_whose_permission_has_a_second_half_says_where_it_is():
+    """Turning this on grants the agent nothing on its own."""
+    websites = next(g for g in tools.permission_groups() if g["key"] == "websites")
+
+    assert websites["more"]["screen"] == "connectors"
+    assert websites["more"]["label"].strip()
+
+
+def test_connected_accounts_points_somewhere_too():
+    """"May read your mail" means nothing until a mailbox is connected, which
+    is the same dead end in a different group."""
+    accounts = next(g for g in tools.permission_groups() if g["key"] == "accounts")
+
+    assert accounts["more"]["screen"] == "connectors"
+
+
+def test_a_group_with_nowhere_else_to_go_names_no_screen():
+    """An absent key draws no button. A control that led nowhere would teach
+    that these buttons lead nowhere."""
+    mac = next(g for g in tools.permission_groups() if g["key"] == "mac")
+
+    assert "more" not in mac

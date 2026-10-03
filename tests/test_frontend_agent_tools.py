@@ -195,17 +195,21 @@ def test_an_unreachable_connector_is_listed_at_all(full):
     assert any(g["name"] == "Linear" for g in full["groups"])
 
 
-def test_a_blocked_group_shows_the_reason_where_its_rows_would_be(full):
-    """A connector that cannot answer contributes no tools, so its card would
-    be an empty box under a heading. The reason goes in the card instead, and
-    there is no switch anywhere in it — a control that cannot work is not shown
-    as a control."""
+def test_a_blocked_group_says_why_and_offers_no_switch(full):
+    """A connector that cannot answer contributes no tools, so there is nothing
+    to switch and nothing to disclose. It is listed, it says why, and it shows
+    no control — a control that cannot work reads as the app being broken.
+
+    The reason used to be drawn **twice**: once on the heading and once inside a
+    card behind a disclosure reading "Show all 0 tools". With four unreachable
+    connectors that was the entire first screen of the panel, so the duplicate
+    and its disclosure went and the heading kept the sentence."""
     linear = full["html"].split("Linear", 1)[1].split("</section>", 1)[0]
+
     assert "at-toggle" not in linear, linear[:300]
-    # Look INSIDE the card, not at the section: the reason is in the group head
-    # too, so a slice that includes the head passes whatever the card holds.
-    card = linear.split('class="at-card"', 1)[1]
-    assert "Linear needs signing in" in card, card[:300]
+    assert linear.count("Linear needs signing in") == 1, linear[:400]
+    assert "Show all 0 tools" not in linear
+    assert "at-card" not in linear, "an empty card under a heading says less than nothing"
 
 
 def test_a_blocked_row_links_to_where_it_is_fixed(full):
@@ -297,3 +301,21 @@ def test_a_connector_that_did_not_name_itself_is_still_not_named_after_it():
     assert not ACRONYM.search(_visible(out["html"])), out["html"]
     names = [g["name"] for g in out["groups"]]
     assert "Built in" not in names, "a connector's tool was passed off as one of ours"
+
+
+# ── a connector's own tools are the one wall left ────────────────────────
+def test_a_connector_group_offers_allow_all(full):
+    """A connector's tools carry no tier — a server does not declare one — so
+    they get no Read/Change switches and the disclosure was the only control
+    they had. Twenty-five Notion tools, one at a time, is the wall this screen
+    was built to remove."""
+    notion = full["html"].split("Notion", 1)[1]
+
+    assert 'data-bulk="notion__search"' in notion
+
+
+def test_an_unreachable_connector_still_offers_no_such_button(full):
+    """Never a control that cannot work."""
+    linear = full["html"].split(">Linear<", 1)[1].split("</section>", 1)[0]
+
+    assert "Allow all" not in linear

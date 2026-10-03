@@ -338,6 +338,16 @@ class NewAgent(BaseModel):
     tools: list[str] | None = None
     recall_sources: list[str] | None = None
 
+    #: Apply a named preset instead of spelling the built-ins out, resolved
+    #: here the way `AgentTools.preset` is.
+    #:
+    #: The builder is a screen with no agent behind it yet, so it cannot PATCH
+    #: a preset on afterwards — and resolving "everything" in the browser is
+    #: exactly the staleness this field exists to avoid. The built-ins come
+    #: from the key, at this moment; `tools` supplies the rest, because only
+    #: the screen knows which connectors the user has.
+    preset: str = ""
+
 
 @router.get("/api/agents/tools")
 def available_tools():
@@ -358,16 +368,22 @@ def available_tools():
     # see `agents/tool_facts.py`. Sent alongside `categories` rather than
     # instead of it, because removing a field a consumer reads is a separate
     # landing from adding the one that replaces it.
-    from ...agents.tool_facts import PRESETS, permission_groups
+    from ...agents.tool_facts import PRESETS, permission_groups, preset_tools
     from ...agents.tools import TOOL_CATEGORIES, describe_tools
 
     return {"tools": describe_tools(), "categories": list(TOOL_CATEGORIES),
             "groups": permission_groups(),
-            # Setting the whole lot at once. The tool names a preset covers are
-            # deliberately NOT sent: a preset is resolved server-side at the
-            # moment it is applied, so a screen left open while a tool was
-            # added cannot grant yesterday's idea of "everything".
-            "presets": [dict(p) for p in PRESETS]}
+            # Setting the whole lot at once.
+            #
+            # `tools` is what the preset covers right now, and it is a PREVIEW
+            # — it exists so the agent BUILDER can show what the button will do
+            # to a draft that has no server state to read back. What either
+            # screen sends is still the key, re-resolved at the moment it is
+            # applied, so a screen left open while a tool shipped shows
+            # yesterday's preview and grants today's definition. That is the
+            # right way round; sending names instead would make the stale
+            # screen the authority on the word "everything".
+            "presets": [{**p, "tools": preset_tools(p["key"])} for p in PRESETS]}
 
 
 @router.get("/api/agents/connector-gaps")
@@ -472,6 +488,35 @@ class AgentTools(BaseModel):
     preset: str = ""
 
 
+def _preset_merge(preset: str, keep: list[str] | None) -> list[str]:
+    """The built-ins a `preset` grants, plus everything in `keep` that is not one.
+
+    **The preset decides the built-ins and nothing else.** Anything in `keep`
+    that is not a built-in — the connector sentinel, a named connector tool —
+    survives, because the save is the whole list and a preset that answered
+    with its own names alone would be an "allow everything" button that
+    silently took Notion away.
+
+    One function rather than one copy per handler: the same word has to mean
+    the same thing whether it is pressed on the panel (where `keep` is what the
+    agent already holds) or in the builder (where there is no agent yet, so
+    `keep` is what is switched on the screen). Two copies of this merge is how
+    one of them ends up dropping a connector.
+
+    Refuses rather than applies an unrecognised key. It arrives from a client,
+    and returning "everything" for a typo would be the worst possible failure
+    mode for this particular control.
+    """
+    from ...agents.tool_facts import builtin_names, preset_tools
+
+    chosen = preset_tools(preset)
+    if not chosen:
+        raise HTTPException(400, f"unknown preset '{preset}'")
+    builtins = builtin_names()
+    kept = [t for t in (keep or []) if t not in builtins]
+    return sorted({*chosen, *kept})
+
+
 @router.patch("/api/agents/{agent_id}/tools")
 def set_agent_tools(agent_id: str, body: AgentTools):
     """Change what one agent may use, from the next question onwards.
@@ -482,7 +527,6 @@ def set_agent_tools(agent_id: str, body: AgentTools):
     live catalog here.
     """
     from ...agents.presets import get_agent
-    from ...agents.tool_facts import builtin_names, preset_tools
     from ...agents.tool_overrides import get_tool_overrides
 
     try:
@@ -492,17 +536,10 @@ def set_agent_tools(agent_id: str, body: AgentTools):
 
     wanted = list(body.tools)
     if body.preset:
-        chosen = preset_tools(body.preset)
-        if not chosen:
-            raise HTTPException(400, f"unknown preset '{body.preset}'")
-        # **The preset decides the built-ins and nothing else.** Everything the
-        # agent holds that is not a built-in — the connector sentinel, a named
-        # connector tool — is kept, because the save is the whole list and a
-        # preset that answered with its own names alone would be an "allow
-        # everything" button that silently took Notion away.
-        builtins = builtin_names()
-        kept = [t for t in (agent.tools or []) if t not in builtins]
-        wanted = sorted({*chosen, *kept})
+        # What the agent already holds is what a preset keeps: the panel sends
+        # the key alone, deliberately, so there is no list on the wire for a
+        # stale screen to be the authority on.
+        wanted = _preset_merge(body.preset, agent.tools)
 
     get_tool_overrides().set(agent_id, wanted)
     # Return the agent as it now is, so the client renders what was actually
@@ -514,8 +551,15 @@ def set_agent_tools(agent_id: str, body: AgentTools):
 @router.post("/api/agents/custom")
 def create_agent(body: NewAgent):
     from ...agents.custom import get_custom_store
+
+    # A preset pressed in the builder is resolved HERE, not in the browser:
+    # "allow everything" has to mean everything at the moment Create is
+    # pressed, and the screen may have been open since before a tool shipped.
+    # What the screen does know, and the server cannot, is which connectors the
+    # user has — so those ride along in `tools` and the merge keeps them.
+    tools = _preset_merge(body.preset, body.tools) if body.preset else body.tools
     a = get_custom_store().create(body.name, body.role, body.system_prompt,
-                                  body.tools, body.recall_sources)
+                                  tools, body.recall_sources)
     return {"id": a.id, "name": a.name, "role": a.role}
 
 

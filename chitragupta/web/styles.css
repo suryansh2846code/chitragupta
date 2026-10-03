@@ -1258,32 +1258,32 @@ textarea.ac-field-wide { resize: vertical; min-height: 58px; line-height: 1.45; 
 .am-tools { display: flex; flex-direction: column; gap: 14px; margin-top: 8px; }
 .am-tools-loading { margin: 8px 0 0; font-size: 12.5px; color: var(--muted); }
 
-/* One card per source, hairline rows inside — the same shape as the
-   Agents & tools panel, so building an agent and editing one afterwards read
-   as one screen rather than two designs of the same list. */
-.am-group-nm { margin: 0 0 6px; font-family: var(--mono); font-size: 10.5px;
-  text-transform: uppercase; letter-spacing: .14em; color: var(--muted); font-weight: 400; }
-.am-card { background: var(--panel-2); border-radius: 12px; overflow: hidden; }
-.am-row { display: flex; align-items: center; gap: 12px; padding: 10px 13px; }
-.am-row + .am-row { border-top: 1px solid var(--line); }
-.am-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
-.am-nm { font-size: 13px; color: var(--star); }
-.am-ds { font-size: 11.5px; color: var(--faint); line-height: 1.45;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.am-group.is-blocked .am-nm { color: var(--muted); }
-.am-blocked { font-size: 11px; color: var(--warn); white-space: nowrap; flex: none; }
+/* The builder draws the Agents & tools panel itself — one renderer, so the
+   presets, the group sentences and "Allow all" cannot land on one screen and
+   not the other. There is no second set of classes here any more; what is left
+   is the size, because a full-window panel's padding inside a 460px modal is a
+   list you scroll twice as far through to read the same thing.
 
-/* The switch, in the app's one accent. A native checkbox paints itself with
-   the SYSTEM accent colour — the blue that had no business on this screen and
-   could never be made gold. */
-.am-toggle { flex: none; width: 34px; height: 20px; border-radius: 999px; padding: 0;
-  background: rgba(223,231,242,.12); border: 1px solid transparent; cursor: pointer;
-  position: relative; transition: background .15s ease; }
-.am-toggle .am-knob { position: absolute; top: 2px; left: 2px; width: 14px; height: 14px;
-  border-radius: 50%; background: var(--muted); transition: transform .15s ease, background .15s ease; }
-.am-toggle.is-on { background: var(--north-dim); border-color: var(--north-track); }
-.am-toggle.is-on .am-knob { transform: translateX(14px); background: var(--north); }
-.am-toggle:focus-visible { outline: 2px solid var(--north); outline-offset: 2px; }
+   `.am-group-nm`, `.am-card`, `.am-row`, `.am-nm`, `.am-ds`, `.am-blocked` and
+   `.am-toggle` were that second set. They are gone, not kept "just in case": a
+   dead rule is the one the next person copies. */
+.am-tools .at-group { margin-bottom: 16px; }
+.am-tools .at-group:last-child { margin-bottom: 0; }
+.am-tools .at-group-nm { font-size: 13.5px; }
+.am-tools .at-group-ds { font-size: 11.5px; margin: 4px 0 8px; }
+.am-tools .at-row, .am-tools .at-bulk { padding: 9px 12px; gap: 12px; }
+.am-tools .at-nm { font-size: 13px; }
+.am-tools .at-ds { font-size: 11.5px; }
+/* Three across rather than two and a widow — the modal is narrower than the
+   panel (460px against the window), so the panel's 180px minimum wraps the
+   third one onto its own line. */
+.am-tools .at-presets { gap: 6px; margin-bottom: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); }
+.am-tools .at-preset { padding: 8px 11px; }
+.am-tools .at-preset-nm { font-size: 12.5px; }
+.am-tools .at-preset-ds { font-size: 11px; }
+.am-tools .at-detail { margin-top: 8px; }
+.am-tools .at-always { font-size: 11.5px; }
 .bm-body { padding: 16px 18px; overflow-y: auto; } .bm-sub { color: var(--muted); font-size: 12px; margin-bottom: 8px; }
 .bm-facts { margin: 6px 0 0; padding-left: 18px; font-size: 13px; } .bm-facts li { margin: 4px 0; } .bm-facts .t { color: var(--muted); list-style: none; }
 .bm-mem { background: var(--panel-2); border: 1px solid var(--border); border-radius: 9px; padding: 9px 11px; margin-bottom: 8px; }
@@ -1639,10 +1639,19 @@ textarea.ac-field-wide { resize: vertical; min-height: 58px; line-height: 1.45; 
 .at-summary b { color: var(--text); }
 
 .at-group { margin-bottom: 26px; }
+/* A connector that cannot answer contributes no tools, so the whole group is
+   its heading and the reason. Four of those used to be the entire first screen,
+   each with a disclosure reading "Show all 0 tools" over a second copy of the
+   sentence beside it. */
+.at-group.is-empty { margin-bottom: 14px; }
 .at-group-head { display: flex; align-items: center; flex-wrap: wrap; gap: 10px;
   margin-bottom: 10px; }
 .at-group-nm { font-size: 15px; font-weight: 600; letter-spacing: -.01em; margin: 0; }
-.at-group-why { font-size: 12.5px; color: var(--north); }
+.at-group-why { font-size: 12.5px; color: var(--north); flex: 1; min-width: 12ch; }
+/* To the right edge, like every other control on a group heading. Sized by its
+   own text, four unreachable connectors put four buttons at four different
+   x positions down the left of the screen. */
+.at-fix { margin-left: auto; }
 .at-group.is-blocked .at-card { opacity: .62; }
 
 .at-card { background: var(--panel); border: 1px solid var(--line);
@@ -1687,6 +1696,12 @@ textarea.ac-field-wide { resize: vertical; min-height: 58px; line-height: 1.45; 
 .at-preset:hover { border-color: var(--north-track); background: var(--panel-2); }
 .at-preset:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--north-dim); }
 .at-preset.is-busy { opacity: .6; cursor: progress; }
+/* The one that is already true. Three buttons that look identical whatever the
+   agent holds say where you could go and never where you are, so "Read only"
+   and "Read only, already applied" were the same picture and the only way to
+   tell them apart was to count switches — the thing this row replaced. */
+.at-preset.is-current { border-color: var(--north-track); background: var(--north-dim); }
+.at-preset.is-current .at-preset-nm { color: var(--north); }
 .at-preset-nm { font-size: 13.5px; font-weight: 600; color: var(--text); }
 /* The part people skim, and the reason it is on the button rather than in a
    tooltip: "Allow everything" includes running code, and a control that hid
@@ -1696,6 +1711,14 @@ textarea.ac-field-wide { resize: vertical; min-height: 58px; line-height: 1.45; 
 /* Per group, because the real answer is usually about one of them: let it
    have websites, leave the Mac alone. */
 .at-all { margin-left: auto; }
+
+/* Where the OTHER half of a permission is set. A switch here says the agent may
+   change a web page; WHICH pages is a list on another screen, and a user who
+   turned everything on here and was still refused had no way to learn that from
+   this panel. Beside the heading, before "Allow all", because it is about the
+   group rather than about granting it. */
+.at-more { margin-left: auto; }
+.at-more + .at-all { margin-left: 0; }
 
 /* ── what a group IS, and the switches that set it ──────────────────────
    The panel used to be sixty-four rows under thirteen headings. The decision
@@ -1718,6 +1741,10 @@ textarea.ac-field-wide { resize: vertical; min-height: 58px; line-height: 1.45; 
    so "3 of 7" and "11 of 13" do not shift the switch beside them. */
 .at-part { flex: none; font-size: 12px; color: var(--faint);
   font-variant-numeric: tabular-nums; }
+/* It is always in the markup so a switch flipped inside the disclosure can fill
+   it without a re-render, which means it is sometimes empty — and an empty one
+   must not take the gap beside the switch. */
+.at-part:empty { display: none; }
 /* Neither on nor off, and it has to look like neither — a half-granted group
    showing a plain "off" is the screen lying about what the agent can do. */
 .at-toggle.is-some { background: color-mix(in srgb, var(--north) 18%, transparent);

@@ -10,13 +10,18 @@
  * making about this modal is a property of that DOM: which group a tool landed
  * in, whether its control is a switch or a reason, and what Create reads back.
  *
- * `workspace.js` loads BEFORE `tools.js`, and this modal calls four functions
- * that tools.js declares. That works only because nothing calls it until after
- * every script has run — so the modal is opened here for real, in the real load
- * order, rather than reasoned about.
+ * It now draws the **Agents & tools panel itself** — one renderer, so the
+ * presets, the group sentences and "Allow all" cannot land on one screen and
+ * not the other. The agent being built is a DRAFT: every switch moves the
+ * object on screen and sends nothing, and Create posts what is in it.
+ *
+ * `workspace.js` loads BEFORE `tools.js`, and this modal calls into it. That
+ * works only because nothing calls it until after every script has run — so the
+ * modal is opened here for real, in the real load order, rather than reasoned
+ * about.
  *
  * argv: <a path inside chitragupta/web/>
- * stdin: {tools, categories, connectors, toggle?}
+ * stdin: {tools, categories, connectors, groups?, presets?, toggle?, preset?, bulk?}
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -47,32 +52,45 @@ const makeEl = (tag = "div") => ({
 const els = {};
 const el = (sel) => (els[sel] ||= makeEl());
 
-// The switches the renderer writes into #amTools. Parsed back out of the HTML
-// so a click runs the handler the renderer actually bound to it.
+// The controls the renderer writes into #amTools. Parsed back out of the HTML
+// so a click runs the handler the renderer actually bound to it, and re-parsed
+// whenever the draft repaints — a draft switch re-renders, and handlers bound
+// to the previous nodes are handlers on nothing the user can click.
 const box = el("#amTools");
-let switches = [];
-let switchesFor = null;
+let controls = {};
+let parsedFor = null;
 const reparse = () => {
-  if (switchesFor === box.innerHTML) return switches;
-  switchesFor = box.innerHTML;
-  switches = [...box.innerHTML.matchAll(/data-tool="([^"]*)"\s+data-on="([^"]*)"/g)]
-    .map(([, name, on]) => {
-      const b = makeEl("button");
-      b.dataset.tool = name;
-      b.dataset.on = on;
-      return b;
-    });
-  return switches;
+  if (parsedFor === box.innerHTML) return controls;
+  parsedFor = box.innerHTML;
+  const made = (sel, re, fields) => [...box.innerHTML.matchAll(re)].map((m) => {
+    const b = makeEl("button");
+    b.dataset = {};
+    fields.forEach((f, i) => { b.dataset[f] = m[i + 1]; });
+    return b;
+  });
+  controls = {
+    "[data-tool]": made("[data-tool]",
+      /data-tool="([^"]*)"\s+data-on="([^"]*)"/g, ["tool", "on"]),
+    "[data-bulk]": made("[data-bulk]",
+      /data-bulk="([^"]*)"\s*\n?\s*data-on="([^"]*)"/g, ["bulk", "on"]),
+    "[data-preset]": made("[data-preset]", /data-preset="([^"]*)"/g, ["preset"]),
+    "[data-screen]": made("[data-screen]", /data-screen="([^"]*)"/g, ["screen"]),
+    "[data-group]": made("[data-group]", /data-group="([^"]*)"/g, ["group"]),
+    "[data-tool-fix]": made("[data-tool-fix]", /data-tool-fix="(1)"/g, ["toolFix"]),
+  };
+  return controls;
 };
-box.querySelectorAll = (sel) => (sel === "[data-tool]" ? reparse() : []);
+const parsed = (sel) => reparse()[sel] || [];
+box.querySelectorAll = (sel) => parsed(sel);
 
 globalThis.MutationObserver = class { observe() {} disconnect() {} takeRecords() { return []; } };
 globalThis.document = {
   querySelector: (sel) => el(sel),
   querySelectorAll: (sel) => {
-    if (sel === "#amTools [data-tool]") return reparse();
-    if (sel === '#amTools [data-tool][data-on="1"]') return reparse().filter((b) => b.dataset.on === "1");
-    if (sel === ".snav" || sel === ".sp" || sel === ".ms-nav-item" || sel === ".modal-bg") return [];
+    if (sel === "#amTools [data-tool]") return parsed("[data-tool]");
+    if (sel === '#amTools [data-tool][data-on="1"]') {
+      return parsed("[data-tool]").filter((b) => b.dataset.on === "1");
+    }
     return [];
   },
   getElementById: (id) => el(`#${id}`),
@@ -90,7 +108,9 @@ globalThis.cancelAnimationFrame = () => {};
 globalThis.fetch = async (url, opts = {}) => {
   calls.push(url);
   if (String(url).startsWith("/api/agents/tools")) {
-    return { ok: true, json: async () => ({ tools: input.tools, categories: input.categories }) };
+    return { ok: true, json: async () => ({
+      tools: input.tools, categories: input.categories,
+      groups: input.groups || [], presets: input.presets || [] }) };
   }
   if (String(url) === "/api/agents/custom" && opts.method === "POST") {
     posted = JSON.parse(opts.body);
@@ -122,19 +142,28 @@ try {
 
   // Read the groups back out of what was drawn, not out of the input.
   for (const m of report.html.matchAll(
-    /<h4 class="am-group-nm">([\s\S]*?)<\/h4>\s*<div class="am-card">([\s\S]*?)<\/section>/g)) {
+    /<h3 class="at-group-nm">([\s\S]*?)<\/h3>([\s\S]*?)(?=<section class="at-group|$)/g)) {
     report.groups.push({
       name: m[1],
-      tools: [...m[2].matchAll(/<span class="am-nm">([\s\S]*?)<\/span>/g)].map((x) => x[1]),
+      tools: [...m[2].matchAll(/<span class="at-nm">([\s\S]*?)<\/span>/g)].map((x) => x[1]),
       switches: [...m[2].matchAll(/data-tool="([^"]*)"/g)].map((x) => x[1]),
-      blocked: [...m[2].matchAll(/<span class="am-blocked">([\s\S]*?)<\/span>/g)].map((x) => x[1]),
+      blocked: [...m[2].matchAll(/<span class="at-blocked">([\s\S]*?)<\/span>/g)].map((x) => x[1]),
     });
   }
 
-  if (input.toggle) {
-    const b = switches.find((x) => x.dataset.tool === input.toggle);
-    if (b && typeof b.onclick === "function") { b.onclick(); report.count = el("#amToolCount").textContent; }
-  }
+  // Each press runs the handler the renderer bound, and a draft press repaints
+  // — so the count and the HTML are re-read afterwards rather than before.
+  const press = (sel, key, field) => {
+    const b = parsed(sel).find((x) => x.dataset[field] === key);
+    if (!b || typeof b.onclick !== "function") return false;
+    b.onclick();
+    report.html = box.innerHTML;
+    report.count = el("#amToolCount").textContent;
+    return true;
+  };
+  if (input.preset) report.pressedPreset = press("[data-preset]", input.preset, "preset");
+  if (input.bulk) report.pressedBulk = press("[data-bulk]", input.bulk, "bulk");
+  if (input.toggle) report.pressedToggle = press("[data-tool]", input.toggle, "tool");
 
   el("#amName").value = "Sales";
   el("#amRole").value = "outreach";

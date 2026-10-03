@@ -205,6 +205,20 @@ class Group:
     #: True for the group that cannot reach past this machine. Granted at
     #: creation and never shown as a toggle — see `ALWAYS`.
     always: bool = False
+    #: Where the OTHER half of this permission is set, when there is one.
+    #:
+    #: A switch here says the agent may change a web page. WHICH pages is a
+    #: per-site decision, kept on another screen, and a panel that grants one
+    #: and never mentions the other is a dead end: the user turns everything on
+    #: here, the agent is still refused, and the screen that would fix it was
+    #: never named. The same is true of accounts — "may read your mail" means
+    #: nothing until a mailbox is connected.
+    #:
+    #: A screen ID and the words on the button. The ID is a name the frontend
+    #: owns and maps to its own opener; an ID it does not recognise draws no
+    #: button, so adding one here can never produce a control that goes nowhere.
+    more_screen: str = ""
+    more_label: str = ""
 
 
 #: Resource → the group it belongs to. The split that matters is **reach**:
@@ -230,10 +244,13 @@ GROUPS: tuple[Group, ...] = (
           "Nothing here leaves this machine.", always=True),
     Group("accounts", "Your connected accounts",
           "Mail, calendar, messages and anything you have connected. Only the "
-          "accounts you connected, and only what you allow below."),
-    Group("websites", "Websites",
-          "Pages on sites you have allowed. Reading is one decision; changing "
-          "a page — clicking, typing, sending — is another."),
+          "accounts you connected, and only what you allow below.",
+          more_screen="connectors", more_label="Connect an account"),
+    Group("websites", "Websites and the browser",
+          "Opening pages in a real browser, on sites you have allowed. Reading "
+          "a page is one decision; changing one — clicking, typing, sending — "
+          "is another. Which sites it may reach is a list of its own.",
+          more_screen="connectors", more_label="Choose which sites"),
     Group("mac", "Your Mac",
           "Files and folders on this computer. Running code is separate, and "
           "deliberately: what it can do is unbounded."),
@@ -393,9 +410,15 @@ def permission_groups() -> list[dict[str, Any]]:
                 changes.append(name)
         if not (reads or changes or runs):
             continue
-        out.append({
+        row: dict[str, Any] = {
             "key": group.key, "label": group.label, "blurb": group.blurb,
             "always": group.always,
             "read": reads, "change": changes, "run": runs,
-        })
+        }
+        # Only when there IS one. An absent key draws no button, which is the
+        # difference between "nothing more to do here" and a control that
+        # leads nowhere.
+        if group.more_screen:
+            row["more"] = {"screen": group.more_screen, "label": group.more_label}
+        out.append(row)
     return out

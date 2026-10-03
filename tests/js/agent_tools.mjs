@@ -55,7 +55,15 @@ const parsedButtons = () => {
   // Parse the rendered HTML for the controls, and hand back live objects whose
   // clicks run the handlers the renderer bound.
   const out = { "[data-tool]": [], "[data-bulk]": [], "[data-preset]": [],
-                "[data-tool-fix]": [], ".at-err": [] };
+                "[data-tool-fix]": [], "[data-group]": [], "[data-screen]": [],
+                ".at-err": [] };
+  // One section standing in for the group a control sits in. Both directions
+  // of the "the screen must not argue with itself" rule walk up to it — a
+  // bucket switch to reach the rows under it, a row to reach the switches above
+  // it — so a harness that returned null here would silently skip the half
+  // being tested.
+  const section = makeEl("section");
+  section._nodes = [];
   for (const m of box.innerHTML.matchAll(/data-tool="([^"]*)"[^>]*data-on="([^"]*)"/g)) {
     const b = makeEl("button");
     b._sel = "[data-tool]";
@@ -63,20 +71,47 @@ const parsedButtons = () => {
     const err = makeEl("span"); err._sel = ".at-err"; err.hidden = true;
     const row = makeEl("div"); row._nodes = [err];
     b._row = row;
-    b.closest = () => row;
+    b.closest = (sel) => (sel === ".at-group" ? section : row);
+    section._nodes.push(b);
     out["[data-tool]"].push(b);
   }
-  for (const m of box.innerHTML.matchAll(/data-bulk="([^"]*)"[^>]*data-on="([^"]*)"/g)) {
+  // The whole tag, because the class is what tells the group's "Allow all"
+  // button apart from a bucket switch — one says its state in words and the
+  // other in a knob position, and a harness that dropped the class would test
+  // the wrong branch of that.
+  for (const m of box.innerHTML.matchAll(
+      /<button[^>]*data-bulk="([^"]*)"[^>]*data-on="([^"]*)"[^>]*>([\s\S]*?)<\/button>/g)) {
     const b = makeEl("button");
     b._sel = "[data-bulk]";
     b.dataset = { bulk: m[1], on: m[2] };
-    // `toggleToolBucket` walks up to the group to bring the per-tool rows
-    // with it; a harness that returned null here would silently skip that.
-    const section = makeEl("section");
-    section._nodes = [];
-    section.querySelector = () => null;
-    b.closest = () => section;
+    // What it says NOW, so a label left stale by a press shows up as itself.
+    b.textContent = m[3].replace(/<[^>]*>/g, "").trim();
+    const cls = /class="([^"]*)"/.exec(m[0]);
+    if (cls) cls[1].split(/\s+/).filter(Boolean).forEach((c) => b.classList.add(c));
+    // The "n of m on" beside the switch is as wrong when stale as the switch.
+    const part = makeEl("span"); part._sel = ".at-part"; part.textContent = "";
+    const wrap = makeEl("div"); wrap._nodes = [part];
+    b._part = part;
+    b.closest = (sel) => (sel === ".at-bulk" ? wrap : section);
+    section._nodes.push(b);
     out["[data-bulk]"].push(b);
+  }
+  for (const m of box.innerHTML.matchAll(/data-group="([^"]*)"/g)) {
+    const d = makeEl("details");
+    d._sel = "[data-group]";
+    d.dataset = { group: m[1] };
+    // Whether it was drawn open is read off the attribute, so a repaint that
+    // forgot the user's disclosure shows up here rather than in a screenshot.
+    // A plain substring, not a RegExp: a connector's label is its own and may
+    // contain characters a pattern would read as syntax.
+    d.open = box.innerHTML.includes(`data-group="${m[1]}" open`);
+    out["[data-group]"].push(d);
+  }
+  for (const m of box.innerHTML.matchAll(/data-screen="([^"]*)"/g)) {
+    const b = makeEl("button");
+    b._sel = "[data-screen]";
+    b.dataset = { screen: m[1] };
+    out["[data-screen]"].push(b);
   }
   for (const m of box.innerHTML.matchAll(/data-preset="([^"]*)"/g)) {
     const b = makeEl("button");
@@ -91,7 +126,7 @@ const parsedButtons = () => {
   return out;
 };
 let buttons = { "[data-tool]": [], "[data-bulk]": [], "[data-preset]": [],
-                "[data-tool-fix]": [] };
+                "[data-tool-fix]": [], "[data-group]": [], "[data-screen]": [] };
 box.querySelectorAll = (sel) => buttons[sel] || [];
 
 const registry = new Map();
@@ -195,6 +230,29 @@ if (input.toggle) {
   }
 }
 
+// The switches ABOVE the row that was pressed. Turning one browser tool on
+// inside the disclosure used to leave the switch over it reading a plain "off".
+const groupAfter = buttons["[data-bulk]"].map((b) => ({
+  bulk: b.dataset.bulk, on: b.dataset.on === "1",
+  some: b.classList.contains("is-some"),
+  part: (b._part && b._part.textContent) || "",
+  label: b.textContent,
+}));
+
+// A disclosure the user opened, and whether a repaint shuts it. Opened through
+// the handler the renderer bound, which is the mechanism under test.
+let reopened = null;
+if (input.openGroup) {
+  const d = buttons["[data-group]"].find((x) => x.dataset.group === input.openGroup);
+  if (d && typeof d.ontoggle === "function") {
+    d.open = true;
+    d.ontoggle();
+    globalThis.__render(box, { agent, tools: input.tools, connectors: input.connectors,
+                              categories: input.categories, specs, presets });
+    reopened = box.innerHTML.includes(`data-group="${input.openGroup}" open`);
+  }
+}
+
 if (input.clickFix && buttons["[data-tool-fix]"].length) {
   const b = buttons["[data-tool-fix]"][0];
   if (typeof b.onclick === "function") b.onclick();
@@ -205,7 +263,8 @@ process.stdout.write(JSON.stringify({
   bulked, presetUsed,
   groups: globalThis.__groups(input.tools, input.connectors, input.agent.tools, input.categories, specs)
     .map((g) => ({ name: g.name, kind: g.kind, tools: g.tools.map((t) => t.row.name) })),
-  toggled, rowError, openedConnectors,
+  toggled, rowError, openedConnectors, groupAfter, reopened,
+  screens: buttons["[data-screen]"].map((b) => b.dataset.screen),
   agentToolsAfter: agent.tools,
   calls,
 }));

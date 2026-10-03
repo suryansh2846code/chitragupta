@@ -238,3 +238,129 @@ def test_an_older_server_without_presets_still_renders():
     assert out["html"].strip()
     assert "data-preset" not in out["html"]
     assert 'data-tool="search_brain"' in out["html"]
+
+
+# ── where the other half of a permission is set ──────────────────────────
+#
+# "there is no option where i can give access to browser in agent and tools
+# section" — there was, under a heading that said "Websites", and flipping it
+# still would not have worked: WHICH sites an agent may touch is a list kept on
+# the Connectors screen, and this panel never said so. A user who turned every
+# switch here on and was still refused had nowhere to go next.
+LINKED = [
+    {"key": "on_device", "label": "Its own memory and your day", "always": True,
+     "blurb": "Nothing here leaves this machine.",
+     "read": ["search_brain"], "change": ["remember"], "run": []},
+    {"key": "websites", "label": "Websites and the browser", "always": False,
+     "blurb": "Opening pages in a real browser, on sites you have allowed.",
+     "more": {"screen": "connectors", "label": "Choose which sites"},
+     "read": ["browse_open", "browse_read"], "change": ["browse_click"], "run": []},
+    {"key": "mac", "label": "Your Mac", "always": False,
+     "blurb": "Files and folders on this computer.",
+     "read": [], "change": [], "run": ["run_python"]},
+]
+
+
+@pytest.fixture(scope="module")
+def linked() -> dict:
+    return run(["search_brain", "remember"], GROUPED, [], groups=LINKED)
+
+
+def test_a_group_says_where_the_rest_of_its_permission_is_set(linked):
+    """A switch here grants the agent nothing on its own."""
+    assert 'data-screen="connectors"' in linked["html"]
+    assert "Choose which sites" in linked["html"]
+
+
+def test_that_button_opens_the_screen_it_names(linked):
+    """A control that goes nowhere is the dead end this closes, not a new one."""
+    assert linked["screens"] == ["connectors"]
+
+
+def test_a_group_with_nowhere_else_to_go_draws_no_such_button(linked):
+    """"Your Mac" has no second screen, and a button that led nowhere would
+    teach that these buttons lead nowhere."""
+    start = linked["html"].index("Your Mac")
+    assert "data-screen" not in linked["html"][start:]
+
+
+def test_an_older_server_that_names_no_screen_still_renders():
+    out = run(["search_brain"], GROUPED, [], groups=SPECS)
+
+    assert out["html"].strip()
+    assert "data-screen" not in out["html"]
+
+
+# ── the screen must not argue with itself ────────────────────────────────
+def test_turning_one_tool_on_moves_the_switch_above_it():
+    """The other direction was handled from the start — a bucket switch patches
+    the rows under it — and this one was not, so a tool switched on inside the
+    disclosure left the switch over it reading a plain "off"."""
+    out = run(["search_brain", "remember"], GROUPED, [], groups=SPECS,
+              toggle="browse_open")
+
+    reading = next(g for g in out["groupAfter"]
+                   if g["bulk"] == "browse_open browse_read")
+    assert reading["some"] is True, reading
+    assert reading["part"] == "1 of 2 on", reading
+
+
+def test_turning_the_last_tool_of_a_bucket_on_fills_its_switch():
+    out = run(["search_brain", "browse_open"], GROUPED, [], groups=SPECS,
+              toggle="browse_read")
+
+    reading = next(g for g in out["groupAfter"]
+                   if g["bulk"] == "browse_open browse_read")
+    assert reading["on"] is True
+    assert reading["part"] == "", "it is whole, so there is nothing to count"
+
+
+def test_allow_all_says_what_it_would_do_now():
+    """It is a button, so it says the state in words rather than in a knob —
+    and a button still offering "Allow all" over a fully granted group is the
+    same lie as a stale switch."""
+    out = run(["search_brain", "remember", "browse_open", "browse_read"],
+              GROUPED, [], groups=SPECS, toggle="browse_click")
+
+    allbtn = next(g for g in out["groupAfter"]
+                  if set(g["bulk"].split()) == {"browse_open", "browse_read",
+                                                "browse_click"})
+    assert allbtn["label"] == "Turn all off", allbtn
+
+
+# ── a repaint must not undo what the user opened ─────────────────────────
+def test_a_disclosure_the_user_opened_survives_a_repaint():
+    """A preset repaints the whole panel, and every list somebody had opened to
+    decide with closed under them."""
+    out = run(["search_brain"], GROUPED, [], groups=SPECS, openGroup="Websites")
+
+    assert out["reopened"] is True
+
+
+# ── the row says where you are, not only where you could go ──────────────
+def test_the_preset_that_is_already_true_is_marked():
+    """Three buttons that look identical whatever the agent holds mean the only
+    way to tell "read only" from "read only, already applied" is to count
+    switches — the thing this row replaced."""
+    previewed = [{**p, "tools": ["search_brain"]} if p["key"] == "read" else p
+                 for p in PRESETS]
+    out = run(["search_brain"], GROUPED, [], groups=SPECS, presets=previewed)
+
+    assert 'aria-pressed="true"' in out["html"]
+    assert "is-current" in out["html"]
+
+
+def test_no_preset_is_marked_when_none_of_them_is_true():
+    previewed = [{**p, "tools": ["search_brain"]} if p["key"] == "read" else p
+                 for p in PRESETS]
+    out = run(["search_brain", "browse_click"], GROUPED, [], groups=SPECS,
+              presets=previewed)
+
+    assert 'aria-pressed="true"' not in out["html"]
+
+
+def test_a_server_that_sends_no_preview_marks_nothing_rather_than_guessing():
+    out = run(["search_brain"], GROUPED, [], groups=SPECS, presets=PRESETS)
+
+    assert 'aria-pressed="true"' not in out["html"]
+    assert 'data-preset="all"' in out["html"], "the presets still render"

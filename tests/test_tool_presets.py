@@ -148,3 +148,90 @@ def test_sending_a_tool_list_still_works_without_a_preset(monkeypatch):
     route.set_agent_tools("a1", route.AgentTools(tools=["search_brain"]))
 
     assert written["a1"] == ["search_brain"]
+
+
+# ── pressing one before the agent exists ─────────────────────────────────
+#
+# The builder is a screen with no agent behind it, so it cannot PATCH a preset
+# on afterwards — and resolving "everything" in the browser is exactly the
+# staleness the key exists to avoid. The built-ins come from the key, at the
+# moment Create is pressed; the rest comes from the screen, because only the
+# screen knows which connectors the user has.
+def test_the_builder_is_told_what_each_preset_covers():
+    """A preview, so a draft can show what the button will do. It is not what
+    gets sent — that is still the key."""
+    from chitragupta.api.routes.agents import available_tools
+
+    presets = {p["key"]: p for p in available_tools()["presets"]}
+
+    assert set(presets["all"]["tools"]) == tf.builtin_names()
+    assert set(presets["none"]["tools"]) == set(tf.granted_by_default())
+
+
+def test_creating_an_agent_with_a_preset_resolves_it_here(monkeypatch):
+    from chitragupta.api.routes import agents as route
+
+    made: dict = {}
+
+    class _Store:
+        def create(self, name, role, prompt, tools, recall):
+            made.update(name=name, tools=list(tools or []))
+            return type("A", (), {"id": "a1", "name": name, "role": role})()
+
+    monkeypatch.setattr("chitragupta.agents.custom.get_custom_store", lambda: _Store())
+    route.create_agent(route.NewAgent(name="Sales", preset="all", tools=[]))
+
+    assert tf.builtin_names() <= set(made["tools"])
+
+
+def test_a_preset_at_creation_keeps_the_connectors_the_screen_knew_about():
+    """No preset can name a connector tool — they do not exist until somebody
+    adds one — so "allow everything" would otherwise be the one button that
+    created an agent unable to see Notion."""
+    from chitragupta.api.routes import agents as route
+
+    got = route._preset_merge("all", ["mcp", "notion__search", "search_brain"])
+
+    assert "mcp" in got and "notion__search" in got
+    assert tf.builtin_names() <= set(got)
+
+
+def test_nothing_yet_at_creation_reaches_nothing_outside_this_machine():
+    from chitragupta.api.routes import agents as route
+
+    got = route._preset_merge("none", [])
+
+    assert set(got) == set(tf.granted_by_default())
+
+
+def test_an_unknown_preset_is_refused_at_creation_too(monkeypatch):
+    """It arrives from a client, and this is the one endpoint where returning
+    "everything" for a typo would create the agent that holds it."""
+    from fastapi import HTTPException
+
+    from chitragupta.api.routes import agents as route
+
+    with pytest.raises(HTTPException) as raised:
+        route.create_agent(route.NewAgent(name="Sales", preset="everything"))
+
+    assert raised.value.status_code == 400
+
+
+def test_creating_without_a_preset_is_untouched(monkeypatch):
+    """`None` means "no opinion, give it the standard set" and `[]` means
+    "deliberately none". Collapsing those is how the builder once created
+    agents with no tools at all."""
+    from chitragupta.api.routes import agents as route
+
+    seen: list = []
+
+    class _Store:
+        def create(self, name, role, prompt, tools, recall):
+            seen.append(tools)
+            return type("A", (), {"id": "a1", "name": name, "role": role})()
+
+    monkeypatch.setattr("chitragupta.agents.custom.get_custom_store", lambda: _Store())
+    route.create_agent(route.NewAgent(name="A"))
+    route.create_agent(route.NewAgent(name="B", tools=[]))
+
+    assert seen == [None, []]
