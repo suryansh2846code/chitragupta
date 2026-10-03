@@ -257,47 +257,97 @@ function renderProfileIdentity(pane, a) {
   renderProfileDanger(pane, a);
 }
 
+/**
+ * The two ways an agent leaves, which are not the same act.
+ *
+ * **Retire** takes it off the rail and keeps everything — its memory, its
+ * persona, its conversation — and the Agent Library brings it back.
+ * **Delete** destroys it and cannot be undone.
+ *
+ * A preset has had both since the roster existed: leaving the roster *is*
+ * retiring, and the template is always in the Library to add again. A custom
+ * agent had only the destructive one, so "I am not using this right now" and
+ * "erase everything it learned" were one button — and the one a person reaches
+ * for first is the one that cannot be taken back.
+ *
+ * Two rows, never one button with a modifier: the whole difference between
+ * them is what survives, and that has to be readable before anything is
+ * pressed.
+ */
 function renderProfileDanger(pane, a) {
   const box = document.createElement("div");
   box.className = "profile-danger";
   const custom = !!a.custom;
-  box.innerHTML =
-    `<h2>${custom ? "Delete this agent" : "Remove from your team"}</h2>
-     <div class="set-desc">${custom
-       ? "Deletes it, along with its instructions, what it has learned, and its conversation. This cannot be undone."
-       : "Takes it out of the rail. Its conversation and everything it learned are kept, and you can add it again from the Agent Library."}</div>`;
-  const btn = document.createElement("button");
-  btn.className = "tiny ghost";
-  btn.textContent = custom ? "Delete agent" : "Remove from team";
-  btn.onclick = async () => {
-    // Deleting a custom agent destroys its notes and its conversation; taking
-    // a preset out of the roster keeps both. Two different acts, so two
-    // different questions — and only the destructive one is phrased as a loss.
-    const ask = custom
-      ? `Delete ${a.name}? Its memory and conversation go with it.`
-      : `Remove ${a.name} from your team? Nothing it learned is deleted.`;
+  box.innerHTML = `<h2>Putting it away</h2>`;
+
+  const leave = async (btn, url, method, ask, said) => {
     if (!confirm(ask)) return;
     btn.disabled = true;
-    // A turn still running for an agent that is about to stop existing has
-    // nowhere to put its answer, and would go on spending the user's key to
-    // write it. Deleting is the strongest "stop that" there is, so it means it.
-    // This came with the delete when it moved off the rail row — losing it here
-    // would be a leak nothing on screen could explain.
+    // A turn still running for an agent that is about to leave has nowhere to
+    // put its answer, and would go on spending the user's key writing it.
     try { await stopTurn(a.id); } catch (_) { /* it may not be running */ }
     LANDED.delete(a.id);
     delete DRAFTS[a.id];
     try {
-      await api(custom
-        ? `/api/agents/custom/${encodeURIComponent(a.id)}`
-        : `/api/agents/roster/${encodeURIComponent(a.id)}`, { method: "DELETE" });
+      await api(url, { method });
     } catch (e) { toast(String(e)); btn.disabled = false; return; }
     if (current === a.id) current = null;
     profDirty = false;
     closeAgentProfile();
-    toast(custom ? "Agent deleted" : "Removed from your team");
+    toast(said);
     loadAgents();
   };
-  box.appendChild(btn);
+
+  const row = (title, desc, label, danger, run) => {
+    const wrap = document.createElement("div");
+    wrap.className = "set-row";
+    const main = document.createElement("div");
+    main.className = "set-main";
+    main.innerHTML = `<div class="set-label">${esc(title)}</div>
+                      <div class="set-desc">${esc(desc)}</div>`;
+    const ctl = document.createElement("div");
+    ctl.className = "set-ctl";
+    const btn = document.createElement("button");
+    btn.className = "tiny ghost" + (danger ? " is-danger" : "");
+    btn.textContent = label;
+    btn.onclick = () => run(btn);
+    ctl.appendChild(btn);
+    wrap.append(main, ctl);
+    box.appendChild(wrap);
+  };
+
+  row("Retire it",
+      custom
+        ? "Takes it off the rail. Its memory, its persona and its conversation are all kept, and you can bring it back from the Agent Library."
+        : "Takes it out of your team. Everything it learned is kept, and you can add it again from the Agent Library.",
+      "Retire", false,
+      (btn) => leave(
+        btn,
+        custom ? `/api/agents/custom/${encodeURIComponent(a.id)}/retire`
+               : `/api/agents/roster/${encodeURIComponent(a.id)}`,
+        custom ? "POST" : "DELETE",
+        `Retire ${a.name}? Nothing it learned is deleted — the Agent Library can bring it back.`,
+        "Retired — the Agent Library can bring it back"));
+
+  // Both kinds can be deleted; what "deleted" leaves behind is what differs.
+  // An agent we ship has no row to destroy and its template is in the Library
+  // whatever happens — so deleting it erases everything it accumulated and it
+  // comes back NEW. One the user built has a row, and deleting it is final.
+  row("Delete it",
+      custom
+        ? "Destroys it, along with its persona, everything it has learned, and your conversation. This cannot be undone, and it will not be in the Library."
+        : "Erases your conversation, everything it learned, the persona you chose and the face you gave it, and takes it off the team. You can add it again from the Library — as a new agent, with none of that.",
+      custom ? "Delete permanently" : "Delete", true,
+      (btn) => leave(
+        btn,
+        custom ? `/api/agents/custom/${encodeURIComponent(a.id)}`
+               : `/api/agents/${encodeURIComponent(a.id)}/reset`,
+        custom ? "DELETE" : "POST",
+        custom
+          ? `Permanently delete ${a.name}? Its memory and conversation go with it, and this cannot be undone.`
+          : `Delete ${a.name}? Everything it learned, its persona and your conversation are erased. Adding it again gives you a new one.`,
+        custom ? "Agent deleted" : "Deleted — the Library has a fresh one"));
+
   pane.appendChild(box);
 }
 
@@ -321,9 +371,9 @@ async function renderProfilePersona(pane, a) {
   const head = document.createElement("div");
   head.innerHTML =
     `<h2>How ${esc(a.name)} works</h2>
-     <p class="ms-sub">Pick what fits. It is written into
-       <code>persona.md</code> in this agent's own folder, so you can still open
-       it outside the app — saving here rewrites that file from these choices.</p>`;
+     <p class="ms-sub">Pick what fits. This is added to what the agent already
+       does — it does not replace its instructions, which live in
+       <code>persona.md</code> in its own folder.</p>`;
   pane.appendChild(head);
 
   const body = document.createElement("div");

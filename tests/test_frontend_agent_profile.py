@@ -129,14 +129,37 @@ def test_a_full_memory_says_so_and_says_what_it_costs(report):
     assert "cannot learn anything new" in meter
 
 
-def test_removing_a_preset_is_not_the_same_act_as_deleting_an_agent(report):
-    """One keeps the conversation and everything learned; the other destroys
-    both. Two acts, so two questions and two endpoints."""
-    preset, custom = report["danger"]["preset"], report["danger"]["custom"]
-    assert preset["url"] == "/api/agents/roster/inbox"
-    assert custom["url"] == "/api/agents/custom/chotu"
-    assert "Nothing it learned is deleted" in preset["asked"]
-    assert "memory and conversation go with it" in custom["asked"]
+def test_an_agent_you_built_can_be_retired_or_destroyed(report):
+    """Two acts, so two rows. It used to be one button, so "I am not using this
+    right now" and "erase everything it learned" were the same press — and the
+    one a person reaches for first is the one that cannot be taken back."""
+    custom = report["danger"]["custom"]
+    assert custom["hasRetire"] and custom["hasDelete"]
+    assert custom["retire"]["url"] == "/api/agents/custom/chotu/retire"
+    assert custom["retire"]["method"] == "POST"
+    assert custom["delete"]["url"] == "/api/agents/custom/chotu"
+    assert custom["delete"]["method"] == "DELETE"
+
+
+def test_an_agent_we_ship_can_be_deleted_back_to_new(report):
+    """It has no row to destroy and its template is in the Library whatever
+    happens — so deleting erases everything it accumulated and it comes back
+    NEW, which is a different endpoint from destroying one the user built."""
+    preset = report["danger"]["preset"]
+    assert preset["hasRetire"] and preset["hasDelete"]
+    assert preset["retire"]["url"] == "/api/agents/roster/inbox"
+    assert preset["delete"]["url"] == "/api/agents/inbox/reset"
+    assert preset["delete"]["method"] == "POST"
+
+
+def test_each_one_says_what_survives_it(report):
+    """The whole difference between them is what is kept, and that has to be
+    readable before anything is pressed."""
+    assert "Nothing it learned is deleted" in report["danger"]["preset"]["retire"]["asked"]
+    assert "can bring it back" in report["danger"]["custom"]["retire"]["asked"]
+    assert "cannot be undone" in report["danger"]["custom"]["delete"]["asked"]
+    # The shipped one says the opposite, because the opposite is true.
+    assert "gives you a new one" in report["danger"]["preset"]["delete"]["asked"]
 
 
 def test_closing_with_unsaved_work_stops_to_ask(report):

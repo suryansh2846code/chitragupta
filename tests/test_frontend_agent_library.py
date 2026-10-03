@@ -79,9 +79,18 @@ def test_an_agent_that_runs_code_says_so_before_it_is_added(run):
     assert "runs code on your Mac" not in _card(run, "Inbox")["text"]
 
 
-def test_a_card_offers_exactly_one_action_and_it_reflects_the_roster(run):
+def test_the_library_adds_and_never_takes_away(run):
+    """A card the user already has offers no action at all.
+
+    It used to read "In your roster · Remove", which did the same thing the
+    agent profile calls Retire — one act, two names, two screens, and only one
+    of them said what was kept. Removing an agent is a decision made in its own
+    profile now, beside the permanent one it has to be told apart from, so the
+    card states the fact and offers nothing.
+    """
     mine, theirs = _card(run, "Inbox"), _card(run, "Engineer")
-    assert mine["buttons"] == ["In your roster · Remove"]
+    assert mine["buttons"] == [], "the Library still offers a way to remove"
+    assert "In your roster" in mine["text"]
     assert theirs["buttons"] == ["Add agent →"]
     assert "is-mine" in mine["className"]
     assert "is-mine" not in theirs["className"]

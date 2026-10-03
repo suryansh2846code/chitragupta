@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 
 from ..config import get_settings
 from ..log import suppressed
-from . import identity, notes, persona, profile_files
+from . import erase, profile_files
 from .agent import Agent
 from .prompt import KNOWN_ACTIONS
 from .tool_snapshot import add_menu_column, catalog, recorded_menu, resolve
@@ -24,7 +24,13 @@ CREATE TABLE IF NOT EXISTS custom_agents (
     tools         TEXT NOT NULL DEFAULT '[]',
     recall_sources TEXT NOT NULL DEFAULT '[]',
     created_at    TEXT NOT NULL,
-    known         TEXT NOT NULL DEFAULT ''   -- JSON array: the catalog it chose from
+    known         TEXT NOT NULL DEFAULT '',  -- JSON array: the catalog it chose from
+    -- When the user retired it. Retiring takes an agent out of the rail and
+    -- keeps everything; deleting destroys it. A preset has had both since the
+    -- roster existed — leaving the roster is retiring — and a custom agent had
+    -- only the destructive one, so "I am not using this right now" and "erase
+    -- what it learned" were the same button.
+    retired_at    TEXT
 );
 """
 
@@ -44,6 +50,13 @@ class CustomAgentStore:
         # Same migration as the override store, from the same function: both
         # hold a snapshot of a tool list and must record it the same way.
         add_menu_column(self._c, "custom_agents")
+        # Same reason `add_menu_column` exists: `CREATE TABLE IF NOT EXISTS` is
+        # a no-op against a table that is already there, so a column added to
+        # the schema never reaches anybody who installed before it.
+        cols = {r[1] for r in self._c.execute("PRAGMA table_info(custom_agents)")}
+        if "retired_at" not in cols:
+            self._c.execute("ALTER TABLE custom_agents ADD COLUMN retired_at TEXT")
+            self._c.commit()
 
     def _row_to_agent(self, r: sqlite3.Row) -> Agent:
         return Agent(
@@ -62,14 +75,47 @@ class CustomAgentStore:
         )
 
     def list(self) -> builtins.list[Agent]:
+        """The ones on the rail. A retired agent is not on the team."""
         rows = self._c.execute(
-            "SELECT * FROM custom_agents ORDER BY created_at").fetchall()
+            "SELECT * FROM custom_agents WHERE retired_at IS NULL "
+            "ORDER BY created_at").fetchall()
         return [self._row_to_agent(r) for r in rows]
 
+    def retired(self) -> builtins.list[dict]:
+        """The ones the user put away, newest first, for the Library to offer
+        back. Not `Agent`s: nothing runs them, and the Library needs when they
+        were retired so the shelf can say how long ago."""
+        rows = self._c.execute(
+            "SELECT id, name, role, retired_at FROM custom_agents "
+            "WHERE retired_at IS NOT NULL ORDER BY retired_at DESC").fetchall()
+        return [dict(r) for r in rows]
+
     def get(self, agent_id: str) -> Agent | None:
+        """One agent, retired or not.
+
+        Deliberately not filtered: a retired agent's conversation is still
+        readable and a routine that named it should not break because the user
+        put it away — the same reason `presets.get_agent` resolves a template
+        that has left the roster.
+        """
         r = self._c.execute(
             "SELECT * FROM custom_agents WHERE id=?", (agent_id,)).fetchone()
         return self._row_to_agent(r) if r else None
+
+    def retire(self, agent_id: str) -> bool:
+        """Put it away. Everything it has is kept and nothing is erased."""
+        cur = self._c.execute(
+            "UPDATE custom_agents SET retired_at=? WHERE id=? AND retired_at IS NULL",
+            (datetime.now(UTC).isoformat(), agent_id))
+        self._c.commit()
+        return cur.rowcount > 0
+
+    def restore(self, agent_id: str) -> bool:
+        """Bring it back, with its memory, its persona and its conversation."""
+        cur = self._c.execute(
+            "UPDATE custom_agents SET retired_at=NULL WHERE id=?", (agent_id,))
+        self._c.commit()
+        return cur.rowcount > 0
 
     def create(self, name: str, role: str = "", system_prompt: str = "",
                tools: builtins.list[str] | None = None,
@@ -109,35 +155,13 @@ class CustomAgentStore:
         return self.get(aid)
 
     def delete(self, agent_id: str) -> bool:
-        with suppressed("from .agent_models import clear_agent_model …"):
-            from .agent_models import clear_agent_model
-            clear_agent_model(agent_id)
-        with suppressed("from .connector_grants import forget_agent …"):
-            from .connector_grants import forget_agent
-            forget_agent(agent_id)
-        with suppressed("from .tool_overrides import get_tool_overrides …"):
-            # An id is a slug of the name, so it is deterministic: delete
-            # "Chotu", build another "Chotu", and it lands on the same id. An
-            # override left behind would then apply to an agent that never had
-            # it — a tool list from a deleted agent, silently.
-            from .tool_overrides import get_tool_overrides
-            get_tool_overrides().clear(agent_id)
-        # Same reasoning as the override above, one step worse: a leftover
-        # `memory.md` is not a stale setting, it is prose the next agent with
-        # this name reads and acts on — standing instructions for a job it was
-        # never given.
-        profile_files.forget(agent_id)
-        # And the ledger of what was written into those notes, or the next
-        # agent with this name starts life unable to learn anything its
-        # predecessor had already learned and lost.
-        with suppressed("clearing the note ledger for a deleted agent"):
-            notes.forget(agent_id)
-        # And what the user renamed it to, for the same slug reason: otherwise
-        # the next agent built with this name wears the deleted one's rename.
-        with suppressed("clearing a deleted agent's name"):
-            identity.clear(agent_id)
-        with suppressed("clearing a deleted agent's persona"):
-            persona.forget(agent_id)
+        """Destroy it, and everything it accumulated.
+
+        The trail is `erase.everything` — one list, shared with the reset an
+        agent we ship gets, so a store added later reaches both rather than
+        whichever cleanup somebody remembered.
+        """
+        erase.everything(agent_id)
         cur = self._c.execute("DELETE FROM custom_agents WHERE id=?", (agent_id,))
         self._c.commit()
         return cur.rowcount > 0

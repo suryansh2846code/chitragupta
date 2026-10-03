@@ -88,6 +88,10 @@ async function selectAgent(id) {
   document.querySelectorAll(".agent").forEach((el) => el.classList.toggle("active", el.dataset.id === id));
   loadAgents();   // refresh the active dot in the rail
   updateAgentModelChip(id);
+  // How much THIS agent decides on its own. Per agent, like the setting it
+  // edits — showing the level of the agent you just left would be a label
+  // about somebody else.
+  if (typeof loadAutonomy === "function") loadAutonomy(id);
   const chip = $("#agentModelChip");
   if (chip && !chip._wired) {
     chip._wired = 1;

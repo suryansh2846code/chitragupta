@@ -33,6 +33,7 @@ read before its definition is a temporal dead-zone `ReferenceError` that
 | `browser.js` | websites agents may read, on the Connectors screen |
 | `webscreen.js` | the browser itself, shown and driven inside the app |
 | `appearance.js` | what one agent looks like — the profile's Appearance tab |
+| `autonomy.js` | the composer's mode pill — how much the open agent decides alone |
 | `profile.js` | the agent profile popup — one agent's identity, files, model and permissions |
 | `app.js` | the shell: state, chrome, agent rail, nav, keyboard, boot |
 
@@ -368,6 +369,15 @@ script out of eleven does not fail; it passes.
   `openToolsScreen` and `openAppearanceScreen` survive as redirects into the
   profile, because four call sites and two old nav names still reach for them
   and a link that lands nowhere is worse than one that lands near.
+- **The mode pill and the Persona tab are one setting.** Both read the levels
+  from `GET /api/agents/{id}/persona` and write with `PUT` — a mode set in the
+  composer and a mode set in the profile that disagreed would be two settings
+  wearing one name. It is **per agent** and re-read on every `selectAgent`,
+  because showing the level of the agent you just left is a label about
+  somebody else; it stays **hidden until the level has arrived**, because a
+  pill reading "Mode" is a control reporting something nobody told it; and the
+  label moves before the server answers and **moves back if the save fails**,
+  or the pill reports a mode the agent is not in.
 - **The persona picker's options come down the wire.** `agents/persona.py` owns
   the traits, the styles, the autonomy levels and the caps; a copy of those
   lists here would be a second copy to keep current, and the one that drifts is

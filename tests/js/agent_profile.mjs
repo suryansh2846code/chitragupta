@@ -294,22 +294,34 @@ try {
     meter: el("#profMeter").textContent,
   };
 
-  // 6. The danger zone asks the right question and calls the right endpoint
-  //    for the kind of agent. A preset is removed from the roster and keeps
-  //    everything; a custom agent is destroyed.
+  // 6. Two ways out, and they are not the same act. Retiring keeps
+  //    everything and the Library brings it back; deleting destroys it. A
+  //    custom agent gets both; an agent we ship gets only the first, because
+  //    its template is in the Library whatever the user does.
   out.danger = {};
   for (const [id, key] of [["inbox", "preset"], ["chotu", "custom"]]) {
     globalThis.__openProfile(id, "profile");
     await tick(); await tick();
-    requests.length = 0; confirmsAsked.length = 0; confirmAnswer = true;
-    const btn = button("Remove from team") || button("Delete agent");
-    await btn.onclick();
-    await tick();
     out.danger[key] = {
-      label: btn._text,
-      asked: confirmsAsked[0] || "",
-      url: (requests.find((r) => r.method === "DELETE") || {}).url || "",
+      hasRetire: !!button("Retire"),
+      hasDelete: !!(button("Delete permanently") || button("Delete")),
     };
+    for (const [label, as] of [["Retire", "retire"],
+                               ["Delete permanently", "delete"], ["Delete", "delete"]]) {
+      const btn = button(label);
+      if (!btn) continue;
+      requests.length = 0; confirmsAsked.length = 0; confirmAnswer = true;
+      await btn.onclick();
+      await tick();
+      const sent = requests.find((r) => r.method === "POST" || r.method === "DELETE");
+      out.danger[key][as] = {
+        asked: confirmsAsked[0] || "",
+        url: (sent || {}).url || "", method: (sent || {}).method || "",
+      };
+      // The dialog closes on a successful leave, so reopen for the next one.
+      globalThis.__openProfile(id, "profile");
+      await tick(); await tick();
+    }
   }
 
   // 7. Closing with unsaved work stops to ask — and "no" keeps it open.

@@ -119,6 +119,24 @@
               <span class="cmp-pill-arrow"><svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6.2L8 10l4-3.8"/></svg></span>
             </button>
 
+            <!-- How much this agent decides on its own, next to the thing you
+                 are about to ask it. It is the same setting as the Persona
+                 tab's — one endpoint, one vocabulary, both drawn from what the
+                 server sends — because a mode set here and a mode set there
+                 that disagreed would be two settings wearing one name.
+                 Hidden until the levels have loaded: a pill that says nothing
+                 is worse than no pill. -->
+            <div class="cmp-auto-wrap">
+              <button type="button" class="cmp-pill" id="cmpAutoPill"
+                      title="How much this agent decides on its own" hidden>
+                <span class="cmp-pill-ic" id="cmpAutoIc" aria-hidden="true"></span>
+                <span class="cmp-pill-label" id="cmpAutoLabel">Mode</span>
+                <span class="cmp-pill-arrow"><svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6.2L8 10l4-3.8"/></svg></span>
+              </button>
+              <div id="cmpAutoMenu" class="cmp-auto-menu" hidden role="menu"
+                   aria-label="How much this agent decides on its own"></div>
+            </div>
+
             <!-- Model & Provider Picker Pill -->
             <div class="cmp-model-picker-wrap">
               <button type="button" class="cmp-pill cmp-pill-model" id="cmpModelPill" title="Choose model & provider">
@@ -911,6 +929,18 @@
         </div>
         <nav id="libCats" class="lib-cats"></nav>
       </header>
+      <!-- Agents the user built and retired. Above the catalogue because it is
+           the shorter list and the one somebody came here *looking* for —
+           "where did my agent go" is the question the shelf answers. Empty
+           until there is one, rather than an empty heading explaining a state
+           nobody is in. -->
+      <section id="libRetiredSec" class="lib-retired" hidden>
+        <h2 class="lib-retired-title">Retired</h2>
+        <p class="lib-retired-sub">You put these away. Everything they learned
+          is still here — bringing one back restores it as it was.</p>
+        <div id="libRetired" class="lib-retired-grid"></div>
+      </section>
+
       <div id="libGrid" class="lib-grid"></div>
       <p id="libEmpty" class="lib-empty" hidden>No agent matches that.</p>
     </div>
@@ -1033,6 +1063,9 @@
        renderers rather than carrying copies of them. Before `app.js`, which
        calls `openAgentProfile` from the rail. -->
   <script src="/static/profile.js"></script>
+  <!-- After `profile.js`: the composer's mode pill edits the same setting the
+       profile's Persona tab does, and nudges that pane when it is open. -->
+  <script src="/static/autonomy.js"></script>
   <script src="/static/app.js"></script>
 </body>
 </html>
