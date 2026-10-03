@@ -1,38 +1,60 @@
 /**
- * What one agent may use, and where each skill came from.
+ * What one agent may use — one card per app, two switches on each.
  *
- * The Agents & tools panel: the built-in tools, the tools a connector the user
- * added exposes to the agent loop, and a switch for each.
+ * **The axis changed, and that is the whole of this screen's history.**
  *
- * There used to be a second screen here — a read-only "Tools & skills" drawer
- * off the sidebar. Same endpoint, same grouping, same rows, no switches, and it
- * printed each connector's description in full where this one trims to the
- * first sentence. A strict subset of this panel, reached by a nav item with
+ * It began as sixty-four switches under thirteen headings: a question about
+ * every tool, asked before the user had sent the agent a single message. That
+ * became four cards by *reach* — what stays on this machine, what touches an
+ * account, what touches a website, what touches your files — which is the right
+ * question for the **gate** and the wrong one for a person. It put Gmail, the
+ * calendar, Telegram, Notion and Linear on one card called "Your connected
+ * accounts", so a user who wanted to say *read GitHub, leave my mail alone* had
+ * no control that said it.
+ *
+ * People think in apps. So the card is the app: Gmail, The browser, Your Mac,
+ * GitHub. On each one, **Read** and the one word that app's changes actually
+ * are — Change for a web page, Write for a file, Send for mail. Between the
+ * switch and the next row is the roll-up: what that switch covers, in the names
+ * a person reads. The per-tool list survives in the disclosure underneath for
+ * anyone who wants it; taking it away would be removing control, where the
+ * complaint was that control was the only thing on offer.
+ *
+ * **The second switch is never one generic word.** `CLAUDE.md` forbids folding
+ * `outbound` or `destructive` into "change": a tap given for one must never
+ * silently cover the other. So running code is its own switch on the one card
+ * that has it, reaching a person is its own switch wherever one appears, and
+ * the wording comes down the wire from `tool_facts.App` rather than being
+ * guessed here.
+ *
+ * **Some apps change things without a tool.** Sending mail, adding an event,
+ * running somebody else's verb in GitHub — those are *actions*, and every one
+ * comes to the user as a card they confirm. There is no switch to draw, so the
+ * row says that instead. An app showing only "Read" reads as an app that cannot
+ * do anything else, which is false, and is what sends people hunting through
+ * settings for a control that does not exist.
+ *
+ * **Nothing on this screen may be a control that does nothing.** Three
+ * permissions used to have a working endpoint and no UI at all — the folders
+ * agents may reach, which connectors an agent may use without asking, and the
+ * people it may write to unattended. "Your Mac → Read" granted a tool whose
+ * only possible answer was *"No folder has been opened to agents yet"*, and no
+ * screen anywhere opened one. They are all on the card they belong to now.
+ *
+ * There used to be a second screen as well — a read-only "Tools & skills"
+ * drawer off the sidebar. Same endpoint, same grouping, same rows, no switches,
+ * and it printed each connector's description in full where this one trims to
+ * the first sentence. A strict subset of this panel, reached by a nav item with
  * almost the same name, and neither said the other existed. It is gone; the two
  * rules only its tests covered moved into `test_frontend_agent_tools.py`.
  *
- * **Every skill says where it came from.** A row that does not name its source
- * reads as something Chitragupta invented, when it belongs to a server the user
- * connected and can disconnect. `toolConnector` resolves that provenance, and a
- * connector that cannot answer right now is shown as unreachable rather than
- * dropped from the list — a capability that silently vanishes is
- * indistinguishable from one that never existed.
- *
- * Names come from the connector, so they are escaped like any other text the
- * user's own sources supply.
+ * Every skill still says where it came from, and a connector that cannot answer
+ * is shown as unreachable rather than dropped: a capability that silently
+ * vanishes is indistinguishable from one that never existed. Names come from
+ * the connector, so they are escaped like any other text the user's own sources
+ * supply, and the acronym for the protocol a connector speaks never reaches
+ * this screen — the user added Linear; the user sees Linear.
  */
-
-// ── the tools panel ────────────────────────────────────────────────────────
-// A skill either ships with Chitragupta or arrives with something the user
-// connected, and they are entitled to know which: a tool that reaches into
-// their mail is a different thing from one that searches their brain.
-// Provenance rides on each row as `source` plus `connector` — the connector's
-// own user-facing label. Rows that predate provenance carry no `source` at all,
-// and those are builtins.
-//
-// The acronym for the protocol a connector speaks NEVER reaches this screen,
-// exactly as "vendor CLI" never reaches the sign-in card. The user added
-// Linear; the user sees Linear.
 
 // What a person reads for this tool. `name` is an id — for a connector tool it
 // is a qualified one we minted — and an id on screen is an internal surfaced.
@@ -41,9 +63,6 @@ function toolLabel(t) {
 }
 
 // A row that grants a whole category rather than naming one connector's tool.
-// It belongs in the agent builder, where it is the switch a user flips, and not
-// in a list of skills, where the concrete tools are already shown under their
-// own connector.
 function isCategoryRow(t) { return !!t && t.source === "category"; }
 
 // One readable line about a tool.
@@ -68,24 +87,24 @@ function toolBlurb(t) {
   return out;
 }
 
-// The heading a built-in sits under. The API names it; a tool that arrives
-// without one lands in "Other", which is visible enough to get fixed.
+// The heading a built-in sits under, inside its card. The API names it; a tool
+// that arrives without one lands in "Other", which is visible enough to get
+// fixed.
 function toolCategory(t) { return ((t && t.category) || "").trim() || "Other"; }
 
 // ── what a built-in touches, and what it does to it ───────────────────────
 //
-// The panel used to arrange itself by `category` — thirteen headings and
-// sixty-four switches, every one of them a question about a tool, asked before
-// the user had sent the agent a single message.
-//
-// `group` and `access` come from the API because the decision is not this
+// `app` and `access` come from the API because the decision is not this
 // layer's: a tool declares a capability, and `agents/tool_facts.py` derives
 // both from it. A consumer that re-derived them would be the name chain this
-// file's own comments keep warning about.
+// file's own comments keep warning about. `group` is still sent and is still
+// the GATE's axis — `request_permission` and the agent's own prompt reason in
+// it — so it is read only as the fallback for a server that predates `app`.
+function toolAppKey(t) { return ((t && t.app) || "").trim(); }
 function toolGroupKey(t) { return ((t && t.group) || "").trim(); }
 function toolAccess(t) { return ((t && t.access) || "").trim(); }
 
-//: What a group can be allowed to do, in the order the tiers escalate.
+//: The tiers a card can draw a switch for, in the order they escalate.
 //:
 //: `access` is the server's word and `verb` is the person's — they are not the
 //: same word and must not be assumed to be. Writing the bucket keys as the UI
@@ -95,17 +114,20 @@ function toolAccess(t) { return ((t && t.access) || "").trim(); }
 //: on. A panel that omits a switch for something an agent can do is worse than
 //: the sixty-four it replaced.
 //:
-//: `outbound` has its own bucket even though no built-in is one today.
-//: Folding it into "change" would mean the first tool that reaches a person
-//: arrives already covered by a switch somebody set for something else.
+//: `verb` takes the card's own word where the card has one — "Change" on a web
+//: page, "Write" on a file — because one generic word across every card is a
+//: switch that was set for one app and granted another. `outbound` keeps a
+//: bucket of its own even though no built-in is one today: folding it into
+//: "change" would mean the first tool that reaches a person arrives already
+//: covered by a switch somebody set for something else.
 const ACCESS_BUCKETS = [
-  { key: "read", access: ["read"], verb: "Read",
+  { key: "read", access: ["read"], word: () => "Read",
     blurb: "Look, and report back." },
-  { key: "change", access: ["write"], verb: "Change",
+  { key: "change", access: ["write"], word: (c) => c.writeLabel || "Change",
     blurb: "Alter something. Each change is yours to undo." },
-  { key: "send", access: ["outbound"], verb: "Send to people",
+  { key: "send", access: ["outbound"], word: () => "Send to people",
     blurb: "Reaches somebody who is not you." },
-  { key: "run", access: ["destructive"], verb: "Irreversible",
+  { key: "run", access: ["destructive"], word: (c) => c.runLabel || "Irreversible",
     blurb: "Running code, and anything else nothing can undo." },
 ];
 
@@ -132,6 +154,11 @@ function toolConnector(t) {
   return label || "A connected app";
 }
 
+//: The id permission is decided against, as opposed to the name a person
+//: reads. A user can rename a connector; a rename must not change who may use
+//: what, so the grant switch sends this and never the label.
+function toolConnectorId(t) { return ((t && t.connector_id) || "").trim(); }
+
 // A connector row exists either because we ship it or because the user added
 // it — `custom` apps come from their own form, `mcp` ones from a server they
 // chose. Only those two can be "configured but unreachable"; the rest are
@@ -144,16 +171,11 @@ function unreachableConnector(c) { return userConfigured(c) && c.ready === false
 
 
 // ── per-agent tools ────────────────────────────────────────────────────────
-// The screen that answers "why does my agent not know about Notion?".
 //
-// It replaced a read-only list of every tool that exists. That answered a
-// different question from the one nobody could previously ask — an agent
-// silently lacking connector access looked exactly like a connector that was
-// still syncing, and no screen distinguished them.
-//
-// The render is split from its fetch so the real path can be executed in a
-// test: an empty panel and a panel that threw are indistinguishable from
-// outside, and this file has shipped both.
+// **The render is split from its fetch so the real path can be executed in a
+// test.** An empty panel and a panel that threw are indistinguishable from
+// outside, and this file has shipped both — `node --check` passes on the
+// temporal-dead-zone `ReferenceError` that once blanked the whole screen.
 
 //: The agent whose tools are on screen. A save names the agent it was for, so
 //: a reply arriving after the user has switched cannot repaint the new one.
@@ -162,16 +184,25 @@ let AGENT_TOOLS_FOR = "";
 //: second click cannot race the first.
 const _toolSaving = new Set();
 
+//: The other half of three permissions, fetched beside the tool list.
+//:
+//: None of these is a tool, and each is the thing that decides whether the
+//: tools above it can reach anything at all: which sites the browser may open,
+//: which folders exist on disk for an agent to read, and whether this agent may
+//: use a connector without asking first. They were endpoints with no screen,
+//: which is the same dead end as a switch with no endpoint and harder to spot.
+//:
+//: `forAgent` is stamped so a reply arriving after the user has switched agents
+//: cannot be drawn under the new one's name.
+let _PANEL = { forAgent: "", sites: null, folders: null, grants: null };
+
 //: An agent that does not exist yet — the one the builder is drawing.
 //:
 //: The builder and this panel are the SAME list, and the only difference is
 //: where the answer is kept: a saved agent's switches each PATCH, a draft's
 //: live in the object on screen and nothing is sent until Create. A flag
 //: rather than a second renderer, because a second renderer is exactly what
-//: this screen had — and the builder's copy was two releases behind it. It
-//: still arranged itself by the thirteen categories, with no group sentences,
-//: no presets and no "allow all": sixty-four switches to set by hand at the
-//: one moment the user knows least about what the agent will need. Polish
+//: this screen had — and the builder's copy was two releases behind it. Polish
 //: landing on one of two copies is how the copies got that far apart.
 function isDraftAgent(a) { return !!(a && a.draft); }
 
@@ -196,91 +227,21 @@ function setDraftTools(agent, names, on) {
   const have = new Set(agent.tools || []);
   for (const n of names) { if (!n) continue; if (on) have.add(n); else have.delete(n); }
   agent.tools = [...have];
-  // Whatever preset was pressed, this is no longer it — and Create sends the
-  // preset by NAME, so a stale one would grant something nobody asked for.
-  agent.preset = "";
   rerenderDraft();
 }
 
-//: Is this tool in the group that cannot leave this machine? Asked of the
-//: specs the API sent, so it is the same answer the group heading gives.
-function alwaysOnTool(ctx, row) {
-  const spec = ((ctx && ctx.specs) || []).find((s) => s && s.key === toolGroupKey(row));
-  return !!(spec && spec.always);
-}
-
-//: What a preset means for an agent that does not exist yet.
+//: Which cards the user has opened, so a re-render does not shut them.
 //:
-//: The panel hands the server a NAME and renders what comes back. A draft has
-//: nothing to hand it to, so each preset row carries `tools` — the built-ins it
-//: covers — purely so this screen can show what the button will do. Create
-//: still sends the name and the server resolves it again at that moment, so a
-//: screen left open while a tool shipped shows yesterday's preview and grants
-//: today's definition. That is the right way round.
-//:
-//: No preset can name a connector tool — they do not exist until the user adds
-//: one. So how far a preset reaches into them is DERIVED from the preset
-//: itself, never from its key: a key chain here would mean a preset added
-//: later silently granting nothing at all.
-//:
-//:   * one that covers every built-in there is covers the connectors too;
-//:   * one that reaches past the always-on group covers the row that grants
-//:     what the connectors can READ, which is exactly what that row is;
-//:   * one that reaches nothing outside this machine covers neither.
-function draftPresetTools(ctx, key) {
-  const found = ((ctx && ctx.presets) || []).find((p) => p.key === key);
-  if (!found || !Array.isArray(found.tools)) return null;   // nothing to preview
-  const covered = new Set(found.tools);
-  const rows = (ctx && ctx.tools) || [];
-  const builtins = rows.filter((t) => !isCategoryRow(t) && !toolConnector(t));
-  const chosen = new Set(builtins.filter((t) => covered.has(t.name)).map((t) => t.name));
-  const everything = !!builtins.length && builtins.every((t) => chosen.has(t.name));
-  // Without the group specs there is no way to ask whether a tool stays on this
-  // machine, so the only preset that reaches out is the one that takes
-  // everything. Narrower than intended is survivable here; wider is not.
-  const haveSpecs = !!((ctx && ctx.specs) || []).length;
-  const reachesOut = everything || (haveSpecs && builtins.some(
-    (t) => chosen.has(t.name) && !alwaysOnTool(ctx, t)));
-  for (const t of rows) {
-    if (isCategoryRow(t)) { if (reachesOut) chosen.add(t.name); continue; }
-    if (toolConnector(t) && everything) chosen.add(t.name);
-  }
-  return [...chosen];
-}
-
-//: Which preset the agent is on right now, or "" — so the row says where you
-//: ARE and not only where you could go.
-//:
-//: Compared on the built-ins, because that is what a preset decides: it keeps
-//: whatever else the agent holds, so counting a connector tool against it would
-//: mean no preset ever matched and the row never lit. Compared against the rows
-//: on SCREEN rather than the preset's whole list, so a preset is not ruled out
-//: by a tool this build does not have.
-function currentPreset(ctx, agent) {
-  const have = new Set((agent && agent.tools) || []);
-  const builtins = ((ctx && ctx.tools) || []).filter(
-    (t) => !isCategoryRow(t) && !toolConnector(t));
-  if (!builtins.length) return "";
-  for (const p of ((ctx && ctx.presets) || [])) {
-    if (!Array.isArray(p.tools)) continue;        // an older server: no preview
-    const covered = new Set(p.tools);
-    if (builtins.every((t) => covered.has(t.name) === have.has(t.name))) return p.key;
-  }
-  return "";
-}
-
-//: Which groups the user has opened, so a re-render does not shut them.
-//:
-//: A preset repaints the whole panel and every disclosure anybody had opened
-//: closed with it — including the one they were reading in order to decide.
-//: Keyed by group name because that is what the user opened; a name that is
-//: gone by the next render simply never matches.
+//: The panel repaints when the sites, folders and grants land, and every
+//: disclosure anybody had opened closed with it — including the one they were
+//: reading in order to decide. Keyed by card name because that is what the user
+//: opened; a name that is gone by the next render simply never matches.
 const _openGroups = new Set();
 
 //: The one list of settings screens this panel can send somebody to.
 //:
-//: A group says where the other half of its permission lives — "which sites"
-//: is not a tool switch — and the ID it names is resolved HERE, because which
+//: A card says where the other half of its permission lives — "which sites" is
+//: not a tool switch — and the ID it names is resolved HERE, because which
 //: screens exist is the frontend's fact and not the API's. An ID nothing
 //: recognises draws no button, so naming a new one server-side can never
 //: produce a control that goes nowhere.
@@ -288,151 +249,243 @@ function screenOpener(id) {
   if (id === "connectors" && typeof openConnectorsScreen === "function") {
     return openConnectorsScreen;
   }
+  if (id === "allowlist") {
+    // Not a screen any more — it is a section at the bottom of this one, which
+    // is where a permission belongs. Scroll rather than navigate, so the user
+    // keeps the card they were reading in view above it.
+    return () => {
+      const el = document.querySelector("#allowList");
+      if (el && typeof el.scrollIntoView === "function") {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+    };
+  }
   return null;
 }
 
-//: Setting the whole lot at once, which is the common case.
+// ── the cards ──────────────────────────────────────────────────────────────
+
+//: What one switch covers, in the names a person reads.
 //:
-//: Six decisions beats sixty-four and is still six. Most of the time the answer
-//: is "this one is mine, let it do everything" or "let it look and nothing
-//: else", and a screen that compacts the list and still makes somebody set
-//: every switch has done half the job.
-//:
-//: The buttons carry the server's words, including the part people skim —
-//: "Allow everything" says it includes running code, because a control that
-//: quietly included that would be the tap-nobody-reads failure at the worst
-//: possible scale.
-//: "Allow all" for one group — every switch in it, in one press.
-//:
-//: Per group rather than only a global preset, because the real answer is
-//: usually about one of them: let it have websites, leave the Mac alone. The
-//: global row sets all four; this sets one.
-//:
-//: Absent on the always-on group (nothing to allow) and while a connector is
-//: unreachable (a control that cannot work is not shown as a control).
-function groupAllButton(g, why) {
-  // A group with no spec is a CONNECTOR, not a group with nothing to allow —
-  // and it is the one that needs this most: a connector's own tools get no
-  // tier switches, because a server's tools do not declare one, so without
-  // this the user's twenty-five Notion tools were the only wall left on the
-  // screen. `always` is the real exemption, and it is asked for by name.
-  if (why || (g.spec && g.spec.always)) return "";
-  const names = g.tools.map(({ row }) => (row && row.name) || "").filter(Boolean);
+//: The "summarise all the permissions in between" half of this screen. A switch
+//: labelled "Read" over a collapsed list says nothing about whether reading
+//: includes scrolling, going back, or waiting for a page — and the user
+//: deciding has to open the disclosure to find out, which is the wall this
+//: layout replaced. Six names, then a count: enough to recognise the shape of
+//: the grant, short enough to stay one line.
+function coveredBy(items) {
+  const names = items.map(({ row }) => toolLabel(row)).filter(Boolean);
   if (!names.length) return "";
-  const allOn = g.tools.every(({ on }) => on);
-  return `<button type="button" class="tiny at-all"
-    data-bulk="${esc(names.join(" "))}" data-on="${allOn ? "1" : ""}"
-    >${allOn ? "Turn all off" : "Allow all"}</button>`;
+  if (names.length <= 6) return names.join(" · ");
+  return `${names.slice(0, 6).join(" · ")} · +${names.length - 6} more`;
 }
 
-//: The presets, with the one that is already true marked.
+//: One tier of one card: the word, what it covers, and the switch.
 //:
-//: Three buttons that look identical whatever the agent holds say where you
-//: could go and never where you are — so "Read only" was indistinguishable from
-//: "Read only, already applied", and the only way to tell was to count
-//: switches, which is the thing this row exists to replace.
-function presetRow(ctx, agent) {
-  const list = Array.isArray(ctx && ctx.presets) ? ctx.presets : [];
-  if (!list.length) return "";          // an older server: the switches remain
-  const now = currentPreset(ctx, agent);
-  return `<div class="at-presets">`
-    + list.map((p) => {
-      const on = !!now && p.key === now;
-      return `<button type="button" class="at-preset${on ? " is-current" : ""}"
-         aria-pressed="${on}"
-         data-preset="${esc(p.key)}" title="${esc(p.blurb || "")}">
-         <span class="at-preset-nm">${esc(p.label)}</span>
-         <span class="at-preset-ds">${esc(p.blurb || "")}</span>
-       </button>`;
-    }).join("")
-    + `</div>`;
+//: One function for all four tiers rather than a branch per tier, because the
+//: thing that differs between them is a word and a list, and a copy per tier is
+//: how "Change" ended up with no switch while its tools sat on underneath.
+function tierRow(card, bucket, items, why) {
+  const on = items.every(({ on: isOn }) => isOn);
+  const some = !on && items.some(({ on: isOn }) => isOn);
+  const names = items.map(({ row }) => (row && row.name) || "").join(" ");
+  const word = bucket.word(card);
+  const control = why
+    ? `<span class="at-blocked">${esc(why)}</span>`
+    : `<button type="button" role="switch" aria-checked="${on}"
+         class="at-toggle${on ? " is-on" : ""}${some ? " is-some" : ""}"
+         data-bulk="${esc(names)}" data-on="${on ? "1" : ""}"
+         aria-label="${esc(word)} — ${esc(card.name)}"><span class="at-knob"></span></button>`;
+  // "3 of 7 on" rather than a half-lit switch with nothing explaining it: a
+  // partially-granted tier is a real state, usually because somebody used the
+  // per-tool rows, and it has to be legible without opening them.
+  //
+  // The element is always drawn and empty when there is nothing to say, so a
+  // switch flipped inside the disclosure can fill it without a re-render.
+  // Rendering it only when it has content meant the one case it exists for —
+  // a tier becoming partial — had nowhere to put the sentence.
+  const part = `<span class="at-part">${
+    some ? `${items.filter((t) => t.on).length} of ${items.length} on` : ""}</span>`;
+  return `<div class="at-bulk" data-bucket="${esc(bucket.key)}">
+    <span class="at-text">
+      <span class="at-nm">${esc(word)}</span>
+      <span class="at-ds">${esc(coveredBy(items))}</span>
+      <span class="at-sub">${esc(bucket.blurb)}</span>
+    </span>${part}${control}</div>`;
 }
 
-//: Where the other half of this group's permission is set.
+//: The row for a change that is an ACTION rather than a tool.
 //:
-//: "Allow changes on websites" grants the agent nothing on its own: which
-//: sites it may touch is a list kept on another screen, and a user who turned
-//: every switch here on and was still refused had no way to learn that from
-//: this panel. Same for accounts — "may read your mail" means nothing until a
-//: mailbox is connected.
+//: Sending mail, adding an event, running somebody else's verb — none of them
+//: is a tool, so there is no switch to draw and nothing this screen could
+//: toggle. Saying nothing is what it used to do, and an app showing only "Read"
+//: reads as an app that cannot do anything else. It can; it asks first.
+function askRow(card, draft) {
+  const ask = card.ask;
+  if (!ask || !ask.label) return "";
+  const open = !draft && screenOpener("allowlist")
+    ? `<button type="button" class="tiny at-more" data-screen="allowlist"
+         >Who it may reach</button>` : "";
+  return `<div class="at-bulk is-ask">
+    <span class="at-text">
+      <span class="at-nm">${esc(ask.label)}</span>
+      <span class="at-ds">${esc(ask.blurb || "")}</span>
+    </span>${open}</div>`;
+}
+
+//: The live line under a card: the other half of its permission, as it stands.
 //:
-//: The group names the screen; this resolves it, and draws nothing for an ID
-//: the frontend does not have.
-function groupMoreButton(g, draft) {
-  const more = g.spec && g.spec.more;
+//: Reading is allowed on three sites; no folder is open at all; this agent has
+//: to ask before it may use Notion. Each is a fact the switches above cannot
+//: express and the user cannot act on without it — and each used to be
+//: invisible, which is why "I turned it on and it still says no" was the most
+//: common thing this screen produced.
+function cardStrip(card, ctx) {
+  const draft = isDraftAgent(ctx.agent);
+  if (card.key === "browser") return sitesStrip(draft);
+  if (card.key === "mac") return foldersStrip(draft);
+  if (card.kind === "connector") return grantStrip(card, draft);
+  return "";
+}
+
+function sitesStrip(draft) {
+  const sites = _PANEL.sites;
+  // Anything that is not a list is "not back yet", including a key nobody set.
+  // `[]` and "we have not asked" mean different things to every strip — empty
+  // is a fact worth stating, and a panel that claimed "no site is allowed"
+  // before asking would be wrong for the first few hundred milliseconds of
+  // every open.
+  if (!Array.isArray(sites)) return "";
+  if (!sites.length) {
+    return `<p class="at-strip is-warn">No site is allowed yet, so nothing here
+      can open a page. ${draft ? "You can allow one under Connectors."
+        : `<button type="button" class="link" data-screen="connectors"
+             >Choose which sites</button>`}</p>`;
+  }
+  const shown = sites.slice(0, 3).map((s) => s.host || s.origin || "").filter(Boolean);
+  const more = sites.length > shown.length ? ` · +${sites.length - shown.length} more` : "";
+  return `<p class="at-strip">${sites.length} site${sites.length === 1 ? "" : "s"} allowed
+    — ${esc(shown.join(" · "))}${esc(more)}</p>`;
+}
+
+//: Where a folder is opened to agents — on the card, not on another screen.
+//:
+//: `tool_facts.App("mac")` deliberately names no `more_screen`: there was no
+//: screen to name. The endpoint has existed since the file tools shipped and
+//: nothing in the app called it, so every agent granted "Your Mac → Read" got a
+//: tool that could only ever answer *"No folder has been opened to agents
+//: yet"*. A control in the card beats a button that sends somebody somewhere.
+function foldersStrip(draft) {
+  const folders = _PANEL.folders;
+  if (!Array.isArray(folders)) return "";        // see `sitesStrip`
+  const rows = folders.map((p) => `
+    <span class="at-chip">${esc(p)}
+      ${draft ? "" : `<button type="button" class="at-chip-x" data-folder-off="${esc(p)}"
+        aria-label="Close ${esc(p)} to agents">×</button>`}</span>`).join("");
+  const add = draft ? "" : `
+    <span class="at-folder-add">
+      <input id="atFolderPath" class="set-input" type="text" autocomplete="off"
+             placeholder="~/Documents/work" aria-label="A folder to open to agents" />
+      <button type="button" class="tiny" data-folder-add="1">Open</button>
+    </span>
+    <span class="at-err" id="atFolderErr" hidden></span>`;
+  if (!folders.length) {
+    return `<div class="at-strip is-warn">
+      <p>No folder is open to agents yet, so nothing here can reach anything on
+      this Mac. Opening one is the consent — there are no default grants.</p>
+      ${add}</div>`;
+  }
+  return `<div class="at-strip"><p>Agents can work in:</p>
+    <div class="at-chips">${rows}</div>${add}</div>`;
+}
+
+//: Whether this agent may use this connector without asking, per agent.
+//:
+//: A separate permission from the switches above it, and deliberately a
+//: separate control: the switches decide whether the agent can see the
+//: connector's tools at all, and this decides whether reaching the account
+//: behind them interrupts the user first. Collapsing the two would be one tap
+//: granting two different things.
+function grantStrip(card, draft) {
+  const grants = _PANEL.grants;
+  if (draft || !grants || !card.connectorId) return "";
+  if (grants.unrestricted) {
+    return `<p class="at-strip">This agent is allowed to reach every connected
+      app without asking. That comes with the agent, not from this screen.</p>`;
+  }
+  const allowed = (grants.allowed || []).includes(card.connectorId);
+  return `<p class="at-strip">
+    ${allowed ? `Reaches ${esc(card.name)} without asking.`
+      : `Asks you the first time it reaches ${esc(card.name)} in a conversation.`}
+    <button type="button" class="link" data-grant="${esc(card.connectorId)}"
+      data-on="${allowed ? "1" : ""}"
+      >${allowed ? "Ask me each time" : "Stop asking"}</button></p>`;
+}
+
+//: Where the other half of this card's permission is set.
+//:
+//: "Allow changes on websites" grants the agent nothing on its own: which sites
+//: it may touch is a list kept on another screen, and a user who turned every
+//: switch here on and was still refused had no way to learn that from this
+//: panel. The card names the screen; this resolves it, and draws nothing for an
+//: ID the frontend does not have.
+function cardMoreButton(card, draft) {
+  const more = card.more;
   // Not from the builder: it is a modal, and the screen this opens would come
-  // up behind it. The group's own sentence still says the list exists.
+  // up behind it. The card's own sentence still says the list exists.
   if (draft || !more || !more.screen || !screenOpener(more.screen)) return "";
   return `<button type="button" class="tiny at-more" data-screen="${esc(more.screen)}"
     >${esc(more.label || "Open")}</button>`;
 }
 
-//: The sentence under a group heading, saying what the whole group IS.
-//:
-//: Sixty-four switches had sixty-four descriptions and no answer to "what am I
-//: deciding?". A group has one, and it is the server's — this layer renders it
-//: and never writes it, for the reason every other label on this screen comes
-//: down the wire.
-function groupBlurb(g) {
-  const text = ((g.spec && g.spec.blurb) || "").trim();
-  return text ? `<p class="at-group-ds">${esc(text)}</p>` : "";
-}
-
-//: The switches a person actually sets: one per thing this group can do.
-//:
-//: A master switch over every tool in its bucket, because "may it read my
-//: mail" is the decision and `list_mail` versus `read_thread` is not. The
-//: per-tool rows survive inside the disclosure below for anyone who wants
-//: them — taking them away would be removing control, where the complaint was
-//: that control was the ONLY thing on offer.
-function groupSwitches(g, why) {
-  if (!g.spec) return "";          // an older server, or a group nobody named
-  if (g.spec.always) {
-    return `<p class="at-always">Always on. Nothing here leaves this machine,
-      so it is not something to switch.</p>`;
+//: Every switch on one card. Empty for the always-on one, which has nothing to
+//: decide: an agent that cannot read its own memory is not a lesser agent, it
+//: is a broken one.
+function cardSwitches(card, why, draft) {
+  if (card.always) {
+    // Not a second copy of the card's own sentence: the blurb above already
+    // says nothing here leaves the machine, and a line repeating it is a line
+    // nobody reads twice. This one says what the STATE is.
+    return `<p class="at-always">Always on — granted when the agent is created,
+      and not something to switch.</p>`;
   }
-  const buckets = ACCESS_BUCKETS.map((b) => {
-    const inBucket = g.tools.filter(({ row }) => bucketOf(row) === b.key);
-    if (!inBucket.length) return "";
-    const on = inBucket.every(({ on: isOn }) => isOn);
-    const some = !on && inBucket.some(({ on: isOn }) => isOn);
-    const names = inBucket.map(({ row }) => (row && row.name) || "").join(" ");
-    const control = why
-      ? `<span class="at-blocked">${esc(why)}</span>`
-      : `<button type="button" role="switch" aria-checked="${on}"
-           class="at-toggle${on ? " is-on" : ""}${some ? " is-some" : ""}"
-           data-bulk="${esc(names)}" data-on="${on ? "1" : ""}"
-           aria-label="${esc(b.verb)} — ${esc(g.name)}"><span class="at-knob"></span></button>`;
-    // "3 of 7 on" rather than a half-lit switch with nothing explaining it:
-    // a partially-granted group is a real state, usually because somebody
-    // used the per-tool rows, and it has to be legible without opening them.
-    //
-    // The element is always drawn and empty when there is nothing to say, so a
-    // switch flipped inside the disclosure can fill it without a re-render.
-    // Rendering it only when it has content meant the one case it exists for —
-    // a group becoming partial — had nowhere to put the sentence.
-    const part = `<span class="at-part">${
-      some ? `${inBucket.filter((t) => t.on).length} of ${inBucket.length} on` : ""}</span>`;
-    return `<div class="at-bulk" data-bucket="${esc(b.key)}">
-      <span class="at-text">
-        <span class="at-nm">${esc(b.verb)}</span>
-        <span class="at-ds">${esc(b.blurb)}</span>
-      </span>${part}${control}</div>`;
-  }).join("");
-  return buckets ? `<div class="at-bulks">${buckets}</div>` : "";
+  // The ask row is INSIDE the same card as the switches, not a box under it.
+  // "Read" and "Send" are two rows of one control — Gmail's permissions — and
+  // drawing the second in a container of its own made it read as a separate,
+  // unrelated thing that happened to be nearby.
+  const rows = ACCESS_BUCKETS.map((b) => {
+    const items = card.tools.filter(({ row }) => bucketOf(row) === b.key);
+    return items.length ? tierRow(card, b, items, why) : "";
+  }).join("") + (why ? "" : askRow(card, draft));
+  return rows ? `<div class="at-bulks">${rows}</div>` : "";
 }
 
-function agentToolGroups(tools, connectors, agentTools, categories, specs) {
+// ── building the cards ─────────────────────────────────────────────────────
+
+//: One card per app, built from what the API said each tool touches.
+//:
+//: Three kinds, and each is asked for by a different field:
+//:   a connector's own tools  — `connector`
+//:   the standing connector grant — `source === "category"`
+//:   a built-in               — its `app`, from `tool_facts.permission_apps`
+//:
+//: Connectors come first: this screen exists because of them. The built-in
+//: cards follow in the API's order — it is the layer that decided "Your Mac"
+//: comes last, and a consumer sorting them itself would be re-deciding that
+//: alphabetically.
+//:
+//: `apps` absent — an older server — falls back to the gate's `groups`, and
+//: then to the thirteen categories. Worse each time, and still a working
+//: screen: a panel that renders nothing because one field is missing is the
+//: failure mode this whole file's tests exist for.
+function agentToolApps(tools, connectors, agentTools, apps, specs, categories) {
   const rows = Array.isArray(tools) ? tools : [];
   const have = new Set(Array.isArray(agentTools) ? agentTools : []);
+  const appSpecs = Array.isArray(apps) ? apps : [];
+  const groupSpecs = Array.isArray(specs) ? specs : [];
 
-  // What each built-in group IS, in the API's words. Absent (an older server,
-  // or a tool whose group nobody recognises) and the screen falls back to the
-  // thirteen categories — worse, and still a working screen.
-  const byKey = new Map();
-  for (const s of (Array.isArray(specs) ? specs : [])) {
-    if (s && s.key) byKey.set(s.key, s);
-  }
+  const byApp = new Map(appSpecs.filter((a) => a && a.key).map((a) => [a.key, a]));
+  const byGroup = new Map(groupSpecs.filter((g) => g && g.key).map((g) => [g.key, g]));
 
   const health = new Map();
   for (const c of (Array.isArray(connectors) ? connectors : [])) {
@@ -440,39 +493,47 @@ function agentToolGroups(tools, connectors, agentTools, categories, specs) {
     if (label) health.set(label.toLowerCase(), c);
   }
 
-  const groups = [];
+  const cards = [];
   const seen = new Map();
-  const groupFor = (name, kind, spec) => {
-    const key = name.toLowerCase();
-    let g = seen.get(key);
-    if (!g) {
-      g = { name, kind, tools: [], connector: null, spec: spec || null };
-      seen.set(key, g); groups.push(g);
+  const cardFor = (key, name, kind, spec) => {
+    const id = `${kind}:${key.toLowerCase()}`;
+    let card = seen.get(id);
+    if (!card) {
+      card = {
+        key, name, kind, tools: [], connector: null, connectorId: "",
+        blurb: (spec && spec.blurb) || "",
+        always: !!(spec && spec.always),
+        writeLabel: (spec && spec.write_label) || "",
+        runLabel: (spec && spec.run_label) || "",
+        ask: (spec && spec.ask) || null,
+        more: (spec && spec.more) || null,
+      };
+      seen.set(id, card); cards.push(card);
     }
-    return g;
+    return card;
   };
 
   for (const t of rows) {
     const name = (t && t.name) || "";
-    // Three kinds of group, and each is asked for by a different field:
-    //   the category switch  — source === "category"
-    //   a connector's tools  — connector
-    //   a built-in           — its own category, from the API
-    // Thirty-two built-ins under one heading is a wall; under nine short
-    // headings it is a list you can choose from.
-    // A built-in goes under what it TOUCHES, not under its old heading. The
-    // heading survives inside the group, where it is a sub-list rather than a
-    // decision.
-    const spec = !isCategoryRow(t) && !toolConnector(t)
-      ? byKey.get(toolGroupKey(t)) : null;
-    const group = isCategoryRow(t)
-      ? groupFor("Your connectors", "category")
-      : toolConnector(t)
-        ? groupFor(toolConnector(t), "connector")
-        : spec
-          ? groupFor(spec.label, "builtin", spec)
-          : groupFor(toolCategory(t), "builtin");
-    group.tools.push({ row: t, on: have.has(name) });
+    let card;
+    if (isCategoryRow(t)) {
+      card = cardFor("connected-apps", "Your connected apps", "category");
+      card.blurb = card.blurb || toolBlurb(t);
+    } else if (toolConnector(t)) {
+      card = cardFor(toolConnector(t), toolConnector(t), "connector");
+      card.connectorId = card.connectorId || toolConnectorId(t);
+    } else {
+      // The app axis first, the gate's axis as the fallback, the old heading
+      // last. Each step down loses a sentence and keeps a working screen.
+      const appSpec = byApp.get(toolAppKey(t));
+      const groupSpec = byGroup.get(toolGroupKey(t));
+      card = appSpec
+        ? cardFor(appSpec.key, appSpec.label, "builtin", appSpec)
+        : groupSpec
+          ? cardFor(groupSpec.key, groupSpec.label, "builtin", groupSpec)
+          : cardFor(toolCategory(t), toolCategory(t), "builtin");
+    }
+    card.tools.push({ row: t, on: have.has(name) });
   }
 
   // A connector the user added that cannot answer contributes no tools, so
@@ -481,62 +542,70 @@ function agentToolGroups(tools, connectors, agentTools, categories, specs) {
   for (const c of (Array.isArray(connectors) ? connectors : [])) {
     if (!unreachableConnector(c)) continue;
     const label = (c.label || "").trim();
-    if (label) groupFor(label, "connector").connector = c;
+    if (label) cardFor(label, label, "connector").connector = c;
   }
-  for (const g of groups) {
-    if (!g.connector) g.connector = health.get(g.name.toLowerCase()) || null;
+  for (const card of cards) {
+    if (card.kind !== "connector") continue;
+    if (!card.connector) card.connector = health.get(card.name.toLowerCase()) || null;
+    // Changing anything in a connected app runs through one action, and that
+    // action always comes back as a card. Written here rather than declared
+    // server-side because the app's NAME is in the sentence, and the server
+    // does not know which connectors this user has.
+    card.ask = card.ask || {
+      label: "Change anything",
+      blurb: `Creating, editing or running anything in ${card.name} comes to `
+           + "you as a card you confirm. Allow one afterwards and the next "
+           + "identical one can run on its own.",
+    };
   }
 
-  // Connectors first: this screen exists because of them. Built-ins after, in
-  // the order the API names — not alphabetical, because "Your Mac" belongs
-  // last whatever letter it starts with, and that is a judgement the layer
-  // that owns the categories already made.
-  const builtin = groups.filter((g) => g.kind === "builtin");
-  // The API's group order first — it is the layer that decided "Your Mac"
-  // comes last, and a consumer sorting them itself would be re-deciding that
-  // alphabetically. Categories remain the fallback for a server that predates
-  // groups, so the screen degrades rather than scrambles.
-  const groupOrder = (Array.isArray(specs) ? specs : []).map((s) => s.label);
-  const order = groupOrder.length ? groupOrder
-    : (Array.isArray(categories) ? categories : []);
-  const rank = (g) => {
-    const i = order.indexOf(g.name);
+  const order = appSpecs.length ? appSpecs.map((a) => a.label)
+    : groupSpecs.length ? groupSpecs.map((g) => g.label)
+      : (Array.isArray(categories) ? categories : []);
+  const rank = (card) => {
+    const i = order.indexOf(card.name);
     return i === -1 ? order.length : i;        // unnamed sinks to the bottom
   };
-  builtin.sort((a, b) => rank(a) - rank(b));
-  return [...groups.filter((g) => g.kind === "category"),
-          ...groups.filter((g) => g.kind === "connector"),
+  const builtin = cards.filter((c) => c.kind === "builtin").sort((a, b) => rank(a) - rank(b));
+  return [...cards.filter((c) => c.kind === "category"),
+          ...cards.filter((c) => c.kind === "connector"),
           ...builtin];
 }
 
-//: Why this row cannot be switched, or "" if it can.
+//: Kept so a consumer written against the old name still resolves. The shape
+//: it returns is the card list above; the panel is the only caller.
+function agentToolGroups(tools, connectors, agentTools, categories, specs, apps) {
+  return agentToolApps(tools, connectors, agentTools, apps, specs, categories);
+}
+
+//: Why this card cannot be switched, or "" if it can.
 //:
 //: The reason is the connector's OWN `reason`, written by the layer that
 //: failed, for a person — never a string we compose from a name we happen to
 //: recognise. There is deliberately no "this agent is built in" case: presets
 //: are editable, so it could never be true, and a branch that cannot fire is
 //: the kind that later fires for the wrong reason.
-function toolBlockedReason(group) {
-  const c = group.connector;
+function toolBlockedReason(card) {
+  const c = card.connector;
   if (c && c.ready === false) {
-    return (c.reason || "").trim() || `${group.name} can't be reached right now.`;
+    return (c.reason || "").trim() || `${card.name} can't be reached right now.`;
   }
   return "";
 }
 
-function renderAgentTools(boxEl, { agent, tools, connectors, categories, specs, presets }) {
+function renderAgentTools(boxEl, { agent, tools, connectors, categories, specs, apps }) {
   if (!boxEl) return;
-  const ctx = { box: boxEl, agent, tools, connectors, categories, specs, presets };
+  const ctx = { box: boxEl, agent, tools, connectors, categories, specs, apps };
   // A draft keeps its own state, so the context it was drawn from is the only
   // thing a switch can read back — kept here rather than passed through every
   // handler, because the handlers are shared with the saved-agent path and
   // that one reads the server instead.
   if (isDraftAgent(agent)) _draftCtx = ctx;
-  const groups = agentToolGroups(tools, connectors, agent && agent.tools, categories, specs);
-  const usable = groups.reduce((n, g) =>
-    n + (toolBlockedReason(g) ? 0 : g.tools.filter((t) => t.on).length), 0);
+  const cards = agentToolApps(tools, connectors, agent && agent.tools, apps, specs, categories);
+  const usable = cards.reduce((n, c) =>
+    n + (toolBlockedReason(c) ? 0 : c.tools.filter((t) => t.on).length), 0);
 
-  if (!groups.length) {
+  if (!cards.length) {
     // Never a blank panel: say what it can still do, and offer the first thing
     // worth adding.
     boxEl.innerHTML = `<div class="at-empty">
@@ -553,24 +622,31 @@ function renderAgentTools(boxEl, { agent, tools, connectors, categories, specs, 
 
   const draft = isDraftAgent(agent);
   const who = esc((agent && agent.name) || "This agent");
-  const total = groups.reduce((n, g) => n + g.tools.length, 0);
+  const total = cards.reduce((n, c) => n + c.tools.length, 0);
   // The builder prints the same count in its own header, directly above this
   // list, and two elements saying one number is how they come to disagree. The
   // panel has no such header, so it keeps the sentence.
   const summary = draft ? ""
     : `<p class="at-summary">${who} can use <b>${usable}</b> of ${total} tools.</p>`;
 
-  boxEl.innerHTML = presetRow(ctx, agent) + summary
-    + groups.map((g) => {
-    const why = toolBlockedReason(g);
-    const rows = g.tools.map(({ row, on }) => {
+  boxEl.innerHTML = summary + cards.map((card) => {
+    const why = toolBlockedReason(card);
+    const rows = card.tools.map(({ row, on }) => {
       const name = (row && row.name) || "";
       const busy = _toolSaving.has(name);
       // A control that cannot work is not shown as a control: the row carries
       // the reason instead, and the place that fixes it.
+      //
+      // The always-on card draws none either, and that is the same rule rather
+      // than a second one. Its heading says "not something to switch" — over a
+      // column of switches, which is the screen arguing with itself, and the
+      // switches were the half that was wrong: `tool_facts.ALWAYS` is granted
+      // at creation and deliberately never offered as a toggle.
       const control = why
         ? `<span class="at-blocked">${esc(why)}</span>`
-        : `<button type="button" role="switch" aria-checked="${on}"
+        : card.always
+          ? ""
+          : `<button type="button" role="switch" aria-checked="${on}"
              class="at-toggle${on ? " is-on" : ""}${busy ? " is-busy" : ""}"
              data-tool="${esc(name)}" data-on="${on ? "1" : ""}"
              aria-label="${esc(toolLabel(row))}"><span class="at-knob"></span></button>`;
@@ -587,30 +663,29 @@ function renderAgentTools(boxEl, { agent, tools, connectors, categories, specs, 
     // nothing, and closing the modal to reach it would throw away a half-typed
     // form. The reason already names the route in words, which is the part that
     // works from either screen.
-    const fix = why && g.connector && !draft
+    const fix = why && card.connector && !draft
       ? `<button type="button" class="tiny at-fix" data-tool-fix="1">Open Connectors</button>` : "";
     // A connector that cannot answer contributes NO tools, and a disclosure
     // reading "Show all 0 tools" over a second copy of the reason already on
     // the heading is two useless lines each. Four unreachable connectors made
     // that the whole first screen. One line: the name and what to do.
-    const detail = g.tools.length ? `
-      <details class="at-detail" data-group="${esc(g.name)}"${
-          _openGroups.has(g.name) ? " open" : ""}>
-        <summary>${g.tools.length === 1 ? "Show the one tool"
-          : `Show all ${g.tools.length} tools`}</summary>
+    const detail = card.tools.length ? `
+      <details class="at-detail" data-group="${esc(card.name)}"${
+          _openGroups.has(card.name) ? " open" : ""}>
+        <summary>${card.tools.length === 1 ? "Show the one tool"
+          : `Show all ${card.tools.length} tools`}</summary>
         <div class="at-card">${rows}</div>
       </details>` : "";
     return `<section class="at-group${why ? " is-blocked" : ""}${
-        g.tools.length ? "" : " is-empty"}${
-        g.spec && g.spec.always ? " is-always" : ""}">
+        card.tools.length ? "" : " is-empty"}${card.always ? " is-always" : ""}">
       <div class="at-group-head">
-        <h3 class="at-group-nm">${esc(g.name)}</h3>
+        <h3 class="at-group-nm">${esc(card.name)}</h3>
         ${why ? `<span class="at-group-why">${esc(why)}</span>${fix}` : ""}
-        ${groupMoreButton(g, draft)}
-        ${groupAllButton(g, why)}
+        ${cardMoreButton(card, draft)}
       </div>
-      ${groupBlurb(g)}
-      ${groupSwitches(g, why)}
+      ${card.blurb ? `<p class="at-group-ds">${esc(card.blurb)}</p>` : ""}
+      ${cardSwitches(card, why, draft)}
+      ${cardStrip(card, ctx)}
       ${detail}
     </section>`;
   }).join("");
@@ -623,23 +698,33 @@ function wireAgentToolActions(boxEl, agent) {
   boxEl.querySelectorAll("[data-tool-fix]").forEach((b) => {
     b.onclick = () => openConnectorsScreen();
   });
+  boxEl.querySelectorAll("[data-open-library]").forEach((b) => {
+    b.onclick = () => { if (typeof openLibrary === "function") openLibrary(); };
+  });
   boxEl.querySelectorAll("[data-tool]").forEach((b) => {
     b.onclick = () => toggleAgentTool(agent, b);
   });
   boxEl.querySelectorAll("[data-bulk]").forEach((b) => {
     b.onclick = () => toggleToolBucket(agent, b);
   });
-  boxEl.querySelectorAll("[data-preset]").forEach((b) => {
-    b.onclick = () => applyPreset(agent, b);
-  });
-  // Where the other half of a permission is set. The group named the screen;
+  // Where the other half of a permission is set. The card named the screen;
   // `screenOpener` is what decides there is one to open.
   boxEl.querySelectorAll("[data-screen]").forEach((b) => {
     const open = screenOpener(b.dataset.screen);
     if (open) b.onclick = () => open();
   });
-  // Remember which disclosures are open. A preset repaints the panel, and
-  // without this it shuts every list the user had opened to decide with.
+  boxEl.querySelectorAll("[data-folder-add]").forEach((b) => {
+    b.onclick = () => openFolderToAgents(agent, b);
+  });
+  boxEl.querySelectorAll("[data-folder-off]").forEach((b) => {
+    b.onclick = () => closeFolderToAgents(agent, b);
+  });
+  boxEl.querySelectorAll("[data-grant]").forEach((b) => {
+    b.onclick = () => toggleConnectorGrant(agent, b);
+  });
+  // Remember which disclosures are open. Every state that lands repaints the
+  // panel, and without this it shuts every list the user had opened to decide
+  // with.
   boxEl.querySelectorAll("[data-group]").forEach((d) => {
     d.ontoggle = () => {
       const key = d.dataset.group || "";
@@ -649,15 +734,15 @@ function wireAgentToolActions(boxEl, agent) {
   });
 }
 
-//: Bring a group's switches with a change made inside it.
+//: Bring a card's switches with a change made inside it.
 //:
-//: The other direction was handled from the start — a bucket switch patches the
+//: The other direction was handled from the start — a tier switch patches the
 //: rows under it — and this one was not, so turning one browser tool on inside
 //: the disclosure left the switch above it reading a plain "off" over a tool
 //: the agent could now use. Same rule, other way round: the screen must never
 //: argue with itself.
 //:
-//: Patched in place rather than re-rendered, for the reason the bucket switch
+//: Patched in place rather than re-rendered, for the reason the tier switch
 //: already is: a re-render closes the disclosure the user is working in.
 function syncGroupSwitches(section, agent) {
   if (!section || typeof section.querySelectorAll !== "function") return;
@@ -668,12 +753,6 @@ function syncGroupSwitches(section, agent) {
     const on = names.filter((n) => have.has(n));
     const all = on.length === names.length;
     sw.dataset.on = all ? "1" : "";
-    // "Allow all" is a button and not a switch, so it says the state in words
-    // rather than in a knob position.
-    if (sw.classList && sw.classList.contains("at-all")) {
-      sw.textContent = all ? "Turn all off" : "Allow all";
-      return;
-    }
     sw.setAttribute("aria-checked", String(all));
     sw.classList.toggle("is-on", all);
     sw.classList.toggle("is-some", !all && on.length > 0);
@@ -685,54 +764,12 @@ function syncGroupSwitches(section, agent) {
   });
 }
 
-//: One switch, every tool in a bucket. The whole point of the compaction.
+//: One switch, every tool in a tier. The whole point of the compaction.
 //:
 //: A separate function from `toggleAgentTool` rather than a loop over it,
 //: because N tools must be **one** PATCH: looping would fire seven requests
 //: that each send the whole list, and whichever replied last would win — so
-//: turning a group on could land as a group half on, depending on the network.
-//: Hand a preset NAME to the server, never a list of tools.
-//:
-//: "Allow everything" has to mean everything *now*. A screen open while a tool
-//: shipped would otherwise send its own stale idea of the word and quietly
-//: withhold the new one — the failure `agents/grants.py` already records for
-//: connectors, where the option did not exist to tick at build time and
-//: nothing ever told anyone to go back.
-async function applyPreset(agent, btn) {
-  const key = btn.dataset.preset;
-  if (!agent || !key || btn.classList.contains("is-busy")) return;
-  // A draft has nothing to PATCH. The preview moves the switches so the button
-  // visibly does something; the NAME is what Create sends, and the server
-  // resolves it there — so this screen never becomes the authority on the word
-  // "everything".
-  if (isDraftAgent(agent)) {
-    const next = draftPresetTools(_draftCtx, key);
-    if (!next) return;              // a server that sent no preview for it
-    agent.tools = next;
-    agent.preset = key;
-    rerenderDraft();
-    return;
-  }
-  btn.classList.add("is-busy");
-  try {
-    const saved = await api(`/api/agents/${encodeURIComponent(agent.id)}/tools`, {
-      method: "PATCH", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ preset: key }),
-    });
-    agent.tools = saved.tools || agent.tools;
-    const inList = agents.find((a) => a.id === agent.id);
-    if (inList) inList.tools = agent.tools;
-    // A preset moves every switch on the screen, so this one IS a re-render —
-    // unlike a single bucket, where patching the rows in place keeps the
-    // disclosures the user opened.
-    loadAgentTools(agent.id);
-  } catch (e) {
-    toast("Couldn't save that — try again.");
-  } finally {
-    btn.classList.remove("is-busy");
-  }
-}
-
+//: turning a tier on could land as a tier half on, depending on the network.
 async function toggleToolBucket(agent, btn) {
   const names = (btn.dataset.bulk || "").split(" ").filter(Boolean);
   if (!agent || !names.length) return;
@@ -772,9 +809,9 @@ async function toggleToolBucket(agent, btn) {
       row.setAttribute("aria-checked", String(next));
       row.classList.toggle("is-on", next);
     }
-    // The group's OTHER switches, and its "Allow all": a bucket press changes
-    // whether the whole group is on, and a stale button beside a live one is
-    // the same lie in a different place.
+    // The card's OTHER switches: a tier press changes whether the whole card is
+    // on, and a stale switch beside a live one is the same lie in a different
+    // place.
     syncGroupSwitches(section, agent);
   } catch (e) {
     btn.dataset.on = wasOn ? "1" : "";
@@ -819,7 +856,7 @@ async function toggleAgentTool(agent, btn) {
     agent.tools = saved.tools || [...tools];
     const inList = agents.find((a) => a.id === forAgent);
     if (inList) inList.tools = agent.tools;
-    // The switches ABOVE this row are about the group it is in, and one of them
+    // The switches ABOVE this row are about the card it is in, and one of them
     // now covers a tool it does not say it covers.
     syncGroupSwitches(typeof btn.closest === "function" ? btn.closest(".at-group") : null,
                       agent);
@@ -836,38 +873,166 @@ async function toggleAgentTool(agent, btn) {
   }
 }
 
+// ── the other half of three permissions ────────────────────────────────────
+
+//: Open a folder to agents. The grant IS the consent — there are no defaults.
+//:
+//: The server validates and answers with a sentence written for a person
+//: ("Pick a folder inside your home directory rather than the whole of it"), so
+//: that sentence is shown in the row rather than replaced with something of
+//: ours about paths. A toast would be gone by the time somebody looked at the
+//: box they typed in.
+async function openFolderToAgents(agent, btn) {
+  const input = document.querySelector("#atFolderPath");
+  const err = document.querySelector("#atFolderErr");
+  const path = ((input && input.value) || "").trim();
+  if (err) { err.hidden = true; err.textContent = ""; }
+  if (!path) { if (input && input.focus) input.focus(); return; }
+  btn.disabled = true;
+  try {
+    const out = await api("/api/agents/folders", { method: "POST", body: { path } });
+    _PANEL.folders = out.folders || _PANEL.folders || [];
+    if (input) input.value = "";
+    toast("Agents can work in that folder");
+    redrawAgentTools();
+  } catch (e) {
+    if (err) { err.textContent = String(e); err.hidden = false; }
+    btn.disabled = false;
+  }
+}
+
+async function closeFolderToAgents(agent, btn) {
+  const path = btn.dataset.folderOff || "";
+  if (!path) return;
+  btn.disabled = true;
+  try {
+    const out = await api(
+      `/api/agents/folders?path=${encodeURIComponent(path)}`, { method: "DELETE" });
+    _PANEL.folders = out.folders || [];
+    toast("Agents can no longer reach that folder");
+    redrawAgentTools();
+  } catch (e) {
+    toast("Couldn't close that folder — try again.");
+    btn.disabled = false;
+  }
+}
+
+//: Whether this agent may reach this connector without asking first.
+//:
+//: Stored per `(agent, connector)` and keyed by the connector's ID, never its
+//: label: a user can rename a connector, and a rename must not change who may
+//: use what.
+async function toggleConnectorGrant(agent, btn) {
+  const connector = btn.dataset.grant || "";
+  if (!agent || !agent.id || !connector) return;
+  const wasOn = btn.dataset.on === "1";
+  btn.disabled = true;
+  const base = `/api/agents/${encodeURIComponent(agent.id)}/connectors`;
+  try {
+    if (wasOn) {
+      await api(`${base}/${encodeURIComponent(connector)}`, { method: "DELETE" });
+    } else {
+      await api(base, { method: "POST", body: { connector, scope: "always" } });
+    }
+    const allowed = new Set((_PANEL.grants && _PANEL.grants.allowed) || []);
+    if (wasOn) allowed.delete(connector); else allowed.add(connector);
+    _PANEL.grants = { ..._PANEL.grants, allowed: [...allowed] };
+    redrawAgentTools();
+  } catch (e) {
+    toast("Couldn't change that — try again.");
+    btn.disabled = false;
+  }
+}
+
+// ── loading ────────────────────────────────────────────────────────────────
+
+//: The last context the panel drew from, so a permission that changed outside
+//: the tool list can repaint without re-fetching the catalog.
+let _panelCtx = null;
+
+function redrawAgentTools() {
+  if (!_panelCtx || !_panelCtx.box) return;
+  renderAgentTools(_panelCtx.box, _panelCtx);
+}
+
+//: The three permissions that are not tools, fetched beside the tool list.
+//:
+//: Never awaited into the render: `/api/agents/{id}/connectors` probes every
+//: configured server to answer honestly, so blocking the panel on it would be
+//: the 2.47s stall `api/concurrency.py` exists to stop. The panel draws, these
+//: land, and the cards fill in.
+async function loadPanelPermissions(agentId) {
+  _PANEL = { forAgent: agentId, sites: null, folders: null, grants: null };
+  const settled = await Promise.allSettled([
+    api("/api/browser/sites"),
+    api("/api/agents/folders"),
+    agentId ? api(`/api/agents/${encodeURIComponent(agentId)}/connectors`) : null,
+  ]);
+  if (_PANEL.forAgent !== agentId) return;     // the user switched while we waited
+  const [sites, folders, grants] = settled;
+  // `[]` and `null` mean different things to every strip: empty is a fact worth
+  // stating ("no folder is open yet"), and a failed fetch is not something to
+  // state at all.
+  if (sites.status === "fulfilled") _PANEL.sites = sites.value.sites || [];
+  if (folders.status === "fulfilled") _PANEL.folders = folders.value.folders || [];
+  if (grants.status === "fulfilled" && grants.value) _PANEL.grants = grants.value;
+  redrawAgentTools();
+}
+
 async function loadAgentTools(agentId) {
   const box = $("#agentToolList"); if (!box) return;
   const id = agentId || AGENT_TOOLS_FOR || current;
   // Repainting a full panel with "Loading…" is a flash of nothing in the middle
-  // of somebody reading it, and a preset press reloads deliberately. The
-  // placeholder is for an empty panel, or for a switch to a DIFFERENT agent —
-  // where leaving the old one's switches up would be showing one agent's
-  // permissions under another agent's name.
+  // of somebody reading it. The placeholder is for an empty panel, or for a
+  // switch to a DIFFERENT agent — where leaving the old one's switches up would
+  // be showing one agent's permissions under another agent's name.
   const same = AGENT_TOOLS_FOR === id && !!box.innerHTML.trim();
   AGENT_TOOLS_FOR = id;
   if (!same) box.innerHTML = `<div class="at-empty">Loading…</div>`;
-  let tools = [], categories = [], specs = [], presets = [];
+  let tools = [], categories = [], specs = [], apps = [];
   try {
     const got = await api("/api/agents/tools");
     ({ tools, categories } = got);
     specs = got.groups || [];
-    presets = got.presets || [];
+    apps = got.apps || [];
   }
   catch (e) { box.innerHTML = `<div class="at-empty">Couldn't load the tool list.</div>`; return; }
   if (AGENT_TOOLS_FOR !== id) return;      // the user switched while we waited
 
-  const agent = (agents || []).find((a) => a.id === id);
-  if (!agent) { box.innerHTML = `<div class="at-empty">Pick an agent.</div>`; return; }
+  // **"Pick an agent." over a picker with no options.** Two different states
+  // were collapsed into one dead end: a roster that is genuinely empty, which
+  // is a first run and has somewhere to go, and an id that no longer resolves
+  // — a deleted agent, or the panel opened before the roster landed — which
+  // should fall back rather than refuse. Neither was something a person could
+  // act on, and the picker beside it had nothing in it to pick.
+  const roster = Array.isArray(agents) ? agents : [];
+  if (!roster.length) {
+    box.innerHTML = `<div class="at-empty">
+      <p>No agents yet, so there is nothing to permit.</p>
+      <p class="at-empty-next">Add one from the Agent Library and its switches
+      appear here.</p>
+      <button type="button" class="tiny" data-open-library="1">Browse the Agent Library</button>
+    </div>`;
+    wireAgentToolActions(box);
+    return;
+  }
+  const agent = roster.find((a) => a.id === id) || roster[0];
+  AGENT_TOOLS_FOR = agent.id;
+  renderAgentToolPicker();
 
-  renderAgentTools(box, { agent, tools, connectors: CONNECTORS, categories, specs, presets });
+  _panelCtx = { box, agent, tools, connectors: CONNECTORS, categories, specs, apps };
+  renderAgentTools(box, _panelCtx);
+  loadPanelPermissions(agent.id);
   if (!CONNECTORS.length) {
     // /api/connectors starts every added server to answer honestly, so it is
     // far too slow to block a panel on. Render what we know, then sharpen.
     try {
       const { connectors } = await api("/api/connectors");
       CONNECTORS = connectors;
-      if (AGENT_TOOLS_FOR === id) renderAgentTools(box, { agent, tools, connectors, categories, specs, presets });
+      if (AGENT_TOOLS_FOR === id) {
+        _panelCtx = { ..._panelCtx, connectors };
+        renderAgentTools(box, _panelCtx);
+      }
     } catch (_) { /* the tools are on screen; health is a bonus */ }
   }
 }
@@ -879,4 +1044,3 @@ function renderAgentToolPicker() {
     `<option value="${esc(a.id)}"${a.id === id ? " selected" : ""}>${esc(a.name)}</option>`).join("");
   sel.onchange = () => loadAgentTools(sel.value);
 }
-

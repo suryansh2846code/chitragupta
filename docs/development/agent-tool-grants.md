@@ -366,6 +366,7 @@ shows the list and a way to act on it; each act goes through §3.
 | `agents/grants.py` | the per-agent view: states, reasons, and which connectors are contributing nothing |
 | `agents/tool_overrides.py` | what the user changed, as an override; `None` ≠ `[]`; records the catalog with the choice |
 | `agents/tool_snapshot.py` | the menu a stored list was chosen from, and what to do about a tool that was not on it. A leaf: it reads `tool_facts` and nothing else |
+| `agents/tool_facts.py` | both axes — `permission_groups()` for the gate, `permission_apps()` for the screen — derived from one table |
 | `agents/custom.py` | the other store holding a snapshot, migrated and resolved the same way |
 | `agents/presets.py` | applies the override at one seam, for both kinds of agent |
 | `api/routes/agents.py` | the three endpoints, thin over the above |
@@ -374,3 +375,50 @@ shows the list and a way to act on it; each act goes through §3.
 answers "what exists", this answers "what does *this agent* have", and the
 second is not a filter over the first — it needs the agent, the sentinel's
 resolution, and the connector's health.
+
+
+---
+
+## 7. Two axes over one table
+
+`tool_group` answers *how far does this reach* — four classes: what stays on
+this machine, what touches an account, a website, your files. That is the
+**gate's** question, and `request_permission`, `prompt._withheld` and
+`tool_snapshot` all reason in it.
+
+It is the wrong question for a settings screen. Four reach classes put Gmail,
+the calendar, Telegram, Notion and Linear on one card called *Your connected
+accounts*, so a user who wanted to say **read GitHub, leave my mail alone** had
+no control that said it. People think in apps.
+
+`tool_app` is the second question over the same key: resource → app, in the same
+shape as `_GROUP_OF` and beside it, plus `_APP_OVERRIDE` for the handful whose
+resource is honest and still lands them in the wrong place (`web_search` is
+`search:webpage` and is not the browser). `permission_apps()` derives the cards
+the way `permission_groups()` derives the groups, and
+`tests/test_tool_permissions.py` fails if a built-in lands on no card.
+
+Both ride on every row of `GET /api/agents/tools` — `group`, `app`, `access` —
+and the panel arranges itself by `app`, falling back to `group` and then to
+`category` for a server that predates it. Not a second taxonomy: one table, one
+derivation, two questions. A second taxonomy is the drift this document exists
+to prevent.
+
+### What a card shows
+
+* **Read**, and the one word that app's changes actually are — `App.write_label`
+  ("Change" on a web page, "Write" on a file), with `App.run_label` as a third
+  switch on the one card that has three tiers. `outbound` keeps a bucket of its
+  own even though no built-in is one today: folding it into "change" would mean
+  the first tool that reaches a person arrives already covered by a switch
+  somebody set for something else.
+* The **roll-up** between them: what each switch covers, in the names a person
+  reads.
+* `App.ask` for an app whose changes are *actions* rather than tools — sending
+  mail, adding an event, `mcp_action` in GitHub. There is no switch to draw, so
+  the row says what happens and names the list that makes it stop asking.
+  Making `agent.actions` editable per agent is a later landing; until then this
+  row is the honest answer rather than a switch that would do nothing.
+* The **other half**, live: which sites are allowed, which folders are open,
+  whether this agent must ask before reaching this connector. All three had a
+  working endpoint and nothing in the app that called it.

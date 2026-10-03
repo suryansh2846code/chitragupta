@@ -399,6 +399,15 @@ Many users, many machines. Do not bake in anything specific to one of either.
   resource, and **unknown fails closed**: a tool that declares nothing is
   destructive, not harmless. Sixty-four switches became six, and the group that
   cannot leave this machine is granted at creation rather than ticked.
+  **The resource answers two questions, not one.** `tool_group` is the *gate's*
+  — how far a capability reaches, which is what `request_permission`,
+  `prompt._withheld` and `tool_snapshot` reason in. `tool_app` is the *screen's*
+  — which app a person sets it on. Four reach classes put Gmail, the calendar,
+  Telegram, Notion and Linear on one card, so nobody could say "read GitHub,
+  leave my mail alone"; the card is the app now, with Read and the one word
+  that app's changes actually are. Same table, same derivation, two questions:
+  a second taxonomy would be the drift this file warns about, and one axis
+  serving both is a screen that asks the gate's question at the user.
   `agents/tool_facts.py` holds it and is a **leaf** — `prompt.py` reads it, and
   importing it from `tools.py` grew the frozen `agents_tools` cycle to ten
   modules the first time it was tried.
@@ -497,7 +506,7 @@ In order: **the focused test → the subsystem's suite → `pytest` →
 `ruff check chitragupta tests` → `mypy chitragupta` → the `tests/js/` harnesses if
 the frontend changed → `chitragupta app` opens and renders.**
 
-Baseline, measured 2026-10-03: **6157 passed, 36 skipped in ~7min43**, ruff
+Baseline, measured 2026-10-03: **6149 passed, 36 skipped in ~8min07**, ruff
 clean, mypy clean over 222 files. With `PLAYWRIGHT_BROWSERS_PATH` pointed at the managed
 browser the same run adds twelve more — `tests/test_browser_driver.py`'s
 real-Chromium tests, which skip when there is

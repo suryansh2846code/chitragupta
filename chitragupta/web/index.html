@@ -585,6 +585,32 @@
         </label>
       </div>
       <div id="agentToolList" class="at-list"></div>
+
+      <!-- The standing half of the unattended-action gate, and the one
+           permission on this screen that is NOT per agent — so it says so.
+           It used to live under Model, three screens away from every other
+           permission, which is how a standing grant stayed invisible to
+           anybody not already looking for it. The approvals card is where a
+           grant is normally made, because that is where the user learns they
+           want one; this is where every grant can be reviewed and taken
+           back. -->
+      <section class="ms-sec at-everyone">
+        <h2 class="ms-h2">Who they may reach — across every agent</h2>
+        <p class="ms-sub">Agents running on their own always ask before emailing or inviting someone new. These are the people they may reach without asking each time, whichever agent is running.</p>
+        <div id="allowList" class="set-group"></div>
+        <div class="set-row">
+          <div class="set-main">
+            <div class="set-label">Allow someone</div>
+            <div class="set-desc">An email address agents may reach unattended.</div>
+          </div>
+          <div class="set-ctl allow-add">
+            <input id="allowInput" class="set-input" type="email"
+                   placeholder="someone@example.com" autocomplete="off" />
+            <button id="allowAdd" class="tiny">Allow</button>
+          </div>
+        </div>
+      </section>
+
     </div>
 
     <!-- ── panel: connectors ───────────────────────────────────────────── -->
@@ -762,27 +788,6 @@
               <div class="set-desc" id="defEffortDesc">How hard the model works before answering.</div>
             </div>
             <div class="set-ctl"><select id="defEffort" class="set-select"></select></div>
-          </div>
-        </div>
-      </section>
-
-      <!-- The standing half of the unattended-action gate. The approvals card
-           is where a grant is normally made, because that is where the user
-           learns they want one; this is where every grant can be reviewed and
-           taken back, so a standing permission is never invisible. -->
-      <section class="ms-sec">
-        <h2 class="ms-h2">Acting without asking</h2>
-        <p class="ms-sub">Agents running on their own always ask before emailing or inviting someone new. These are the people they may reach without asking each time.</p>
-        <div id="allowList" class="set-group"></div>
-        <div class="set-row">
-          <div class="set-main">
-            <div class="set-label">Allow someone</div>
-            <div class="set-desc">An email address agents may reach unattended.</div>
-          </div>
-          <div class="set-ctl allow-add">
-            <input id="allowInput" class="set-input" type="email"
-                   placeholder="someone@example.com" autocomplete="off" />
-            <button id="allowAdd" class="tiny">Allow</button>
           </div>
         </div>
       </section>

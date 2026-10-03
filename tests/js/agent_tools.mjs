@@ -10,7 +10,7 @@
  * blank while every test passed.
  *
  * argv: <a path inside chitragupta/web/>
- * stdin: {agent, tools, connectors, toggle?, failSave?}
+ * stdin: {agent, tools, connectors, apps?, panel?, toggle?, failSave?}
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -54,9 +54,10 @@ const box = makeEl();
 const parsedButtons = () => {
   // Parse the rendered HTML for the controls, and hand back live objects whose
   // clicks run the handlers the renderer bound.
-  const out = { "[data-tool]": [], "[data-bulk]": [], "[data-preset]": [],
+  const out = { "[data-tool]": [], "[data-bulk]": [],
                 "[data-tool-fix]": [], "[data-group]": [], "[data-screen]": [],
-                ".at-err": [] };
+                "[data-folder-add]": [], "[data-folder-off]": [],
+                "[data-grant]": [], ".at-err": [] };
   // One section standing in for the group a control sits in. Both directions
   // of the "the screen must not argue with itself" rule walk up to it — a
   // bucket switch to reach the rows under it, a row to reach the switches above
@@ -75,10 +76,9 @@ const parsedButtons = () => {
     section._nodes.push(b);
     out["[data-tool]"].push(b);
   }
-  // The whole tag, because the class is what tells the group's "Allow all"
-  // button apart from a bucket switch — one says its state in words and the
-  // other in a knob position, and a harness that dropped the class would test
-  // the wrong branch of that.
+  // The whole tag, because the class carries whether a tier is half-granted —
+  // a state the screen must not render as a plain "off" — and a harness that
+  // dropped the class would test the wrong branch of that.
   for (const m of box.innerHTML.matchAll(
       /<button[^>]*data-bulk="([^"]*)"[^>]*data-on="([^"]*)"[^>]*>([\s\S]*?)<\/button>/g)) {
     const b = makeEl("button");
@@ -113,11 +113,22 @@ const parsedButtons = () => {
     b.dataset = { screen: m[1] };
     out["[data-screen]"].push(b);
   }
-  for (const m of box.innerHTML.matchAll(/data-preset="([^"]*)"/g)) {
-    const b = makeEl("button");
-    b._sel = "[data-preset]";
-    b.dataset = { preset: m[1] };
-    out["[data-preset]"].push(b);
+  // The three controls that are not tool switches: the folder a user opens to
+  // agents, closing one again, and whether this agent may reach a connector
+  // without asking. Each had a working endpoint and no screen at all.
+  for (const _ of box.innerHTML.matchAll(/data-folder-add="1"/g)) {
+    const b = makeEl("button"); b._sel = "[data-folder-add]";
+    out["[data-folder-add]"].push(b);
+  }
+  for (const m of box.innerHTML.matchAll(/data-folder-off="([^"]*)"/g)) {
+    const b = makeEl("button"); b._sel = "[data-folder-off]";
+    b.dataset = { folderOff: m[1] };
+    out["[data-folder-off]"].push(b);
+  }
+  for (const m of box.innerHTML.matchAll(/data-grant="([^"]*)"[^>]*data-on="([^"]*)"/g)) {
+    const b = makeEl("button"); b._sel = "[data-grant]";
+    b.dataset = { grant: m[1], on: m[2] };
+    out["[data-grant]"].push(b);
   }
   for (const _ of box.innerHTML.matchAll(/data-tool-fix="1"/g)) {
     const b = makeEl("button"); b._sel = "[data-tool-fix]";
@@ -125,8 +136,9 @@ const parsedButtons = () => {
   }
   return out;
 };
-let buttons = { "[data-tool]": [], "[data-bulk]": [], "[data-preset]": [],
-                "[data-tool-fix]": [], "[data-group]": [], "[data-screen]": [] };
+let buttons = { "[data-tool]": [], "[data-bulk]": [],
+                "[data-tool-fix]": [], "[data-group]": [], "[data-screen]": [],
+                "[data-folder-add]": [], "[data-folder-off]": [], "[data-grant]": [] };
 box.querySelectorAll = (sel) => buttons[sel] || [];
 
 const registry = new Map();
@@ -163,6 +175,11 @@ new Function(
   appSource(path.dirname(APP_JS)) +
   "\nglobalThis.__render = renderAgentTools;" +
   "\nglobalThis.__groups = agentToolGroups;" +
+  // The other half of three permissions. `renderAgentTools` reads it and
+  // `loadAgentTools` fills it, so a harness that renders directly has to set
+  // it — otherwise every strip is the "not back yet" branch and the controls
+  // under test are never drawn.
+  "\nglobalThis.__panel = (p) => { _PANEL = p; };" +
   "\nglobalThis.__agents = (a) => { agents = a; };" +
   // Assigning globalThis.openConnectorsScreen cannot shadow a function
   // DECLARATION in the evaluated scope, so the swap has to happen inside it.
@@ -176,8 +193,9 @@ globalThis.__spyConnectors(() => { openedConnectors += 1; });
 
 const agent = JSON.parse(JSON.stringify(input.agent));
 const specs = input.groups || [];
-const presets = input.presets || [];
-globalThis.__render(box, { agent, tools: input.tools, connectors: input.connectors, categories: input.categories, specs, presets });
+const apps = input.apps || [];
+if (input.panel) globalThis.__panel({ forAgent: input.agent.id, ...input.panel });
+globalThis.__render(box, { agent, tools: input.tools, connectors: input.connectors, categories: input.categories, specs, apps });
 const firstHtml = box.innerHTML;
 buttons = parsedButtons();
 
@@ -185,18 +203,7 @@ buttons = parsedButtons();
 // first pass produced. Do NOT re-parse afterwards: fresh objects would be
 // unbound, which is the harness losing the handlers rather than the app
 // failing to set them.
-globalThis.__render(box, { agent, tools: input.tools, connectors: input.connectors, categories: input.categories, specs, presets });
-
-let presetUsed = null;
-if (input.preset) {
-  const btn = buttons["[data-preset]"].find((b) => b.dataset.preset === input.preset);
-  if (btn && typeof btn.onclick === "function") {
-    await btn.onclick();
-    const patch = calls.filter((c) => c.method === "PATCH").pop();
-    presetUsed = { sent: patch ? patch.body : null,
-                   patches: calls.filter((c) => c.method === "PATCH").length };
-  }
-}
+globalThis.__render(box, { agent, tools: input.tools, connectors: input.connectors, categories: input.categories, specs, apps });
 
 let bulked = null;
 if (input.bulk) {
@@ -248,8 +255,31 @@ if (input.openGroup) {
     d.open = true;
     d.ontoggle();
     globalThis.__render(box, { agent, tools: input.tools, connectors: input.connectors,
-                              categories: input.categories, specs, presets });
+                              categories: input.categories, specs, apps });
     reopened = box.innerHTML.includes(`data-group="${input.openGroup}" open`);
+  }
+}
+
+// The controls that are not tool switches. Each one is a permission that used
+// to have an endpoint nothing called.
+let folderAdded = null;
+if (input.addFolder) {
+  registry.set("#atFolderPath", makeEl("input"));
+  registry.get("#atFolderPath").value = input.addFolder;
+  const b = buttons["[data-folder-add]"][0];
+  if (b && typeof b.onclick === "function") {
+    await b.onclick();
+    const post = calls.filter((c) => c.path.includes("/folders") && c.method === "POST").pop();
+    folderAdded = post ? { path: post.path, body: post.body } : null;
+  }
+}
+let grantToggled = null;
+if (input.toggleGrant) {
+  const b = buttons["[data-grant]"].find((x) => x.dataset.grant === input.toggleGrant);
+  if (b && typeof b.onclick === "function") {
+    await b.onclick();
+    const hit = calls.filter((c) => c.path.includes("/connectors")).pop();
+    grantToggled = hit ? { path: hit.path, method: hit.method, body: hit.body } : null;
   }
 }
 
@@ -260,8 +290,9 @@ if (input.clickFix && buttons["[data-tool-fix]"].length) {
 
 process.stdout.write(JSON.stringify({
   html: firstHtml,
-  bulked, presetUsed,
-  groups: globalThis.__groups(input.tools, input.connectors, input.agent.tools, input.categories, specs)
+  bulked, folderAdded, grantToggled,
+  groups: globalThis.__groups(input.tools, input.connectors, input.agent.tools,
+                              input.categories, specs, apps)
     .map((g) => ({ name: g.name, kind: g.kind, tools: g.tools.map((t) => t.row.name) })),
   toggled, rowError, openedConnectors, groupAfter, reopened,
   screens: buttons["[data-screen]"].map((b) => b.dataset.screen),

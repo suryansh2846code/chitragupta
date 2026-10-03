@@ -1274,14 +1274,6 @@ textarea.ac-field-wide { resize: vertical; min-height: 58px; line-height: 1.45; 
 .am-tools .at-row, .am-tools .at-bulk { padding: 9px 12px; gap: 12px; }
 .am-tools .at-nm { font-size: 13px; }
 .am-tools .at-ds { font-size: 11.5px; }
-/* Three across rather than two and a widow — the modal is narrower than the
-   panel (460px against the window), so the panel's 180px minimum wraps the
-   third one onto its own line. */
-.am-tools .at-presets { gap: 6px; margin-bottom: 14px;
-  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); }
-.am-tools .at-preset { padding: 8px 11px; }
-.am-tools .at-preset-nm { font-size: 12.5px; }
-.am-tools .at-preset-ds { font-size: 11px; }
 .am-tools .at-detail { margin-top: 8px; }
 .am-tools .at-always { font-size: 11.5px; }
 .bm-body { padding: 16px 18px; overflow-y: auto; } .bm-sub { color: var(--muted); font-size: 12px; margin-bottom: 8px; }
@@ -1683,47 +1675,19 @@ textarea.ac-field-wide { resize: vertical; min-height: 58px; line-height: 1.45; 
 .at-toggle:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--north-dim); }
 .at-toggle.is-busy { opacity: .6; cursor: progress; }
 
-/* ── setting the whole lot at once ──────────────────────────────────────
-   Six decisions beats sixty-four and is still six. Most of the time the
-   answer is "this one is mine, let it do everything" or "let it look and
-   nothing else", so those are one press above the switches rather than four. */
-.at-presets { display: grid; gap: 8px; margin: 0 0 20px;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
-.at-preset { display: flex; flex-direction: column; gap: 3px; text-align: left;
-  padding: 11px 13px; border-radius: 12px; cursor: pointer;
-  background: var(--panel); border: 1px solid var(--line);
-  transition: border-color .14s, background .14s; }
-.at-preset:hover { border-color: var(--north-track); background: var(--panel-2); }
-.at-preset:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--north-dim); }
-.at-preset.is-busy { opacity: .6; cursor: progress; }
-/* The one that is already true. Three buttons that look identical whatever the
-   agent holds say where you could go and never where you are, so "Read only"
-   and "Read only, already applied" were the same picture and the only way to
-   tell them apart was to count switches — the thing this row replaced. */
-.at-preset.is-current { border-color: var(--north-track); background: var(--north-dim); }
-.at-preset.is-current .at-preset-nm { color: var(--north); }
-.at-preset-nm { font-size: 13.5px; font-weight: 600; color: var(--text); }
-/* The part people skim, and the reason it is on the button rather than in a
-   tooltip: "Allow everything" includes running code, and a control that hid
-   that would be the tap-nobody-reads failure at the worst possible scale. */
-.at-preset-ds { font-size: 11.5px; color: var(--muted); line-height: 1.4; }
-
-/* Per group, because the real answer is usually about one of them: let it
-   have websites, leave the Mac alone. */
-.at-all { margin-left: auto; }
-
 /* Where the OTHER half of a permission is set. A switch here says the agent may
    change a web page; WHICH pages is a list on another screen, and a user who
    turned everything on here and was still refused had no way to learn that from
-   this panel. Beside the heading, before "Allow all", because it is about the
-   group rather than about granting it. */
+   this panel. Beside the heading, because it is about the card rather than
+   about granting it. */
 .at-more { margin-left: auto; }
-.at-more + .at-all { margin-left: 0; }
 
-/* ── what a group IS, and the switches that set it ──────────────────────
-   The panel used to be sixty-four rows under thirteen headings. The decision
-   lives up here now: a sentence saying what the group is, then one switch per
-   thing it can do. The per-tool rows survive inside the disclosure below —
+/* ── what an app IS, and the two switches that set it ───────────────────
+   The panel used to be sixty-four rows under thirteen headings, then four
+   cards by how far a capability reaches — which is the gate's question, not a
+   person's. The card is the app now: Gmail, The browser, Your Mac, GitHub. A
+   sentence saying what it is, then Read and the one word that app's changes
+   actually are. The per-tool rows survive inside the disclosure below —
    taking them away would be removing control, where the complaint was that
    control was the only thing on offer. */
 .at-group-ds { font-size: 12.5px; color: var(--muted); line-height: 1.5;
@@ -1737,6 +1701,20 @@ textarea.ac-field-wide { resize: vertical; min-height: 58px; line-height: 1.45; 
   border-radius: 14px; overflow: hidden; margin-bottom: 10px; }
 .at-bulk { display: flex; align-items: center; gap: 16px; padding: 13px 16px; }
 .at-bulk + .at-bulk { border-top: 1px solid var(--line); }
+/* What the switch beside it covers, in the names a person reads — the
+   "summarise it in between the two" half of this screen. A switch labelled
+   "Read" over a collapsed list says nothing about whether reading includes
+   scrolling or going back, and the only way to find out was to open the
+   disclosure, which is the wall this layout replaced. */
+.at-bulk .at-ds { color: var(--text); opacity: .82; }
+.at-sub { font-size: 11.5px; color: var(--faint); line-height: 1.4; }
+/* A change that is an ACTION rather than a tool: sending mail, adding an
+   event, running somebody else's verb. There is nothing to switch, so the row
+   says what happens instead — an app showing only "Read" reads as an app that
+   cannot do anything else, which is false. */
+.at-bulk.is-ask { background: color-mix(in srgb, var(--panel-2) 60%, transparent); }
+.at-bulk.is-ask .at-nm { color: var(--muted); }
+.at-bulk.is-ask .at-ds { color: var(--muted); opacity: 1; }
 /* The count for a group somebody part-granted with the per-tool rows. Tabular
    so "3 of 7" and "11 of 13" do not shift the switch beside them. */
 .at-part { flex: none; font-size: 12px; color: var(--faint);
@@ -1762,6 +1740,42 @@ textarea.ac-field-wide { resize: vertical; min-height: 58px; line-height: 1.45; 
   box-shadow: 0 0 0 3px var(--north-dim); border-radius: 6px; }
 .at-detail[open] > summary { margin-bottom: 10px; }
 .at-group.is-always .at-detail > summary { color: var(--faint); }
+
+/* ── the other half of a permission, where it actually stands ───────────
+   Three permissions had a working endpoint and no screen at all: which sites
+   the browser may open, which folders exist for an agent to read, and whether
+   this agent may use a connector without asking. So "Your Mac → Read" granted
+   a tool whose only possible answer was "No folder has been opened to agents
+   yet". The line under the switches says the present position, and where it
+   is a control rather than a fact, the control is right there — a button that
+   sends somebody to another screen is the thing that lost them last time. */
+.at-strip { font-size: 12.5px; color: var(--muted); line-height: 1.55;
+  margin: 0 0 10px; padding: 11px 14px; border-radius: 12px;
+  background: var(--panel); border: 1px solid var(--line); max-width: 66ch; }
+.at-strip p { margin: 0 0 8px; }
+.at-strip p:last-child { margin-bottom: 0; }
+/* Not an error — it is the correct starting state, and the warning tint is
+   what stops somebody reading the switches above as already working. */
+.at-strip.is-warn { border-color: var(--north-track); background: var(--north-dim);
+  color: var(--text); }
+.at-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.at-chip { display: inline-flex; align-items: center; gap: 6px;
+  font-family: var(--mono); font-size: 11.5px; padding: 4px 6px 4px 9px;
+  border-radius: 8px; background: var(--panel-2); border: 1px solid var(--line); }
+.at-chip-x { background: none; border: 0; cursor: pointer; color: var(--faint);
+  font-size: 14px; line-height: 1; padding: 0 2px; }
+.at-chip-x:hover { color: var(--danger); }
+.at-folder-add { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.at-folder-add .set-input { flex: 1; min-width: 18ch; }
+/* The server writes this sentence for a person — "Pick a folder inside your
+   home directory rather than the whole of it" — so it is shown as it came
+   rather than replaced with something of ours about paths. */
+.at-strip .at-err { display: block; margin-top: 6px; }
+
+/* The one permission on this screen that is NOT per agent, set apart so the
+   agent picker above cannot be read as applying to it. */
+.at-everyone { margin-top: 34px; border-top: 1px solid var(--line); padding-top: 22px; }
+
 
 .at-empty { background: var(--panel); border: 1px solid var(--line);
   border-radius: 14px; padding: 20px; color: var(--muted); font-size: 13.5px;
@@ -3189,6 +3203,11 @@ button.tiny.running:hover { background: linear-gradient(to right,
    still reachable — a row that overflowed used to push it off-screen, which
    made a check impossible to delete. */
 @media (max-width: 560px) {
+  /* The panel: the roll-up is the first thing to wrap, and the switch must
+     stay on the same line as the word it belongs to. */
+  .at-bulk, .at-row { gap: 10px; padding: 12px 13px; }
+  .at-part { display: none; }
+  .at-folder-add { width: 100%; }
   .cond-row { grid-template-columns: 1fr 1fr; }
   .cond-row .cond-value { grid-column: 1 / -1; }
   .am-pair { grid-template-columns: 1fr; }
