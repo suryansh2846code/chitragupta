@@ -17,6 +17,7 @@ from . import roster
 from .agent import Agent
 from .agent_models import get_agent_model
 from .library import BY_ID, rostered_agents
+from .tool_snapshot import resolve
 
 #: Every agent Chitragupta ships, by id. Not the same as the user's roster.
 PRESETS: dict[str, Agent] = {tid: t.to_agent() for tid, t in BY_ID.items()}
@@ -40,9 +41,16 @@ def _with_user_edits(agent: Agent) -> Agent:
 
     # `None` is untouched; `[]` is an agent the user deliberately stripped, and
     # falling back to the default there would silently undo that.
-    tools = get_tool_overrides().get(agent.id)
+    store = get_tool_overrides()
+    tools = store.get(agent.id)
     if tools is not None:
-        agent = dataclasses.replace(agent, tools=tools)
+        # The stored list, plus anything that was not on the menu when it was
+        # stored. A preset with no override resolves its tools from the library
+        # on every call and so keeps up with the app; one the user had touched
+        # was frozen at the day they touched it, which is how a workspace ends
+        # up with exactly one agent that can drive the browser.
+        agent = dataclasses.replace(
+            agent, tools=resolve(tools, store.menu(agent.id)))
     return agent
 
 

@@ -125,6 +125,29 @@ and `#5fd0e0` are still in the file.
   the cards keep the state they were built with.
 
 
+## `GET /api/agents/connector-gaps` has no screen
+
+Found while wiring the Agents & tools panel to every permission endpoint it
+should have been using. Three of the four dangling endpoints are now on the
+card they belong to — folders, per-agent connector grants, the unattended
+allow-list. This one is deliberately still unused.
+
+It answers a different question: *I just connected something — which of my
+agents cannot see it?* That is a fact about the connector, not about one agent,
+so putting it behind the panel's agent picker would be filing it under the one
+axis it does not vary on. It belongs on the **Connectors** screen, beside the
+source that was just added.
+
+Nothing is broken today: `library.BASE_TOOLS` gives every new agent the
+connector sentinel, so the gap it reports is rare and shrinking. Worth doing
+when the Connectors screen is next opened up, not before.
+
+**And it is now the cheap one of the two.** The measurement below puts
+`/api/agents/{id}/connectors` at 4.5 seconds. The Agents & tools panel asks for
+it once per open, after the switches are already drawn — but if that endpoint
+is ever made to answer quickly, this note and the one under it are the same
+piece of work.
+
 ## `selectAgent` fires a 4.5s connector probe per switch, and never cancels one
 
 Measured on a real machine, 2026-10-03:

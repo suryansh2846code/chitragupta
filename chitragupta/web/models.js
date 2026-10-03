@@ -964,6 +964,12 @@ async function openToolsScreen() {
   // agent it is for. Both come from `agents`, already loaded at startup.
   try { renderAgentToolPicker(); } catch (_) {}
   try { await loadAgentTools(); } catch (_) {}
+  // The people agents may reach unattended. It lived under Model, three screens
+  // from every other permission, which is how a standing grant stayed invisible
+  // to anyone not already looking for it. It is global rather than per-agent
+  // and the section says so — but it belongs beside the switches, not beside
+  // the model picker.
+  try { await loadAllowList(); } catch (_) {}
 }
 async function openConnectorsScreen() {
   const m = $("#modelScreen"); if (!m) return;
@@ -991,10 +997,6 @@ async function openModelScreen() {
   // nothing at all.
   try { await loadProviders(); } catch (_) {}
   try { await loadAgentDefaults(); } catch (_) {}
-  // Lives in workspace.js with the approvals queue it belongs to — the grant and
-  // the review of it are one subsystem, and splitting them would put the same
-  // endpoint in two files.
-  try { await loadAllowList(); } catch (_) {}
   // Last, and never awaited into the others: a log that cannot be read must not
   // stop the settings screen rendering the parts that can.
   try { await loadDiagnosticsLog(); } catch (_) {}

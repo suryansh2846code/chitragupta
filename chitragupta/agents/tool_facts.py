@@ -335,52 +335,6 @@ def tools_for(group: str, level: str) -> list[str]:
     return []
 
 
-# ── setting the whole lot at once ────────────────────────────────────────
-#
-# Six decisions is better than sixty-four and it is still six, and the common
-# case is not six decisions — it is "this one is mine, let it do everything" or
-# "let it look and nothing else". A screen that compacts the list and still
-# makes you set every switch has only done half the job.
-#
-# Each preset says what it includes in its own words, including the part people
-# skim: `all` carries running code, and a button that quietly included that
-# would be the "a tap nobody reads" failure at the worst possible scale. This
-# is also the right screen for it — `ASKABLE` deliberately refuses to let an
-# agent ask for that from a card, because a tap given to unblock a task is not
-# the same decision as one given here, reading this sentence.
-PRESETS: tuple[dict[str, str], ...] = (
-    {"key": "all", "label": "Allow everything",
-     "blurb": "Every group, including changing websites and files, and "
-              "running code on this Mac."},
-    {"key": "read", "label": "Read only",
-     "blurb": "It can look at everything and change nothing — no clicking, "
-              "typing, writing or running."},
-    {"key": "none", "label": "Nothing yet",
-     "blurb": "Only its own memory and your day. It can still think, "
-              "remember and plan; it reaches nothing outside this machine."},
-)
-
-
-def preset_tools(key: str) -> list[str]:
-    """The built-ins one preset grants, or [] for a key nobody recognises.
-
-    **Built-ins only, and the caller must keep the rest.** The save is the whole
-    tool list, so a preset that answered with its own names alone would silently
-    drop the connector sentinel and every connector tool the agent had — an
-    "allow everything" button that took Notion away is the worst possible
-    version of this control. `api/routes/agents` merges; the test says so.
-    """
-    always = set(granted_by_default())
-    if key == "none":
-        return sorted(always)
-    if key == "all":
-        return sorted(_FACTS)
-    if key == "read":
-        reading = {n for n in _FACTS if tool_access(n) is Access.READ}
-        return sorted(always | reading)
-    return []
-
-
 def permission_groups() -> list[dict[str, Any]]:
     """The permission screen, derived rather than hand-arranged.
 
@@ -420,5 +374,192 @@ def permission_groups() -> list[dict[str, Any]]:
         # leads nowhere.
         if group.more_screen:
             row["more"] = {"screen": group.more_screen, "label": group.more_label}
+        out.append(row)
+    return out
+
+
+# ── the same tools, arranged the way a person thinks about them ───────────
+#
+# `GROUPS` above is the **gate's** axis: how far a capability reaches, which is
+# the right question for `request_permission`, for `prompt._withheld` and for
+# deciding what a grant covers. It is the wrong question for a settings screen.
+# It puts Gmail, your calendar, your messages, Notion and Linear on one card
+# called "Your connected accounts", so a user who wants to say *this agent may
+# read GitHub and not my mail* has no control that says it. People think in
+# apps.
+#
+# So this is a second question over the same key. Not a second taxonomy — the
+# resource still decides, exactly as `_GROUP_OF` uses it — just asked at the
+# granularity somebody actually sets switches at. Both are derived from
+# `_FACTS`, so neither can drift from the tool table, and
+# `tests/test_tool_permissions.py` fails if a built-in lands on no card.
+
+#: Resource → the app it belongs to.
+_APP_OF: dict[str, str] = {
+    "memory": "on_device", "task": "on_device", "measurement": "on_device",
+    "agent": "on_device", "routine": "on_device",
+
+    "email": "gmail", "thread": "gmail", "draft": "gmail",
+    "event": "calendar", "calendar": "calendar",
+    "chat": "messages", "message": "messages", "channel": "messages",
+    "contact": "contacts", "note": "sources", "page": "sources",
+    "record": "sources",
+
+    "webpage": "browser",
+
+    "file": "mac", "folder": "mac", "document": "mac", "process": "mac",
+}
+
+#: The few tools whose resource is honest and still lands them in the wrong
+#: place. `web_search` is `search:webpage` because that is what it returns, and
+#: it is not the browser: it reads public results and never opens a page the
+#: user is signed in to. Filing it under "The browser" would put a harmless
+#: tool behind the switch that is the most dangerous one on the screen.
+_APP_OVERRIDE: dict[str, str] = {"web_search": "web"}
+
+#: Where a tool nobody classified goes. `mac` for `_FALLBACK_GROUP`'s reason:
+#: unknown fails closed, and the harmless-looking default is the trap.
+_FALLBACK_APP = "mac"
+
+
+@dataclass(frozen=True)
+class App:
+    """One app or surface, as a card with at most three switches."""
+
+    key: str
+    label: str
+    blurb: str
+
+    #: The word on the second switch. Never a generic "Write" everywhere: a
+    #: switch reading the same word on files, on a web page and on somebody
+    #: else's inbox is a switch that was set for one of them and granted all
+    #: three. `CLAUDE.md` forbids folding `outbound` into `change` for exactly
+    #: this, and the wording is the half of that rule a person can see.
+    write_label: str = "Write"
+
+    #: The third switch, and only `mac` has one. Running code is unbounded, so
+    #: it is never inside the word "write".
+    run_label: str = ""
+
+    #: What this app's *changes* are, when they are actions rather than tools —
+    #: sending mail, adding an event, running somebody else's verb. There is no
+    #: switch for those: each comes to the user as a card. The row says so,
+    #: because an app showing only "Read" reads as an app that cannot do
+    #: anything else, which is false and is what sends people hunting for a
+    #: setting that does not exist.
+    ask_label: str = ""
+    ask_blurb: str = ""
+
+    #: True for the surface that cannot leave this machine — granted at
+    #: creation, never shown as a switch. Same meaning as `Group.always`.
+    always: bool = False
+
+    #: Where the other half of this permission is set, when it is on another
+    #: screen. Absent when the control is *in* the card, which is better: see
+    #: `mac`, whose folders are opened from the card itself.
+    more_screen: str = ""
+    more_label: str = ""
+
+
+APPS: tuple[App, ...] = (
+    App("on_device", "Its own memory and your day",
+        "The brain, your tasks, your numbers, and asking the other agents. "
+        "Nothing here leaves this machine.", always=True),
+    App("gmail", "Gmail",
+        "Searching and reading the mail in the account you connected.",
+        ask_label="Send", ask_blurb=(
+            "Sending or drafting mail always comes to you as a card you "
+            "confirm, whatever is switched on here."),
+        more_screen="connectors", more_label="Connect an account"),
+    App("calendar", "Calendar",
+        "Reading what is in the day, and finding a time that works.",
+        ask_label="Add or change", ask_blurb=(
+            "Creating, moving or cancelling an event always comes to you as a "
+            "card you confirm."),
+        more_screen="connectors", more_label="Connect an account"),
+    App("messages", "Messages",
+        "Reading the chats in an app you connected — Telegram, Slack, "
+        "WhatsApp.",
+        ask_label="Send", ask_blurb=(
+            "Sending a message always comes to you as a card you confirm, and "
+            "an agent running on its own may only reach a chat you allowed."),
+        more_screen="connectors", more_label="Connect an account"),
+    App("contacts", "Contacts", "People from an account you connected.",
+        more_screen="connectors", more_label="Connect an account"),
+    App("sources", "Your sources",
+        "Pulling in anything new from a source you connected, and reading "
+        "what came back.",
+        more_screen="connectors", more_label="Connect a source"),
+    App("web", "Web search",
+        "Public search results. Nothing you are signed in to — that is the "
+        "browser, below."),
+    App("browser", "The browser",
+        "Opening pages in a real browser, on sites you have allowed. Reading "
+        "a page is one decision; changing one — clicking, typing, sending — "
+        "is another.",
+        write_label="Change",
+        more_screen="connectors", more_label="Choose which sites"),
+    App("mac", "Your Mac",
+        "Files and folders on this computer, inside the folders you open to "
+        "agents and nowhere else.",
+        write_label="Write", run_label="Run code"),
+)
+
+_APP_BY_KEY: dict[str, App] = {a.key: a for a in APPS}
+
+
+def tool_app(name: str) -> str:
+    """Which app card a built-in belongs on, from the resource it names."""
+    override = _APP_OVERRIDE.get(name)
+    if override:
+        return override
+    raw = tool_capability(name)
+    if not raw:
+        return _FALLBACK_APP
+    try:
+        resource = parse_capability(raw).resource.value
+    except UnknownCapabilityError:     # pragma: no cover - the test forbids it
+        return _FALLBACK_APP
+    return _APP_OF.get(resource, _FALLBACK_APP)
+
+
+def permission_apps() -> list[dict[str, Any]]:
+    """The settings screen, one row per app, derived rather than arranged.
+
+    Same shape and same derivation as `permission_groups()` — `read`, `change`
+    and `run` are tool names already split by what they do, so the panel
+    renders two switches and a sentence rather than a list of function names.
+
+    An app with no tools at all is dropped: a card nobody can switch anything
+    on is a heading that teaches the screen is decorative. An app whose only
+    changes are *actions* keeps its card — `ask` is what it says instead of a
+    switch, and saying nothing there is what makes a user hunt for a setting
+    that does not exist.
+    """
+    out: list[dict[str, Any]] = []
+    for app in APPS:
+        reads, changes, runs = [], [], []
+        for name in sorted(_FACTS):
+            if tool_app(name) != app.key:
+                continue
+            tier = tool_access(name)
+            if tier is Access.READ:
+                reads.append(name)
+            elif tier is Access.DESTRUCTIVE:
+                runs.append(name)
+            else:
+                changes.append(name)
+        if not (reads or changes or runs):
+            continue
+        row: dict[str, Any] = {
+            "key": app.key, "label": app.label, "blurb": app.blurb,
+            "always": app.always,
+            "read": reads, "change": changes, "run": runs,
+            "write_label": app.write_label, "run_label": app.run_label,
+        }
+        if app.ask_label:
+            row["ask"] = {"label": app.ask_label, "blurb": app.ask_blurb}
+        if app.more_screen:
+            row["more"] = {"screen": app.more_screen, "label": app.more_label}
         out.append(row)
     return out

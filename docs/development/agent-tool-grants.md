@@ -80,6 +80,41 @@ Storage and the write path are `agents/tool_overrides.py`, which distinguishes
 deliberately stripped of everything) — collapsing those two would silently undo
 the second.
 
+**That prediction came true, and "recoverable" was not enough.** On a real
+machine, six agents and exactly one — Chief of Staff, the only one never
+edited — could drive the browser. Every other agent held a stored list: a
+custom agent's own, or an override. `browse_wait`, `browse_select`,
+`browse_press` and `what_i_looked_at` shipped on 2026-10-01 and could not
+reach an agent built on 2026-09-27, because a switch grants **names** and the
+new names were not in the list. Nothing told anyone to go back, and the switch
+that would have fixed it read as already on. So the user granted "Websites and
+the browser", the panel agreed, and the agent still answered that it had no
+browser and sent them to that same screen — the dead end `Group.more_screen`
+exists to stop, arriving from the other side.
+
+### A stored list records the menu it was chosen from
+
+`agents/tool_snapshot.py`. Every save now writes the tool catalog alongside the
+choice, in a `known` column on both tables. On read:
+
+* a name **on** that menu and not in the list was **declined**, and stays
+  declined — topping up must never undo a capability somebody removed;
+* a name **not** on that menu was never decided about. It is undecided, and
+  undecided takes the agent's default.
+
+The default for an undecided tool is the **bucket** it lands in: `(group,
+access)`, the exact pair the panel draws as one switch. So a new read tool
+joins an agent already allowed to read that group, never crosses into changing
+it, never crosses into another group, and an agent that holds nothing in a
+bucket gains nothing there. `[]` still means stripped and still stays stripped.
+
+Rows written before the column existed have no menu. `assumed_menu` takes the
+only reading that cannot widen a decision the user made: a bucket they hold
+nothing in was offered and declined in full; a bucket they hold something in is
+credited only with what they actually hold. The one-time repair therefore fills
+the buckets they already said yes to, at the access level they said it, and
+grants nothing anywhere else.
+
 ### New custom agents **do** get connector access
 
 Arguments against, taken seriously: connector access reaches third-party data,
@@ -329,7 +364,10 @@ shows the list and a way to act on it; each act goes through §3.
 |---|---|
 | `agents/library.py` | `BASE_TOOLS` — the one definition of what every agent starts with, preset or custom |
 | `agents/grants.py` | the per-agent view: states, reasons, and which connectors are contributing nothing |
-| `agents/tool_overrides.py` | what the user changed, as an override; `None` ≠ `[]` |
+| `agents/tool_overrides.py` | what the user changed, as an override; `None` ≠ `[]`; records the catalog with the choice |
+| `agents/tool_snapshot.py` | the menu a stored list was chosen from, and what to do about a tool that was not on it. A leaf: it reads `tool_facts` and nothing else |
+| `agents/tool_facts.py` | both axes — `permission_groups()` for the gate, `permission_apps()` for the screen — derived from one table |
+| `agents/custom.py` | the other store holding a snapshot, migrated and resolved the same way |
 | `agents/presets.py` | applies the override at one seam, for both kinds of agent |
 | `api/routes/agents.py` | the three endpoints, thin over the above |
 
@@ -337,3 +375,50 @@ shows the list and a way to act on it; each act goes through §3.
 answers "what exists", this answers "what does *this agent* have", and the
 second is not a filter over the first — it needs the agent, the sentinel's
 resolution, and the connector's health.
+
+
+---
+
+## 7. Two axes over one table
+
+`tool_group` answers *how far does this reach* — four classes: what stays on
+this machine, what touches an account, a website, your files. That is the
+**gate's** question, and `request_permission`, `prompt._withheld` and
+`tool_snapshot` all reason in it.
+
+It is the wrong question for a settings screen. Four reach classes put Gmail,
+the calendar, Telegram, Notion and Linear on one card called *Your connected
+accounts*, so a user who wanted to say **read GitHub, leave my mail alone** had
+no control that said it. People think in apps.
+
+`tool_app` is the second question over the same key: resource → app, in the same
+shape as `_GROUP_OF` and beside it, plus `_APP_OVERRIDE` for the handful whose
+resource is honest and still lands them in the wrong place (`web_search` is
+`search:webpage` and is not the browser). `permission_apps()` derives the cards
+the way `permission_groups()` derives the groups, and
+`tests/test_tool_permissions.py` fails if a built-in lands on no card.
+
+Both ride on every row of `GET /api/agents/tools` — `group`, `app`, `access` —
+and the panel arranges itself by `app`, falling back to `group` and then to
+`category` for a server that predates it. Not a second taxonomy: one table, one
+derivation, two questions. A second taxonomy is the drift this document exists
+to prevent.
+
+### What a card shows
+
+* **Read**, and the one word that app's changes actually are — `App.write_label`
+  ("Change" on a web page, "Write" on a file), with `App.run_label` as a third
+  switch on the one card that has three tiers. `outbound` keeps a bucket of its
+  own even though no built-in is one today: folding it into "change" would mean
+  the first tool that reaches a person arrives already covered by a switch
+  somebody set for something else.
+* The **roll-up** between them: what each switch covers, in the names a person
+  reads.
+* `App.ask` for an app whose changes are *actions* rather than tools — sending
+  mail, adding an event, `mcp_action` in GitHub. There is no switch to draw, so
+  the row says what happens and names the list that makes it stop asking.
+  Making `agent.actions` editable per agent is a later landing; until then this
+  row is the honest answer rather than a switch that would do nothing.
+* The **other half**, live: which sites are allowed, which folders are open,
+  whether this agent must ask before reaching this connector. All three had a
+  working endpoint and nothing in the app that called it.

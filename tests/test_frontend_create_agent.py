@@ -241,39 +241,39 @@ SPECS = [
      "blurb": "Files and folders on this computer.",
      "read": [], "change": ["add_task"], "run": ["run_python"]},
 ]
-#: `group` and `access` on the row, the way `describe_tools()` sends them.
+#: `group`, `app` and `access` on the row, the way `describe_tools()` sends
+#: them: the gate's axis, the screen's, and the tier.
 #:
 #: `who_is` is on this machine and is deliberately NOT one of the three names
-#: the builder used to hand out: the group it belongs to is the one the panel
+#: the builder used to hand out: the card it belongs to is the one the panel
 #: calls always on, and that is the claim the default has to keep.
 WHO_IS = {"name": "who_is", "label": "People", "category": "Memory",
           "description": "Who someone is.", "source": "builtin", "connector": "",
-          "group": "on_device", "access": "read"}
+          "group": "on_device", "app": "on_device", "access": "read"}
 TIERED = [
-    {**BUILTIN[0], "group": "on_device", "access": "read"},
-    {**BUILTIN[1], "group": "on_device", "access": "write"},
+    {**BUILTIN[0], "group": "on_device", "app": "on_device", "access": "read"},
+    {**BUILTIN[1], "group": "on_device", "app": "on_device", "access": "write"},
     WHO_IS,
-    {**BUILTIN[2], "group": "mac", "access": "write"},
-    {**BUILTIN[3], "group": "mac", "access": "destructive"},
+    {**BUILTIN[2], "group": "mac", "app": "mac", "access": "write"},
+    {**BUILTIN[3], "group": "mac", "app": "mac", "access": "destructive"},
 ]
-#: What each preset covers, as the route sends it — a PREVIEW, so a draft can
-#: show what the button will do before there is an agent to ask about.
-PRESETS = [
-    {"key": "all", "label": "Allow everything",
-     "blurb": "Every group, including running code on this Mac.",
-     "tools": ["search_brain", "remember", "who_is", "add_task", "run_python"]},
-    {"key": "read", "label": "Read only",
-     "blurb": "It can look at everything and change nothing.",
-     "tools": ["search_brain", "remember", "who_is"]},
-    {"key": "none", "label": "Nothing yet",
-     "blurb": "Only its own memory and your day.",
-     "tools": ["search_brain", "remember", "who_is"]},
+#: The cards, as `permission_apps()` sends them. Same shape the panel gets, and
+#: the point of the fixture: the builder and the panel are one renderer.
+APPS = [
+    {"key": "on_device", "label": "Its own memory and your day", "always": True,
+     "blurb": "Nothing here leaves this machine.",
+     "read": ["search_brain", "who_is"], "change": ["remember"], "run": [],
+     "write_label": "Write", "run_label": ""},
+    {"key": "mac", "label": "Your Mac", "always": False,
+     "blurb": "Files and folders on this computer.",
+     "read": [], "change": ["add_task"], "run": ["run_python"],
+     "write_label": "Write", "run_label": "Run code"},
 ]
 
 
 def built(**over) -> dict:
     return run(tools=[*TIERED, NOTION], connectors=[READY],
-               groups=SPECS, presets=PRESETS, **over)
+               groups=SPECS, apps=APPS, **over)
 
 
 @pytest.fixture(scope="module")
@@ -281,73 +281,43 @@ def builder() -> dict:
     return built()
 
 
-def test_the_builder_offers_the_presets(builder):
-    """It compacted nothing and still made somebody set every switch, at the
-    one moment they know least about what the agent will need."""
-    for key in ("all", "read", "none"):
-        assert f'data-preset="{key}"' in builder["html"]
-
-
-def test_the_builder_says_what_each_group_is(builder):
+def test_the_builder_says_what_each_card_is(builder):
     """The sentence the panel has had for two releases."""
     assert "Files and folders on this computer." in builder["html"]
 
 
-def test_the_builder_offers_allow_all_per_group(builder):
-    assert "Allow all" in builder["html"]
+def test_the_builder_draws_the_same_cards_as_the_panel(builder):
+    """One renderer, so a card cannot land on one screen and not the other. It
+    had not: the builder was still on the thirteen category headings two
+    releases after the panel had moved on."""
+    assert 'aria-label="Run code — Your Mac"' in builder["html"]
+    assert 'aria-label="Write — Your Mac"' in builder["html"]
 
 
-def test_one_press_turns_everything_on():
-    """The ask. One button, every permission."""
-    out = built(preset="all")
+def test_a_tier_switch_in_the_builder_changes_the_draft_and_sends_nothing():
+    """Nothing is saved until Create, so a press moves the object on screen —
+    a PATCH here would be editing an agent that does not exist."""
+    out = built(bulk="run_python")
 
-    assert out["pressedPreset"] is True
-    on = set(re.findall(r'data-tool="([^"]*)" data-on="1"', out["html"]))
-    every = set(re.findall(r'data-tool="([^"]*)"', out["html"]))
-    assert on == every, sorted(every - on)
-
-
-def test_one_press_includes_the_connector_the_user_added():
-    """No preset can name a connector tool — they do not exist until somebody
-    adds one — so a button saying "allow everything" that left Notion off would
-    be the same button `preset_tools` already refuses to be."""
-    out = built(preset="all")
-
-    assert out["posted"]["tools"].count("notion__search") == 1, out["posted"]
+    assert out["pressedBulk"] is True
+    assert "run_python" in out["posted"]["tools"], out["posted"]
+    assert not [c for c in out["calls"] if "PATCH" in str(c)], out["calls"]
 
 
-def test_one_press_sends_the_presets_NAME_so_it_means_everything_NOW():
-    """A screen left open while a tool shipped would otherwise send its own
-    stale idea of the word and quietly withhold the new one."""
-    out = built(preset="all")
-
-    assert out["posted"]["preset"] == "all", out["posted"]
-
-
-def test_a_switch_pressed_afterwards_cancels_the_preset():
-    """The preset is resolved on the server, so leaving the name attached would
-    re-grant everything and throw away the change the user just made — a switch
-    that visibly moved and then did nothing."""
-    out = built(preset="all", toggle="run_python")
-
-    assert "preset" not in out["posted"], out["posted"]
-    assert "run_python" not in out["posted"]["tools"]
+def test_there_is_no_preset_row_in_the_builder(builder):
+    """It went from both surfaces at once. A card is two switches now, so the
+    row was a second way to do a one-press thing — and "Allow everything"
+    silently included running code on this Mac."""
+    assert "data-preset" not in builder["html"]
+    assert "Allow everything" not in builder["html"]
+    assert "Allow all" not in builder["html"]
 
 
-def test_nothing_yet_leaves_only_what_cannot_leave_this_machine():
-    out = built(preset="none")
-
-    assert set(out["posted"]["tools"]) == {"search_brain", "remember", "who_is"}
-
-
-def test_a_preset_the_server_sent_no_preview_for_changes_nothing():
-    """It would have nothing to draw, and a button that visibly does nothing is
-    worse than one that is not there."""
-    bare = [{k: v for k, v in p.items() if k != "tools"} for p in PRESETS]
-    out = run(tools=[*TIERED, NOTION], connectors=[READY], groups=SPECS,
-              presets=bare, preset="all")
-
-    assert "run_python" not in out["posted"]["tools"]
+def test_create_sends_the_tools_and_nothing_else(builder):
+    """The `preset` field went with the row — the server resolves nothing now,
+    so a key on the wire would be a field nobody reads."""
+    assert "preset" not in builder["posted"], builder["posted"]
+    assert isinstance(builder["posted"]["tools"], list)
 
 
 def test_a_new_agent_gets_everything_that_cannot_leave_this_machine():
@@ -359,7 +329,7 @@ def test_a_new_agent_gets_everything_that_cannot_leave_this_machine():
     assert "who_is" in out["posted"]["tools"], out["posted"]["tools"]
 
 
-def test_the_group_that_is_always_on_is_not_a_switch_here_either(builder):
+def test_the_card_that_is_always_on_is_not_a_switch_here_either(builder):
     assert "Always on" in builder["html"]
 
 
@@ -369,7 +339,7 @@ def test_the_builder_offers_no_button_that_opens_a_screen_behind_it():
     throw away a half-typed form. The reason still names the route in words,
     which is the part that works from either screen."""
     out = run(tools=[*TIERED, NOTION], connectors=[READY, DOWN],
-              groups=SPECS, presets=PRESETS)
+              groups=SPECS, apps=APPS)
 
     assert "Open Connectors" not in out["html"]
     assert "data-screen" not in out["html"]

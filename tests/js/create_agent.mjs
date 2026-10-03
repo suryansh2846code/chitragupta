@@ -11,7 +11,7 @@
  * in, whether its control is a switch or a reason, and what Create reads back.
  *
  * It now draws the **Agents & tools panel itself** — one renderer, so the
- * presets, the group sentences and "Allow all" cannot land on one screen and
+ * the card sentences and the roll-ups cannot land on one screen and
  * not the other. The agent being built is a DRAFT: every switch moves the
  * object on screen and sends nothing, and Create posts what is in it.
  *
@@ -21,7 +21,7 @@
  * about.
  *
  * argv: <a path inside chitragupta/web/>
- * stdin: {tools, categories, connectors, groups?, presets?, toggle?, preset?, bulk?}
+ * stdin: {tools, categories, connectors, groups?, apps?, toggle?, bulk?}
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -73,7 +73,6 @@ const reparse = () => {
       /data-tool="([^"]*)"\s+data-on="([^"]*)"/g, ["tool", "on"]),
     "[data-bulk]": made("[data-bulk]",
       /data-bulk="([^"]*)"\s*\n?\s*data-on="([^"]*)"/g, ["bulk", "on"]),
-    "[data-preset]": made("[data-preset]", /data-preset="([^"]*)"/g, ["preset"]),
     "[data-screen]": made("[data-screen]", /data-screen="([^"]*)"/g, ["screen"]),
     "[data-group]": made("[data-group]", /data-group="([^"]*)"/g, ["group"]),
     "[data-tool-fix]": made("[data-tool-fix]", /data-tool-fix="(1)"/g, ["toolFix"]),
@@ -110,7 +109,7 @@ globalThis.fetch = async (url, opts = {}) => {
   if (String(url).startsWith("/api/agents/tools")) {
     return { ok: true, json: async () => ({
       tools: input.tools, categories: input.categories,
-      groups: input.groups || [], presets: input.presets || [] }) };
+      groups: input.groups || [], apps: input.apps || [] }) };
   }
   if (String(url) === "/api/agents/custom" && opts.method === "POST") {
     posted = JSON.parse(opts.body);
@@ -145,7 +144,12 @@ try {
     /<h3 class="at-group-nm">([\s\S]*?)<\/h3>([\s\S]*?)(?=<section class="at-group|$)/g)) {
     report.groups.push({
       name: m[1],
-      tools: [...m[2].matchAll(/<span class="at-nm">([\s\S]*?)<\/span>/g)].map((x) => x[1]),
+      // The per-tool rows only. A tier switch and an "it asks you every time"
+      // row both carry `.at-nm` too, and they are not tools — reading every
+      // one of them made "Read" and "Change anything" look like skills.
+      tools: [...m[2].matchAll(
+        /<div class="at-row"[\s\S]*?<span class="at-nm">([\s\S]*?)<\/span>/g)]
+        .map((x) => x[1]),
       switches: [...m[2].matchAll(/data-tool="([^"]*)"/g)].map((x) => x[1]),
       blocked: [...m[2].matchAll(/<span class="at-blocked">([\s\S]*?)<\/span>/g)].map((x) => x[1]),
     });
@@ -161,7 +165,6 @@ try {
     report.count = el("#amToolCount").textContent;
     return true;
   };
-  if (input.preset) report.pressedPreset = press("[data-preset]", input.preset, "preset");
   if (input.bulk) report.pressedBulk = press("[data-bulk]", input.bulk, "bulk");
   if (input.toggle) report.pressedToggle = press("[data-tool]", input.toggle, "tool");
 
