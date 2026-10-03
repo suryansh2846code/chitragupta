@@ -10,7 +10,8 @@
  * blank while every test passed.
  *
  * argv: <a path inside chitragupta/web/>
- * stdin: {agent, tools, connectors, apps?, panel?, toggle?, failSave?}
+ * stdin: {agent, tools, connectors, apps?, panel?, toggle?, addReach?,
+ *          clickScreen?, failSave?}
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -22,6 +23,10 @@ const input = JSON.parse(fs.readFileSync(0, "utf8"));
 
 const calls = [];
 let openedConnectors = 0;
+//: Was the profile already closed by the time the screen opened? Recorded at
+//: the moment of the navigation, not after it: the bug was that the page
+//: changed *behind* a dialog that stayed up, and only the ordering shows it.
+let profileWasOpenOnNavigate = null;
 
 const makeEl = (tag = "div") => {
   const el = {
@@ -57,7 +62,7 @@ const parsedButtons = () => {
   const out = { "[data-tool]": [], "[data-bulk]": [],
                 "[data-tool-fix]": [], "[data-group]": [], "[data-screen]": [],
                 "[data-folder-add]": [], "[data-folder-off]": [],
-                "[data-grant]": [], ".at-err": [] };
+                "[data-grant]": [], "[data-reach-add]": [], ".at-err": [] };
   // One section standing in for the group a control sits in. Both directions
   // of the "the screen must not argue with itself" rule walk up to it — a
   // bucket switch to reach the rows under it, a row to reach the switches above
@@ -125,6 +130,12 @@ const parsedButtons = () => {
     b.dataset = { folderOff: m[1] };
     out["[data-folder-off]"].push(b);
   }
+  for (const m of box.innerHTML.matchAll(
+      /data-reach-add="([^"]*)"\s*\n?\s*data-reach-for="([^"]*)"/g)) {
+    const b = makeEl("button"); b._sel = "[data-reach-add]";
+    b.dataset = { reachAdd: m[1], reachFor: m[2] };
+    out["[data-reach-add]"].push(b);
+  }
   for (const m of box.innerHTML.matchAll(/data-grant="([^"]*)"[^>]*data-on="([^"]*)"/g)) {
     const b = makeEl("button"); b._sel = "[data-grant]";
     b.dataset = { grant: m[1], on: m[2] };
@@ -138,7 +149,8 @@ const parsedButtons = () => {
 };
 let buttons = { "[data-tool]": [], "[data-bulk]": [],
                 "[data-tool-fix]": [], "[data-group]": [], "[data-screen]": [],
-                "[data-folder-add]": [], "[data-folder-off]": [], "[data-grant]": [] };
+                "[data-folder-add]": [], "[data-folder-off]": [], "[data-grant]": [],
+                "[data-reach-add]": [] };
 box.querySelectorAll = (sel) => buttons[sel] || [];
 
 const registry = new Map();
@@ -156,6 +168,12 @@ globalThis.document = {
 };
 globalThis.window = { location: { pathname: "/", href: "/" }, addEventListener() {},
                       matchMedia: () => ({ matches: false, addEventListener() {} }), open() {} };
+// `CSS.escape` exists in every browser and in no harness. Without it the
+// renderer's own selector building throws — inside a `try`, so the bulk toggle
+// silently ran its failure branch and every assertion about the request still
+// passed. A harness that does not define what the page defines is a harness
+// testing a different program.
+globalThis.CSS = { escape: (s) => String(s).replace(/["\\]/g, "\\$&") };
 globalThis.localStorage = { getItem: () => null, setItem() {}, removeItem() {} };
 globalThis.sessionStorage = { getItem: () => null, setItem() {} };
 globalThis.fetch = async (p, opts = {}) => {
@@ -189,7 +207,11 @@ new Function(
 globalThis.__agents([input.agent]);
 // The screen calls openConnectorsScreen for every "fix this" affordance; count
 // it rather than opening a panel that does not exist in a harness.
-globalThis.__spyConnectors(() => { openedConnectors += 1; });
+globalThis.__spyConnectors(() => {
+  openedConnectors += 1;
+  const bg = el("#agentProfile");
+  profileWasOpenOnNavigate = bg.hidden === false;
+});
 
 const agent = JSON.parse(JSON.stringify(input.agent));
 const specs = input.groups || [];
@@ -273,6 +295,29 @@ if (input.addFolder) {
     folderAdded = post ? { path: post.path, body: post.body } : null;
   }
 }
+let screenClicked = null;
+if (input.clickScreen) {
+  el("#agentProfile").hidden = false;            // the profile this is a tab in
+  const b = buttons["[data-screen]"].find((x) => x.dataset.screen === input.clickScreen);
+  if (b && typeof b.onclick === "function") {
+    b.onclick();
+    screenClicked = { profileStillOpen: profileWasOpenOnNavigate,
+                      closedAfter: el("#agentProfile").hidden === true };
+  }
+}
+
+let reachAdded = null;
+if (input.addReach) {
+  const key = `[data-reach-in="${input.addReach.card}"]`;
+  registry.set(key, makeEl("input"));
+  registry.get(key).value = input.addReach.value;
+  const b = buttons["[data-reach-add]"].find((x) => x.dataset.reachFor === input.addReach.card);
+  if (b && typeof b.onclick === "function") {
+    await b.onclick();
+    const post = calls.filter((c) => c.path.includes("/permissions") && c.method === "POST").pop();
+    reachAdded = post ? { path: post.path, body: post.body } : null;
+  }
+}
 let grantToggled = null;
 if (input.toggleGrant) {
   const b = buttons["[data-grant]"].find((x) => x.dataset.grant === input.toggleGrant);
@@ -290,7 +335,7 @@ if (input.clickFix && buttons["[data-tool-fix]"].length) {
 
 process.stdout.write(JSON.stringify({
   html: firstHtml,
-  bulked, folderAdded, grantToggled,
+  bulked, folderAdded, grantToggled, reachAdded, screenClicked,
   groups: globalThis.__groups(input.tools, input.connectors, input.agent.tools,
                               input.categories, specs, apps)
     .map((g) => ({ name: g.name, kind: g.kind, tools: g.tools.map((t) => t.row.name) })),

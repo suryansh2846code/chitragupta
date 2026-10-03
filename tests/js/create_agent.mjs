@@ -100,6 +100,12 @@ globalThis.window = {
   location: { pathname: "/", href: "/" }, addEventListener() {},
   matchMedia: () => ({ matches: false, addEventListener() {} }),
 };
+// `CSS.escape` exists in every browser and in no harness. Without it the
+// renderer's own selector building throws — inside a `try`, so the bulk toggle
+// silently ran its failure branch and every assertion about the request still
+// passed. A harness that does not define what the page defines is a harness
+// testing a different program.
+globalThis.CSS = { escape: (s) => String(s).replace(/["\\]/g, "\\$&") };
 globalThis.localStorage = { getItem: () => null, setItem() {}, removeItem() {} };
 globalThis.sessionStorage = { getItem: () => null, setItem() {} };
 globalThis.requestAnimationFrame = () => 0;
