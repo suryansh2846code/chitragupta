@@ -80,6 +80,41 @@ Storage and the write path are `agents/tool_overrides.py`, which distinguishes
 deliberately stripped of everything) — collapsing those two would silently undo
 the second.
 
+**That prediction came true, and "recoverable" was not enough.** On a real
+machine, six agents and exactly one — Chief of Staff, the only one never
+edited — could drive the browser. Every other agent held a stored list: a
+custom agent's own, or an override. `browse_wait`, `browse_select`,
+`browse_press` and `what_i_looked_at` shipped on 2026-10-01 and could not
+reach an agent built on 2026-09-27, because a switch grants **names** and the
+new names were not in the list. Nothing told anyone to go back, and the switch
+that would have fixed it read as already on. So the user granted "Websites and
+the browser", the panel agreed, and the agent still answered that it had no
+browser and sent them to that same screen — the dead end `Group.more_screen`
+exists to stop, arriving from the other side.
+
+### A stored list records the menu it was chosen from
+
+`agents/tool_snapshot.py`. Every save now writes the tool catalog alongside the
+choice, in a `known` column on both tables. On read:
+
+* a name **on** that menu and not in the list was **declined**, and stays
+  declined — topping up must never undo a capability somebody removed;
+* a name **not** on that menu was never decided about. It is undecided, and
+  undecided takes the agent's default.
+
+The default for an undecided tool is the **bucket** it lands in: `(group,
+access)`, the exact pair the panel draws as one switch. So a new read tool
+joins an agent already allowed to read that group, never crosses into changing
+it, never crosses into another group, and an agent that holds nothing in a
+bucket gains nothing there. `[]` still means stripped and still stays stripped.
+
+Rows written before the column existed have no menu. `assumed_menu` takes the
+only reading that cannot widen a decision the user made: a bucket they hold
+nothing in was offered and declined in full; a bucket they hold something in is
+credited only with what they actually hold. The one-time repair therefore fills
+the buckets they already said yes to, at the access level they said it, and
+grants nothing anywhere else.
+
 ### New custom agents **do** get connector access
 
 Arguments against, taken seriously: connector access reaches third-party data,
@@ -329,7 +364,9 @@ shows the list and a way to act on it; each act goes through §3.
 |---|---|
 | `agents/library.py` | `BASE_TOOLS` — the one definition of what every agent starts with, preset or custom |
 | `agents/grants.py` | the per-agent view: states, reasons, and which connectors are contributing nothing |
-| `agents/tool_overrides.py` | what the user changed, as an override; `None` ≠ `[]` |
+| `agents/tool_overrides.py` | what the user changed, as an override; `None` ≠ `[]`; records the catalog with the choice |
+| `agents/tool_snapshot.py` | the menu a stored list was chosen from, and what to do about a tool that was not on it. A leaf: it reads `tool_facts` and nothing else |
+| `agents/custom.py` | the other store holding a snapshot, migrated and resolved the same way |
 | `agents/presets.py` | applies the override at one seam, for both kinds of agent |
 | `api/routes/agents.py` | the three endpoints, thin over the above |
 

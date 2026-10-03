@@ -259,6 +259,20 @@ even when every test is green. Reasoning and measurements:
   that reads identically either way. A turn ending on undone steps is told so
   **once** — with both ways out, finish them or name them — because a step that
   is genuinely impossible would drive a second nudge forever.
+- **A stored tool list is a choice made from a menu, and the menu is stored with
+  it.** Without that, a capability shipped later is indistinguishable from one
+  the user turned down — so nothing could ever reach an agent again, and six
+  agents on one machine had exactly one that could drive the browser: the only
+  one never edited, because a preset with no override resolves from the library
+  every time. The user granted "Websites and the browser", the panel agreed, and
+  the agent still said it had none: a switch grants **names**, and the four page
+  tools that shipped in between were not names in that list.
+  `tool_snapshot.resolve` treats a tool that was not on the recorded menu as
+  **undecided**, and undecided takes the default for its bucket —
+  `(group, access)`, the pair the panel draws as one switch. Never another
+  group, never another access level, and nothing at all in a bucket the agent
+  holds nothing in. A tool that *was* on the menu and was left out stays out,
+  or the top-up quietly undoes a permission somebody removed on purpose.
 - Streaming is a callback on the same loop, never a second loop.
 - Delegation guards live in a `ContextVar`: one `copy_context()` **per call**,
   and the chain is left on every exit path.
@@ -483,8 +497,8 @@ In order: **the focused test → the subsystem's suite → `pytest` →
 `ruff check chitragupta tests` → `mypy chitragupta` → the `tests/js/` harnesses if
 the frontend changed → `chitragupta app` opens and renders.**
 
-Baseline, measured 2026-10-03: **6131 passed, 34 skipped in ~7min49**, ruff
-clean, mypy clean over 221 files. With `PLAYWRIGHT_BROWSERS_PATH` pointed at the managed
+Baseline, measured 2026-10-03: **6157 passed, 36 skipped in ~7min43**, ruff
+clean, mypy clean over 222 files. With `PLAYWRIGHT_BROWSERS_PATH` pointed at the managed
 browser the same run adds twelve more — `tests/test_browser_driver.py`'s
 real-Chromium tests, which skip when there is
 no browser to find. Worth setting: they are the only tests that drive a real

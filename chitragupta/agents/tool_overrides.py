@@ -31,6 +31,7 @@ from datetime import UTC, datetime
 
 from ..config import get_settings
 from ..log import get_logger
+from .tool_snapshot import add_menu_column, catalog, recorded_menu
 
 log = get_logger(__name__)
 
@@ -38,7 +39,8 @@ _SCHEMA = """
 CREATE TABLE IF NOT EXISTS agent_tool_overrides (
     agent_id   TEXT PRIMARY KEY,
     tools      TEXT NOT NULL,          -- JSON array of tool names
-    updated_at TEXT NOT NULL
+    updated_at TEXT NOT NULL,
+    known      TEXT NOT NULL DEFAULT ''  -- JSON array: the catalog it chose from
 );
 """
 
@@ -53,6 +55,7 @@ class ToolOverrideStore:
         self._c = sqlite3.connect(str(path), check_same_thread=False)
         self._c.row_factory = sqlite3.Row
         self._c.executescript(_SCHEMA)
+        add_menu_column(self._c, "agent_tool_overrides")
 
     def get(self, agent_id: str) -> list[str] | None:
         """The user's tool list for this agent, or None if untouched.
@@ -73,6 +76,18 @@ class ToolOverrideStore:
             return None
         return [str(t) for t in value] if isinstance(value, list) else None
 
+    def menu(self, agent_id: str) -> list[str] | None:
+        """The tool catalog this agent's list was chosen from, or None.
+
+        None is a row written before the catalog was recorded — see
+        `tool_snapshot`, which is the only thing that knows what to do with
+        that. Empty is impossible: a save always has a catalog.
+        """
+        row = self._c.execute(
+            "SELECT known FROM agent_tool_overrides WHERE agent_id=?",
+            (agent_id,)).fetchone()
+        return recorded_menu(row)
+
     def set(self, agent_id: str, tools: list[str]) -> list[str]:
         """Record a tool list. Order is preserved; duplicates are not."""
         seen: dict[str, None] = {}
@@ -81,11 +96,16 @@ class ToolOverrideStore:
             if name:
                 seen.setdefault(name, None)
         clean = list(seen)
+        # The catalog goes in with the choice. Without it, a tool that ships
+        # tomorrow is indistinguishable from one the user turned down today,
+        # and the list is a snapshot nothing can ever reach again.
         self._c.execute(
-            "INSERT INTO agent_tool_overrides (agent_id, tools, updated_at) "
-            "VALUES (?,?,?) ON CONFLICT(agent_id) DO UPDATE SET "
-            "tools=excluded.tools, updated_at=excluded.updated_at",
-            (agent_id, json.dumps(clean), datetime.now(UTC).isoformat()))
+            "INSERT INTO agent_tool_overrides (agent_id, tools, updated_at, known) "
+            "VALUES (?,?,?,?) ON CONFLICT(agent_id) DO UPDATE SET "
+            "tools=excluded.tools, updated_at=excluded.updated_at, "
+            "known=excluded.known",
+            (agent_id, json.dumps(clean), datetime.now(UTC).isoformat(),
+             json.dumps(catalog())))
         self._c.commit()
         return clean
 
