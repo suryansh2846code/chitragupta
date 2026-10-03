@@ -1349,6 +1349,47 @@ textarea.ac-field-wide { resize: vertical; min-height: 58px; line-height: 1.45; 
 .profile-meter { font-size: 11.5px; color: var(--muted); }
 .profile-meter.is-full { color: var(--danger); }
 
+/* Retired agents, on the Agent Library. Their own shelf rather than cards in
+   the catalogue: nothing is built from one, it is brought back. */
+.lib-retired { margin: 0 0 28px; }
+.lib-retired-title { font-size: 15px; margin: 0 0 3px; }
+.lib-retired-sub { font-size: 12px; color: var(--muted); margin: 0 0 12px; }
+.lib-retired-grid { display: grid; gap: 8px;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); }
+.lib-retired-card { display: flex; align-items: center; gap: 11px;
+  padding: 10px 12px; border-radius: 12px; background: var(--panel-2);
+  border: 1px solid var(--border); }
+.lib-retired-orb { width: 40px; height: 40px; flex: none; }
+.lib-retired-meta { min-width: 0; flex: 1; }
+.lib-retired-name { font-size: 13.5px; font-weight: 600; }
+.lib-retired-role { font-size: 11.5px; color: var(--muted);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* The one control on the profile that cannot be taken back. */
+.is-danger { color: var(--danger); }
+.is-danger:hover { color: var(--danger); border-color: var(--danger); }
+
+
+/* The composer's autonomy pill and its menu. Beside the model pill, because
+   both are "how this turn will be answered" rather than what it is about. */
+.cmp-auto-wrap { position: relative; display: inline-flex; }
+.cmp-pill.is-free { color: var(--accent); }
+.cmp-pill.is-locked { color: var(--muted); }
+.cmp-auto-menu { position: absolute; bottom: calc(100% + 8px); left: 0;
+  z-index: 40; width: 300px; padding: 5px; border-radius: 13px;
+  background: var(--panel); border: 1px solid var(--border2);
+  box-shadow: 0 16px 40px rgba(0,0,0,.45); display: flex;
+  flex-direction: column; gap: 2px; }
+.cmp-auto-menu[hidden] { display: none; }
+.cmp-auto-row { display: flex; flex-direction: column; gap: 2px;
+  text-align: left; padding: 9px 11px; border-radius: 9px; background: none;
+  border: 1px solid transparent; }
+.cmp-auto-row:hover { background: rgba(255,255,255,.05); }
+.cmp-auto-row.is-on { background: var(--panel-2); border-color: var(--border); }
+.cmp-auto-name { font-size: 13px; font-weight: 600; color: var(--text); }
+.cmp-auto-blurb { font-size: 11.5px; color: var(--muted); line-height: 1.45; }
+
+
 /* ── the persona picker ─────────────────────────────────────────────────
    Chips rather than a blank box: the question is "which of these", and a
    textarea asking for a system prompt is a question most people decline. */

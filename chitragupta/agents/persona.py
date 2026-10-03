@@ -1,21 +1,20 @@
 """How an agent works, chosen rather than written.
 
-`persona.md` is the file an agent runs on, and it still is — nothing about the
-prompt changed. What changed is how it gets written: an empty box asking a
-non-technical person to compose a system prompt is a box most people close
-again, so the choices that actually matter are offered as choices and the file
-is **rendered** from them.
+An empty box asking a non-technical person to compose a system prompt is a box
+most people close again, so the choices that actually matter are offered as
+choices.
 
-**One direction, and it is stated on the screen.** The selections are the
-source; `persona.md` is what they produce. Saving re-renders the file, so prose
-typed into it by hand outside the app is replaced the next time somebody
-presses Save. That is the cost of a picker, and the honest way to pay it is to
-say so rather than to try to parse sentences back into chips — which would be a
-parser a user can break by typing, the thing `profile_files` exists to avoid.
-The way to keep hand-written prose is the free-text field, which is part of the
-document and survives every re-render. An agent that already had a hand-written
-`persona.md` and no selections gets it back as that field's starting value, so
-the picker never silently eats what somebody wrote.
+**These choices are ADDED to an agent's instructions, never written over
+them.** The first version rendered them into `persona.md`, which is an
+*override* — so ticking one chip replaced Chief of Staff's entire brief with
+the words "Be witty." The agent kept every tool and lost its job, and nothing
+on screen said so. `prompt_block` is what fixed it: the persona is a block of
+the system prompt, composed after the agent's own instructions.
+
+That is the distinction worth keeping. `persona.md` answers **what this agent
+is for**, and replacing it is a deliberate act somebody takes by editing a
+file. These answer **how it should work**, which composes with the first
+instead of erasing it.
 
 **Autonomy is not a second permission system.** `/CLAUDE.md` is explicit that
 there is one gate and every side effect goes through it. So the level here does
@@ -40,7 +39,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from ..config import get_settings
-from ..log import get_logger, suppressed
+from ..log import get_logger
 
 log = get_logger(__name__)
 
@@ -348,27 +347,26 @@ def set_persona(agent_id: str, *, traits: Any = None, communication: Any = None,
          json.dumps(think_v), level, extra_v, now))
     conn.commit()
 
-    _write_document(agent_id, choices)
     apply_autonomy(agent_id, level)
     return {**choices, "updated_at": now}
 
 
-def _write_document(agent_id: str, choices: dict[str, Any]) -> None:
-    """Render and store `persona.md`, or clear it when nothing was chosen.
+def prompt_block(agent_id: str) -> str:
+    """The chosen persona as a block of the system prompt, or "" if none.
 
-    Clearing means *deleting* rather than writing an empty file: no file is
-    "use the instructions we ship", and an empty one is "the user deliberately
-    cleared them". Writing a blank document for somebody who simply unticked
-    their last chip would silently strip the agent of its shipped prompt.
+    **Added to the agent's instructions, never written over them.** The first
+    version rendered this into `persona.md`, which is an *override* — so
+    ticking one chip replaced Chief of Staff's entire brief with the words "Be
+    witty." The agent kept its tools and lost its job, and nothing on screen
+    said so.
+
+    Which is the whole distinction: `persona.md` answers "what is this agent
+    for", and replacing it is a deliberate act. These choices answer "how
+    should it work", which is a different question and has to compose with the
+    first rather than erase it.
     """
-    from . import profile_files
-
-    text = render(choices)
-    with suppressed("rewriting persona.md from the persona choices"):
-        if text.strip():
-            profile_files.write(agent_id, profile_files.PERSONA, text)
-        else:
-            profile_files.clear(agent_id, profile_files.PERSONA)
+    choices = get(agent_id)
+    return render(choices) if choices else ""
 
 
 def apply_autonomy(agent_id: str, level: str) -> None:

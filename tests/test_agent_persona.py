@@ -1,10 +1,11 @@
 """Choosing how an agent works, instead of writing a system prompt.
 
 The picker is the easy half. What is worth testing is the seam underneath it:
-the choices are the source and `persona.md` is what they produce, so every way
-that could silently destroy what somebody had — an empty selection rendering an
-empty document over a shipped preset, a re-render eating hand-written prose, a
-level that claims more than the gate will give — is a case below.
+the choices are ADDED to an agent's instructions and must never replace them,
+an empty selection must add nothing at all, and a level must not claim more
+than the gate will give. The first version got the first of those wrong —
+rendering into `persona.md`, which is an override, so one chip erased a
+preset's whole brief — and the case for it is the first test below.
 """
 from __future__ import annotations
 
@@ -54,13 +55,23 @@ def test_every_option_has_a_label_and_a_sentence_fragment():
 
 # ── what gets written ──────────────────────────────────────────────────────
 
-def test_choices_become_the_agents_instructions():
+def test_choices_are_added_to_the_agents_instructions():
+    """ADDED, not written over. These were rendered into `persona.md` at first
+    — an override — so ticking one chip replaced Chief of Staff's whole brief
+    with "Be witty.", and the agent kept every tool and lost its job."""
+    shipped = presets.PRESETS[AGENT].system_prompt
     persona.set_persona(AGENT, traits=["Supportive", "Warm"],
                         communication=["Concise"], thinking=["First principles"])
-    text = pf.read(AGENT, pf.PERSONA)
-    assert "Be supportive and warm." in text
-    assert "keep answers short" in text
-    assert "reason from first principles" in text
+
+    agent = presets.get_agent(AGENT)
+    assert agent.system_prompt == shipped, "the shipped instructions were replaced"
+    assert pf.read(AGENT, pf.PERSONA) is None, "persona.md was written over"
+
+    msg = agent.system_message()
+    assert shipped[:60] in msg, "the agent lost its job"
+    assert "Be supportive and warm." in msg
+    assert "keep answers short" in msg
+    assert "reason from first principles" in msg
 
 
 def test_the_instructions_reach_the_agent():
@@ -68,40 +79,34 @@ def test_the_instructions_reach_the_agent():
     assert "witty" in presets.get_agent(AGENT).system_message()
 
 
-def test_choosing_nothing_leaves_the_shipped_instructions_alone():
-    """The failure this exists to stop: a persona row holding nothing but the
-    default autonomy would render a document and replace a preset's own prompt
-    with three lines about asking first."""
-    shipped = presets.PRESETS[AGENT].system_prompt
+def test_choosing_nothing_adds_nothing_to_the_prompt():
+    """An empty persona must not spend prefix tokens on every turn saying the
+    agent behaves the way it already behaves."""
     persona.set_persona(AGENT, traits=[], communication=[], thinking=[],
                         autonomy="ask_first", extra="")
-    assert pf.read(AGENT, pf.PERSONA) is None
-    assert presets.get_agent(AGENT).system_prompt == shipped
+    assert persona.prompt_block(AGENT) == ""
 
 
-def test_clearing_every_choice_hands_the_agent_back_its_shipped_prompt():
-    shipped = presets.PRESETS[AGENT].system_prompt
+def test_clearing_every_choice_takes_the_persona_back_out_of_the_prompt():
     persona.set_persona(AGENT, traits=["Witty"])
-    assert pf.read(AGENT, pf.PERSONA) is not None
+    assert "witty" in presets.get_agent(AGENT).system_message()
     persona.set_persona(AGENT, traits=[])
-    assert presets.get_agent(AGENT).system_prompt == shipped
+    assert "Be witty" not in presets.get_agent(AGENT).system_message()
 
 
-def test_free_text_survives_every_re_render():
-    """The one place hand-written prose is safe, because the file itself is
-    rewritten from the choices on every save."""
+def test_free_text_survives_a_later_save():
     persona.set_persona(AGENT, extra="Always sign off as Suryansh.")
     persona.set_persona(AGENT, traits=["Calm"])
-    text = pf.read(AGENT, pf.PERSONA)
-    assert "Always sign off as Suryansh." in text
-    assert "calm" in text
+    block = persona.prompt_block(AGENT)
+    assert "Always sign off as Suryansh." in block
+    assert "calm" in block
 
 
 def test_the_users_own_words_come_last():
     """Anything they wrote outranks a sentence generated from a chip."""
     persona.set_persona(AGENT, traits=["Calm"], extra="Never use bullet points.")
-    text = pf.read(AGENT, pf.PERSONA)
-    assert text.index("Never use bullet points.") > text.index("calm")
+    block = persona.prompt_block(AGENT)
+    assert block.index("Never use bullet points.") > block.index("calm")
 
 
 def test_one_field_at_a_time_leaves_the_others_alone():
@@ -114,13 +119,13 @@ def test_one_field_at_a_time_leaves_the_others_alone():
     assert stored["communication"] == ["Concise"]
 
 
-def test_the_order_chips_were_pressed_in_does_not_change_the_document():
-    """Otherwise a save that chose the same things rewrites the file and the
-    agent's cached prefix for nothing."""
+def test_the_order_chips_were_pressed_in_does_not_change_the_prompt():
+    """Otherwise choosing the same things twice changes the cached prefix and
+    pays for a cache miss that bought nothing."""
     persona.set_persona(AGENT, traits=["Warm", "Supportive"])
-    first = pf.read(AGENT, pf.PERSONA)
+    first = persona.prompt_block(AGENT)
     persona.set_persona(AGENT, traits=["Supportive", "Warm"])
-    assert pf.read(AGENT, pf.PERSONA) == first
+    assert persona.prompt_block(AGENT) == first
 
 
 # ── what it refuses ────────────────────────────────────────────────────────

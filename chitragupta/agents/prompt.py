@@ -21,6 +21,7 @@ from __future__ import annotations
 from typing import Any
 
 from ..log import suppressed
+from . import persona as persona_choices
 from . import profile_files
 
 #: Every action an agent can propose. `Agent.actions` is checked against this,
@@ -1220,6 +1221,15 @@ def build(*, name: str, role: str, system_prompt: str,
     notes = _notes(agent_id)
     if notes:
         parts.append(notes)
+
+    # How the user asked this agent to work — chosen on the Persona tab.
+    # **After the agent's own instructions, never instead of them.** These were
+    # rendered into `persona.md` at first, which is an override, so one chip
+    # replaced a preset's whole brief with "Be witty." A persona says how to do
+    # the job; the instructions say what the job is.
+    chosen = persona_choices.prompt_block(agent_id) if agent_id else ""
+    if chosen:
+        parts.append(chosen)
 
     allowed = [a for a in (actions or []) if a in KNOWN_ACTIONS]
     # An agent is only told what it can do — the rule this module exists for.

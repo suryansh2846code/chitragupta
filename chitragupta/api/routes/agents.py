@@ -428,18 +428,19 @@ def get_agent_persona(agent_id: str):
     options exist and which are on, and two requests for that is a frame where
     it knows half.
 
-    `extra` falls back to whatever is in `persona.md` when there are no choices
-    yet — an agent somebody wrote instructions for by hand must not have them
-    vanish the first time they open the picker.
+    No choices yet is an empty picker, not a seeded one. `persona.md` is NOT
+    read in here: it answers "what is this agent for" and these answer "how
+    should it work", and they are composed in the prompt rather than being two
+    views of one string — copying one into the other would put a hand-written
+    brief into the free-text box and then send it a second time.
     """
-    from ...agents import persona, profile_files
+    from ...agents import persona
     _require_agent(agent_id)
     chosen = persona.get(agent_id)
     if chosen is None:
-        written = profile_files.read(agent_id, profile_files.PERSONA)
         chosen = {"traits": [], "communication": [], "thinking": [],
                   "autonomy": persona.DEFAULT_AUTONOMY,
-                  "extra": (written or "").strip(), "updated_at": None}
+                  "extra": "", "updated_at": None}
     return {"agent_id": agent_id, "persona": chosen,
             "vocabulary": persona.vocabulary()}
 
@@ -662,11 +663,60 @@ def create_agent(body: NewAgent):
 
 @router.delete("/api/agents/custom/{agent_id}")
 def delete_agent(agent_id: str):
+    """Destroy it. Its memory, its persona and its conversation go with it.
+
+    The reversible half is `/retire` below. A preset has had both since the
+    roster existed — leaving the roster is retiring — and a custom agent had
+    only this one, so "I am not using this right now" and "erase everything it
+    learned" were the same button.
+    """
     from ...agents.custom import get_custom_store
     if not get_custom_store().delete(agent_id):
         raise HTTPException(404, "not a custom agent")
     AgentMemory().clear(agent_id)
     return {"deleted": agent_id}
+
+
+@router.post("/api/agents/{agent_id}/reset")
+def reset_agent(agent_id: str):
+    """Start an agent we ship again from scratch.
+
+    There is no row to destroy and nothing to lose for ever — the template is
+    in the Library whatever the user does. So "delete" means this for a shipped
+    agent: forget its conversation, its memory, its persona, its name, its
+    face, its model and its tools, and take it off the team. Adding it again
+    gives a genuinely new agent rather than the old one wearing a fresh coat.
+
+    Refused for an agent the user built: that one has a row, and destroying it
+    is `DELETE /api/agents/custom/{id}` — which cannot be undone and must not
+    be reachable by a call that reads as "reset".
+    """
+    from ...agents import erase
+    from ...agents.grants import is_custom
+    _require_agent(agent_id)
+    if is_custom(agent_id):
+        raise HTTPException(
+            400, "That is an agent you built — deleting it is permanent.")
+    erase.reset_shipped(agent_id)
+    return {"reset": agent_id}
+
+
+@router.post("/api/agents/custom/{agent_id}/retire")
+def retire_agent(agent_id: str):
+    """Put it away. Nothing is erased and the Library can bring it back."""
+    from ...agents.custom import get_custom_store
+    if not get_custom_store().retire(agent_id):
+        raise HTTPException(404, "not a custom agent, or already retired")
+    return {"retired": agent_id}
+
+
+@router.post("/api/agents/custom/{agent_id}/restore")
+def restore_agent(agent_id: str):
+    """Bring it back, with everything it had."""
+    from ...agents.custom import get_custom_store
+    if not get_custom_store().restore(agent_id):
+        raise HTTPException(404, "not a retired agent")
+    return {"restored": agent_id}
 
 
 def _turn_images(body: ChatIn) -> list:
@@ -698,9 +748,15 @@ def agent_library():
     `missing` per template is what keeps the library honest: a card can say
     "connect Gmail first" rather than offering an agent that will disappoint.
     """
+    from ...agents.custom import get_custom_store
     from ...agents.library import CATEGORIES, describe
 
-    return {"categories": list(CATEGORIES), "templates": describe()}
+    # Agents the user built and then retired. They are not templates — nothing
+    # can be built *from* one — so they are their own shelf rather than being
+    # mixed into the catalogue, and restoring one returns the agent that was
+    # put away rather than making a fresh copy of it.
+    return {"categories": list(CATEGORIES), "templates": describe(),
+            "retired": get_custom_store().retired()}
 
 
 @router.post("/api/agents/roster")

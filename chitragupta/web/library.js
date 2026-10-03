@@ -74,7 +74,57 @@ function libMatches(t) {
   return hay.includes(libQuery);
 }
 
+/**
+ * The agents the user built and then retired.
+ *
+ * Not templates — nothing can be built *from* one — so they are their own
+ * shelf rather than cards mixed into the catalogue, and the button restores
+ * the agent that was put away rather than making a fresh copy of it. That
+ * distinction is the whole reason retiring is not deleting: the memory, the
+ * persona and the conversation are still there and come back with it.
+ */
+function renderRetired() {
+  const sec = $("#libRetiredSec");
+  const box = $("#libRetired");
+  if (!sec || !box) return;
+  const rows = LIB.retired || [];
+  sec.hidden = rows.length === 0;
+  box.textContent = "";
+  for (const r of rows) {
+    const card = document.createElement("div");
+    card.className = "lib-retired-card";
+
+    const face = document.createElement("span");
+    face.className = "lib-retired-orb";
+    card.appendChild(face);
+    paintAvatar(face, r.id, { size: 40, title: r.name });
+
+    const meta = document.createElement("div");
+    meta.className = "lib-retired-meta";
+    meta.innerHTML = `<div class="lib-retired-name">${esc(r.name)}</div>
+                      <div class="lib-retired-role">${esc(r.role || "")}</div>`;
+    card.appendChild(meta);
+
+    const btn = document.createElement("button");
+    btn.className = "tiny";
+    btn.textContent = "Bring it back";
+    btn.onclick = async () => {
+      btn.disabled = true;
+      try {
+        await api(`/api/agents/custom/${encodeURIComponent(r.id)}/restore`,
+                  { method: "POST" });
+      } catch (e) { toast(String(e)); btn.disabled = false; return; }
+      toast(`${r.name} is back on your team`);
+      await loadLibrary();
+      loadAgents();
+    };
+    card.appendChild(btn);
+    box.appendChild(card);
+  }
+}
+
 function renderLibrary() {
+  renderRetired();
   const grid = $("#libGrid");
   if (!grid) return;
   const shown = LIB.templates.filter(libMatches);
