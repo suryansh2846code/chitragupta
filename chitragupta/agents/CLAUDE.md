@@ -124,6 +124,30 @@ permissions — and `library.py`, which is what Chitragupta *offers*.
   site-packages back on the path, which would hand a snippet every dependency
   the app has, including the ones that know where the credentials live.
 - Every new capability gets a case in `evaluation.py`.
+- **An agent's prose lives in two files, and `profile_files.py` is the only
+  thing that touches them.** `persona.md` is its instructions and `memory.md`
+  is what it has learned about doing this job for this user. Both are
+  **overrides**, the shape `tool_overrides` already uses: no file means the
+  shipped preset, so reset-to-default is deleting one and a later release can
+  still improve an agent the user has edited. A custom agent is born with its
+  `persona.md` written, so the `custom_agents.system_prompt` column only ever
+  answers for agents that predate it — **one live copy of one piece of prose**.
+  Three things are load-bearing and each is a test: the file name is matched
+  against a closed set and **never sanitised** (a cleaned-up name out of a URL
+  is a traversal with extra steps, and `secrets.json` is two directories up);
+  **`None` is not `""`** (no file means the shipped default, an empty file
+  means the user cleared it, and collapsing them restores a preset somebody
+  deliberately emptied); and **deleting an agent deletes its directory**,
+  because ids are slugs and the collision is therefore deterministic — notes
+  are prose the next agent with that name would act on.
+- **`memory.md` rides in the system message, so it is capped.** It is the same
+  on every round of a turn, which is why it belongs in the cached prefix rather
+  than beside recall — and why an uncapped one is a turn that costs more every
+  time it runs. The block is **absent, never blank**: an agent shown an empty
+  heading fills it. It says it is not facts about the user (those are the
+  brain's, shared and versioned), that the user can edit or delete any of it,
+  and that **a live instruction outranks a written note** — without that last
+  sentence the model has two instructions and no rule for choosing.
 
 Providers and entitlements belong to `../models/`; recall order belongs to
 `../brain/`. Rules: [`/CLAUDE.md`](../../CLAUDE.md).

@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import dataclasses
 
-from . import roster
+from . import profile_files, roster
 from .agent import Agent
 from .agent_models import get_agent_model
 from .library import BY_ID, rostered_agents
@@ -43,6 +43,15 @@ def _with_user_edits(agent: Agent) -> Agent:
     tools = get_tool_overrides().get(agent.id)
     if tools is not None:
         agent = dataclasses.replace(agent, tools=tools)
+
+    # The same shape one line up, for prose instead of a list: no file means
+    # the shipped instructions, a file means the user's. `""` is a real answer
+    # — "this agent gets no instructions of its own" — so the test is against
+    # None rather than falsiness, or clearing a persona would silently restore
+    # the preset the user had just emptied.
+    persona = profile_files.read(agent.id, profile_files.PERSONA)
+    if persona is not None:
+        agent = dataclasses.replace(agent, system_prompt=persona)
     return agent
 
 

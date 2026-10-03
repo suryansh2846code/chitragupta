@@ -110,6 +110,64 @@ newly aged out is folded in, so a long conversation does not re-summarise itself
 on every message. The writer follows the effort level, and a failed summary call
 falls back to the heuristic rather than failing the turn.
 
+## The two files an agent keeps
+
+Everything else an agent carries is structured and lives in `agents.db` — a
+model binding, an avatar, a tool override. Two things are not: **what it is**
+and **what it has learned**. Those are prose a person writes and reads, so they
+are files, in the agent's own directory:
+
+```
+~/Library/Chitragupta/agents/<agent_id>/persona.md
+~/Library/Chitragupta/agents/<agent_id>/memory.md
+```
+
+`agents/profile_files.py` owns both and is a **leaf** — `prompt.py` and
+`presets.py` both read it, so it may import nothing above `config` and `log`.
+
+**Both are overrides**, the shape `tool_overrides.py` established. No file means
+the shipped preset; a file means the user's version; deleting one is
+reset-to-default, so nothing has to remember what the default used to be and a
+later release can still improve an agent somebody has edited. `None` and `""`
+are therefore different answers and stay distinguishable: an empty persona is
+"this agent gets no instructions of its own", and reading it as "no file" would
+restore the preset the user had just cleared.
+
+**One live copy.** A custom agent writes `persona.md` at creation, so
+`custom_agents.system_prompt` only ever answers for agents made before the
+files existed. Two copies of one piece of prose is the drift trap, and the copy
+that drifts is always the one being read.
+
+**Deleting an agent deletes its directory.** Ids are slugs of the name
+(`custom._slug`), so deleting "Chotu" and building another "Chotu" lands on the
+same id — the collision is deterministic, not theoretical. A leftover
+`memory.md` is not a stale setting; it is standing instructions the new agent
+reads and acts on.
+
+### Where `memory.md` reaches the model
+
+In the system message, via `prompt._notes` — which is to say **inside the
+cached prefix**. The notes are identical on every round of a turn, so they are
+marked and cached rather than re-billed; that is also why `profile_files.LIMITS`
+caps the file, because an uncapped one is a turn that costs more every time it
+runs. A write past the cap is refused with a sentence meant for a person; a file
+someone edited past it on disk is cut on a line boundary and the agent is told
+it only has part of them.
+
+The block is **absent when the file is empty, never blank** — an agent shown a
+heading with nothing under it fills the gap. What it says is as load-bearing as
+where it sits:
+
+- **not facts about the user's life.** Those are the brain's: shared between
+  agents, versioned, superseded, searchable. A note here is none of those, so an
+  agent that files *"their sister is Dana"* in its own notes has put it where no
+  other agent can find it and nothing will ever correct it.
+- **the user can read, edit or delete any of them** — true, and an agent that
+  thinks the notes are its own defends them.
+- **a live instruction outranks a written note.** A standing note and something
+  the user says this turn will contradict each other eventually, and without a
+  stated rule the model picks whichever it read last.
+
 ## Delegation
 
 `ask_agent(agent_id, question)` lets any agent put a focused question to any

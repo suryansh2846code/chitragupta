@@ -10,6 +10,7 @@ from datetime import UTC, datetime
 
 from ..config import get_settings
 from ..log import suppressed
+from . import profile_files
 from .agent import Agent
 from .prompt import KNOWN_ACTIONS
 
@@ -86,6 +87,16 @@ class CustomAgentStore:
              json.dumps(recall_sources or []),
              datetime.now(UTC).isoformat()))
         self._c.commit()
+        # Born file-backed. The column above is still written because an agent
+        # is a row and always has been, but from here on `persona.md` is what
+        # `presets._with_user_edits` reads — so there is one live copy of this
+        # prose and the column only ever answers for agents made before it.
+        # Nothing is written when there are no instructions: an empty file
+        # means "the user cleared it", which is a different thing from "it
+        # never had any".
+        if system_prompt.strip():
+            with suppressed("writing a new agent's persona.md"):
+                profile_files.write(aid, profile_files.PERSONA, system_prompt)
         return self.get(aid)
 
     def delete(self, agent_id: str) -> bool:
@@ -102,6 +113,11 @@ class CustomAgentStore:
             # it — a tool list from a deleted agent, silently.
             from .tool_overrides import get_tool_overrides
             get_tool_overrides().clear(agent_id)
+        # Same reasoning as the override above, one step worse: a leftover
+        # `memory.md` is not a stale setting, it is prose the next agent with
+        # this name reads and acts on — standing instructions for a job it was
+        # never given.
+        profile_files.forget(agent_id)
         cur = self._c.execute("DELETE FROM custom_agents WHERE id=?", (agent_id,))
         self._c.commit()
         return cur.rowcount > 0

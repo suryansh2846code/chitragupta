@@ -5,6 +5,7 @@
   "DELETE /api/agents/roster/{template_id}",
   "DELETE /api/agents/{agent_id}/avatar",
   "DELETE /api/agents/{agent_id}/connectors/{connector}",
+  "DELETE /api/agents/{agent_id}/files/{name}",
   "DELETE /api/agents/{agent_id}/model",
   "DELETE /api/brain/memories/{memory_id}",
   "DELETE /api/browser/sites/{host}",
@@ -34,6 +35,8 @@
   "GET /api/agents/{agent_id}/avatar",
   "GET /api/agents/{agent_id}/cards",
   "GET /api/agents/{agent_id}/connectors",
+  "GET /api/agents/{agent_id}/files",
+  "GET /api/agents/{agent_id}/files/{name}",
   "GET /api/agents/{agent_id}/history",
   "GET /api/agents/{agent_id}/model",
   "GET /api/agents/{agent_id}/tools",
@@ -203,5 +206,6 @@
   "POST /api/usage/reset",
   "POST /api/webhooks/{provider}",
   "PUT /api/agents/{agent_id}/avatar",
+  "PUT /api/agents/{agent_id}/files/{name}",
   "PUT /api/agents/{agent_id}/model"
 ]

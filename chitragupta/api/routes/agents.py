@@ -325,6 +325,86 @@ def clear_agent_avatar_endpoint(agent_id: str):
     return {"cleared": clear_agent_avatar(agent_id)}
 
 
+# ── the two files an agent keeps ──────────────────────────────────────────
+# `persona.md` and `memory.md`. Everything about *what* they are and *why* they
+# are files is in `agents/profile_files.py`; this is only the HTTP surface.
+#
+# **The file name never becomes a path here.** It is handed to `profile_files`
+# whole and matched against a closed set there, because a name that arrives
+# from a URL and gets cleaned up on the way to the disk is a traversal with
+# extra steps — and `secrets.json` sits two directories above these.
+
+
+def _require_agent(agent_id: str) -> None:
+    """404 for an id nobody has. Without it the files endpoints would happily
+    create a directory for an agent that does not exist."""
+    from ...agents.presets import get_agent
+    try:
+        get_agent(agent_id)
+    except KeyError:
+        raise HTTPException(404, f"unknown agent '{agent_id}'") from None
+
+
+class AgentFileIn(BaseModel):
+    #: The whole file. A replace, not a patch: these are short documents a
+    #: person edits in one box, and a partial update would need a merge rule
+    #: that nothing on either side has.
+    text: str = ""
+
+
+@router.get("/api/agents/{agent_id}/files")
+def agent_files(agent_id: str):
+    """What this agent keeps, without opening either file.
+
+    One call, so the profile can show both sizes and dates before deciding
+    whether to fetch anything.
+    """
+    from ...agents import profile_files
+    _require_agent(agent_id)
+    return {"agent_id": agent_id,
+            "files": [profile_files.info(agent_id, name)
+                      for name in (profile_files.PERSONA, profile_files.MEMORY)]}
+
+
+@router.get("/api/agents/{agent_id}/files/{name}")
+def get_agent_file(agent_id: str, name: str):
+    from ...agents import profile_files
+    _require_agent(agent_id)
+    try:
+        text = profile_files.read(agent_id, name)
+        meta = profile_files.info(agent_id, name)
+    except profile_files.FileRejectedError as exc:
+        raise HTTPException(400, str(exc)) from None
+    # `null` rather than a 404, for the reason the avatar endpoint gives: "this
+    # agent has no persona of its own, use the shipped one" is the ordinary
+    # answer, and a 404 would make every caller treat it as a failure.
+    return {**meta, "agent_id": agent_id, "text": text}
+
+
+@router.put("/api/agents/{agent_id}/files/{name}")
+def set_agent_file(agent_id: str, name: str, body: AgentFileIn):
+    from ...agents import profile_files
+    _require_agent(agent_id)
+    try:
+        meta = profile_files.write(agent_id, name, body.text)
+    except profile_files.FileRejectedError as exc:
+        # Written to be read by the person who pressed Save.
+        raise HTTPException(400, str(exc)) from None
+    return {**meta, "agent_id": agent_id}
+
+
+@router.delete("/api/agents/{agent_id}/files/{name}")
+def clear_agent_file(agent_id: str, name: str):
+    """For `persona.md` this is reset-to-shipped; for `memory.md` it is forget."""
+    from ...agents import profile_files
+    _require_agent(agent_id)
+    try:
+        cleared = profile_files.clear(agent_id, name)
+    except profile_files.FileRejectedError as exc:
+        raise HTTPException(400, str(exc)) from None
+    return {"agent_id": agent_id, "name": name, "cleared": cleared}
+
+
 class NewAgent(BaseModel):
     name: str
     role: str = ""

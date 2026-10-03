@@ -21,6 +21,7 @@ from __future__ import annotations
 from typing import Any
 
 from ..log import suppressed
+from . import profile_files
 
 #: Every action an agent can propose. `Agent.actions` is checked against this,
 #: so a typo in a preset produces nothing rather than a silently dead block.
@@ -188,6 +189,59 @@ _BRAIN_ONLY = (
     "If something truly isn't in the recalled context, say it's not synced yet "
     "and offer the Connectors panel."
 )
+
+#: What the agent has learned about doing *this job* for *this user* —
+#: `memory.md`, which the user can open, edit and delete in the agent's profile.
+#:
+#: Three sentences, and each is load-bearing.
+#:
+#: **"not facts about their life"** keeps this from becoming a second brain.
+#: The brain is shared, versioned and searchable, and its claims supersede; a
+#: note here is none of those things. An agent that files "their sister is
+#: Dana" in its own notes has put it where no other agent can find it and where
+#: nothing will ever correct it.
+#:
+#: **"the user can read, edit or delete any of them"** is the honest half. These
+#: notes are written without anybody approving each one, so the agent must know
+#: they are the user's to take away — an agent that treats them as its own
+#: defends them.
+#:
+#: **"what they say now wins"** is the one that stops the obvious failure. A
+#: standing note and a live instruction will contradict each other eventually,
+#: and without a stated rule the model picks whichever it read more recently.
+_NOTES = (
+    "NOTES YOU KEEP ABOUT THIS JOB. Your own working notes on how this user "
+    "wants your work done — not facts about their life, which live in the brain "
+    "and are reached with your brain tools. The user can read, edit or delete "
+    "any of them in your profile. Follow them unless the user says otherwise in "
+    "this conversation: what they say now wins over anything written here."
+)
+
+#: Said only when the file on disk is longer than the agent can carry. A write
+#: through the app is refused past the cap, so this is a file somebody edited
+#: outside it — and an agent acting on two thirds of its instructions while
+#: believing it has all of them is the failure worth one extra sentence.
+_NOTES_CUT = ("Only the first part of your notes fits here — the rest is in "
+              "your profile, and you have not been shown it.")
+
+
+def _notes(agent_id: str) -> str:
+    """This agent's notes, or "" when it has none.
+
+    Absent rather than blank when empty: an agent shown a heading with nothing
+    under it fills the gap, which is how a model ends up citing a note that
+    does not exist.
+    """
+    if not agent_id:
+        return ""
+    text, truncated = profile_files.for_prompt(agent_id, profile_files.MEMORY)
+    if not text:
+        return ""
+    parts = [_NOTES, text]
+    if truncated:
+        parts.append(_NOTES_CUT)
+    return "\n\n".join(parts)
+
 
 _RECALL = (
     "Whenever the task touches the user's own context, rely on the brain FIRST "
@@ -1141,6 +1195,20 @@ def build(*, name: str, role: str, system_prompt: str,
     live = _connector_reads(tools)
     parts.append(live or _BRAIN_ONLY)
     parts += [_RECALL, _HONESTY, _CORRECTIONS]
+
+    # After the brain and recall blocks, never before them: the notes say they
+    # are *not* facts about the user, and that sentence is nonsense to an agent
+    # that has not yet been told where facts about the user live. Before the
+    # action protocols, because a standing note like "replies stay short" is
+    # about how to carry those out.
+    #
+    # This sits in the system message, which is the stable prefix `caching.py`
+    # marks — the notes are the same on every round of a turn, so they are
+    # cached rather than re-billed. That is the whole reason they are capped:
+    # see `profile_files.LIMITS`.
+    notes = _notes(agent_id)
+    if notes:
+        parts.append(notes)
 
     allowed = [a for a in (actions or []) if a in KNOWN_ACTIONS]
     # An agent is only told what it can do — the rule this module exists for.
