@@ -1886,14 +1886,9 @@ textarea.ac-field-wide { resize: vertical; min-height: 58px; line-height: 1.45; 
 .at-reach { display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
   margin-top: 6px; }
 .at-reach-lb { font-size: 11.5px; color: var(--faint); }
-.at-reach.is-none { font-size: 11.5px; color: var(--faint); line-height: 1.45;
-  max-width: 56ch; display: block; }
-/* Adding one, on the card. It was a button to another screen holding the same
-   list — the same trip under a better label — and the card already knows which
-   list this app is judged against, so there is nothing to go and find. */
-.at-reach-add { display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
-  margin-top: 8px; }
-.at-reach-add .set-input { flex: 1; min-width: 20ch; max-width: 34ch; }
+/* No empty state and no box. A grant is made from the approval it would have
+   cleared, where the exact value is known; this row only ever shows what is
+   already standing, and shows nothing when nothing is. */
 /* The count for a group somebody part-granted with the per-tool rows. Tabular
    so "3 of 7" and "11 of 13" do not shift the switch beside them. */
 .at-part { flex: none; font-size: 12px; color: var(--faint);

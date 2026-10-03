@@ -354,70 +354,43 @@ function tierRow(card, bucket, items, why) {
 //: toggle. Saying nothing is what it used to do, and an app showing only "Read"
 //: reads as an app that cannot do anything else. It can; it asks first.
 //:
-//: **And it answers "who may it reach" here, rather than sending somebody to
-//: find out.** The first version of this row had a *Who it may reach* button
-//: that opened the global allow-list on the Actions screen. From a connector
-//: card that was a dead end twice over: the list holds every app's grants
-//: mixed together, and the only thing it can *add* is an email address — a
-//: connector key is `server:tool@scope`, minted by the call it describes and
-//: never typed. So the user pressed a button about DeepWiki, landed on a
-//: screen about email, and had nothing to do there. That is the exact failure
-//: `Group.more_screen` exists to stop, rebuilt by hand.
+//: **And it says what the standing grants actually change, which is nothing
+//: you will see in a conversation.** `approvals.run_or_queue` is "the seam
+//: every *unattended* action goes through — interactive chat does not come
+//: this way", so the list only decides what an automation may do with nobody
+//: watching. The row used to read "always comes to you as a card you confirm"
+//: and then offer a box that undoes it: both sentences true, of different
+//: situations, and neither saying which.
 //:
-//: The grants for THIS app are shown in the row instead, each with the one
-//: control that makes sense for a standing permission: take it back.
-//:
-//: **And a new one is added in the row too.** The first fix replaced the dead
-//: button with *Allow someone new*, which still opened the Actions screen —
-//: the same trip to the same list, under a better label. A box on the card is
-//: the whole interaction: the card already knows which list this app is judged
-//: against, so there is nothing to go and find. Offered only where a person
-//: could name the next entry in advance; a connector key is minted by the call
-//: it describes, so there is no box for one.
+//: **Read-only, and empty draws nothing.** A grant is made from the approval
+//: it would have cleared — the queue offers it there with the exact value the
+//: gate reads, at the moment somebody learns they want one. A box here asked
+//: people to predict that, and wrote to the same global list from a second
+//: place. "Nothing runs on its own yet" over an empty row was a sentence every
+//: user read once, on a screen about something else.
 function askRow(card, draft) {
   const ask = card.ask;
   if (!ask || !ask.label) return "";
   const held = reachFor(card);
-  // `null` is "not asked yet" and `[]` is "none", exactly as the strips below
-  // treat theirs: claiming nothing is allowed before the answer is back would
-  // be wrong for the first few hundred milliseconds of every open.
-  const grants = held === null ? "" : held.length
+  // `null` is "not asked yet" and `[]` is "none" — and here they draw the
+  // same thing, because there is nothing worth saying about an empty list on
+  // a screen that cannot change it.
+  const grants = Array.isArray(held) && held.length
     ? `<span class="at-reach">
-         <span class="at-reach-lb">Runs without asking:</span>
+         <span class="at-reach-lb">Runs unattended for, across every agent:</span>
          ${held.map((g) => `<span class="at-chip">${esc(g.label || g.value)}
            ${draft ? "" : `<button type="button" class="at-chip-x"
              data-reach-off="${esc(g.value)}" data-reach-kind="${esc(g.kind || "")}"
              aria-label="Ask again before reaching ${esc(g.label || g.value)}"
              >×</button>`}</span>`).join("")}
        </span>`
-    : `<span class="at-reach is-none">Nothing runs on its own yet — each one
-         asks the first time, and you allow it from that card.</span>`;
-  // Only where a person could type the next one. A box on a connector card
-  // would be a box for a key nobody can know in advance.
-  const add = !draft && ask.addable ? `
-    <span class="at-reach-add">
-      <input class="set-input" type="${ask.kind === "email_recipient" ? "email" : "text"}"
-             data-reach-in="${esc(card.key)}" autocomplete="off"
-             placeholder="${esc(addHint(ask.kind))}"
-             aria-label="Someone ${esc(card.name)} may reach without asking" />
-      <button type="button" class="tiny" data-reach-add="${esc(ask.kind)}"
-        data-reach-for="${esc(card.key)}">Allow</button>
-    </span>
-    <span class="at-err" data-reach-err="${esc(card.key)}" hidden></span>` : "";
+    : "";
   return `<div class="at-bulk is-ask">
     <span class="at-text">
       <span class="at-nm">${esc(ask.label)}</span>
       <span class="at-ds">${esc(ask.blurb || "")}</span>
-      ${grants}${add}
+      ${grants}
     </span></div>`;
-}
-
-//: What the box wants, in the shape that list stores. An address speaks for
-//: itself; a chat id does not, and a placeholder reading "someone" over a box
-//: that needs `telegram:12345` is a box somebody fills in wrong once and then
-//: stops trusting.
-function addHint(kind) {
-  return kind === "chat_recipient" ? "telegram:12345" : "someone@example.com";
 }
 
 //: The standing grants that belong to ONE card, out of the list that holds all
@@ -833,19 +806,6 @@ function wireAgentToolActions(boxEl, agent) {
   boxEl.querySelectorAll("[data-reach-off]").forEach((b) => {
     b.onclick = () => askAgainBefore(b);
   });
-  boxEl.querySelectorAll("[data-reach-add]").forEach((b) => {
-    b.onclick = () => allowReach(b);
-  });
-  boxEl.querySelectorAll("[data-reach-in]").forEach((i) => {
-    // Enter is what a person presses in a one-box form, and a box that only
-    // works with the mouse is half a control.
-    i.onkeydown = (e) => {
-      if (e.key !== "Enter") return;
-      const btn = boxEl.querySelector(
-        `[data-reach-for="${CSS.escape(i.dataset.reachIn || "")}"]`);
-      if (btn) allowReach(btn);
-    };
-  });
   // Remember which disclosures are open. Every state that lands repaints the
   // panel, and without this it shuts every list the user had opened to decide
   // with.
@@ -1064,39 +1024,6 @@ async function toggleConnectorGrant(agent, btn) {
     redrawAgentTools();
   } catch (e) {
     toast("Couldn't change that — try again.");
-    btn.disabled = false;
-  }
-}
-
-//: Let one more recipient through without asking, from the card it belongs to.
-//:
-//: The server canonicalises and refuses, and its refusal is written for a
-//: person — so it is shown in the row rather than replaced with something of
-//: ours. A toast would be gone by the time somebody looked back at the box
-//: they typed in.
-async function allowReach(btn) {
-  const kind = btn.dataset.reachAdd || "";
-  const key = btn.dataset.reachFor || "";
-  const box = document.querySelector(`[data-reach-in="${CSS.escape(key)}"]`);
-  const err = document.querySelector(`[data-reach-err="${CSS.escape(key)}"]`);
-  const value = ((box && box.value) || "").trim();
-  if (err) { err.hidden = true; err.textContent = ""; }
-  if (!value) { if (box && box.focus) box.focus(); return; }
-  btn.disabled = true;
-  try {
-    const saved = await api("/api/agents/permissions", {
-      method: "POST", body: { value, kind, note: "" } });
-    // What came back, not what was typed: the list stores a canonical form and
-    // a chip showing the raw text would disagree with the × beside it.
-    const next = (_PANEL.reach || []).filter(
-      (g) => !(g.value === saved.value && (g.kind || "") === kind));
-    next.push({ kind, value: saved.value, label: saved.value });
-    _PANEL.reach = next;
-    if (box) box.value = "";
-    toast(`${saved.value} won't be asked about again`);
-    redrawAgentTools();
-  } catch (e) {
-    if (err) { err.textContent = String(e); err.hidden = false; }
     btn.disabled = false;
   }
 }

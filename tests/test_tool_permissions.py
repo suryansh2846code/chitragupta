@@ -370,15 +370,16 @@ def test_each_ask_row_names_the_list_its_actions_are_actually_judged_against():
             f"judged against {spec.recipient_kind}")
 
 
-def test_only_a_list_a_person_could_type_an_entry_for_is_addable():
-    """An email address and a chat id are things somebody can name in advance.
-    A connector key is minted by the call it describes and only ever granted
-    from the card that was asking — a box for one is a box nobody can fill."""
-    from chitragupta.actions import TOOL_RECIPIENT
-    from chitragupta.agents.tool_facts import APPS
+def test_no_card_offers_to_create_a_grant():
+    """A grant is **made** from the approval it would have cleared: the queue
+    offers it there with the exact value the gate reads, at the moment somebody
+    learns they want one. A box on a settings screen asks them to predict it,
+    and writes to the same global list from a second place — so `App` declares
+    which list to *read* and nothing about adding to it."""
+    from dataclasses import fields
 
-    for app in APPS:
-        if app.ask_addable:
-            assert app.ask_kind, f"{app.key} is addable to no list at all"
-            assert app.ask_kind != TOOL_RECIPIENT, (
-                f"{app.key} offers to type a connector key")
+    from chitragupta.agents.tool_facts import App
+
+    names = {f.name for f in fields(App)}
+    assert "ask_addable" not in names, "the box came back"
+    assert "ask_kind" in names, "the row still has to know which list to show"
