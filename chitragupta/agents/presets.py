@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import dataclasses
 
-from . import profile_files, roster
+from . import identity, profile_files, roster
 from .agent import Agent
 from .agent_models import get_agent_model
 from .library import BY_ID, rostered_agents
@@ -52,6 +52,17 @@ def _with_user_edits(agent: Agent) -> Agent:
     persona = profile_files.read(agent.id, profile_files.PERSONA)
     if persona is not None:
         agent = dataclasses.replace(agent, system_prompt=persona)
+
+    # What the user calls it. Each field stands alone — renaming an agent and
+    # keeping the role we shipped is the common case, and a `None` here has to
+    # mean "untouched" rather than "blank" or the rail loses the line under
+    # the name the first time somebody renames one.
+    named = identity.get(agent.id)
+    if named:
+        agent = dataclasses.replace(
+            agent,
+            name=named.get("name") or agent.name,
+            role=agent.role if named.get("role") is None else named["role"])
     return agent
 
 

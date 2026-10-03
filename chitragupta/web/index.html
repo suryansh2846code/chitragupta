@@ -68,6 +68,11 @@
           </button>
         </div>
         <div class="ch-right">
+          <!-- The same control as the ⋯ on the rail row, in the place you are
+               actually looking when you think "this agent should…". One
+               opener, `openAgentProfile`, so the two cannot drift. -->
+          <button id="chMore" class="ghost tiny ch-more" aria-label="Open this agent's profile"
+                  title="Profile, instructions, memory and permissions"></button>
           <span class="tb-trust">On-device · Private · Yours</span>
           <button id="brainStatus" class="brain-status" title="Your brain — click to open" aria-label="Your brain — open"></button>
           <button id="clearBtn" class="ghost tiny">Clear chat</button>
@@ -429,6 +434,41 @@
     <div class="modal" role="dialog" aria-modal="true" aria-labelledby="bmTitle">
       <div class="modal-head"><b id="bmTitle">Details</b><button id="bmClose" class="ghost tiny" aria-label="Close"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 4.5l7 7M11.5 4.5l-7 7"/></svg></button></div>
       <div id="bmBody" class="bm-body"></div>
+    </div>
+  </div>
+
+  <!-- ── Agent profile ────────────────────────────────────────────────────
+       Everything about one agent, in one place: who it is, the instructions
+       it runs on, what it has learned, what it may use, and what it looks
+       like. Opened by the ⋯ on an agent row or in the chat header.
+
+       **Markup here, not injected by `profile.js`.** The focus observer and
+       the Escape handler in `app.js` bind to every `.modal-bg` once, at load.
+       An overlay added to the DOM afterwards gets neither — it would open
+       without taking focus and would not close on Escape, and both failures
+       are invisible until somebody tries to use the keyboard.
+
+       Escape closes the topmost modal by clicking the button in its
+       `.modal-head`, which is why the unsaved-work guard lives on that button
+       rather than in a keydown handler of its own. -->
+  <div id="agentProfile" class="modal-bg" hidden>
+    <div class="modal profile-card" role="dialog" aria-modal="true" aria-labelledby="profTitle">
+      <div class="modal-head profile-head">
+        <div class="profile-id">
+          <span class="orb" id="profOrb"></span>
+          <div class="profile-id-meta">
+            <b id="profTitle">Agent</b>
+            <span id="profSub" class="profile-sub"></span>
+          </div>
+        </div>
+        <button id="profClose" class="ghost tiny" aria-label="Close">
+          <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 4.5l7 7M11.5 4.5l-7 7"/></svg>
+        </button>
+      </div>
+      <div class="profile-body">
+        <nav class="profile-tabs" id="profTabs" role="tablist" aria-label="Agent profile"></nav>
+        <div class="profile-pane" id="profPane"></div>
+      </div>
     </div>
   </div>
 
@@ -1034,6 +1074,10 @@
   <script src="/static/webscreen.js"></script>
   <script src="/static/automations.js"></script>
   <script src="/static/appearance.js"></script>
+  <!-- After `tools.js` and `appearance.js`: the profile composes their
+       renderers rather than carrying copies of them. Before `app.js`, which
+       calls `openAgentProfile` from the rail. -->
+  <script src="/static/profile.js"></script>
   <script src="/static/app.js"></script>
 </body>
 </html>

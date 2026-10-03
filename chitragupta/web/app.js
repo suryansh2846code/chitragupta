@@ -142,8 +142,10 @@ async function loadAgents() {
         <div class="n">${esc(a.name)}</div>
         <div class="r">${esc(a.role)}</div>
       </div>
-      ${a.custom ? `<button type="button" class="del-agent" data-del-agent="${a.id}" aria-label="Delete agent ${esc(a.name)}">${IC.close}</button>`
-        : (a.id === current ? `<span class="dot"></span>` : "")}
+      ${a.id === current ? `<span class="dot"></span>` : ""}
+      <button type="button" class="agent-more" data-profile="${a.id}"
+              aria-label="Open ${esc(a.name)}'s profile"
+              title="Profile, instructions, memory and permissions">${IC.dots}</button>
     </div>`; }).join("");
   document.querySelectorAll(".agent").forEach((el) => {
     // Mounted after the markup, never inside it: a character is a live instance
@@ -156,23 +158,24 @@ async function loadAgents() {
     if (orb) paintAvatar(orb, agentOrbId(agent), { live: true, title: agent ? agent.name : "" });
 
     el.onclick = (e) => {
-      if (e.target.closest("[data-del-agent]")) return;   // handled below
+      if (e.target.closest("[data-profile]")) return;   // handled below
       selectAgent(el.dataset.id);
     };
     // role="button" is a promise that Enter and Space work. Keep it.
     el.onkeydown = (e) => {
       if (e.key !== "Enter" && e.key !== " ") return;
-      if (e.target.closest("[data-del-agent]")) return;
+      if (e.target.closest("[data-profile]")) return;
       e.preventDefault();
       selectAgent(el.dataset.id);
     };
   });
-  document.querySelectorAll("[data-del-agent]").forEach((el) => el.onclick = async (e) => {
+  // Deleting an agent used to be a ✕ here, and only for custom ones — so a
+  // preset had no control on its row at all, and the one destructive action
+  // in the rail was the easiest thing to hit by accident. It is in the
+  // profile's danger zone now, where there is room to say what goes with it.
+  document.querySelectorAll("[data-profile]").forEach((el) => el.onclick = (e) => {
     e.stopPropagation();
-    if (!confirm("Delete this agent?")) return;
-    await api(`/api/agents/custom/${el.dataset.delAgent}`, { method: "DELETE" });
-    if (current === el.dataset.delAgent) current = null;
-    toast("Agent deleted"); loadAgents();
+    openAgentProfile(el.dataset.profile);
   });
   if (!current && agents.length) selectAgent(agents[0].id);
 }

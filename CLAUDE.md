@@ -4,7 +4,30 @@ Local-first AI **agent workspace**: a team of agents share one on-device "brain"
 (memories + a knowledge graph) built from the user's connected sources. Bring
 your own model. Everything runs and stays on the user's machine. macOS only.
 
-**One session works this repo at a time.**
+**Several sessions work this repo at once — one worktree and one branch each.**
+Never two sessions in the same checkout, and never two on the same branch.
+New work starts with `git worktree add`, not a `git checkout` in a tree
+somebody else is holding.
+
+A worktree gives you your own files and your own HEAD. **It does not give you
+your own machine**, and every rule below exists because something shared got
+reached for as though it were private:
+
+- **Kill by pid, never by name.** `pkill -f pytest` matches every process on
+  the machine, including the other sessions' — see *Verification* below, where
+  it cost two full suites.
+- **The git stash stack is one stack, shared by every worktree.** Bare
+  `git stash` / `git stash pop` can pop work that is not yours. Set work aside
+  with a WIP commit on your own branch instead.
+- **`~/Library/Chitragupta` is one home.** `pytest` gets a temporary one from
+  `conftest.py` and is safe; `chitragupta serve` and `chitragupta app` do not —
+  two sessions running the app share its databases and fight over the saved
+  port. Run one at a time, or give yours its own `CHITRAGUPTA_HOME`.
+- **Ports are first-come.** Pick a free one rather than assuming the default is
+  yours.
+- **`main` is shared.** Branch from it, never commit to it from a worktree, and
+  never rewrite it — every other session's branch is cut from the history you
+  would be rewriting.
 
 This file is what you need on almost every task. It states rules; it does not
 explain them at length — the explanation is in the document each rule points to,
@@ -483,11 +506,14 @@ In order: **the focused test → the subsystem's suite → `pytest` →
 `ruff check chitragupta tests` → `mypy chitragupta` → the `tests/js/` harnesses if
 the frontend changed → `chitragupta app` opens and renders.**
 
-Baseline, measured 2026-10-03: **6224 passed, 34 skipped in ~7min35**, ruff
-clean, mypy clean over 223 files. With `PLAYWRIGHT_BROWSERS_PATH` pointed at the managed
-browser the same run adds twelve more — `tests/test_browser_driver.py`'s
-real-Chromium tests, which skip when there is
-no browser to find. Worth setting: they are the only tests that drive a real
+Baseline, measured 2026-10-03: **6247 passed, 34 skipped**, ruff clean, mypy
+clean over 224 files. That run took 11min10 because it shared the machine with
+another session's suite; alone it is ~7min40. **The count is the number to
+compare against, never the clock** — see the shared-machine rules at the top.
+
+With `PLAYWRIGHT_BROWSERS_PATH` pointed at the managed browser the same run
+adds twelve more — `tests/test_browser_driver.py`'s real-Chromium tests, which
+skip when there is no browser to find. Worth setting: they are the only tests that drive a real
 page, and one of them is the regression for a navigation that used to hang.
 Locally the split differs again — some tests skip when a provider is genuinely
 connected on the machine. Run tests when stuck or finishing, not after every
@@ -498,8 +524,15 @@ enough that the suite had grown past 3,600 underneath it — so the figure every
 session compared its run against was wrong by 2,233, and "the same as the
 baseline" stopped meaning anything.
 
-Four rules, each bought the hard way:
+Five rules, each bought the hard way:
 
+- **A suite that dies with no failures printed was killed, not broken.**
+  `exit code 144` and a run that stops mid-progress-bar reads exactly like a
+  flaky suite and is not one: another session tidying up with `pkill -f pytest`
+  before its own run took this one out twice, at 55% and 67%. That is the
+  machine-is-shared rule at the top of this file, and this is where it is
+  cheapest to learn — check for another session's run before you go hunting a
+  test bug that does not exist.
 - **Never weaken a test to get green**, never delete one that exposes an
   inconvenient architecture problem, never skip the regression test on a fix.
 - **A bug fix ships with a test that fails without it — and you must watch it

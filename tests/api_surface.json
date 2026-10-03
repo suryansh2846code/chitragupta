@@ -6,6 +6,7 @@
   "DELETE /api/agents/{agent_id}/avatar",
   "DELETE /api/agents/{agent_id}/connectors/{connector}",
   "DELETE /api/agents/{agent_id}/files/{name}",
+  "DELETE /api/agents/{agent_id}/identity",
   "DELETE /api/agents/{agent_id}/model",
   "DELETE /api/brain/memories/{memory_id}",
   "DELETE /api/browser/sites/{host}",
@@ -207,5 +208,6 @@
   "POST /api/webhooks/{provider}",
   "PUT /api/agents/{agent_id}/avatar",
   "PUT /api/agents/{agent_id}/files/{name}",
+  "PUT /api/agents/{agent_id}/identity",
   "PUT /api/agents/{agent_id}/model"
 ]

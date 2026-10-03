@@ -405,6 +405,33 @@ def clear_agent_file(agent_id: str, name: str):
     return {"agent_id": agent_id, "name": name, "cleared": cleared}
 
 
+class AgentIdentityIn(BaseModel):
+    #: Either alone, or both. `None` is "leave that one as it is" — the profile
+    #: saves a field at a time, and treating an absent role as a blank one is
+    #: how renaming an agent would wipe the line under its name.
+    name: str | None = None
+    role: str | None = None
+
+
+@router.put("/api/agents/{agent_id}/identity")
+def set_agent_identity(agent_id: str, body: AgentIdentityIn):
+    """Rename an agent. The id never moves — see `agents/identity.py`."""
+    from ...agents import identity
+    _require_agent(agent_id)
+    try:
+        return identity.set_identity(agent_id, name=body.name, role=body.role)
+    except identity.IdentityRejectedError as exc:
+        raise HTTPException(400, str(exc)) from None
+
+
+@router.delete("/api/agents/{agent_id}/identity")
+def clear_agent_identity(agent_id: str):
+    """Back to the name we ship."""
+    from ...agents import identity
+    _require_agent(agent_id)
+    return {"agent_id": agent_id, "cleared": identity.clear(agent_id)}
+
+
 class NewAgent(BaseModel):
     name: str
     role: str = ""

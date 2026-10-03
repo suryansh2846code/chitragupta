@@ -836,8 +836,16 @@ async function toggleAgentTool(agent, btn) {
   }
 }
 
-async function loadAgentTools(agentId) {
-  const box = $("#agentToolList"); if (!box) return;
+/**
+ * @param boxEl where to draw. Defaults to the Settings panel's list, which is
+ *   the only caller that existed when this was written; the agent profile
+ *   passes its own pane. Parameterised rather than copied — the grouping, the
+ *   presets and the blocked-reason wording are the part that must not exist
+ *   twice, and a second renderer is how two screens start disagreeing about
+ *   what an agent may do.
+ */
+async function loadAgentTools(agentId, boxEl) {
+  const box = boxEl || $("#agentToolList"); if (!box) return;
   const id = agentId || AGENT_TOOLS_FOR || current;
   // Repainting a full panel with "Loading…" is a flash of nothing in the middle
   // of somebody reading it, and a preset press reloads deliberately. The

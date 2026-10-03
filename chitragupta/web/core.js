@@ -242,6 +242,11 @@ const IC = {
   briefcase: _S('<rect x="2.4" y="5.3" width="11.2" height="7.6" rx="1.6"/><path d="M6.1 5.3V4.2a1.6 1.6 0 0 1 1.6-1.6h.6a1.6 1.6 0 0 1 1.6 1.6v1.1"/>'),
   book: _S('<path d="M2.7 3.3h3.6A1.7 1.7 0 0 1 8 5v8a1.4 1.4 0 0 0-1.4-1.2H2.7z"/><path d="M13.3 3.3H9.7A1.7 1.7 0 0 0 8 5v8a1.4 1.4 0 0 1 1.4-1.2h3.9z"/>'),
   pencil: _S('<path d="M11 2.6l2.4 2.4-7.7 7.7-3 .6.6-3z"/>'),
+  // Filled, not stroked: three 1.1px-radius rings read as smudges at this size.
+  // It opens the agent's profile — the one place everything about an agent is.
+  dots: _S('<circle cx="3.6" cy="8" r="1.25" fill="currentColor" stroke="none"/>'
+         + '<circle cx="8" cy="8" r="1.25" fill="currentColor" stroke="none"/>'
+         + '<circle cx="12.4" cy="8" r="1.25" fill="currentColor" stroke="none"/>', 16),
   //: The glyph set. These replaced the emoji and dingbats that were doing an
   //: icon's job — 🔒 in nine places, 📁, ✨, ⚠️, and ✕/✓/↗ as button faces.
   //: An emoji is a colour font the OS picks: it ignores `currentColor`, so it

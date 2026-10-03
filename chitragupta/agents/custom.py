@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 
 from ..config import get_settings
 from ..log import suppressed
-from . import notes, profile_files
+from . import identity, notes, profile_files
 from .agent import Agent
 from .prompt import KNOWN_ACTIONS
 
@@ -123,6 +123,10 @@ class CustomAgentStore:
         # predecessor had already learned and lost.
         with suppressed("clearing the note ledger for a deleted agent"):
             notes.forget(agent_id)
+        # And what the user renamed it to, for the same slug reason: otherwise
+        # the next agent built with this name wears the deleted one's rename.
+        with suppressed("clearing a deleted agent's name"):
+            identity.clear(agent_id)
         cur = self._c.execute("DELETE FROM custom_agents WHERE id=?", (agent_id,))
         self._c.commit()
         return cur.rowcount > 0

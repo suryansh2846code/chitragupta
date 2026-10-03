@@ -61,14 +61,27 @@ def test_space_selects_an_agent(report):
     assert report["agentRail"]["selectedAfterSpace"] == "lead-1"
 
 
-def test_delete_button_does_not_also_select_the_row(report):
+def test_the_row_control_does_not_also_select_the_row(report):
     assert report["agentRail"]["deleteKeyDidNotSelect"]
 
 
-def test_delete_control_is_a_labelled_button(report):
+def test_the_row_control_is_a_labelled_button(report):
+    """The ⋯ that opens the agent's profile.
+
+    This asserted the same two things about the ✕ that used to delete an agent
+    from the row. The control changed; the property did not — a trailing row
+    control has to be a real button with a label, or it is unreachable from the
+    keyboard and announces as nothing.
+    """
     rail = report["agentRail"]
-    assert rail["deleteIsButton"], "delete is a <span> — not focusable, not a button"
-    assert rail["deleteHasLabel"], "the delete button announces only as '✕'"
+    assert rail["rowControlIsButton"], "the row control is not a <button>"
+    assert rail["rowControlHasLabel"], "the row control announces only as '⋯'"
+
+
+def test_every_agent_has_a_row_control_not_just_the_custom_ones(report):
+    """The ✕ was on custom agents only, so a preset's row had no control at all
+    — and the one thing you could do from the rail was the destructive one."""
+    assert report["agentRail"]["rowControlCount"] == 2
 
 
 # ── escape and focus ──────────────────────────────────────────────────────

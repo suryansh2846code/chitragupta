@@ -33,6 +33,7 @@ read before its definition is a temporal dead-zone `ReferenceError` that
 | `browser.js` | websites agents may read, on the Connectors screen |
 | `webscreen.js` | the browser itself, shown and driven inside the app |
 | `appearance.js` | the Appearance screen — what each agent looks like |
+| `profile.js` | the agent profile popup — one agent's identity, files, model and permissions |
 | `app.js` | the shell: state, chrome, agent rail, nav, keyboard, boot |
 
 **Before moving code between them**, read the five checks in
@@ -272,6 +273,28 @@ script out of eleven does not fail; it passes.
   way to learn that from this panel. The group names a screen id (`more`);
   `screenOpener` resolves it, and an id the frontend does not have draws no
   button — never a control that goes nowhere.
+- **The agent profile is a popup, and its markup is in `index.html`.** The
+  focus observer and the Escape handler in `app.js` bind to every `.modal-bg`
+  **once, at load** — an overlay `profile.js` injected later would open without
+  taking focus and would never close on Escape, and neither failure is visible
+  until somebody uses the keyboard. Escape closes the topmost modal by clicking
+  the button in its `.modal-head`, which is why the unsaved-work guard lives on
+  that button rather than in a keydown handler of its own: one rule, both ways
+  out. A dialog rather than a screen because you open it *about* the agent you
+  are talking to, and getting back to the conversation should not be a
+  navigation.
+- **`profile.js` composes; it does not redraw.** Permissions come from
+  `loadAgentTools`/`renderAgentTools` with the popup's own container passed in —
+  the entry above about the agent builder is the same rule, and this is the
+  third surface. Its globals are `prof*`, never `ap*`: `appearance.js` already
+  declares `apAgent`, `apDoc`, `apDirty` and `apEditor` at the top level of this
+  shared scope, and redeclaring one with `let` is a SyntaxError that kills the
+  whole file — the symptom being a ⋯ that does nothing.
+- **Hold the element, do not re-query it.** The profile's Save button is kept in
+  `profSaveEl` by whichever pane built it. `$("#profSave")` from a handler is the
+  selector-as-a-claim-about-markup failure this file already records for
+  `syncConn`, and a fake DOM is exactly where it shows up first: the lookup
+  returned a different element and Save stayed dead after an edit.
 - **Every left-nav item opens a screen.** The slide-over drawer is gone:
   `tasks` moved into Inbox and `tools` became the Agents & tools panel, and
   those were its only two occupants. `openDrawer()` kept its name — four call

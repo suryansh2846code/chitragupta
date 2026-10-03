@@ -172,8 +172,15 @@ report.agentRail.html = html;
 report.agentRail.hasRole = /role="button"/.test(html);
 report.agentRail.hasTabindex = /tabindex="0"/.test(html);
 report.agentRail.hasAriaLabel = /aria-label="[^"]+"/.test(html);
-report.agentRail.deleteIsButton = /<button[^>]*class="del-agent"/.test(html);
-report.agentRail.deleteHasLabel = /class="del-agent"[^>]*aria-label="[^"]+"/.test(html);
+// The row's trailing control. It was a ✕ that deleted the agent, and only on
+// custom ones; it is now the ⋯ that opens the profile, on every agent, with
+// delete moved into that profile's danger zone. The assertion is the same one
+// either way — a real <button> with a label — because that is the property
+// that was worth pinning, not which action happened to be behind it.
+report.agentRail.rowControlIsButton = /<button[^>]*class="agent-more"/.test(html);
+report.agentRail.rowControlHasLabel = /class="agent-more"[^>]*aria-label="[^"]+"/.test(html);
+// Every agent gets one, not just the custom ones. AGENTS below is a mix.
+report.agentRail.rowControlCount = (html.match(/class="agent-more"/g) || []).length;
 
 // Re-render against real row stubs so the handlers the render attaches land on
 // something we can fire. Row 1 is "inbox-2" — pressing Enter must select it.

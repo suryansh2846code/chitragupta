@@ -160,7 +160,7 @@ select:focus, input:focus, textarea:focus { outline: none; border-color: var(--a
 /* .del-agent is opacity:0 with margin-left:auto — invisible but still laying
    out, and still claiming the right-hand side of the row. That is what pushed
    every collapsed orb left of centre. Zero opacity is not gone. */
-.app.collapsed .del-agent,
+.app.collapsed .del-agent, .app.collapsed .agent-more,
 .app.collapsed .a-meta, .app.collapsed .agent .dot, .app.collapsed .na-tx,
 .app.collapsed .snav-tx, .app.collapsed .user-nm { display: none; }
 .app.collapsed .collapse-btn { margin-left: 0; }
@@ -1237,6 +1237,79 @@ textarea.ac-field-wide { resize: vertical; min-height: 58px; line-height: 1.45; 
 .modal-head { border-bottom: 1px solid var(--border); font-size: 15px; }
 .modal-foot { border-top: 1px solid var(--border); gap: 10px; }
 .modal-foot button:last-child, #amCreate, #rmCreate, #pickIngest, #wCreate { background: var(--north); color: var(--north-ink); border-radius: 10px; padding: 10px 18px; font-weight: 600; }
+/* ── the agent profile ──────────────────────────────────────────────────
+   A popup, not a screen, and a wide one: it carries the permission groups and
+   the character editor, both of which were full pages until now. 980px is as
+   wide as it can be while still reading as a dialog over the workspace rather
+   than another page; `max-width` keeps it off the edges on a laptop display.
+
+   The card never scrolls — the PANE inside it does. A modal whose whole body
+   scrolls takes the tab rail and the agent's name with it, so by the time you
+   are at the bottom of the permission list there is nothing on screen saying
+   which agent you are changing. */
+.modal.profile-card { width: 980px; height: 76vh; max-height: 760px; }
+.profile-head { gap: 12px; }
+.profile-id { display: flex; align-items: center; gap: 11px; min-width: 0; }
+.profile-id .orb { width: 34px; height: 34px; flex: none; }
+.profile-id-meta { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.profile-id-meta b { font-size: 15px; }
+.profile-sub { font-size: 11.5px; color: var(--muted);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.profile-body { display: flex; min-height: 0; flex: 1; }
+.profile-tabs { width: 164px; flex: none; padding: 12px 10px; gap: 2px;
+  display: flex; flex-direction: column; border-right: 1px solid var(--border);
+  overflow-y: auto; }
+.profile-tab { display: flex; align-items: center; gap: 9px; width: 100%;
+  padding: 8px 10px; border-radius: 9px; font-size: 13px; text-align: left;
+  color: var(--muted); background: none; border: 1px solid transparent; }
+.profile-tab:hover { background: rgba(255,255,255,.04); color: var(--text); }
+.profile-tab.is-on { background: var(--panel-2); border-color: var(--border);
+  color: var(--text); font-weight: 600; }
+.profile-tab-ic { width: 16px; height: 16px; display: inline-flex; flex: none; }
+.profile-tab-ic svg { width: 16px; height: 16px; }
+
+.profile-pane { flex: 1; min-width: 0; overflow-y: auto; padding: 18px 20px; }
+.profile-pane h2 { font-size: 14px; margin: 0 0 4px; }
+.profile-pane .ms-sub { margin: 0 0 16px; }
+
+/* The two prose files. Monospace, because they are files the user can also
+   open in a text editor — and a proportional face makes a markdown bullet
+   list look like something we render rather than something they own. */
+.profile-doc { width: 100%; min-height: 240px; resize: vertical;
+  font-family: var(--mono); font-size: 12.5px; line-height: 1.65;
+  padding: 12px 13px; border-radius: 10px; background: var(--panel-2);
+  border: 1px solid var(--border); color: var(--text); }
+.profile-doc:focus { outline: none; border-color: var(--border2); }
+.profile-foot { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
+.profile-foot .muted { font-size: 11.5px; margin-left: auto; }
+.profile-meter { font-size: 11.5px; color: var(--muted); }
+.profile-meter.is-full { color: var(--danger); }
+
+.profile-field { display: flex; flex-direction: column; gap: 5px; margin-bottom: 14px; }
+.profile-field label { font-size: 12px; color: var(--muted); }
+
+.profile-danger { margin-top: 26px; padding-top: 16px;
+  border-top: 1px solid var(--border); }
+.profile-danger .set-desc { margin-bottom: 9px; }
+
+/* The ⋯ on an agent row. Mirrors `.del-agent`, which it replaces: hidden until
+   the row is hovered or the button itself is focused, so the rail stays a list
+   of agents rather than a list of controls. */
+.agent-more { color: var(--faint); opacity: 0; margin-left: auto; flex: none;
+  border-radius: 7px; padding: 2px 3px; line-height: 0; }
+/* The active row has BOTH the dot and the ⋯, and `.dot` also carries
+   `margin-left: auto`. Two auto margins in a flex row split the free space
+   between them, so the dot floated in the middle of the row instead of sitting
+   with the control it belongs beside. The dot keeps the auto; the ⋯ next to it
+   gets a fixed gap. */
+.agent .dot + .agent-more { margin-left: 6px; }
+.agent-more:focus-visible { opacity: 1; }
+.agent:hover .agent-more { opacity: 1; }
+.agent-more:hover { color: var(--text); background: rgba(255,255,255,.06); }
+.ch-more { color: var(--faint); border-radius: 7px; padding: 3px 4px; line-height: 0; }
+.ch-more:hover { color: var(--text); background: rgba(255,255,255,.06); }
+
 .am-body { padding: 16px 18px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
 /* The fields are a fixed size. Without this they are flex items in a column
    that scrolls, so a long tool list squeezed the textarea until its own
