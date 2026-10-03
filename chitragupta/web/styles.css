@@ -1044,6 +1044,50 @@ select:focus, input:focus, textarea:focus { outline: none; border-color: var(--a
 .action-card[data-risk="red"] .ac-risk,
 .apr[data-risk="red"] .ac-risk { color: var(--danger); }
 
+/* The access panel: an ask for permission, as the switches themselves.
+   It is a card without a Confirm, so it must not look like one waiting to be
+   pressed — no `.ac-actions` row, and the quiet foot line where the buttons
+   would be, saying what is reversible and where. */
+.access-card[data-risk="red"] { border-color: var(--border2); }
+.acc-why { font-family: var(--sans); font-style: italic; color: var(--text); }
+.acc-rows { margin-top: var(--ac-gap); display: flex; flex-direction: column; gap: 2px; }
+.acc-wait { font-size: 13px; color: var(--muted); padding: 6px 0; }
+.acc-row { display: grid; grid-template-columns: 1fr auto; align-items: center;
+  gap: 10px 12px; padding: 10px 11px; border-radius: 10px;
+  background: var(--panel-2); border: 1px solid var(--line2); }
+/* Granted rows stay in the list rather than disappearing: the panel is a
+   picture of what this agent may do, and one that silently dropped what it had
+   already given would stop answering the question a person opened it with. */
+.acc-row.is-on { background: transparent; border-color: transparent; }
+.acc-tx { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.acc-tx b { font-size: 13.5px; font-weight: 600; }
+.acc-tx span { font-size: 12px; color: var(--muted); line-height: 1.45; }
+.acc-on { display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px;
+  color: var(--accent-2); white-space: nowrap; }
+/* The switch. A real one — it writes on press, the same write the Agents &
+   tools screen makes — so it gets the affordance of one rather than a button
+   wearing a label. */
+.acc-sw { position: relative; width: 40px; height: 23px; flex: none; padding: 0;
+  border-radius: 999px; background: var(--line2); border: 1px solid var(--border2);
+  transition: background .16s ease; cursor: pointer; }
+.acc-sw .acc-knob { position: absolute; top: 2px; left: 2px; width: 17px; height: 17px;
+  border-radius: 50%; background: var(--text); transition: transform .16s ease; }
+.acc-sw[aria-checked="true"] { background: var(--accent); }
+.acc-sw[aria-checked="true"] .acc-knob { transform: translateX(17px); }
+.acc-sw:disabled { opacity: .5; cursor: default; }
+.acc-sw:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.acc-open { white-space: nowrap; }
+/* The failure belongs on the row that failed, not in a toast that has gone by
+   the time the eye gets back to the panel. Spans both columns so a sentence
+   wraps under the control it is about. */
+.acc-err { grid-column: 1 / -1; font-size: 12px; color: var(--danger); }
+.acc-err:empty { display: none; }
+.acc-foot { margin-top: var(--ac-gap); font-size: 12px; color: var(--muted);
+  line-height: 1.5; }
+@media (prefers-reduced-motion: reduce) {
+  .acc-sw, .acc-sw .acc-knob { transition: none; }
+}
+
 /* A plan: several actions, one judgement. The steps are a quiet list — the
    decision is the card, not each line in it. */
 .pl-why { font-style: italic; margin-bottom: 6px; }

@@ -183,17 +183,24 @@ def _answer(reading: Reading) -> ToolResult:
         site = reading.grantable.split("://")[-1]
         wanted = ("read it" if reading.needs == origins.READ
                   else "change things on it")
-        # **Where the control actually is.** This said "on the Browser screen",
-        # and the Browser screen is the live page an agent is driving — the
-        # per-site switch is on Connectors, under Websites. So an agent refused
-        # on a site sent the user to a screen that does not hold the control,
-        # which is the same dead end the Agents & tools panel used to be: every
-        # switch on, still refused, and nothing naming the list that decides it.
+        # **The ask, not the address of the switch.** This has now been wrong
+        # twice in the same direction. First it named the Browser screen, which
+        # is the live page an agent drives rather than the list that decides
+        # anything; corrected, it named Connectors → Websites — right, and still
+        # the dead end `request_permission` exists to remove. An agent refused
+        # here dutifully relayed the path, so the user was sent off to re-derive
+        # a decision they were already being asked to make, and then asked to
+        # come back and say "go".
+        #
+        # The site is a thing an agent can ask for now. `agents/access.py` owns
+        # the spelling and `origins.READ`/`CHANGE` are the same two words it
+        # uses, so the token below is built rather than transcribed.
         return ToolResult.failed(
-            f"{reading.reason} Tell the user they can turn that on for {site} "
-            f"under Connectors → Websites if they want you to {wanted}. You "
-            "cannot turn it on yourself. Do not try other addresses for the "
-            "same thing.")
+            f"{reading.reason} If they want you to {wanted}, ASK with "
+            f'request_permission needs="site:{site}:{reading.needs}" — they '
+            "get a switch here in the conversation. Do NOT tell them to open "
+            "a settings screen. You cannot turn it on yourself. Do not try "
+            "other addresses for the same thing.")
     return ToolResult.failed(reading.reason)
 
 

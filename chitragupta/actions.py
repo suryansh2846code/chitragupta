@@ -521,6 +521,25 @@ def parse_actions(text: str) -> list[dict]:
             a["params"]["text"] = inner.strip()
         elif t == "set_reminder":
             a["params"]["message"] = inner.strip()
+        elif t == "request_permission":
+            # **One field by the time anything downstream looks.** The ask has
+            # two spellings — `needs="websites:read, site:amazon.in:change"` and
+            # the older `group=` + `level=` pair for a single tool group — and
+            # `required` is an AND-list that cannot say "one of these". Folding
+            # the pair into the general form here is what lets the field the
+            # handler actually refuses without be the field it declares, which
+            # is the contract `test_action_required_fields` holds everything to.
+            if not a["params"].get("needs") and a["params"].get("group"):
+                a["params"]["needs"] = (f'{a["params"].get("group", "")}:'
+                                        f'{a["params"].get("level", "")}')
+            # **The reason is the body, and it was being thrown away.** The
+            # protocol has always told the model to write its sentence as the
+            # tag's inner text, and `fields` has always listed `why` — but
+            # nothing mapped one to the other, so `params["why"]` was set only
+            # when a model happened to write it as an attribute, which the
+            # protocol never asked for. The card's own docstring calls that
+            # sentence "the whole point"; it rendered an empty row.
+            a["params"]["why"] = inner.strip()
         elif t == "mcp_action":
             # A vendor's tool takes an object, and an action tag's attributes
             # are flat strings — so the arguments are the body, as JSON.
@@ -1091,43 +1110,50 @@ def _request_permission(params: dict) -> dict:
 
     So: the ask lands where the work is, carrying the agent's own reason for
     wanting it, which is the thing a person actually needs in order to decide.
+
+    **It asks for more than a tool group now.** The first version knew only
+    `group` + `level`, so an agent needing a tool group *and* a website could
+    put half its ask on a card and had to write the other half as prose. It
+    wrote all of it as prose, and the user was back on a settings screen being
+    told to come back and say "go". `agents/access.py` is the one vocabulary;
+    this grants everything that came back through it, and the panel in the chat
+    grants them one switch at a time.
     """
-    from .agents.tool_facts import ASKABLE, tools_for
+    from .agents import access
 
-    # The same write path the switches use — an override, not an edit, so a
-    # preset keeps its shipped definition and a later release can still improve
-    # it. Writing anywhere else would be a second way to change one fact.
-    from .agents.tool_overrides import get_tool_overrides
-
-    group = (params.get("group") or "").strip().lower()
-    level = (params.get("level") or "").strip().lower()
     agent_id = (params.get("agent_id") or "").strip()
     if not agent_id:
         return {"ok": False, "error": "no agent to give this to"}
 
-    wanted = tools_for(group, level)
-    if not wanted:
-        # Named rather than described: the model chose these two strings, and a
+    needs = access.needs_from_params(params)
+    if not needs:
+        # Named rather than described: the model chose these strings, and a
         # vague refusal would have it guess again rather than read the list.
+        asked = params.get("needs") or f"{params.get('group')}: {params.get('level')}"
+        return {"ok": False, "error": access.nothing_to_ask_for(str(asked))}
+
+    # Every need, because Confirm on a card showing three switches means all
+    # three. The panel is the finer control, and it reaches `access.grant` per
+    # switch rather than coming through here at all.
+    done: list[tuple] = []
+    failed: list[tuple] = []
+    for need in needs:
+        out = access.grant(agent_id, need)
+        (done if out.get("ok") else failed).append((need, out))
+    if not done:
         return {"ok": False,
-                "error": (f"“{group}: {level}” is not something to ask for. "
-                          f"Levels are {' or '.join(ASKABLE)}, and running "
-                          "code is granted on the Agents & tools screen "
-                          "rather than from a card.")}
-
-    from .agents import list_agents
-    found = next((a for a in list_agents() if a.id == agent_id), None)
-    if found is None:
-        return {"ok": False, "error": "that agent is not on the roster"}
-
-    already = set(found.tools or [])
-    added = sorted(t for t in wanted if t not in already)
-    if not added:
-        return {"ok": True, "detail": "It already had that.", "added": []}
-
-    get_tool_overrides().set(agent_id, sorted(already | set(wanted)))
-    return {"ok": True, "added": added,
-            "detail": f"{found.name} can now {level} {group.replace('_', ' ')}."}
+                "error": failed[0][1].get("error") if failed else "nothing to do"}
+    detail = " ".join(str(o.get("detail") or "") for _, o in done).strip()
+    if failed:
+        detail += f" {len(failed)} could not be done from here."
+    # `added` is every built-in that was not there before, across the whole ask.
+    # Kept because "it already had that" has to be distinguishable from "it has
+    # it now" by something other than reading the sentence: a card that said
+    # "granted" for a press that wrote nothing would be reporting our own
+    # bookkeeping to the user as their news.
+    return {"ok": True, "detail": detail or "Done.",
+            "granted": [n.key for n, o in done if o.get("changed")],
+            "added": sorted({t for _, o in done for t in (o.get("added") or [])})}
 
 
 def _create_routine(params: dict) -> dict:
@@ -1509,23 +1535,26 @@ def _verify_permission(params: dict, result: dict) -> dict:
     worst kind of silent failure — the user believes they granted it, the agent
     still cannot act, and the next thing either of them does is ask again.
     """
-    from .agents import list_agents
-    from .agents.tool_facts import tools_for
+    from .agents import access, list_agents
 
     agent_id = str(params.get("agent_id") or "")
-    wanted = tools_for(str(params.get("group") or ""),
-                       str(params.get("level") or ""))
-    if not wanted:
+    needs = access.needs_from_params(params)
+    if not needs:
         return {"verified": False, "detail": "nothing was asked for"}
-    found = next((a for a in list_agents() if a.id == agent_id), None)
-    if found is None:
+    if not any(a.id == agent_id for a in list_agents()):
         return {"verified": False, "detail": "that agent is not on the roster"}
-    missing = [t for t in wanted if t not in set(found.tools or [])]
+    # Read back through `describe`, which is also what the panel renders from —
+    # so a grant that reported success and did not land fails here AND shows as
+    # off on its switch, rather than the two disagreeing about one fact.
+    rows = access.describe(agent_id, needs)
+    # A connector is not a switch and never lands from a card, so counting one
+    # would make every ask containing one read as unverified for ever.
+    checkable = [r for r in rows if r.get("control") == "switch"]
+    missing = [r for r in checkable if not r.get("granted")]
     if missing:
         return {"verified": False,
-                "detail": f"{len(missing)} of {len(wanted)} did not take"}
-    return {"verified": True,
-            "detail": f"{found.name} has all {len(wanted)} of them"}
+                "detail": f"{len(missing)} of {len(checkable)} did not take"}
+    return {"verified": True, "detail": f"all {len(checkable)} are on"}
 
 
 def _verify_routine(params: dict, result: dict) -> dict:
@@ -2169,10 +2198,14 @@ REGISTRY: dict[str, ActionSpec] = {
     # text a stranger wrote, and an agent that could widen itself on that input
     # is the whole threat model in one action.
     "request_permission": ActionSpec(
-        required=("group", "level"),
-        identity=("group", "level"),
+        # `needs` and nothing else: `parse_actions` folds the older `group` +
+        # `level` pair into it, so by the time a card or the queue reads one of
+        # these there is a single field to declare — and it is the field the
+        # handler genuinely refuses without.
+        required=("needs",),
+        identity=("needs", "group", "level"),
         handler=_request_permission, label="Give access",
-        fields=["group", "level", "why"],
+        fields=["needs", "group", "level", "why"],
         risk=Risk.RED,
         always_ask_because=(
             "Giving an agent something new to reach always needs your tap."),

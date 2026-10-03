@@ -667,6 +667,77 @@ def remove_agent_from_roster(template_id: str):
     return {"roster": remove_from_roster(template_id)}
 
 
+class AccessIn(BaseModel):
+    """What an agent asked for, as the card carries it.
+
+    `needs` is the compact form `agents/access.py` parses — `"websites:read,
+    site:amazon.in:change"`. The pair is the older spelling of one tool group
+    and still accepted, because it is the shortest way to ask for the common
+    thing and nothing gains by breaking it.
+    """
+
+    needs: str = ""
+    group: str = ""
+    level: str = ""
+
+
+class GrantIn(BaseModel):
+    """One switch on the panel, named by the key `describe` gave it.
+
+    The key, never a free-form target. It is matched against the needs the card
+    is asking for, so a request naming something that card never asked about is
+    refused rather than granted — a page an agent is reading must not be able
+    to turn a permission panel into a different permission panel.
+    """
+
+    key: str
+    needs: str = ""
+    group: str = ""
+    level: str = ""
+
+
+@router.post("/api/agents/{agent_id}/access")
+def agent_access(agent_id: str, body: AccessIn):
+    """What this ask looks like right now: each need, named, with its state.
+
+    Resolved here rather than in the browser, every time the panel draws. The
+    alternative was four fetches and the vocabulary written out a second time in
+    JavaScript, and a switch whose label and whose state come from different
+    places is exactly the failure this control exists to fix.
+    """
+    from ...agents import access
+
+    needs = access.needs_from_params(body.model_dump())
+    return {"agent_id": agent_id, "rows": access.describe(agent_id, needs)}
+
+
+@router.post("/api/agents/{agent_id}/access/grant")
+def agent_access_grant(agent_id: str, body: GrantIn):
+    """Turn one of them on, because the user pressed its switch.
+
+    The press is the consent, so there is no second confirmation — this is the
+    same decision as flipping the switch on the Agents & tools screen, made
+    where the work is instead of three screens away.
+
+    **The key must be one this ask actually named.** Re-resolving the card's own
+    `needs` and looking the key up inside it is what keeps the endpoint from
+    being a general-purpose "grant anything" route that a card could be talked
+    into addressing. `access.grant` then delegates to whoever already owned that
+    write; nothing new writes a permission.
+    """
+    from ...agents import access
+
+    asked = access.needs_from_params(body.model_dump())
+    found = next((n for n in asked if n.key == body.key), None)
+    if found is None:
+        raise HTTPException(
+            400, "That is not something this request asked for.")
+    out = access.grant(agent_id, found)
+    if not out.get("ok"):
+        raise HTTPException(400, out.get("error") or "That could not be done.")
+    return {**out, "rows": access.describe(agent_id, asked)}
+
+
 class FolderIn(BaseModel):
     """A folder the user is opening to their agents, or closing again."""
 

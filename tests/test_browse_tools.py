@@ -18,6 +18,7 @@ and when they do they have to be gated. A test that fails the day somebody adds
 """
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -101,19 +102,44 @@ def test_a_refusal_tells_the_agent_who_can_fix_it():
     out = browse_tools.browse_open("https://payroll.example.com/payslips")
 
     assert "payroll.example.com" in out
-    assert "the user" in out.lower()
+    assert "they" in out.lower() or "the user" in out.lower()
 
 
-def test_a_refusal_names_the_screen_that_actually_holds_the_switch():
-    """It said "on the Browser screen", and the Browser screen is the live page
-    an agent is driving — the per-site switch is on Connectors, under Websites.
-    So an agent refused on a site sent the user somewhere that does not hold the
-    control, which is how a person ends up reporting that the permission does
-    not exist."""
+def test_a_refusal_carries_an_ask_that_actually_resolves():
+    """**The route out, not the address of a switch.**
+
+    This has been wrong twice in the same direction. It first said "on the
+    Browser screen", which is the live page an agent drives rather than the list
+    that decides anything; corrected, it said Connectors → Websites — right, and
+    still a dead end. An agent refused here relayed the path, so the user was
+    sent off to re-derive a decision they were already being asked to make.
+
+    So the claim is no longer that a screen is named correctly. It is that the
+    refusal hands the agent a **working ask**: the token it names must parse
+    through `agents/access.py` and come back pointing at this exact site and
+    this exact capability. That is strictly stronger than matching a screen's
+    name, because a transcribed token that nothing could grant would pass the
+    old test and fail this one.
+    """
+    from chitragupta.agents import access
+
     out = browse_tools.browse_open("https://payroll.example.com/payslips")
 
-    assert "Connectors" in out, out
+    assert "request_permission" in out, out
     assert "Browser screen" not in out, out
+    found = re.search(r'needs="([^"]+)"', str(out))
+    assert found, out
+    needs = access.parse(found.group(1))
+    assert [n.as_dict() for n in needs] == [
+        {"kind": "site", "target": "payroll.example.com", "level": "read"}], out
+
+
+def test_a_refusal_never_sends_the_user_to_a_settings_screen():
+    """The whole point of the ask is that nobody has to go looking for it."""
+    out = browse_tools.browse_open("https://payroll.example.com/payslips")
+
+    assert "Settings" not in str(out), out
+    assert "Connectors" not in str(out), out
 
 
 def test_a_refusal_tells_the_agent_not_to_go_hunting():

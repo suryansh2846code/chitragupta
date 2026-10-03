@@ -75,18 +75,35 @@ def granted_roots() -> list[str]:
     return [str(v) for v in values if isinstance(v, str)] if isinstance(values, list) else []
 
 
-def grant_folder(path: str) -> dict:
-    """Open a folder to agents. Raises ValueError with a reason a person reads."""
+def folder_problem(path: str) -> str:
+    """Why this folder cannot be opened to agents, or "" if it can.
+
+    **Asked before it is answered, as well as while answering it.** An agent can
+    now ask for a folder in the chat (`agents/access.py`), and that panel draws
+    a switch per thing asked for — so it has to know which asks are refusable
+    before it offers a control for one. `folder:/` otherwise became a switch
+    labelled "Open " whose only possible outcome was this sentence.
+
+    One function rather than the same two rules written in both places: a
+    boundary that one screen enforces and another describes differently is not a
+    boundary. `grant_folder` raises what this returns.
+    """
     candidate = Path(str(path or "")).expanduser().resolve()
     if not candidate.is_dir():
-        raise ValueError(f"{candidate} is not a folder that exists")
-
-    home = Path.home().resolve()
-    if candidate == home or candidate == Path("/"):
+        return f"{candidate} is not a folder that exists"
+    if candidate == Path.home().resolve() or candidate == Path("/"):
         # A grant this wide is not a boundary, it is the absence of one.
-        raise ValueError(
-            "Pick a folder inside your home directory rather than the whole of "
-            "it — the point of choosing is that everything else stays out")
+        return ("Pick a folder inside your home directory rather than the whole "
+                "of it — the point of choosing is that everything else stays out")
+    return ""
+
+
+def grant_folder(path: str) -> dict:
+    """Open a folder to agents. Raises ValueError with a reason a person reads."""
+    problem = folder_problem(path)
+    if problem:
+        raise ValueError(problem)
+    candidate = Path(str(path or "")).expanduser().resolve()
 
     roots = granted_roots()
     if str(candidate) not in roots:

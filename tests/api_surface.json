@@ -122,6 +122,8 @@
   "POST /api/agents/permissions",
   "POST /api/agents/roster",
   "POST /api/agents/turns/{turn_id}/stop",
+  "POST /api/agents/{agent_id}/access",
+  "POST /api/agents/{agent_id}/access/grant",
   "POST /api/agents/{agent_id}/cards/{key}",
   "POST /api/agents/{agent_id}/chat",
   "POST /api/agents/{agent_id}/chat/stream",
