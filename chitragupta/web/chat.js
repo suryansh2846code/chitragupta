@@ -15,8 +15,23 @@
  * before any markup — `md()` in core.js escapes first for the same reason.
  * Confirming an action is a deliberate tap; the agent never sends one unasked.
  *
- * One turn at a time for the whole workspace (`busy`), with an AbortController
- * so the user can stop it. Anything the user starts, they can stop.
+ * **A turn belongs to its agent, not to the workspace.** `busy` was one flag
+ * for the whole window, so one agent thinking was the whole window thinking:
+ * every other agent went unusable, and switching away was refused outright
+ * with *"finishing current reply…"*. A user with four agents had a one-lane
+ * workspace. `TURNS` is one record per agent id instead — its own
+ * AbortController, its own turn id, its own indicator — so as many agents run
+ * at once as the user starts, and switching is always free. Nothing below the
+ * window had to change for that: `MODEL_CALLS` has been a lane of eight since
+ * it was written, and routines have always chatted alongside a person.
+ *
+ * It follows that **nothing inside a turn may read `current`.** The user is
+ * free to walk away mid-reply, and a turn that read the global would finish by
+ * answering whichever agent they walked to. Every turn carries its own agent
+ * id, and the reply is only drawn when that agent is the one on screen.
+ *
+ * Anything the user starts, they can stop — per agent, and without having to
+ * be looking at it.
  */
 
 //: What every card in this conversation already settled as, by key. Filled
@@ -41,8 +56,20 @@ let CARD_RAN = [];
 //: which is the only thing that distinguishes them for a person reading it too.
 let CARD_SEEN = {};
 
+//: Which `selectAgent` call is still the one wanted.
+//:
+//: Switching used to be refused while a turn ran, which hid this: two calls
+//: can now be in flight over the same `await`, and the slower one would draw
+//: its transcript over the faster one's — leaving the header naming one agent
+//: and the messages belonging to another. The last caller wins, and an older
+//: one drops out at the first point it could do damage.
+let SELECT_SEQ = 0;
+
 async function selectAgent(id) {
-  if (busy) { toast("finishing current reply…"); return; }
+  // Before `current` moves: a half-typed message, its attachments and its `@`
+  // grants were addressed to the agent being left, not to the one arriving.
+  saveDraft(current);
+  const seq = ++SELECT_SEQ;
   current = id;
   const a = agents.find((x) => x.id === id) || { name: "—", role: "", tools: [] };
   const oid = agentOrbId(a);
@@ -66,12 +93,26 @@ async function selectAgent(id) {
     chip._wired = 1;
     chip.onclick = () => { if (current) openAgentModelModal(current); };
   }
+  // **Everything that does not need the network is painted before the first
+  // await.** Switching agents is now something a user does freely and often,
+  // and `/api/agents/{id}/connectors` measures 4.5s on a real machine with
+  // `/api/connectors` behind it at 9.8s — six switches saturate the browser's
+  // six-per-host connection pool, and the transcript fetch queues behind them.
+  // When the composer was only repainted after that, clicking an idle agent
+  // left the input disabled by the agent you had left, for seconds, which reads
+  // as the window having ignored the click. The draft and the composer are
+  // local facts about `current`, which is already set, so they are drawn now
+  // and the transcript catches up when it arrives.
+  restoreDraft(id);
+  syncComposer();
+  paintAgentStatus();
   // Which connectors this agent could be handed, for the `@` picker. Per
-  // agent, because the labels are the same but who may use them is not.
-  attachedConnectors = [];
-  renderConnectorChips();
+  // agent, because the labels are the same but who may use them is not. What is
+  // *attached* came back with the draft — a grant belongs to the message being
+  // composed, and that message belongs to one agent.
   loadConnectorNames();
   const { history } = await api(`/api/agents/${id}/history`);
+  if (seq !== SELECT_SEQ) return;    // overtaken; this transcript is not wanted
   // Before the history, not after: a card reads its own state as it is built,
   // and fetching this second would draw every card as pending and then have to
   // repaint them.
@@ -80,7 +121,60 @@ async function selectAgent(id) {
     CARD_STATE = answered.cards || {};
     CARD_RAN = (answered.ran || []).map((e) => ({ ...e, claimed: false }));
   } catch (_) { CARD_STATE = {}; CARD_RAN = []; }
+  if (seq !== SELECT_SEQ) return;    // …including after the second fetch
   renderHistory(history);
+  restoreInFlight(id, history);      // a turn this agent is already running
+}
+
+//: What is half-composed for each agent: the words, the attachments and the
+//: connector grants. One textarea serves the whole window, which quietly made
+//: all three belong to the *workspace* — switch agents and a draft written for
+//: one was addressed to another. They belong to the agent, so they are stored
+//: per agent.
+const DRAFTS = {};
+
+function saveDraft(id) {
+  if (!id) return;
+  const input = $("#input");
+  DRAFTS[id] = { text: input ? input.value : "",
+                 attachments, connectors: attachedConnectors };
+}
+
+function restoreDraft(id) {
+  const d = DRAFTS[id] || { text: "", attachments: [], connectors: [] };
+  const input = $("#input");
+  if (input) input.value = d.text || "";
+  attachments = d.attachments || [];
+  attachedConnectors = d.connectors || [];
+  renderAttachments();
+  renderConnectorChips();
+  autoGrow();
+}
+
+/** Put an already-running turn back on screen, after the history is drawn.
+ *
+ * What the stored transcript is missing is the *answer*, not the question —
+ * `runtime.run_turn` appends the question before it calls the model, which is
+ * what makes a turn that died still show what was asked. So the only thing that
+ * has to come off the turn's own record is the indicator, carrying whatever the
+ * model has written so far. While it is streaming there is no other copy of
+ * that anywhere, and a glance at another agent must not cost the user it.
+ *
+ * A trailing `user` message is how the history says a turn is in flight. The
+ * question is drawn from the record only when it is genuinely absent — the
+ * request can be out before the server's write lands — because a question
+ * missing for a moment is better than one shown twice.
+ */
+function restoreInFlight(id, history) {
+  LANDED.delete(id);                 // they are looking at it; it is read
+  const turn = TURNS[id];
+  if (turn) {
+    const msgs = (history || []).filter((m) => m.role === "user" || m.role === "assistant");
+    const tail = msgs[msgs.length - 1];
+    if (!tail || tail.role !== "user") addMsg("user", turn.text, turn.images);
+    if (turn.view) turn.view.attach();
+  }
+  paintAgentStatus();
 }
 
 function heroEmpty() {
@@ -135,6 +229,14 @@ async function maybeEnrichTip(div) {
 
 function renderHistory(history) {
   const box = $("#messages");
+  // The line below destroys every node in the thread, and some of them may
+  // belong to a running turn's indicator. A view that is not told keeps its
+  // handle — and `attach()`, which returns early when it already has one, then
+  // re-attaches nothing: switching to a working agent and back showed a
+  // transcript with no sign that anything was still happening. The function
+  // that takes the nodes is the one that has to say so, or the next renderer
+  // has to remember to.
+  for (const t of Object.values(TURNS)) if (t.view) t.view.detach();
   box.innerHTML = "";              // also takes the boot skeleton with it
   box.removeAttribute("aria-busy");
   // A fresh count for a fresh render: the keys depend on how many cards with
@@ -1976,7 +2078,8 @@ const IMG_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"];
 const IMG_MAX_BYTES = 5 * 1024 * 1024;     // decoded; the wire cap is larger
 const IMG_MAX = 4;
 let attachments = [];                       // {name, dataUrl, size}
-let sentImages = [];                        // the set belonging to the turn in flight
+// The set belonging to a turn in flight lives on that turn's record, not here —
+// several turns can be in flight, and one global held the last one's pictures.
 
 function modelSeesImages() {
   // The agent's binding, for the same reason the turn uses it: this decides
@@ -2293,26 +2396,62 @@ function addTrace(steps) {
   $("#messages").appendChild(el); $("#messages").scrollTop = 1e9;
 }
 
-let busy = false;               // one turn at a time per the whole workspace
-let controller = null;          // AbortController for the in-flight turn
-let turnId = null;              // the name this turn answers to, for Stop
+//: Every turn in flight, by agent id.
+//:
+//: One entry per agent and no more — an agent's history is an append log, and
+//: two turns writing into it interleave into a conversation that happened to
+//: nobody. As many entries at once as the user starts, which is the point:
+//: this replaced a single `busy` boolean that made the *window* the limit
+//: rather than the model.
+//:
+//: A record is `{ agent, turnId, controller, view, text, images, connectors }`.
+//: `view` is the thinking indicator as state rather than as a DOM node, so the
+//: turn survives the user looking at something else.
+const TURNS = {};
 
-// Stop the running turn. The server is told first and the fetch is left alone,
+//: Agents whose reply arrived while the user was looking somewhere else.
+//:
+//: The reply itself is on the server the moment the turn ends, so this is not
+//: a copy of anything — it is only what lets the rail say *there is something
+//: here*. Cleared when the agent is opened, because then it has been read.
+const LANDED = new Set();
+
+/** Is this agent mid-turn? With no argument, asks about the one on screen. */
+function isBusy(id) {
+  const key = (id === undefined || id === null) ? current : id;
+  return !!(key && TURNS[key]);
+}
+
+// Stop one agent's turn. The server is told first and the fetch is left alone,
 // because the turn keeps whatever it had already written and sends it back —
 // aborting here would throw that away and, worse, leave the model calls running
 // on the user's own key with the screen saying the work had ended.
-async function stopTurn() {
-  if (!turnId) { if (controller) controller.abort(); return; }
-  const id = turnId;
+//
+// Takes the agent rather than reading `current`: Stop has to mean "stop that
+// one", or pressing it after switching stops the wrong agent — and the one the
+// user meant goes on spending their money.
+async function stopTurn(agentId) {
+  const turn = TURNS[(agentId === undefined || agentId === null) ? current : agentId];
+  if (!turn) return;
+  if (!turn.turnId) { if (turn.controller) turn.controller.abort(); return; }
   try {
-    await api(`/api/agents/turns/${encodeURIComponent(id)}/stop`, { method: "POST" });
+    await api(`/api/agents/turns/${encodeURIComponent(turn.turnId)}/stop`,
+              { method: "POST" });
   } catch (_) {
-    if (controller) controller.abort();   // could not reach it; end it locally
+    if (turn.controller) turn.controller.abort();   // unreachable; end it here
   }
 }
 
+/** Paint the composer for whichever agent is on screen.
+ *
+ * The composer is one control shared by every agent, so what it shows is a
+ * question about the visible one and nothing else. Calling `setBusy` directly
+ * from a turn is what let a reply landing for a background agent re-enable an
+ * input that belonged to an agent still thinking.
+ */
+function syncComposer() { setBusy(isBusy(current)); }
+
 function setBusy(on) {
-  busy = on;
   $("#input").disabled = on;
   const b = $("#send");
   // Swap the ICON. This wrote textContent, which did two things at once: it
@@ -2339,93 +2478,159 @@ const THINK_PHRASES = [
 const THINK_EST = { "claude-code": 18, ollama: 12, subscription: 15,
   anthropic: 8, openai: 8, openrouter: 9, mock: 1 };
 
+/** One turn's progress, as state that outlives the node showing it.
+ *
+ * This used to *be* a DOM node: it appended one and handed back closures over
+ * it. That was fine for exactly as long as a turn could not outlive the screen
+ * it started on — `renderHistory` assigns `innerHTML`, so switching agents took
+ * the node and left the closures writing into an orphan. The turn kept running
+ * and the window stopped saying so.
+ *
+ * So the progress is the record and the node is a view of it. `attach()` draws
+ * one, `detach()` takes it down, and a single turn may do both any number of
+ * times. The reply-so-far is kept, not re-derived — while it is streaming there
+ * is no other copy of it anywhere, and losing it to a glance at another agent
+ * would be losing the only one.
+ */
 function makeThinking(provider) {
-  const est = THINK_EST[provider] || 12;
-  const el = addMsg("assistant", "");
-  el.classList.add("thinking");
-  el.innerHTML =
-    `<div class="think-row"><span class="think-dot"></span>
-       <span class="think-msg">Thinking…</span><span class="think-time"></span></div>
-     <div class="think-bar"><div class="think-fill"></div></div>`;
-  const msgEl = el.querySelector(".think-msg");
-  const timeEl = el.querySelector(".think-time");
-  const fill = el.querySelector(".think-fill");
-  const t0 = performance.now();
-  let pi = -1;
-  const tick = () => {
-    const elapsed = (performance.now() - t0) / 1000;
-    // asymptotic progress: approaches ~97% but never completes until the reply lands
-    fill.style.width = Math.min(97, 100 * (1 - Math.exp(-elapsed / est))).toFixed(1) + "%";
-    const remain = est - elapsed;
-    timeEl.textContent = remain > 0.5 ? `~${Math.ceil(remain)}s` : "almost there…";
-    const want = Math.min(THINK_PHRASES.length - 1, Math.floor(elapsed / 2.5));
-    if (want !== pi) { pi = want; msgEl.textContent = THINK_PHRASES[pi]; }
+  const view = {
+    est: THINK_EST[provider] || 12,
+    t0: performance.now(),
+    label: "Thinking…",      // the phrase, or the tool now running
+    text: "",                // the reply as far as it has been streamed
+    guessing: true,          // still filling silence with an estimate
+    el: null, timer: null, body: null,
   };
-  tick();
-  let timer = setInterval(tick, 150);
-  let body = null;
+  const paint = () => {
+    const el = view.el;
+    if (!el) return;
+    const msgEl = el.querySelector(".think-msg");
+    const timeEl = el.querySelector(".think-time");
+    const fill = el.querySelector(".think-fill");
+    if (view.guessing) {
+      const elapsed = (performance.now() - view.t0) / 1000;
+      // asymptotic progress: approaches ~97% but never completes until the reply lands
+      if (fill) fill.style.width =
+        Math.min(97, 100 * (1 - Math.exp(-elapsed / view.est))).toFixed(1) + "%";
+      const remain = view.est - elapsed;
+      if (timeEl) timeEl.textContent = remain > 0.5 ? `~${Math.ceil(remain)}s` : "almost there…";
+      view.label = THINK_PHRASES[Math.min(THINK_PHRASES.length - 1, Math.floor(elapsed / 2.5))];
+    } else {
+      if (fill) fill.style.width = "100%";
+      if (timeEl) timeEl.textContent = "";
+    }
+    if (msgEl) msgEl.textContent = view.label;
+    if (view.text) {
+      if (!view.body) {
+        view.body = document.createElement("div");
+        view.body.className = "think-preview";
+        el.appendChild(view.body);
+      }
+      view.body.textContent = view.text;
+    }
+  };
+  const scroll = () => { const w = $("#messages"); if (w) w.scrollTop = w.scrollHeight; };
+  view.attach = () => {
+    if (view.el) return view.el;
+    const el = addMsg("assistant", "");
+    el.classList.add("thinking");
+    el.innerHTML =
+      `<div class="think-row"><span class="think-dot"></span>
+         <span class="think-msg">Thinking…</span><span class="think-time"></span></div>
+       <div class="think-bar"><div class="think-fill"></div></div>`;
+    view.el = el; view.body = null;
+    paint();
+    // The ticker only runs while there is silence to fill, and it is restarted
+    // per attach rather than per turn — the estimate is drawn from `t0`, so a
+    // view that comes back mid-turn carries on from where the turn actually is
+    // instead of restarting the countdown.
+    if (view.guessing) view.timer = setInterval(paint, 150);
+    scroll();
+    return el;
+  };
+  view.detach = () => {
+    if (view.timer) { clearInterval(view.timer); view.timer = null; }
+    if (view.el) view.el.remove();
+    view.el = null; view.body = null;
+  };
   // Once anything real arrives, stop guessing. The phrases and the countdown
   // exist only to fill silence, and there is no longer any silence to fill.
   const stopGuessing = () => {
-    if (timer) { clearInterval(timer); timer = null; }
-    if (fill) fill.style.width = "100%";
-    if (timeEl) timeEl.textContent = "";
+    if (!view.guessing) return;
+    view.guessing = false;
+    if (view.timer) { clearInterval(view.timer); view.timer = null; }
   };
-  return {
-    el,
-    note: (label) => { stopGuessing(); if (msgEl) msgEl.textContent = label; },
-    preview: (textSoFar) => {
-      stopGuessing();
-      if (!body) {
-        body = document.createElement("div");
-        body.className = "think-preview";
-        el.appendChild(body);
-      }
-      body.textContent = textSoFar;
-      const wrap = $("#messages");
-      if (wrap) wrap.scrollTop = wrap.scrollHeight;
-    },
-    done: () => { if (timer) clearInterval(timer); el.remove(); },
+  view.note = (label) => { stopGuessing(); view.label = label; paint(); };
+  view.preview = (textSoFar) => {
+    stopGuessing(); view.text = textSoFar; paint(); if (view.el) scroll();
   };
+  view.done = () => view.detach();
+  return view;
 }
 
 async function send(text) {
-  if (busy) return;             // guard: ignore sends while a turn is running
-  setBusy(true);
-  controller = new AbortController();
-  // Named before the request leaves, so Stop works from the first frame the
-  // button is visible rather than from whenever the server gets around to us.
-  turnId = (crypto.randomUUID && crypto.randomUUID())
-    || `t-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  // Detach the attachments the moment the turn starts: the user can type the
-  // next message while this one runs, and anything still in the tray then
-  // belongs to THAT message, not this one.
-  sentImages = attachments;
+  const aid = current;
+  if (!aid || TURNS[aid]) return;   // one turn per agent; the composer says so
+  // Everything this turn needs is copied onto its own record, and nothing below
+  // reads `current` again. The user may switch agents a word into the reply —
+  // a turn that kept reading the global would post its answer, its trace and
+  // its "Stopped." into whichever conversation they happened to be looking at.
+  const turn = {
+    agent: aid,
+    // Named before the request leaves, so Stop works from the first frame the
+    // button is visible rather than from whenever the server gets around to us.
+    turnId: (crypto.randomUUID && crypto.randomUUID())
+      || `t-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    controller: new AbortController(),
+    text,
+    // Detach the attachments and the grants the moment the turn starts: the
+    // user can type the next message while this one runs — to this agent or to
+    // another one — and anything still in the tray then belongs to THAT
+    // message. Clearing them at the end instead meant a turn finishing could
+    // wipe a grant that had since been attached for a different agent.
+    images: attachments,
+    connectors: attachedConnectors.slice(),
+  };
   attachments = [];
+  attachedConnectors = [];
   renderAttachments();
-  addMsg("user", text, sentImages);
-  const curAgent = agents.find((x) => x.id === current);
-  const thinkProv = (curAgent && curAgent.model_provider) || $("#provider").value;
-  const think = makeThinking(thinkProv);
+  renderConnectorChips();
+  TURNS[aid] = turn;
+  LANDED.delete(aid);
+  syncComposer();
+  paintAgentStatus();
+  addMsg("user", text, turn.images);
+  const sendingAgent = agents.find((x) => x.id === aid);
+  const thinkProv = (sendingAgent && sendingAgent.model_provider) || $("#provider").value;
+  const think = turn.view = makeThinking(thinkProv);
+  think.attach();
   try {
-    const res = await streamTurn(text, think);
+    const res = await streamTurn(turn, think);
     think.done();
-    addTrace(res.trace || []);
-    addMsg("assistant", res.reply);
+    // Only draw into a transcript that is still this agent's. The reply is
+    // stored server-side either way, so the rail is told instead and opening
+    // the agent loads it — the one thing we must never do is write an answer
+    // from one agent into another agent's conversation.
+    if (current === aid) {
+      addTrace(res.trace || []);
+      addMsg("assistant", res.reply);
+    } else {
+      LANDED.add(aid);
+    }
     loadBrain();
     loadTasks();       // an agent may have added/completed a task this turn
     loadReminders();   // …or set a reminder
   } catch (e) {
     think.done();
-    if (controller && controller.signal.aborted) addMsg("assistant", "Stopped.");
-    else addMsg("assistant", String(e));
+    const note = (turn.controller && turn.controller.signal.aborted)
+      ? "Stopped." : String(e);
+    if (current === aid) addMsg("assistant", note);
+    else LANDED.add(aid);
   }
   finally {
-    controller = null; turnId = null;
-    // The grant belonged to the message that has now been sent.
-    attachedConnectors = [];
-    renderConnectorChips();
-    setBusy(false);
+    delete TURNS[aid];
+    syncComposer();    // reads `current`, so a background turn cannot free the composer
+    paintAgentStatus();
   }
 }
 
@@ -2453,8 +2658,15 @@ async function send(text) {
 // binding, which the picker writes, both labels render, and the server
 // resolves — and the request names no provider at all.
 
-async function streamTurn(text, think) {
-  const body = JSON.stringify({
+/** The request one turn puts on the wire.
+ *
+ * Built from the turn's record rather than from the live globals, for the same
+ * reason the rest of it is: by the time the stream falls back to `plainTurn`
+ * the tray and the `@` chips may belong to a different agent entirely, and the
+ * retry has to send what was asked, not what is on screen now.
+ */
+function turnBody(turn) {
+  return JSON.stringify({
     // NO provider/model. The agent's own binding decides, server-side.
     //
     // These used to be sent from localStorage, and `run_turn` treats a provider
@@ -2471,24 +2683,28 @@ async function streamTurn(text, think) {
     // these is what makes the thing shown and the thing used the same thing.
     // An agent with no binding falls to settings.model_provider — which is
     // exactly what the "Auto" label means.
-    message: text,
+    message: turn.text,
     effort: localStorage.getItem("chitragupta_effort") || undefined,
-    turn_id: turnId || undefined,
+    turn_id: turn.turnId || undefined,
     // Granted for this turn only. The server never stores these.
-    connectors: attachedConnectors.slice(),
-    images: sentImages.map((a) => ({ data_url: a.dataUrl, name: a.name })),
+    connectors: (turn.connectors || []).slice(),
+    images: (turn.images || []).map((a) => ({ data_url: a.dataUrl, name: a.name })),
   });
+}
+
+async function streamTurn(turn, think) {
+  const body = turnBody(turn);
   let resp;
   try {
-    resp = await fetch(`/api/agents/${current}/chat/stream`, {
+    resp = await fetch(`/api/agents/${turn.agent}/chat/stream`, {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body, signal: controller.signal,
+      body, signal: turn.controller.signal,
     });
   } catch (e) {
-    if (controller.signal.aborted) throw e;
+    if (turn.controller.signal.aborted) throw e;
     resp = null;
   }
-  if (!resp || !resp.ok || !resp.body) return plainTurn(body);
+  if (!resp || !resp.ok || !resp.body) return plainTurn(turn, body);
 
   const reader = resp.body.getReader();
   const decoder = new TextDecoder();
@@ -2522,13 +2738,13 @@ async function streamTurn(text, think) {
   }
   if (result) return result;
   if (failure) throw failure;
-  return plainTurn(body);        // stream ended with nothing usable
+  return plainTurn(turn, body);  // stream ended with nothing usable
 }
 
-async function plainTurn(body) {
-  return api(`/api/agents/${current}/chat`, {
+async function plainTurn(turn, body) {
+  return api(`/api/agents/${turn.agent}/chat`, {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body, signal: controller.signal,
+    body: body || turnBody(turn), signal: turn.controller.signal,
   });
 }
 

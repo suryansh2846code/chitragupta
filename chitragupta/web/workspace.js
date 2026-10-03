@@ -546,7 +546,9 @@ $("#pickIngest").onclick = async () => {
 
 $("#composer").onsubmit = (e) => {
   e.preventDefault();
-  if (busy) { stopTurn(); return; }   // Stop — the server hears about it
+  // Stop — named, so it stops the agent on screen rather than the last one to
+  // have started a turn. With several running, those are different agents.
+  if (isBusy(current)) { stopTurn(current); return; }
   const v = $("#input").value.trim();
   if ((v || attachments.length) && current) {
     $("#input").value = ""; autoGrow(); send(v);
@@ -568,7 +570,14 @@ $("#input").addEventListener("keydown", (e) => {
   if (open && e.key === "Escape") { e.preventDefault(); closeConnectorPicker(); return; }
   if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("#composer").requestSubmit(); }
 });
-$("#clearBtn").onclick = async () => { await api(`/api/agents/${current}/clear`, { method: "POST" }); selectAgent(current); toast("chat cleared"); };
+$("#clearBtn").onclick = async () => {
+  // A reply still being written would be appended to the history we just
+  // emptied, so the chat would come back holding the one thing the user asked
+  // to be rid of. Stop it first, or say so.
+  if (isBusy(current)) { toast("Stop the current reply first"); return; }
+  await api(`/api/agents/${current}/clear`, { method: "POST" });
+  selectAgent(current); toast("chat cleared");
+};
 $("#ingestBtn").onclick = async () => {
   const t = $("#ingestText").value.trim(); if (!t) return;
   await api("/api/brain/ingest", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: t }) });

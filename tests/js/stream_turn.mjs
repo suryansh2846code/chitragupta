@@ -79,13 +79,15 @@ const src = appSource(path.dirname(APP_JS));
 new Function(
   src +
   "\nglobalThis.__streamTurn = streamTurn;" +
-  "\nglobalThis.__setCurrent = (c) => { current = c; };" +
-  "\nglobalThis.__setController = (c) => { controller = c; };" +
   "\nglobalThis.__setApi = (f) => { plainTurn = f; };"
 )();
 
-globalThis.__setCurrent("research");
-globalThis.__setController({ signal: { aborted: false } });
+// A turn is a record now, not three globals — one agent's reply must not be
+// readable from another agent's in-flight state. So the fixture is the record.
+const turn = {
+  agent: "research", turnId: "t-stream", controller: { signal: { aborted: false } },
+  text: "hello", images: [], connectors: [],
+};
 
 const think = {
   preview: (t) => previews.push(t),
@@ -95,7 +97,7 @@ const think = {
 
 let result = null, error = null;
 try {
-  result = await globalThis.__streamTurn("hello", think);
+  result = await globalThis.__streamTurn(turn, think);
 } catch (e) {
   error = String(e);
 }
