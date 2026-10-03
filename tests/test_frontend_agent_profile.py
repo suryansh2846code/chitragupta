@@ -64,22 +64,52 @@ def test_every_tab_draws_something(report):
         assert children > 0, f"the {tab} tab drew nothing"
 
 
-def test_the_persona_box_holds_the_file_the_server_sent(report):
+def test_the_persona_tab_offers_choices_rather_than_a_blank_box(report):
+    """It was a textarea asking a non-technical person to compose a system
+    prompt, which is a box most people close again."""
+    persona = report["persona"]
+    assert persona["chips"] == 7, "the chip groups did not render"
+    assert persona["levels"] == 3, "the autonomy levels did not render"
+
+
+def test_the_options_come_from_the_server(report):
+    """A copy of these lists in JavaScript would be a second copy to keep
+    current, and the one that drifts is the one somebody is choosing from."""
+    assert report["persona"]["chipLabels"] == [
+        "Supportive", "Warm", "Professional",      # traits
+        "Concise", "Bullet points",                # communication
+        "Analytical", "First principles",          # thinking
+    ]
+
+
+def test_what_was_already_chosen_comes_back_on(report):
+    """A picker that forgets its own state reads as a picker that did not
+    save."""
+    assert report["persona"]["onAtLoad"] == ["Warm"]
+    assert report["persona"]["levelOnAtLoad"] == 1, "the stored level is not lit"
+
+
+def test_the_free_text_field_holds_what_was_written(report):
     assert report["persona"]["loaded"] == "Be brief."
 
 
-def test_save_is_dead_until_something_changes(report):
-    """And alive the moment it does — the whole point of holding the button
-    rather than looking it up by id from a handler."""
-    assert report["persona"]["saveDisabled"] is True
-    assert report["persona"]["saveEnabledAfterEdit"] is True
+def test_choosing_an_autonomy_level_replaces_the_last_one(report):
+    """Three levels lit at once is not a choice. It happened: clearing the
+    others by searching the DOM for them found nothing, so the first stayed
+    on."""
+    assert report["persona"]["levelsOnAfterPick"] == 1
 
 
-def test_saving_sends_what_is_on_screen(report):
+def test_saving_sends_every_choice_together(report):
+    """One document is rendered from all of them server-side, so a save that
+    sent only the field that changed would render the rest away."""
     saved = report["persona"]["saved"]
     assert saved and saved["method"] == "PUT"
-    assert saved["url"].endswith("/files/persona.md")
-    assert json.loads(saved["body"])["text"] == "Answer only in haiku."
+    assert saved["url"].endswith("/persona")
+    body = json.loads(saved["body"])
+    assert body["traits"] == ["Warm", "Professional"]
+    assert body["autonomy"] == "on_its_own"
+    assert body["extra"] == "Answer only in haiku."
 
 
 def test_forgetting_deletes_the_file_rather_than_saving_a_blank_one(report):

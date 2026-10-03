@@ -159,7 +159,7 @@ function renderProfilePane() {
   if (!pane || !a) return;
   pane.textContent = "";
   if (profTab === "profile") return renderProfileIdentity(pane, a);
-  if (profTab === "persona") return renderProfileDoc(pane, a, "persona");
+  if (profTab === "persona") return renderProfilePersona(pane, a);
   if (profTab === "memory") return renderProfileDoc(pane, a, "memory");
   if (profTab === "model") return renderProfileModel(pane, a);
   if (profTab === "permissions") return renderProfilePermissions(pane, a);
@@ -301,18 +301,206 @@ function renderProfileDanger(pane, a) {
   pane.appendChild(box);
 }
 
-// ── Persona and Memory: the two files ──────────────────────────────────────
+// ── Persona: chosen, not written ───────────────────────────────────────────
+//
+// This was a blank box asking somebody to compose a system prompt, which is a
+// box most people close again. It is the same `persona.md` underneath — the
+// choices are rendered into it server-side by `agents/persona.py`, so nothing
+// about how an agent reads its instructions changed.
+//
+// **The vocabulary comes down the wire.** A copy of the trait and style lists
+// here would be a second copy to keep current, and the one that drifts is the
+// one somebody is choosing from.
 
+//: What the server said, held so a save can send the whole picture and a
+//: re-render can redraw it without another round trip.
+let profPersona = null;
+let profVocab = null;
+
+async function renderProfilePersona(pane, a) {
+  const head = document.createElement("div");
+  head.innerHTML =
+    `<h2>How ${esc(a.name)} works</h2>
+     <p class="ms-sub">Pick what fits. It is written into
+       <code>persona.md</code> in this agent's own folder, so you can still open
+       it outside the app — saving here rewrites that file from these choices.</p>`;
+  pane.appendChild(head);
+
+  const body = document.createElement("div");
+  body.id = "profPersonaBody";
+  body.innerHTML = `<p class="ms-sub">Loading…</p>`;
+  pane.appendChild(body);
+
+  const id = a.id;
+  try {
+    const got = await api(`/api/agents/${encodeURIComponent(id)}/persona`);
+    if (profAgentId !== id || profTab !== "persona") return;
+    profPersona = got.persona;
+    profVocab = got.vocabulary;
+  } catch (e) {
+    body.innerHTML = `<p class="ms-sub">Could not open this agent's persona.</p>`;
+    toast(String(e));
+    return;
+  }
+  drawPersonaBody(body, a);
+}
+
+/** One group of chips. Multi-select, capped, and the cap is shown not enforced
+ *  silently — a chip that refuses to turn on with no explanation reads as a
+ *  broken control. */
+function personaChips(box, { title, hint, options, chosen, cap, onChange }) {
+  const sec = document.createElement("section");
+  sec.className = "pp-sec";
+  const h = document.createElement("div");
+  h.className = "pp-head";
+  h.innerHTML = `<div class="pp-title">${esc(title)}</div>
+                 <div class="pp-hint">${esc(hint)}</div>`;
+  sec.appendChild(h);
+
+  const row = document.createElement("div");
+  row.className = "pp-chips";
+  for (const opt of options) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "pp-chip" + (chosen.includes(opt) ? " is-on" : "");
+    b.setAttribute("aria-pressed", String(chosen.includes(opt)));
+    b.textContent = opt;
+    b.onclick = () => {
+      const at = chosen.indexOf(opt);
+      if (at >= 0) chosen.splice(at, 1);
+      else if (chosen.length >= cap) {
+        toast(`Pick at most ${cap} — more than that stops describing anything.`);
+        return;
+      } else chosen.push(opt);
+      b.classList.toggle("is-on", at < 0);
+      b.setAttribute("aria-pressed", String(at < 0));
+      onChange();
+    };
+    row.appendChild(b);
+  }
+  sec.appendChild(row);
+  box.appendChild(sec);
+}
+
+/** The autonomy choice: one card per level, the whole card clickable. */
+function personaAutonomy(box, chosen, onChange) {
+  const sec = document.createElement("section");
+  sec.className = "pp-sec";
+  sec.innerHTML = `<div class="pp-head">
+      <div class="pp-title">How much it decides on its own</div>
+      <div class="pp-hint">What it may use is the Permissions tab. This is how
+        far it goes with what it has.</div>
+    </div>`;
+  const row = document.createElement("div");
+  row.className = "pp-levels";
+  // The cards are held, not re-found with `row.querySelectorAll(".pp-level")`
+  // from inside the handler. These three are built right here, so searching
+  // the DOM for them again is the selector-as-a-claim-about-markup failure
+  // `web/CLAUDE.md` records — and it is not hypothetical: with the lookup,
+  // choosing a second level left the first one lit as well.
+  const cards = [];
+  for (const level of profVocab.autonomy) {
+    const card = document.createElement("button");
+    card.type = "button";
+    card.className = "pp-level" + (level.key === chosen.value ? " is-on" : "");
+    card.setAttribute("role", "radio");
+    card.setAttribute("aria-checked", String(level.key === chosen.value));
+    card.innerHTML = `<span class="pp-level-name">${esc(level.label)}</span>
+                      <span class="pp-level-blurb">${esc(level.blurb)}</span>`;
+    card.onclick = () => {
+      chosen.value = level.key;
+      for (const other of cards) {
+        other.classList.remove("is-on");
+        other.setAttribute("aria-checked", "false");
+      }
+      card.classList.add("is-on");
+      card.setAttribute("aria-checked", "true");
+      onChange();
+    };
+    cards.push(card);
+    row.appendChild(card);
+  }
+  sec.appendChild(row);
+  box.appendChild(sec);
+}
+
+function drawPersonaBody(body, a) {
+  body.textContent = "";
+  const v = profVocab;
+  const p = profPersona;
+  const traits = [...(p.traits || [])];
+  const comm = [...(p.communication || [])];
+  const think = [...(p.thinking || [])];
+  const level = { value: p.autonomy || v.default_autonomy };
+  const dirty = () => markProfileDirty(true);
+
+  personaAutonomy(body, level, dirty);
+  personaChips(body, {
+    title: "How it comes across", hint: `Up to ${v.limits.traits}.`,
+    options: v.traits, chosen: traits, cap: v.limits.traits, onChange: dirty });
+  personaChips(body, {
+    title: "How it says things", hint: `Up to ${v.limits.communication}.`,
+    options: v.communication, chosen: comm, cap: v.limits.communication,
+    onChange: dirty });
+  personaChips(body, {
+    title: "How it works a problem", hint: `Up to ${v.limits.thinking}.`,
+    options: v.thinking, chosen: think, cap: v.limits.thinking,
+    onChange: dirty });
+
+  const sec = document.createElement("section");
+  sec.className = "pp-sec";
+  sec.innerHTML = `<div class="pp-head">
+      <div class="pp-title">Anything else</div>
+      <div class="pp-hint">In your own words. This is kept exactly as you write
+        it, and it is the part the agent is told outranks the choices above.</div>
+    </div>`;
+  const area = document.createElement("textarea");
+  area.className = "profile-doc pp-extra";
+  area.id = "profPersonaExtra";
+  area.setAttribute("aria-label", "Anything else");
+  area.placeholder =
+    "e.g. Always check my calendar before proposing a time, and never reply to recruiters.";
+  area.value = p.extra || "";
+  area.oninput = dirty;
+  sec.appendChild(area);
+  body.appendChild(sec);
+
+  const foot = document.createElement("div");
+  foot.className = "profile-foot";
+  const save = document.createElement("button");
+  save.className = "tiny";
+  save.textContent = "Save";
+  save.disabled = true;
+  profSaveEl = save;
+  save.onclick = async () => {
+    save.disabled = true;
+    try {
+      const got = await api(`/api/agents/${encodeURIComponent(a.id)}/persona`, {
+        method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ traits, communication: comm, thinking: think,
+                               autonomy: level.value, extra: area.value }),
+      });
+      profPersona = got.persona;
+    } catch (e) {
+      toast(String(e)); save.disabled = false; return;
+    }
+    profDirty = false;
+    toast("Saved");
+    // Read only takes tools away and leaving it puts them back, so the
+    // Permissions tab is now showing something other than what is true.
+    if (typeof loadAgentTools === "function") AGENT_TOOLS_FOR = "";
+  };
+  foot.appendChild(save);
+  body.appendChild(foot);
+  markProfileDirty(false);
+}
+
+// ── Memory: the file it writes itself ──────────────────────────────────────
+
+//: Only `memory.md` now. `persona.md` is still a file and still the thing the
+//: agent reads, but it is no longer edited as one — the Persona tab writes it
+//: from choices, so a second spec for it here would be a screen nothing draws.
 const PROF_DOCS = {
-  persona: {
-    file: "persona.md",
-    title: "Instructions",
-    sub: `What this agent runs on. Saved as <code>persona.md</code> in its own
-          folder, so you can open it outside the app.`,
-    empty: "Using the instructions this agent ships with.",
-    reset: "Use the instructions we ship",
-    cleared: "Back to the instructions we ship",
-  },
   memory: {
     file: "memory.md",
     title: "What it has learned",
@@ -333,7 +521,7 @@ async function loadProfileFiles() {
     profFiles = {};
     for (const f of got.files || []) profFiles[f.name] = f;
   } catch (_) { /* the pane shows the file itself; this is only the meter */ }
-  if (profTab === "persona" || profTab === "memory") renderProfileMeter();
+  if (profTab === "memory") renderProfileMeter();
 }
 
 function renderProfileMeter() {

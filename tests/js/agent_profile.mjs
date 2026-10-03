@@ -27,14 +27,8 @@ function makeEl(tag = "div") {
   const el = {
     tag, value: "", hidden: false, disabled: false, title: "", maxLength: 0,
     style: {}, dataset: {}, onclick: null, oninput: null, onchange: null,
-    onkeydown: null, children: [], _attrs: {}, className: "", _html: "", _text: "",
-    placeholder: "", htmlFor: "", id: "", type: "",
-    classList: {
-      _set: new Set(),
-      add(c) { this._set.add(c); }, remove(c) { this._set.delete(c); },
-      toggle(c, on) { if (on === undefined) { this._set.has(c) ? this._set.delete(c) : this._set.add(c); } else if (on) this._set.add(c); else this._set.delete(c); },
-      contains(c) { return this._set.has(c); },
-    },
+    onkeydown: null, children: [], _attrs: {}, _html: "", _text: "",
+    placeholder: "", htmlFor: "", id: "", type: "", _classes: new Set(),
     appendChild(child) { el.children.push(child); return child; },
     // Real: `profile.js` builds its footers with `append(a, b, c)`, which is a
     // DOM method a stub that only has `appendChild` would silently lack — the
@@ -48,6 +42,25 @@ function makeEl(tag = "div") {
     addEventListener() {}, removeEventListener() {}, focus() {}, remove() {},
     closest: () => null, querySelector: () => null, querySelectorAll: () => [],
     getBoundingClientRect: () => ({ left: 0, top: 0, width: 64, height: 64 }),
+  };
+  // `className` and `classList` are ONE thing, as they are in a browser. They
+  // were two here — a plain string and a separate Set — so a render that set
+  // the string and a handler that toggled the Set disagreed, and every
+  // `classList.contains` the harness asked came back false against markup that
+  // was visibly correct. A stub that can disagree with itself produces false
+  // passes, not just false failures.
+  Object.defineProperty(el, "className", {
+    get: () => [...el._classes].join(" "),
+    set: (v) => { el._classes = new Set(String(v).split(/\s+/).filter(Boolean)); },
+  });
+  el.classList = {
+    add: (c) => el._classes.add(c),
+    remove: (c) => el._classes.delete(c),
+    toggle: (c, on) => {
+      const want = on === undefined ? !el._classes.has(c) : !!on;
+      if (want) el._classes.add(c); else el._classes.delete(c);
+    },
+    contains: (c) => el._classes.has(c),
   };
   Object.defineProperty(el, "textContent", {
     get: () => el._text || el.children.map((c) => c.textContent).join(""),
@@ -130,6 +143,24 @@ globalThis.fetch = async (url, opts) => {
     ] });
   }
   if (/\/files\/persona\.md$/.test(url)) return json({ text: "Be brief." });
+  if (/\/persona$/.test(url)) {
+    return json({
+      persona: { traits: ["Warm"], communication: [], thinking: [],
+                 autonomy: "ask_first", extra: "Be brief." },
+      vocabulary: {
+        traits: ["Supportive", "Warm", "Professional"],
+        communication: ["Concise", "Bullet points"],
+        thinking: ["Analytical", "First principles"],
+        autonomy: [
+          { key: "read_only", label: "Read only", blurb: "Looks and reports." },
+          { key: "ask_first", label: "Ask before changing", blurb: "Asks." },
+          { key: "on_its_own", label: "Acts on its own", blurb: "Gets on with it." },
+        ],
+        limits: { traits: 4, communication: 3, thinking: 3, extra: 4000 },
+        default_autonomy: "ask_first",
+      },
+    });
+  }
   if (/\/files\/memory\.md$/.test(url)) return json({ text: "- Keep it short" });
   if (/\/model$/.test(url)) return json({ provider: "claude", model: "claude-sonnet-5" });
   if (/\/history$/.test(url)) return json({ history: [] });
@@ -209,14 +240,41 @@ try {
     out.tabs[tab] = pane().children.length;
   }
 
-  // 4. Persona: the file the server sent is in the box, and Save sends it back.
+  // 4. Persona: chips, levels and a free-text field — not a blank box asking
+  //    somebody to compose a system prompt.
   globalThis.__openProfile("inbox", "persona");
   await tick(); await tick();
+  const chips = [];
+  const levels = [];
+  (function walk(n) {
+    if (n.classList && n.classList.contains("pp-chip")) chips.push(n);
+    if (n.classList && n.classList.contains("pp-level")) levels.push(n);
+    for (const c of n.children || []) walk(c);
+  })(pane());
   const doc = findBy(pane(), (n) => n.tag === "textarea");
-  out.persona = { loaded: doc && doc.value, saveDisabled: button("Save").disabled };
+  out.persona = {
+    chips: chips.length,
+    levels: levels.map((l) => l._text || l.textContent).length,
+    // The vocabulary came down the wire, so the chips are what the SERVER
+    // offers rather than a list this file keeps.
+    chipLabels: chips.map((c) => c._text),
+    onAtLoad: chips.filter((c) => c.classList.contains("is-on")).map((c) => c._text),
+    levelOnAtLoad: levels.findIndex((l) => l.classList.contains("is-on")),
+    loaded: doc && doc.value,
+    saveDisabled: button("Save").disabled,
+  };
+
+  // Pressing a chip is a change, and shows as one.
+  chips.find((c) => c._text === "Professional").onclick();
+  out.persona.saveEnabledAfterEdit = button("Save").disabled === false;
+  // Choosing a different autonomy level moves the selection rather than
+  // adding a second one.
+  levels[2].onclick();
+  out.persona.levelsOnAfterPick =
+    levels.filter((l) => l.classList.contains("is-on")).length;
+
   doc.value = "Answer only in haiku.";
   doc.oninput();
-  out.persona.saveEnabledAfterEdit = button("Save").disabled === false;
   requests.length = 0;
   await button("Save").onclick();
   await tick();

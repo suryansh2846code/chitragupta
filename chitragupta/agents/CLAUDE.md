@@ -155,6 +155,30 @@ permissions — and `library.py`, which is what Chitragupta *offers*.
   site-packages back on the path, which would hand a snippet every dependency
   the app has, including the ones that know where the credentials live.
 - Every new capability gets a case in `evaluation.py`.
+- **A persona is chosen, and `persona.md` is what the choices produce.**
+  `persona.py` holds the vocabulary, the store and the renderer; the file is
+  rewritten from the selections on every save, which is why the free-text field
+  exists and why the screen says so. **One direction only** — parsing sentences
+  back into chips would be a parser a user can break by typing. An agent that
+  had a hand-written `persona.md` and no selections gets it back as that
+  field's starting value, so the picker never eats what somebody wrote.
+  Every option is `(label, fragment)`: the chip and the clause are not the same
+  string, and reusing one produced *"communicate in a way that is concise and
+  bullet points"* — which is what the model would then act on. **Choosing
+  nothing renders nothing**, or a row holding only the default autonomy would
+  write a document over a preset's shipped instructions.
+- **Autonomy is not a second permission system**, and `/CLAUDE.md` is the
+  reason. The level does two things: `read_only` sets the tool list to the
+  tools whose tier is `READ` (derived from `tool_facts`, and the list it
+  replaced is stashed so leaving the level restores it rather than guessing),
+  and every level writes a sentence into the prompt about how much to decide
+  alone. It never widens what the gate allows — irreversible verbs, spending
+  money and reaching another person ask at **every** level, the most autonomous
+  level's prompt says so, and the agent is told not to claim otherwise.
+  It reads the roster through `roster.get_agent`, never `presets`: `custom`
+  imports this module and `presets` imports `custom`, so the obvious import
+  closes a cycle — which `test_import_layering.py` caught, counting the lazy
+  import as the real edge it is.
 - **An agent's prose lives in two files, and `profile_files.py` is the only
   thing that touches them.** `persona.md` is its instructions and `memory.md`
   is what it has learned about doing this job for this user. Both are
