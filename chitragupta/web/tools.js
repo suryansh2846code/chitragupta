@@ -188,13 +188,15 @@ const _toolSaving = new Set();
 //:
 //: None of these is a tool, and each is the thing that decides whether the
 //: tools above it can reach anything at all: which sites the browser may open,
-//: which folders exist on disk for an agent to read, and whether this agent may
-//: use a connector without asking first. They were endpoints with no screen,
-//: which is the same dead end as a switch with no endpoint and harder to spot.
+//: which folders exist on disk for an agent to read, whether this agent may use
+//: a connector without asking first, and which standing grants already let an
+//: action run unattended. They were endpoints with no screen, which is the same
+//: dead end as a switch with no endpoint and harder to spot.
 //:
 //: `forAgent` is stamped so a reply arriving after the user has switched agents
 //: cannot be drawn under the new one's name.
-let _PANEL = { forAgent: "", sites: null, folders: null, grants: null };
+let _PANEL = { forAgent: "", sites: null, folders: null, grants: null,
+               reach: null };
 
 //: An agent that does not exist yet — the one the builder is drawing.
 //:
@@ -329,17 +331,69 @@ function tierRow(card, bucket, items, why) {
 //: is a tool, so there is no switch to draw and nothing this screen could
 //: toggle. Saying nothing is what it used to do, and an app showing only "Read"
 //: reads as an app that cannot do anything else. It can; it asks first.
+//:
+//: **And it answers "who may it reach" here, rather than sending somebody to
+//: find out.** The first version of this row had a *Who it may reach* button
+//: that opened the global allow-list on the Actions screen. From a connector
+//: card that was a dead end twice over: the list holds every app's grants
+//: mixed together, and the only thing it can *add* is an email address — a
+//: connector key is `server:tool@scope`, minted by the call it describes and
+//: never typed. So the user pressed a button about DeepWiki, landed on a
+//: screen about email, and had nothing to do there. That is the exact failure
+//: `Group.more_screen` exists to stop, rebuilt by hand.
+//:
+//: The grants for THIS app are shown in the row instead, each with the one
+//: control that makes sense for a standing permission: take it back. A link
+//: out survives only where the destination can actually do something a person
+//: came for — a list they can type a new entry into.
 function askRow(card, draft) {
   const ask = card.ask;
   if (!ask || !ask.label) return "";
-  const open = !draft && screenOpener("allowlist")
+  const held = reachFor(card);
+  // `null` is "not asked yet" and `[]` is "none", exactly as the strips below
+  // treat theirs: claiming nothing is allowed before the answer is back would
+  // be wrong for the first few hundred milliseconds of every open.
+  const grants = held === null ? "" : held.length
+    ? `<span class="at-reach">
+         <span class="at-reach-lb">Runs without asking:</span>
+         ${held.map((g) => `<span class="at-chip">${esc(g.label || g.value)}
+           ${draft ? "" : `<button type="button" class="at-chip-x"
+             data-reach-off="${esc(g.value)}" data-reach-kind="${esc(g.kind || "")}"
+             aria-label="Ask again before reaching ${esc(g.label || g.value)}"
+             >×</button>`}</span>`).join("")}
+       </span>`
+    : `<span class="at-reach is-none">Nothing runs on its own yet — each one
+         asks the first time, and you allow it from that card.</span>`;
+  // Only where a person could type the next one. "Allow someone new" on a
+  // connector card would open a box for a key nobody can know in advance.
+  const open = !draft && ask.addable && screenOpener("allowlist")
     ? `<button type="button" class="tiny at-more" data-screen="allowlist"
-         >Who it may reach</button>` : "";
+         >Allow someone new</button>` : "";
   return `<div class="at-bulk is-ask">
     <span class="at-text">
       <span class="at-nm">${esc(ask.label)}</span>
       <span class="at-ds">${esc(ask.blurb || "")}</span>
+      ${grants}
     </span>${open}</div>`;
+}
+
+//: The standing grants that belong to ONE card, out of the list that holds all
+//: of them. `null` until the answer is back.
+//:
+//: A connector's grants are matched on the **server id** its keys start with,
+//: never on the label: a user can rename a connector, and a rename must not
+//: change which permissions are shown as belonging to it.
+function reachFor(card) {
+  const all = _PANEL.reach;
+  if (!Array.isArray(all)) return null;
+  if (card.kind === "connector") {
+    const id = (card.connectorId || "").toLowerCase();
+    if (!id) return [];
+    return all.filter((g) => g.kind === "connector_tool"
+      && String(g.value || "").toLowerCase().startsWith(`${id}:`));
+  }
+  const kind = (card.ask && card.ask.kind) || "";
+  return kind ? all.filter((g) => g.kind === kind) : [];
 }
 
 //: The live line under a card: the other half of its permission, as it stands.
@@ -731,6 +785,9 @@ function wireAgentToolActions(boxEl, agent) {
   boxEl.querySelectorAll("[data-grant]").forEach((b) => {
     b.onclick = () => toggleConnectorGrant(agent, b);
   });
+  boxEl.querySelectorAll("[data-reach-off]").forEach((b) => {
+    b.onclick = () => askAgainBefore(b);
+  });
   // Remember which disclosures are open. Every state that lands repaints the
   // panel, and without this it shuts every list the user had opened to decide
   // with.
@@ -953,6 +1010,31 @@ async function toggleConnectorGrant(agent, btn) {
   }
 }
 
+//: Take back one standing grant, from the card it belongs to.
+//:
+//: The only control a standing permission needs here. Making one is deliberately
+//: not offered: a grant is given from the approval card that was asking, in the
+//: moment somebody is reading what it would do — which is the whole reason
+//: `permissions` keeps them off this screen.
+async function askAgainBefore(btn) {
+  const value = btn.dataset.reachOff || "";
+  const kind = btn.dataset.reachKind || "";
+  if (!value) return;
+  btn.disabled = true;
+  try {
+    await api(`/api/agents/permissions/${encodeURIComponent(value)}`
+              + (kind ? `?kind=${encodeURIComponent(kind)}` : ""),
+              { method: "DELETE" });
+    _PANEL.reach = (_PANEL.reach || []).filter(
+      (g) => !(g.value === value && (g.kind || "") === kind));
+    toast("That will be asked about again");
+    redrawAgentTools();
+  } catch (e) {
+    toast("Couldn't change that — try again.");
+    btn.disabled = false;
+  }
+}
+
 // ── loading ────────────────────────────────────────────────────────────────
 
 //: The last context the panel drew from, so a permission that changed outside
@@ -971,20 +1053,23 @@ function redrawAgentTools() {
 //: the 2.47s stall `api/concurrency.py` exists to stop. The panel draws, these
 //: land, and the cards fill in.
 async function loadPanelPermissions(agentId) {
-  _PANEL = { forAgent: agentId, sites: null, folders: null, grants: null };
+  _PANEL = { forAgent: agentId, sites: null, folders: null, grants: null,
+             reach: null };
   const settled = await Promise.allSettled([
     api("/api/browser/sites"),
     api("/api/agents/folders"),
     agentId ? api(`/api/agents/${encodeURIComponent(agentId)}/connectors`) : null,
+    api("/api/agents/permissions"),
   ]);
   if (_PANEL.forAgent !== agentId) return;     // the user switched while we waited
-  const [sites, folders, grants] = settled;
+  const [sites, folders, grants, reach] = settled;
   // `[]` and `null` mean different things to every strip: empty is a fact worth
   // stating ("no folder is open yet"), and a failed fetch is not something to
   // state at all.
   if (sites.status === "fulfilled") _PANEL.sites = sites.value.sites || [];
   if (folders.status === "fulfilled") _PANEL.folders = folders.value.folders || [];
   if (grants.status === "fulfilled" && grants.value) _PANEL.grants = grants.value;
+  if (reach.status === "fulfilled") _PANEL.reach = reach.value.permissions || [];
   redrawAgentTools();
 }
 

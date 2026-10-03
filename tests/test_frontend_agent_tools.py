@@ -62,7 +62,10 @@ APPS = [
      "always": False, "read": [], "change": [], "run": [],
      "write_label": "Write", "run_label": "",
      "ask": {"label": "Send",
-             "blurb": "Sending mail always comes to you as a card you confirm."},
+             "blurb": "Sending mail always comes to you as a card you confirm.",
+             # Which list its cards are judged against, and whether a person
+             # could type the next entry for it. A connector key could not be.
+             "kind": "email_recipient", "addable": True},
      "more": {"screen": "connectors", "label": "Connect an account"}},
     {"key": "mac", "label": "Your Mac", "blurb": "Files on this computer.",
      "always": False, "read": [], "change": [], "run": [],
@@ -242,10 +245,80 @@ def test_the_ask_row_is_not_a_switch(full):
     assert "at-toggle" not in ask, ask[:300]
 
 
-def test_the_ask_row_names_where_the_standing_grant_lives(full):
-    """"It asks every time" is only half the answer — the other half is the
-    list that makes it stop asking, and it is on this screen now."""
-    assert 'data-screen="allowlist"' in full["html"]
+def test_the_ask_row_answers_who_it_may_reach_in_place(full):
+    """"It asks every time" is only half the answer — the other half is which
+    ones have stopped asking, and that one is answered in the row.
+
+    It used to be a *Who it may reach* button that opened the global allow-list
+    on the Actions screen. From a connector card that was a dead end twice
+    over: the list holds every app's grants together, and the only thing it can
+    add is an email address — a connector key is minted by the call it
+    describes and never typed. Somebody pressed a button about DeepWiki and
+    landed on a screen about email with nothing to do."""
+    assert "Who it may reach" not in full["html"], "the dead end came back"
+    # The row itself stays — what went is the button that led somewhere it
+    # could not answer from.
+    assert "is-ask" in _card(full["html"], "Gmail")
+
+
+def test_a_standing_grant_is_shown_on_the_card_it_belongs_to():
+    out = run(["gmail_search"], BUILTIN, [], panel={"reach": [
+        {"kind": "email_recipient", "value": "rahul@acme.com",
+         "label": "rahul@acme.com"},
+        {"kind": "chat_recipient", "value": "telegram:42", "label": "Dana"},
+    ]})
+    gmail = _card(out["html"], "Gmail")
+    assert "rahul@acme.com" in gmail
+    assert "Dana" not in gmail, "another app's grant was shown under Gmail"
+
+
+def test_a_connector_s_grants_are_matched_on_its_id_never_its_name():
+    """A user can rename a connector, and a rename must not change which
+    permissions are shown as belonging to it."""
+    out = run(["notion__search"], [*BUILTIN, CATEGORY, NOTION_TOOL], [READY],
+              panel={"reach": [
+                  {"kind": "connector_tool", "value": "notion:create_page@docs",
+                   "label": "create_page in docs"},
+                  {"kind": "connector_tool", "value": "linear:create_issue",
+                   "label": "create_issue"},
+              ]})
+    notion = _card(out["html"], "Notion")
+    assert "create_page in docs" in notion
+    assert "create_issue" not in notion
+
+
+def test_a_grant_can_be_taken_back_from_the_card():
+    """The only control a standing permission needs here. Making one is
+    deliberately not offered — that happens on the card that was asking."""
+    out = run(["gmail_search"], BUILTIN, [], panel={"reach": [
+        {"kind": "email_recipient", "value": "rahul@acme.com",
+         "label": "rahul@acme.com"}]})
+    assert 'data-reach-off="rahul@acme.com"' in out["html"]
+    assert 'data-reach-kind="email_recipient"' in out["html"]
+
+
+def test_only_a_list_you_could_type_into_offers_a_way_in():
+    """"Allow someone new" on a connector card would open a box for a key
+    nobody can know in advance."""
+    out = run(["notion__search"], [*BUILTIN, CATEGORY, NOTION_TOOL], [READY],
+              panel={"reach": []})
+    assert 'data-screen="allowlist"' in _card(out["html"], "Gmail")
+    assert 'data-screen="allowlist"' not in _card(out["html"], "Notion")
+
+
+def test_nothing_is_claimed_about_grants_before_the_answer_is_back():
+    out = run(["gmail_search"], BUILTIN, [])
+    assert "Nothing runs on its own yet" not in out["html"]
+    assert "Runs without asking" not in out["html"]
+
+
+def test_an_app_with_no_grants_says_how_one_is_made():
+    """A bare "nothing yet" leaves somebody looking for the control that adds
+    one. There isn't one here, and the sentence says where it is."""
+    out = run(["gmail_search"], BUILTIN, [], panel={"reach": []})
+    gmail = _card(out["html"], "Gmail")
+    assert "Nothing runs on its own yet" in gmail
+    assert "you allow it from that card" in gmail
 
 
 def test_a_connector_tool_is_named_after_its_connector(full):

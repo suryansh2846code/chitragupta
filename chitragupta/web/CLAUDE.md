@@ -253,10 +253,24 @@ script out of eleven does not fail; it passes.
 - **Some changes are actions, and an app that only says "Read" is lying.**
   Sending mail, adding an event, running somebody else's verb in GitHub — none
   of them is a tool, so there is nothing here to toggle. `askRow` says what
-  happens instead and names the list that makes it stop asking. Saying nothing
-  is what this used to do, and an app showing a single Read switch reads as an
-  app that cannot do anything else, which is what sends people hunting through
-  settings for a control that does not exist.
+  happens instead. Saying nothing is what this used to do, and an app showing a
+  single Read switch reads as an app that cannot do anything else, which is
+  what sends people hunting through settings for a control that does not exist.
+  **And it answers "who may it reach" in the row, not behind a button.** The
+  first version ended that row with *Who it may reach*, which opened the global
+  allow-list on the Actions screen. From a connector card that was a dead end
+  twice over: the list holds every app's grants mixed together, and the only
+  thing it can **add** is an email address — a connector key is
+  `server:tool@scope`, minted by the call it describes and never typed. So a
+  user pressed a button about DeepWiki, landed on a screen about email, and had
+  nothing to do there. Exactly the failure `more_screen` exists to stop, rebuilt
+  by hand. `reachFor` slices the one list by the card it is drawn on — by
+  **server id** for a connector, never by label, because a rename must not
+  change which permissions look like its — and each grant gets the one control
+  a standing permission needs: take it back. Making one is deliberately absent:
+  that happens on the approval card that was asking, while somebody is reading
+  what it would do. The link out survives only where `ask.addable` says a
+  person could type the next entry.
 - **Nothing on this screen may be a control that does nothing — in either
   direction.** Three permissions had a working endpoint and nothing in the app
   that called it: `/api/agents/folders`, `/api/agents/{id}/connectors`, and the

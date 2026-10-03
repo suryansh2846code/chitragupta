@@ -561,8 +561,10 @@ In order: **the focused test → the subsystem's suite → `pytest` →
 `ruff check chitragupta tests` → `mypy chitragupta` → the `tests/js/` harnesses if
 the frontend changed → `chitragupta app` opens and renders.**
 
-Baseline, measured 2026-10-03: **6363 passed, 36 skipped in ~8min**, ruff
-clean, mypy clean over 227 files. **The count is the number to compare against,
+Baseline, measured 2026-10-04: **6370 passed, 36 skipped in ~8min**, ruff
+clean, mypy clean over 227 files. One further test is **time-of-day
+dependent** and was red in that run — see the rules below.
+**The count is the number to compare against,
 never the clock** — the same suite took 11min10 earlier the same day while it
 shared the machine with another session's run. See the shared-machine rules at
 the top.
@@ -582,6 +584,14 @@ baseline" stopped meaning anything.
 
 Five rules, each bought the hard way:
 
+- **A test that builds a timestamp from `now()` is an order test with a clock
+  in it.** `test_yesterday_is_spelled_out` asks for `now(UTC) - 26h` and expects
+  the word "yesterday". Run at 00:37 local, that lands **two** calendar days
+  back — the offset crosses two local midnights — so it fails for roughly the
+  two hours after midnight and passes the rest of the day, in a file nobody
+  touched. Same shape as the shuffled-run rule below: the failure is real, it is
+  in the test, and the fix is to pin the clock rather than to widen the
+  assertion.
 - **A suite that dies with no failures printed was killed, not broken.**
   `exit code 144` and a run that stops mid-progress-bar reads exactly like a
   flaky suite and is not one: another session tidying up with `pkill -f pytest`

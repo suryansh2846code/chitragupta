@@ -344,3 +344,41 @@ def test_only_the_card_with_three_tiers_names_a_third_switch():
             assert app["run_label"], f"{app['key']} runs code and does not say so"
         else:
             assert not app["run_label"], f"{app['key']} names a switch it has no tools for"
+
+
+def test_each_ask_row_names_the_list_its_actions_are_actually_judged_against():
+    """`App.ask_kind` is a literal, because `tool_facts` is a leaf and importing
+    the action registry here would grow the cycle it was extracted to stop. So
+    the registry checks the literal instead: a card promising to show "this
+    app's standing grants" and reading the wrong list would show somebody
+    else's, which is worse than showing none."""
+    from chitragupta.actions import REGISTRY
+    from chitragupta.agents.tool_facts import _APP_OF, APPS
+    from chitragupta.connectors.capability import parse as parse_capability
+
+    #: action capability resource → the app its card sits on, the same mapping
+    #: the tools go through.
+    declared = {a.key: a.ask_kind for a in APPS if a.ask_kind}
+    for name, spec in REGISTRY.items():
+        if not spec.recipient_kind or not spec.capability:
+            continue
+        app = _APP_OF.get(parse_capability(spec.capability).resource.value, "")
+        if app not in declared:
+            continue
+        assert declared[app] == spec.recipient_kind, (
+            f"{app} says it is judged against {declared[app]}, but {name} is "
+            f"judged against {spec.recipient_kind}")
+
+
+def test_only_a_list_a_person_could_type_an_entry_for_is_addable():
+    """An email address and a chat id are things somebody can name in advance.
+    A connector key is minted by the call it describes and only ever granted
+    from the card that was asking — a box for one is a box nobody can fill."""
+    from chitragupta.actions import TOOL_RECIPIENT
+    from chitragupta.agents.tool_facts import APPS
+
+    for app in APPS:
+        if app.ask_addable:
+            assert app.ask_kind, f"{app.key} is addable to no list at all"
+            assert app.ask_kind != TOOL_RECIPIENT, (
+                f"{app.key} offers to type a connector key")
