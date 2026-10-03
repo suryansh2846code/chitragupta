@@ -546,7 +546,9 @@ $("#pickIngest").onclick = async () => {
 
 $("#composer").onsubmit = (e) => {
   e.preventDefault();
-  if (busy) { stopTurn(); return; }   // Stop — the server hears about it
+  // Stop — named, so it stops the agent on screen rather than the last one to
+  // have started a turn. With several running, those are different agents.
+  if (isBusy(current)) { stopTurn(current); return; }
   const v = $("#input").value.trim();
   if ((v || attachments.length) && current) {
     $("#input").value = ""; autoGrow(); send(v);
@@ -568,7 +570,14 @@ $("#input").addEventListener("keydown", (e) => {
   if (open && e.key === "Escape") { e.preventDefault(); closeConnectorPicker(); return; }
   if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("#composer").requestSubmit(); }
 });
-$("#clearBtn").onclick = async () => { await api(`/api/agents/${current}/clear`, { method: "POST" }); selectAgent(current); toast("chat cleared"); };
+$("#clearBtn").onclick = async () => {
+  // A reply still being written would be appended to the history we just
+  // emptied, so the chat would come back holding the one thing the user asked
+  // to be rid of. Stop it first, or say so.
+  if (isBusy(current)) { toast("Stop the current reply first"); return; }
+  await api(`/api/agents/${current}/clear`, { method: "POST" });
+  selectAgent(current); toast("chat cleared");
+};
 $("#ingestBtn").onclick = async () => {
   const t = $("#ingestText").value.trim(); if (!t) return;
   await api("/api/brain/ingest", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: t }) });
@@ -809,33 +818,32 @@ function newAgentDefault(t, specs) {
 //: keeps every switch in this object instead of PATCHing it, so the builder and
 //: the Agents & tools panel are one screen with one renderer rather than two
 //: designs of the same list that drift apart. They had: the builder was still
-//: on the thirteen category headings, with no group sentences, no presets and
-//: no "allow all", long after the panel had all four.
+//: on the thirteen category headings, with no card sentences and no per-tier
+//: switches, long after the panel had all three.
 let NEW_AGENT = null;
 
 //: Creating an agent and editing one afterwards are the same list, so they are
 //: the same render. The only difference is that nothing here is saved until
-//: Create — and that the presets apply to a draft, which is what makes
-//: "Allow everything" one press at the moment it is most wanted.
+//: Create.
 async function openAgentModal() {
   const box = $("#amTools");
   $("#amName").value = ""; $("#amRole").value = ""; $("#amPrompt").value = "";
   $("#agentModal").hidden = false;
   box.innerHTML = `<p class="am-tools-loading">Loading what it could use…</p>`;
 
-  let tools = [], categories = [], specs = [], presets = [];
+  let tools = [], categories = [], specs = [], apps = [];
   try {
     const got = await api("/api/agents/tools");
     tools = got.tools || []; categories = got.categories || [];
-    specs = got.groups || []; presets = got.presets || [];
+    specs = got.groups || []; apps = got.apps || [];
   }
   catch (e) { box.innerHTML = `<p class="am-tools-loading">Couldn't load the tool list.</p>`; return; }
 
-  NEW_AGENT = { id: "", name: "", draft: true, preset: "",
+  NEW_AGENT = { id: "", name: "", draft: true,
                 tools: tools.filter((t) => newAgentDefault(t, specs)).map((t) => t.name) };
   const draw = () => {
     renderAgentTools(box, { agent: NEW_AGENT, tools, connectors: CONNECTORS,
-                            categories, specs, presets });
+                            categories, specs, apps });
     updateAgentToolCount();
   };
   draw();
@@ -872,16 +880,10 @@ $("#amCreate").onclick = async () => {
   // until one of them is patched in place.
   const chosen = (NEW_AGENT && NEW_AGENT.tools)
     || [...document.querySelectorAll('#amTools [data-tool][data-on="1"]')].map((b) => b.dataset.tool);
-  // A preset still pressed is sent by NAME, and the server resolves it at that
-  // moment: "allow everything" has to mean everything now, not everything as
-  // of whenever this modal was opened. The list rides along because only the
-  // screen knows which connectors the user has — no preset can name one.
-  const preset = (NEW_AGENT && NEW_AGENT.preset) || "";
   const a = await api("/api/agents/custom", {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ name, role: $("#amRole").value.trim(),
-      system_prompt: $("#amPrompt").value.trim(), tools: chosen,
-      ...(preset ? { preset } : {}) }) });
+      system_prompt: $("#amPrompt").value.trim(), tools: chosen }) });
   $("#agentModal").hidden = true; toast("Agent created");
   await loadAgents(); selectAgent(a.id);
 };

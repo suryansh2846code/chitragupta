@@ -1307,19 +1307,24 @@ def build_tools(names: list[str], *, self_id: str | None = None,
 # caller of `tool_label` keeps working.
 from .tool_facts import (
     ALWAYS,
+    APPS,
     GROUPS,
     TOOL_CATEGORIES,
+    App,
     Group,
     granted_by_default,
+    permission_apps,
     permission_groups,
     tool_access,
+    tool_app,
     tool_capability,
     tool_group,
     tool_label,
 )
 
-__all__ = ["ALWAYS", "GROUPS", "TOOL_CATEGORIES", "Group", "granted_by_default",
-           "permission_groups", "tool_access", "tool_capability", "tool_group",
+__all__ = ["ALWAYS", "APPS", "GROUPS", "TOOL_CATEGORIES", "App", "Group",
+           "granted_by_default", "permission_apps", "permission_groups",
+           "tool_access", "tool_app", "tool_capability", "tool_group",
            "tool_label"]
 
 
@@ -1336,18 +1341,22 @@ def describe_tools() -> list[dict[str, str]]:
     because a name-to-label table in a consumer is the name chain this codebase
     keeps paying for.
 
-    `group` and `access` are the newer pair and the ones the panel actually
-    arranges itself by: which of the four things a tool touches, and whether it
-    reads, changes or runs. `category` is kept beside them because it is still
-    the finer-grained heading inside a group, and because removing a field a
-    consumer reads is the third of the three landings, not the first.
+    `group` and `access` are the pair the gate reasons in: which of the four
+    things a tool touches, and whether it reads, changes or runs. `app` is the
+    newer one and the one the panel arranges itself by — the same tools at the
+    granularity a person sets switches at, so Gmail and GitHub are cards rather
+    than two entries under "your connected accounts". `category` is kept beside
+    them because it is still the finer-grained heading inside a card, and
+    because removing a field a consumer reads is the third of the three
+    landings, not the first.
     """
     rows = []
     for n, t in TOOL_DEFS.items():
         label, category = tool_label(n)
         rows.append({"name": n, "description": t.description, "label": label,
                      "category": category, "source": "builtin", "connector": "",
-                     "group": tool_group(n), "access": tool_access(n).value})
+                     "group": tool_group(n), "access": tool_access(n).value,
+                     "app": tool_app(n)})
     rows.extend(mcp_tools.describe())
     return rows
 

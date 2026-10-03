@@ -366,6 +366,14 @@ anything is emitted, since falling back afterwards would duplicate it.
 `run_turn(on_event=…)`, and a test asserts that watching a turn does not change
 it. Two loops would mean reproducing every bug twice.
 
+**Several agents run at once, one turn each.** The lane is eight wide, and the
+window uses it: each agent in the rail is its own identity with its own turn id,
+its own cancellation and its own indicator, so a user can set three of them
+working and carry on. One turn *per agent* is the floor, not a preference —
+an agent's history is an append log, and two turns writing into it interleave
+into a conversation that happened to nobody. `cancellation` is keyed by turn id
+already, so Stop names one turn and reaches only that one.
+
 The endpoint is SSE (`POST /api/agents/{id}/chat/stream`), running on the
 `MODEL_CALLS` lane so a conversation does not hold a worker thread. Event types:
 `token` · `tool_call` · `tool_result` · `plan` · `done` · `error`. A client

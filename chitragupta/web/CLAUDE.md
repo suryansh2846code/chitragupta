@@ -207,72 +207,108 @@ script out of eleven does not fail; it passes.
   "Email", "Calendar" — beside the status. A conversation fills with cards that
   look alike, and a settled one has lost its buttons, so there is *less* left to
   recognise it by. A word, never the action id.
-- **The tools panel shows what a group IS, not what every tool is.** It was
-  sixty-four switches under thirteen headings, all of them asked before the
-  user had sent the agent a message. Now: four groups (what a tool touches)
-  with a switch per tier inside each (what it does to it), both derived
-  server-side from the capability each tool declares and sent on the row —
-  `group` and `access`. The screen renders them and decides nothing; a consumer
-  that re-derived which tools are dangerous is the name chain this file carries
-  three other warnings about.
+- **The tools panel is one card per app, with two switches on it.** The axis
+  has moved twice. Sixty-four switches under thirteen headings became four
+  cards by *reach* — what stays on this machine, what touches an account, a
+  website, your files — which is the right question for the **gate** and the
+  wrong one for a person: it put Gmail, the calendar, Telegram, Notion and
+  Linear on one card called "Your connected accounts", so a user who wanted to
+  say *read GitHub, leave my mail alone* had no control that said it. The card
+  is the app now, and under its name is **Read** and the one word that app's
+  changes actually are. Both axes still come down the wire — `app` and
+  `access` on every row, derived server-side from the capability each tool
+  declares. The screen renders them and decides nothing; a consumer that
+  re-derived which tools are dangerous is the name chain this file carries
+  three other warnings about. `group` is still sent and is still the **gate's**
+  axis (`request_permission`, `prompt._withheld` and `tool_snapshot` all reason
+  in it), so the panel reads it only as the fallback for a server that predates
+  `app`.
   **`access` is the server's word and the switch label is the person's**, and
   they are not the same word. Comparing the UI labels straight against `access`
   matched neither `write` nor `destructive`, so the Change and Irreversible
   switches rendered as nothing while their tools sat in the disclosure below,
   switched on — a panel omitting a switch for something an agent can do is
   worse than the sixty-four it replaced. `bucketOf` is the mapping.
-  **A group switch is one PATCH.** Looping the per-tool toggle would send one
+  **The second switch is never one generic word.** `/CLAUDE.md` forbids folding
+  `outbound` or `destructive` into "change": a tap given for one must never
+  silently cover the other. So the word comes from `tool_facts.App`
+  (`write_label`, `run_label`) — Change on a web page, Write on a file — and
+  running code is its own switch on the one card that has three tiers.
+  **Between the two switches is the roll-up.** `coveredBy` prints what each one
+  covers in the names a person reads. A switch labelled "Read" over a collapsed
+  list says nothing about whether reading includes scrolling or going back, and
+  the only way to find out was to open the disclosure — the wall this layout
+  replaced.
+  **A card switch is one PATCH.** Looping the per-tool toggle would send one
   request per tool, each carrying the whole list, and whichever replied last
-  would win — so turning a group on could land half on, depending on the
+  would win — so turning a tier on could land half on, depending on the
   network. The per-tool rows stay, folded into a disclosure: the complaint was
   that per-tool control was the only thing on offer, not that it should go. A
-  group somebody part-granted that way says "3 of 7 on" rather than showing a
+  tier somebody part-granted that way says "3 of 7 on" rather than showing a
   plain off over four live tools.
-- **Compacting the list is half the job; the other half is setting it in one
-  press.** Six decisions beats sixty-four and is still six, and the common
-  answer is "this one is mine, let it do everything" or "let it look and
-  nothing else". So: three presets above the groups, and `Allow all` on each
-  group heading — not on the always-on one, where there is nothing to allow and
-  a button that changed nothing would teach that buttons change nothing.
-  **A preset sends its NAME, never a list of tools.** "Allow everything" has to
-  mean everything *now*; a screen left open while a tool shipped would send its
-  own stale idea of the word and quietly withhold the new one — the failure
-  `agents/grants.py` records for connectors, where the option did not exist to
-  tick at build time and nothing ever told anyone to go back. The server
-  resolves it and **keeps what the preset has no opinion about**, or "allow
-  everything" would also be "and forget the connectors".
-  **The blurb is on the button, not in a tooltip.** "Allow everything" includes
-  running code, and a control that hid that is the tap-nobody-reads failure at
-  the worst possible scale.
+  **The always-on card draws no switch anywhere on it**, the disclosure
+  included. Its heading says "not something to switch" and used to say it over
+  a column of switches, which is the screen arguing with itself —
+  `tool_facts.ALWAYS` says the switches were the half that was wrong.
+- **Some changes are actions, and an app that only says "Read" is lying.**
+  Sending mail, adding an event, running somebody else's verb in GitHub — none
+  of them is a tool, so there is nothing here to toggle. `askRow` says what
+  happens instead and names the list that makes it stop asking. Saying nothing
+  is what this used to do, and an app showing a single Read switch reads as an
+  app that cannot do anything else, which is what sends people hunting through
+  settings for a control that does not exist.
+- **Nothing on this screen may be a control that does nothing — in either
+  direction.** Three permissions had a working endpoint and nothing in the app
+  that called it: `/api/agents/folders`, `/api/agents/{id}/connectors`, and the
+  unattended allow-list sitting three screens away under *Model*. So "Your Mac
+  → Read" granted a tool whose only possible answer was *"No folder has been
+  opened to agents yet"*, and no screen anywhere opened one. Each is now a
+  strip on the card it belongs to — `cardStrip` — and where it is a control
+  rather than a fact, the control is **in the card**: a button that sends
+  somebody to another screen is the thing that lost them last time.
+  `_PANEL` holds the three answers and `loadPanelPermissions` fetches them
+  **after** the first render, never into it: `/api/agents/{id}/connectors`
+  probes every configured server, and blocking the panel on it is the 2.47s
+  stall `api/concurrency.py` exists to stop. A key that is not a list means
+  "not back yet" and draws nothing — `[]` is a fact worth stating and an
+  unanswered fetch is not, and a panel that claimed "no site is allowed" before
+  asking would be wrong for the first few hundred milliseconds of every open.
+- **There are no presets, and the per-card "Allow all" is gone with them.**
+  Three buttons above the list — *Allow everything · Read only · Nothing yet* —
+  and a bulk button per card made sense when a card was four switches over a
+  wall of sixty-four. A card is two switches now, so the preset row was a
+  second way to do a thing that takes one press, and "Allow everything"
+  silently included running code. `PRESETS`, `preset_tools`, `_preset_merge`
+  and the `preset` field on both bodies went with it.
 - **The agent BUILDER is this panel, not a second drawing of it.**
   `openAgentModal` calls `renderAgentTools` with a **draft** agent — `draft:
   true`, its tools in the object on screen, nothing sent until Create — so the
-  presets, the group sentences, "Allow all" and the disclosures cannot land on
-  one screen and not the other. They had not: the builder was still arranging
-  itself by the thirteen category headings, with no presets and no "allow all",
-  two releases after the panel had all four. A draft preset previews from
-  `presets[].tools` and Create still sends the **name**, so the server resolves
-  it there; a switch pressed afterwards clears the name, or the server would
-  re-grant everything and throw the change away.
-- **The screen must not argue with itself in either direction.** A bucket switch
+  cards, the roll-ups and the disclosures cannot land on one screen and not the
+  other. They had not: the builder was still arranging itself by the thirteen
+  category headings two releases after the panel had moved on. A draft is
+  offered no control it cannot use — the folder box, the grant switch and every
+  "open that screen" button are absent, because the modal is a modal and the
+  screen behind it would come up behind it.
+- **The screen must not argue with itself in either direction.** A tier switch
   patches the rows under it, and `syncGroupSwitches` brings the switches *above*
   a row with it — turning one browser tool on inside the disclosure used to
-  leave the switch over it reading a plain "off" over a live tool, and the
-  group's "Allow all" still offering to allow what was already allowed. The
+  leave the switch over it reading a plain "off" over a live tool. The
   `.at-part` count is always in the markup and empty when there is nothing to
   say, because an element rendered only when it has content cannot be filled in
   the one case it exists for.
-- **A repaint must not undo what the user opened.** A preset repaints the whole
-  panel; `_openGroups` is what stops that closing every disclosure somebody had
-  opened to decide with. `loadAgentTools` only paints "Loading…" over an empty
-  panel or a switch to a *different* agent — otherwise a preset press is a flash
-  of nothing in the middle of reading.
-- **A group says where the rest of its permission is set.** Turning *change
-  websites* on grants nothing by itself: which sites is a list on the Connectors
-  screen, and a user who turned everything on here and was still refused had no
-  way to learn that from this panel. The group names a screen id (`more`);
-  `screenOpener` resolves it, and an id the frontend does not have draws no
-  button — never a control that goes nowhere.
+- **A repaint must not undo what the user opened.** Every permission that lands
+  repaints the whole panel; `_openGroups` is what stops that closing every
+  disclosure somebody had opened to decide with. `loadAgentTools` only paints
+  "Loading…" over an empty panel or a switch to a *different* agent — otherwise
+  a repaint is a flash of nothing in the middle of reading.
+- **A card says where the rest of its permission is set.** Turning *Change* on
+  for the browser grants nothing by itself: which sites is a list on the
+  Connectors screen, and a user who turned everything on here and was still
+  refused had no way to learn that from this panel. The card names a screen id
+  (`more`); `screenOpener` resolves it, and an id the frontend does not have
+  draws no button — never a control that goes nowhere. `allowlist` is the one
+  that is not a screen any more: it is a section at the bottom of this panel,
+  so the opener scrolls instead of navigating.
 - **The agent profile is a popup, and its markup is in `index.html`.** The
   focus observer and the Escape handler in `app.js` bind to every `.modal-bg`
   **once, at load** — an overlay `profile.js` injected later would open without
@@ -294,7 +330,9 @@ script out of eleven does not fail; it passes.
   pages with "which agent?" on them — a dropdown on one, a roster of every agent
   on the other — and both questions are already answered by the time a profile
   is open. The panels, the rail items, the dropdown and the roster are all gone;
-  `loadAgentTools(id, box)` and `mountAppearanceFor(box, id)` are what is left.
+  `loadAgentTools(id, box)` and `mountAppearanceFor(box, id)` are what is
+  left, and the allow-list — the one permission that is global rather than per
+  agent — followed the approvals queue onto the Actions screen.
   `openToolsScreen` and `openAppearanceScreen` survive as redirects into the
   profile, because four call sites and two old nav names still reach for them
   and a link that lands nowhere is worse than one that lands near.
@@ -302,10 +340,10 @@ script out of eleven does not fail; it passes.
   `profSaveEl` by whichever pane built it, and `appearance.js` keeps its five
   parts in `apBox` / `apSaveBtn` / `apResetBtn` / `apNameEl` / `apNoteEl` for
   the same reason: those ids were safe only while the markup was in
-  `index.html` and there was exactly one of each. They are built per pane now. `$("#profSave")` from a handler is the
+  `index.html` and there was exactly one of each. They are built per pane now — `$("#profSave")` from a handler is the
   selector-as-a-claim-about-markup failure this file already records for
-  `syncConn`, and a fake DOM is exactly where it shows up first: the lookup
-  returned a different element and Save stayed dead after an edit.
+  `syncConn`, and a fake DOM is where it showed up first: the lookup returned a
+  different element and Save stayed dead after an edit.
 - **Every left-nav item opens a screen.** The slide-over drawer is gone:
   `tasks` moved into Inbox and `tools` became the Agents & tools panel, and
   those were its only two occupants. `openDrawer()` kept its name — four call

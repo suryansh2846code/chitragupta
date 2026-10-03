@@ -267,6 +267,14 @@ function renderProfileDanger(pane, a) {
       : `Remove ${a.name} from your team? Nothing it learned is deleted.`;
     if (!confirm(ask)) return;
     btn.disabled = true;
+    // A turn still running for an agent that is about to stop existing has
+    // nowhere to put its answer, and would go on spending the user's key to
+    // write it. Deleting is the strongest "stop that" there is, so it means it.
+    // This came with the delete when it moved off the rail row — losing it here
+    // would be a leak nothing on screen could explain.
+    try { await stopTurn(a.id); } catch (_) { /* it may not be running */ }
+    LANDED.delete(a.id);
+    delete DRAFTS[a.id];
     try {
       await api(custom
         ? `/api/agents/custom/${encodeURIComponent(a.id)}`

@@ -13,6 +13,7 @@ from ..log import suppressed
 from . import identity, notes, profile_files
 from .agent import Agent
 from .prompt import KNOWN_ACTIONS
+from .tool_snapshot import add_menu_column, catalog, recorded_menu, resolve
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS custom_agents (
@@ -22,7 +23,8 @@ CREATE TABLE IF NOT EXISTS custom_agents (
     system_prompt TEXT NOT NULL DEFAULT '',
     tools         TEXT NOT NULL DEFAULT '[]',
     recall_sources TEXT NOT NULL DEFAULT '[]',
-    created_at    TEXT NOT NULL
+    created_at    TEXT NOT NULL,
+    known         TEXT NOT NULL DEFAULT ''   -- JSON array: the catalog it chose from
 );
 """
 
@@ -39,12 +41,19 @@ class CustomAgentStore:
         self._c = sqlite3.connect(str(path), check_same_thread=False)
         self._c.row_factory = sqlite3.Row
         self._c.executescript(_SCHEMA)
+        # Same migration as the override store, from the same function: both
+        # hold a snapshot of a tool list and must record it the same way.
+        add_menu_column(self._c, "custom_agents")
 
     def _row_to_agent(self, r: sqlite3.Row) -> Agent:
         return Agent(
             id=r["id"], name=r["name"], role=r["role"],
             system_prompt=r["system_prompt"],
-            tools=json.loads(r["tools"]),
+            # The list the user chose, plus anything that did not exist to
+            # choose from when they chose it. An agent built in September had
+            # no `browse_wait` on its menu, and nothing would ever have given
+            # it one — see `tool_snapshot`.
+            tools=resolve(json.loads(r["tools"]), recorded_menu(r)),
             recall_sources=json.loads(r["recall_sources"]),
             # An agent the user built themselves keeps every proposal it could
             # make before the prompt was split by capability. Narrowing one
@@ -82,10 +91,10 @@ class CustomAgentStore:
         tools = tools if tools is not None else list(BASE_TOOLS)
         self._c.execute(
             "INSERT INTO custom_agents (id,name,role,system_prompt,tools,"
-            "recall_sources,created_at) VALUES (?,?,?,?,?,?,?)",
+            "recall_sources,created_at,known) VALUES (?,?,?,?,?,?,?,?)",
             (aid, name, role, system_prompt, json.dumps(tools),
              json.dumps(recall_sources or []),
-             datetime.now(UTC).isoformat()))
+             datetime.now(UTC).isoformat(), json.dumps(catalog())))
         self._c.commit()
         # Born file-backed. The column above is still written because an agent
         # is a row and always has been, but from here on `persona.md` is what

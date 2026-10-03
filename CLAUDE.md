@@ -282,6 +282,20 @@ even when every test is green. Reasoning and measurements:
   that reads identically either way. A turn ending on undone steps is told so
   **once** — with both ways out, finish them or name them — because a step that
   is genuinely impossible would drive a second nudge forever.
+- **A stored tool list is a choice made from a menu, and the menu is stored with
+  it.** Without that, a capability shipped later is indistinguishable from one
+  the user turned down — so nothing could ever reach an agent again, and six
+  agents on one machine had exactly one that could drive the browser: the only
+  one never edited, because a preset with no override resolves from the library
+  every time. The user granted "Websites and the browser", the panel agreed, and
+  the agent still said it had none: a switch grants **names**, and the four page
+  tools that shipped in between were not names in that list.
+  `tool_snapshot.resolve` treats a tool that was not on the recorded menu as
+  **undecided**, and undecided takes the default for its bucket —
+  `(group, access)`, the pair the panel draws as one switch. Never another
+  group, never another access level, and nothing at all in a bucket the agent
+  holds nothing in. A tool that *was* on the menu and was left out stays out,
+  or the top-up quietly undoes a permission somebody removed on purpose.
 - Streaming is a callback on the same loop, never a second loop.
 - Delegation guards live in a `ContextVar`: one `copy_context()` **per call**,
   and the chain is left on every exit path.
@@ -347,6 +361,22 @@ even when every test is green. Reasoning and measurements:
   hold one and must never ask for one.
 
 **Frontend — `web/`**
+- **A turn belongs to its agent, not to the window.** `busy` was one boolean,
+  one AbortController and one turn id for the whole workspace, so one agent
+  thinking was the whole workspace thinking: every other agent went unusable and
+  `selectAgent` refused outright. A team of agents sharing one brain was one
+  agent at a time. `TURNS` in `chat.js` is keyed by agent id, and nothing inside
+  a turn may read `current` — the user is free to walk away mid-reply, and a
+  turn that read the global finished by writing its answer into whichever
+  conversation they walked to. A reply for an agent that is off screen is
+  **flagged, never drawn**: it is already stored server-side, so `LANDED` only
+  tells the rail there is something to come back to. The server never had the
+  limit — `MODEL_CALLS` is a lane of eight.
+- **Whatever destroys a node tells whoever is holding it.** `renderHistory`
+  assigns `innerHTML`, which orphaned the running turn's indicator while its
+  `view` kept the handle — so re-attaching returned early and drew nothing, and
+  a working agent you came back to looked idle. The indicator is state with a
+  view, not a node with closures over it.
 - **Every agent has a face, and it is never blank.** `character.js` composes one
   from the agent's id, so a first launch with an empty database still shows a
   full roster. A stored avatar is an *override*; deleting it returns the agent to
@@ -408,6 +438,15 @@ Many users, many machines. Do not bake in anything specific to one of either.
   resource, and **unknown fails closed**: a tool that declares nothing is
   destructive, not harmless. Sixty-four switches became six, and the group that
   cannot leave this machine is granted at creation rather than ticked.
+  **The resource answers two questions, not one.** `tool_group` is the *gate's*
+  — how far a capability reaches, which is what `request_permission`,
+  `prompt._withheld` and `tool_snapshot` reason in. `tool_app` is the *screen's*
+  — which app a person sets it on. Four reach classes put Gmail, the calendar,
+  Telegram, Notion and Linear on one card, so nobody could say "read GitHub,
+  leave my mail alone"; the card is the app now, with Read and the one word
+  that app's changes actually are. Same table, same derivation, two questions:
+  a second taxonomy would be the drift this file warns about, and one axis
+  serving both is a screen that asks the gate's question at the user.
   `agents/tool_facts.py` holds it and is a **leaf** — `prompt.py` reads it, and
   importing it from `tools.py` grew the frozen `agents_tools` cycle to ten
   modules the first time it was tried.
@@ -506,11 +545,11 @@ In order: **the focused test → the subsystem's suite → `pytest` →
 `ruff check chitragupta tests` → `mypy chitragupta` → the `tests/js/` harnesses if
 the frontend changed → `chitragupta app` opens and renders.**
 
-Baseline, measured 2026-10-03: **6249 passed, 34 skipped in ~8min**, ruff
-clean, mypy clean over 224 files. **The count is the number to compare against,
-never the clock** — the same run took 11min10 earlier the same day while it
-shared the machine with another session's suite. See the shared-machine rules
-at the top.
+Baseline, measured 2026-10-03: **6285 passed, 36 skipped in ~7min30**, ruff
+clean, mypy clean over 225 files. **The count is the number to compare against,
+never the clock** — the same suite took 11min10 earlier the same day while it
+shared the machine with another session's run. See the shared-machine rules at
+the top.
 
 With `PLAYWRIGHT_BROWSERS_PATH` pointed at the managed browser the same run
 adds twelve more — `tests/test_browser_driver.py`'s real-Chromium tests, which

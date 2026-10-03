@@ -38,8 +38,9 @@ import anyio.to_thread
 
 T = TypeVar("T")
 
-#: Concurrent LLM turns. Generous: the UI runs one turn at a time, but routines
-#: and the scheduler can chat at the same time as a person.
+#: Concurrent LLM turns. The window uses this: an agent is its own identity with
+#: its own turn, so a user can set several of them working and keep moving. The
+#: scheduler and routines chat alongside them.
 MODEL_CALLS = anyio.CapacityLimiter(8)
 
 #: Concurrent provider probes. Deliberately small — these spawn processes, and

@@ -115,6 +115,32 @@ function clearSkeletons() {
   if (rl && rl.querySelector(".sk")) rl.textContent = "";
 }
 
+/** What each agent in the rail is doing: working, or holding an unread reply.
+ *
+ * Its own pass rather than a `loadAgents()` call, because `loadAgents()`
+ * refetches the roster and reassigns the rail's `innerHTML` — which remounts a
+ * live character per row, each with a pointer subscription and an observer, and
+ * throws away whichever row the pointer is over. Turns start and end often;
+ * paying for thirty springs each time is not what the indicator is for.
+ *
+ * The active dot stays here too, so one function decides what the right-hand
+ * slot holds and there is no state it can be in that nothing draws.
+ */
+function paintAgentStatus() {
+  document.querySelectorAll("[data-state-for]").forEach((slot) => {
+    const id = slot.dataset.stateFor;
+    const a = agents.find((x) => x.id === id);
+    const who = esc(a ? a.name : "This agent");
+    if (TURNS[id]) {
+      slot.innerHTML = `<span class="a-work" role="img" aria-label="${who} is working"></span>`;
+    } else if (LANDED.has(id)) {
+      slot.innerHTML = `<span class="a-new" role="img" aria-label="New reply from ${who}"></span>`;
+    } else {
+      slot.innerHTML = id === current ? `<span class="dot"></span>` : "";
+    }
+  });
+}
+
 async function loadAgents() {
   const d = await api("/api/agents");
   agents = d.agents;
@@ -142,11 +168,14 @@ async function loadAgents() {
         <div class="n">${esc(a.name)}</div>
         <div class="r">${esc(a.role)}</div>
       </div>
-      ${a.id === current ? `<span class="dot"></span>` : ""}
+      <span class="a-state" data-state-for="${a.id}"></span>
       <button type="button" class="agent-more" data-profile="${a.id}"
               aria-label="Open ${esc(a.name)}'s profile"
               title="Profile, instructions, memory and permissions">${IC.dots}</button>
     </div>`; }).join("");
+  // The row says what the agent is doing, and it is its own pass — see
+  // `paintAgentStatus`.
+  paintAgentStatus();
   document.querySelectorAll(".agent").forEach((el) => {
     // Mounted after the markup, never inside it: a character is a live instance
     // with a pointer subscription and an observer, and an `innerHTML` template
