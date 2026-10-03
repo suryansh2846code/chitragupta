@@ -69,9 +69,25 @@ def test_the_refusal_tells_the_model_what_to_do_with_it():
 def test_the_refusal_says_where_the_user_turns_it_on():
     """"Please grant Google Calendar read access" is not an instruction anybody
     can follow. An error that names no control is a dead end, and the user is
-    left believing the app is broken rather than that a switch is off."""
-    assert "Agents & tools" in NEEDS_PERMISSION
-    assert "Settings" in NEEDS_PERMISSION
+    left believing the app is broken rather than that a switch is off.
+
+    It used to name "Settings, then Agents & tools". That screen is the agent's
+    own profile now — and, worse, naming it was what made the browser bug
+    unfixable from the user's side: the switch there was already on, so five
+    trips to it changed nothing. The route has to name the **card**, which is
+    where the grant actually is."""
+    assert "Permissions" in NEEDS_PERMISSION
+    assert "open this agent" in NEEDS_PERMISSION
+    assert "card" in NEEDS_PERMISSION
+
+
+def test_the_refusal_does_not_send_the_user_to_a_switch_that_is_already_on():
+    """The grant and the read switch are two permissions, and the read switch
+    is usually already on — so a refusal that says "turn it on" sends somebody
+    to flip something that was never the problem. That is the loop this
+    sentence exists to break, and it ran five times on one machine."""
+    assert "second permission" in NEEDS_PERMISSION
+    assert "already on" in NEEDS_PERMISSION
 
 
 def test_the_refusal_forbids_naming_the_tool():

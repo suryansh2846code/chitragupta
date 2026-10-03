@@ -619,17 +619,77 @@ def test_the_browser_card_says_when_no_site_is_allowed():
     assert "No site is allowed yet" in _card(out["html"], "The browser")
 
 
-def test_a_connector_card_says_whether_this_agent_must_ask_first():
+def test_a_connector_card_says_whether_this_agent_may_reach_it_at_all():
     """A separate permission from the switches above it, and deliberately a
     separate control: the switches decide whether the agent can see the tools,
-    and this decides whether reaching the account behind them interrupts the
-    user first. Collapsing the two would be one tap granting two things."""
+    and this decides whether it may reach the account behind them at all.
+    Collapsing the two would be one tap granting two things."""
     out = run(["notion__search"], [*BUILTIN, CATEGORY, NOTION_TOOL], [READY],
               panel={"grants": {"allowed": [], "must_ask": ["notion"],
                                 "unrestricted": False}})
     notion = _card(out["html"], "Notion")
-    assert "Asks you the first time" in notion
+    assert "not something this agent may reach" in notion
     assert 'data-grant="notion"' in notion
+
+
+def test_a_built_in_card_gated_as_a_connector_offers_the_grant_too():
+    """**The bug five trips to the settings screen could not fix.**
+    `browse_open` is in `connector_grants.FIRST_PARTY_TOOLS`, so reaching the
+    browser is a permission of its own — stored per agent, exempted by exactly
+    one template. The card drew only the tool switch and the site list, so
+    there was no control anywhere in the app for it: every agent showed the
+    browser as on and only Chief of Staff could open a page."""
+    browser = [{"name": "browse_open", "label": "Open page", "category": "Web",
+                "description": "Open a page.", "source": "builtin",
+                "connector": "", "app": "browser", "access": "read"}]
+    apps = [{"key": "browser", "label": "The browser", "blurb": "Pages.",
+             "always": False, "read": [], "change": [], "run": [],
+             "write_label": "Change", "run_label": "",
+             "grant": {"connector": "browser", "label": "Browser"}}]
+    out = run(["browse_open"], browser, [], apps=apps,
+              panel={"grants": {"allowed": [], "must_ask": ["browser"],
+                                "unrestricted": False}, "sites": []})
+    card = _card(out["html"], "The browser")
+    assert 'data-grant="browser"' in card, card[:500]
+    assert "not something this agent may reach" in card
+
+
+def test_the_grant_says_the_switches_above_it_are_refused_until_it_is_given():
+    """"Asks you the first time" was the old wording and it is not what
+    happens: the tool comes back refused and the turn says so. Reading it as a
+    question is what let five attempts look like a switch that had not taken."""
+    browser = [{"name": "browse_open", "label": "Open page", "category": "Web",
+                "description": "Open a page.", "source": "builtin",
+                "connector": "", "app": "browser", "access": "read"}]
+    apps = [{"key": "browser", "label": "The browser", "blurb": "Pages.",
+             "always": False, "read": [], "change": [], "run": [],
+             "write_label": "Change", "run_label": "",
+             "grant": {"connector": "browser", "label": "Browser"}}]
+    out = run(["browse_open"], browser, [], apps=apps,
+              panel={"grants": {"allowed": [], "must_ask": ["browser"],
+                                "unrestricted": False}, "sites": []})
+    card = _card(out["html"], "The browser")
+    assert "refused until it is" in card
+    assert "is-warn" in card, "a blocked agent must not read as a normal state"
+
+
+def test_the_grant_comes_before_the_site_list():
+    """"May it reach the browser at all" is upstream of "which sites". A card
+    that led with the sites answered the second question while the first was
+    still no."""
+    browser = [{"name": "browse_open", "label": "Open page", "category": "Web",
+                "description": "Open a page.", "source": "builtin",
+                "connector": "", "app": "browser", "access": "read"}]
+    apps = [{"key": "browser", "label": "The browser", "blurb": "Pages.",
+             "always": False, "read": [], "change": [], "run": [],
+             "write_label": "Change", "run_label": "",
+             "grant": {"connector": "browser", "label": "Browser"}}]
+    out = run(["browse_open"], browser, [], apps=apps,
+              panel={"grants": {"allowed": [], "must_ask": ["browser"],
+                                "unrestricted": False},
+                     "sites": [{"host": "amazon.in"}]})
+    card = _card(out["html"], "The browser")
+    assert card.index("data-grant") < card.index("1 site allowed")
 
 
 def test_the_grant_is_keyed_by_the_connector_s_id_not_its_name():

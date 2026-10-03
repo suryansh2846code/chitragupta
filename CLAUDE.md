@@ -561,7 +561,7 @@ In order: **the focused test → the subsystem's suite → `pytest` →
 `ruff check chitragupta tests` → `mypy chitragupta` → the `tests/js/` harnesses if
 the frontend changed → `chitragupta app` opens and renders.**
 
-Baseline, measured 2026-10-04: **6374 passed, 36 skipped in ~7min55**, ruff
+Baseline, measured 2026-10-04: **6381 passed, 36 skipped in ~7min36**, ruff
 clean, mypy clean over 227 files. (The "one further test is time-of-day
 dependent" caveat that stood here is gone because the test is:
 `test_yesterday_is_spelled_out` built its fixture as twenty-six hours ago in

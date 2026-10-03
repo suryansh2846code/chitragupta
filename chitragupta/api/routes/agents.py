@@ -500,6 +500,45 @@ class NewAgent(BaseModel):
     recall_sources: list[str] | None = None
 
 
+def _apps() -> list[dict]:
+    """The cards, each told whether reaching it is itself a permission.
+
+    **The bug this exists for, from a real machine: every agent had the browser
+    switched on and only one could open a page.** `browse_open` is in
+    `connector_grants.FIRST_PARTY_TOOLS`, so the loop gates it on *reaching the
+    browser* — a second permission, stored per agent, and exempted by exactly
+    one template. Chief of Staff was that template. Everybody else was refused,
+    and the refusal sent them to the screen that holds the tool switch, which
+    was already on and could never fix it. Five trips.
+
+    Gmail and the calendar are gated the same way and were just as invisible.
+
+    Derived here rather than declared on `App`, because `tool_facts` is a leaf
+    and may not import `connector_grants` — and derived rather than listed,
+    because a tool added to that map must not need a second edit here.
+    """
+    from ...agents.connector_grants import FIRST_PARTY_TOOLS, first_party_labels
+    from ...agents.tool_facts import permission_apps
+
+    labels = first_party_labels()
+    rows = permission_apps()
+    for row in rows:
+        named = {FIRST_PARTY_TOOLS[n]
+                 for n in (*row["read"], *row["change"], *row["run"])
+                 if n in FIRST_PARTY_TOOLS}
+        # One card, one connector. Two would mean a grant on the card could
+        # only ever be half of what the switch above it implies, so it is
+        # better to show nothing than something that is right about one.
+        if len(named) == 1:
+            found = named.pop()
+            # The label only when the connector is actually set up; the card's
+            # own name otherwise, because a grant is still the thing that
+            # unblocks it and the control must not disappear.
+            row["grant"] = {"connector": found,
+                            "label": labels.get(found) or row["label"]}
+    return rows
+
+
 @router.get("/api/agents/tools")
 def available_tools():
     # Each row keeps `name` and `description` exactly as before and adds
@@ -519,7 +558,7 @@ def available_tools():
     # Sent alongside `categories` rather than instead of it, because removing a
     # field a consumer reads is a separate landing from adding the one that
     # replaces it.
-    from ...agents.tool_facts import permission_apps, permission_groups
+    from ...agents.tool_facts import permission_groups
     from ...agents.tools import TOOL_CATEGORIES, describe_tools
 
     return {"tools": describe_tools(), "categories": list(TOOL_CATEGORIES),
@@ -531,7 +570,7 @@ def available_tools():
             # — `request_permission` and `prompt._withheld` both reason in it —
             # and because removing a field a consumer reads is a separate
             # landing from adding the one that joins it.
-            "apps": permission_apps()}
+            "apps": _apps()}
 
 
 @router.get("/api/agents/connector-gaps")

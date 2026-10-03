@@ -1932,6 +1932,8 @@ textarea.ac-field-wide { resize: vertical; min-height: 58px; line-height: 1.45; 
    what stops somebody reading the switches above as already working. */
 .at-strip.is-warn { border-color: var(--north-track); background: var(--north-dim);
   color: var(--text); }
+.at-strip b { color: var(--text); }
+.at-strip .link { white-space: nowrap; }
 .at-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
 .at-chip { display: inline-flex; align-items: center; gap: 6px;
   font-family: var(--mono); font-size: 11.5px; padding: 4px 6px 4px 9px;

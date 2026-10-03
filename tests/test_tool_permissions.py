@@ -383,3 +383,52 @@ def test_no_card_offers_to_create_a_grant():
     names = {f.name for f in fields(App)}
     assert "ask_addable" not in names, "the box came back"
     assert "ask_kind" in names, "the row still has to know which list to show"
+
+
+# ── reaching an app is a permission of its own ───────────────────────────
+#
+# Every agent on a real machine had the browser switched on and only one could
+# open a page. `browse_open` is in `connector_grants.FIRST_PARTY_TOOLS`, so the
+# loop gates it on *reaching the browser* — a second permission, stored per
+# agent, exempted by exactly one template. The card drew the tool switch and
+# the site list and nothing for this, so there was no control anywhere in the
+# app, and the refusal sent people to the switch that was already on.
+
+def test_a_card_whose_tools_are_connector_gated_carries_the_grant():
+    """Derived from the gate's own map, so a tool added to it cannot leave a
+    card silently ungrantable — which is the whole failure."""
+    from chitragupta.agents.connector_grants import FIRST_PARTY_TOOLS
+    from chitragupta.api.routes.agents import _apps
+
+    for app in _apps():
+        gated = {FIRST_PARTY_TOOLS[n]
+                 for n in (*app["read"], *app["change"], *app["run"])
+                 if n in FIRST_PARTY_TOOLS}
+        if not gated:
+            assert not app.get("grant"), (
+                f"{app['key']} offers a grant for nothing")
+            continue
+        assert app.get("grant"), (
+            f"{app['key']} holds {sorted(gated)}-gated tools and offers no way "
+            "to grant it — the switches on it can never work")
+        assert app["grant"]["connector"] in gated
+
+
+def test_the_browser_is_one_of_them():
+    """Named explicitly, because it is the one that was reported and a derived
+    test can be right about an empty set."""
+    from chitragupta.api.routes.agents import _apps
+
+    browser = next(a for a in _apps() if a["key"] == "browser")
+    assert browser["grant"]["connector"] == "browser"
+
+
+def test_the_grant_label_is_readable_even_when_nothing_is_set_up():
+    """`first_party_labels` only names connectors that are configured. A card
+    that dropped its grant control when the browser was not installed yet would
+    be a control that disappears exactly when somebody needs to find it."""
+    from chitragupta.api.routes.agents import _apps
+
+    for app in _apps():
+        if app.get("grant"):
+            assert app["grant"]["label"].strip()

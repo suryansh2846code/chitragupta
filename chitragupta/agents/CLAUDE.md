@@ -39,6 +39,18 @@ permissions — and `library.py`, which is what Chitragupta *offers*.
   (a turn, from `@` or *Allow once*), `always` (per agent+connector), `unrestricted` —
   declared by a template, and only Chief of Staff has it.
   [`connector-permissions.md`](../../docs/development/connector-permissions.md)
+  **The browser is one of these connectors, and forgetting that shipped the
+  worst bug this permission screen has had.** Every agent had the browser
+  switched on and only Chief of Staff could open a page — `browse_open` is in
+  `FIRST_PARTY_TOOLS`, so reaching the browser is a second permission, and the
+  one agent exempt from it is the one template with `unrestricted_connectors`.
+  The screen drew a tool switch and a site list and nothing for the grant, so
+  there was no control anywhere in the app, and `NEEDS_PERMISSION` sent people
+  to the switch — which was already on. A user did that five times before
+  giving up. Any card holding connector-gated tools now carries the grant,
+  derived from this map in `api/routes/agents._apps` so a tool added here
+  cannot leave one silently ungrantable, and `tests/test_tool_permissions.py`
+  fails if one does.
   **The refusal names a screen and never a tool.** `NEEDS_PERMISSION` is the
   whole of what the model knows about the problem, so what it omits the user
   never hears. It shipped saying only "ask them for it", and an agent wrote

@@ -421,10 +421,28 @@ function reachFor(card) {
 //: common thing this screen produced.
 function cardStrip(card, ctx) {
   const draft = isDraftAgent(ctx.agent);
-  if (card.key === "browser") return sitesStrip(draft);
+  // The grant comes FIRST where there is one: "may this agent reach the
+  // browser at all" is upstream of "which sites", and a card that led with the
+  // sites answered the second question while the first one was still no.
+  const grant = grantStrip(card, draft);
+  if (card.key === "browser") return grant + sitesStrip(draft);
   if (card.key === "mac") return foldersStrip(draft);
-  if (card.kind === "connector") return grantStrip(card, draft);
-  return "";
+  return grant;
+}
+
+//: The connector this card is gated on, whether it is one of the user's own
+//: servers or one of ours.
+//:
+//: **Built-in cards have one too, and missing that is what kept the browser
+//: broken.** `browse_open` is in `connector_grants.FIRST_PARTY_TOOLS`, so
+//: reaching the browser is a permission of its own — stored per agent, and
+//: exempted by exactly one template. This function used to answer only for
+//: `kind === "connector"`, so Gmail, the calendar and the browser had no
+//: control anywhere in the app, their switches read as on, and every agent but
+//: Chief of Staff was refused.
+function grantConnectorId(card) {
+  if (card.kind === "connector") return card.connectorId || "";
+  return (card.grant && card.grant.connector) || "";
 }
 
 function sitesStrip(draft) {
@@ -487,18 +505,34 @@ function foldersStrip(draft) {
 //: granting two different things.
 function grantStrip(card, draft) {
   const grants = _PANEL.grants;
-  if (draft || !grants || !card.connectorId) return "";
+  const connector = grantConnectorId(card);
+  if (draft || !grants || !connector) return "";
   if (grants.unrestricted) {
     return `<p class="at-strip">This agent is allowed to reach every connected
       app without asking. That comes with the agent, not from this screen.</p>`;
   }
-  const allowed = (grants.allowed || []).includes(card.connectorId);
-  return `<p class="at-strip">
-    ${allowed ? `Reaches ${esc(card.name)} without asking.`
-      : `Asks you the first time it reaches ${esc(card.name)} in a conversation.`}
-    <button type="button" class="link" data-grant="${esc(card.connectorId)}"
+  const allowed = (grants.allowed || []).includes(connector);
+  // The connector's own name where there is one, and the card's heading when
+  // it is not set up yet — `first_party_labels` only names what is configured,
+  // and the control must not vanish exactly when somebody needs to find it.
+  //
+  // The name goes at the START of the sentence and never into the button. A
+  // heading is written to sit above a card ("The browser"), so mid-sentence it
+  // is a stray capital and "Allow The browser" is not a label anybody writes.
+  const named = (card.grant && card.grant.label) || card.name;
+  // **Not "asks you" — it refuses.** An agent with no grant does not get a
+  // card it can wait on: the tool comes back refused and the turn says so.
+  // Wording it as a question is what let five attempts read as a switch that
+  // had not taken.
+  return `<p class="at-strip${allowed ? "" : " is-warn"}">
+    ${allowed
+      ? `<b>${esc(named)}</b> is one this agent may reach without asking.`
+      : `<b>${esc(named)}</b> is not something this agent may reach yet, so the
+         switches above are refused until it is. This is a second permission,
+         kept per agent.`}
+    <button type="button" class="link" data-grant="${esc(connector)}"
       data-on="${allowed ? "1" : ""}"
-      >${allowed ? "Ask me each time" : "Stop asking"}</button></p>`;
+      >${allowed ? "Make it ask again" : "Allow it"}</button></p>`;
 }
 
 //: Where the other half of this card's permission is set.
@@ -581,6 +615,7 @@ function agentToolApps(tools, connectors, agentTools, apps, specs, categories) {
       card = {
         key, name, kind, tools: [], connector: null, connectorId: "",
         blurb: (spec && spec.blurb) || "",
+        grant: (spec && spec.grant) || null,
         always: !!(spec && spec.always),
         writeLabel: (spec && spec.write_label) || "",
         runLabel: (spec && spec.run_label) || "",
