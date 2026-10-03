@@ -405,6 +405,60 @@ def clear_agent_file(agent_id: str, name: str):
     return {"agent_id": agent_id, "name": name, "cleared": cleared}
 
 
+class AgentPersonaIn(BaseModel):
+    """What was chosen. `None` means "leave that one alone".
+
+    The screen saves a field at a time — picking a chip should not silently
+    clear the autonomy level somebody set a minute earlier — so absent and
+    empty are deliberately different: `[]` clears a group, omitting it does not.
+    """
+
+    traits: list[str] | None = None
+    communication: list[str] | None = None
+    thinking: list[str] | None = None
+    autonomy: str | None = None
+    extra: str | None = None
+
+
+@router.get("/api/agents/{agent_id}/persona")
+def get_agent_persona(agent_id: str):
+    """The choices, and the vocabulary to draw them with.
+
+    One call: the screen cannot render a chip without knowing both which
+    options exist and which are on, and two requests for that is a frame where
+    it knows half.
+
+    `extra` falls back to whatever is in `persona.md` when there are no choices
+    yet — an agent somebody wrote instructions for by hand must not have them
+    vanish the first time they open the picker.
+    """
+    from ...agents import persona, profile_files
+    _require_agent(agent_id)
+    chosen = persona.get(agent_id)
+    if chosen is None:
+        written = profile_files.read(agent_id, profile_files.PERSONA)
+        chosen = {"traits": [], "communication": [], "thinking": [],
+                  "autonomy": persona.DEFAULT_AUTONOMY,
+                  "extra": (written or "").strip(), "updated_at": None}
+    return {"agent_id": agent_id, "persona": chosen,
+            "vocabulary": persona.vocabulary()}
+
+
+@router.put("/api/agents/{agent_id}/persona")
+def set_agent_persona(agent_id: str, body: AgentPersonaIn):
+    from ...agents import persona
+    _require_agent(agent_id)
+    try:
+        return {"agent_id": agent_id,
+                "persona": persona.set_persona(
+                    agent_id, traits=body.traits, communication=body.communication,
+                    thinking=body.thinking, autonomy=body.autonomy,
+                    extra=body.extra)}
+    except persona.PersonaRejectedError as exc:
+        # Written to be read by the person who pressed Save.
+        raise HTTPException(400, str(exc)) from None
+
+
 class AgentIdentityIn(BaseModel):
     #: Either alone, or both. `None` is "leave that one as it is" — the profile
     #: saves a field at a time, and treating an absent role as a blank one is

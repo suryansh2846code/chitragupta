@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 
 from ..config import get_settings
 from ..log import suppressed
-from . import identity, notes, profile_files
+from . import identity, notes, persona, profile_files
 from .agent import Agent
 from .prompt import KNOWN_ACTIONS
 from .tool_snapshot import add_menu_column, catalog, recorded_menu, resolve
@@ -136,6 +136,8 @@ class CustomAgentStore:
         # the next agent built with this name wears the deleted one's rename.
         with suppressed("clearing a deleted agent's name"):
             identity.clear(agent_id)
+        with suppressed("clearing a deleted agent's persona"):
+            persona.forget(agent_id)
         cur = self._c.execute("DELETE FROM custom_agents WHERE id=?", (agent_id,))
         self._c.commit()
         return cur.rowcount > 0

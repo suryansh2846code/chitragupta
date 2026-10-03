@@ -336,6 +336,12 @@ script out of eleven does not fail; it passes.
   `openToolsScreen` and `openAppearanceScreen` survive as redirects into the
   profile, because four call sites and two old nav names still reach for them
   and a link that lands nowhere is worse than one that lands near.
+- **The persona picker's options come down the wire.** `agents/persona.py` owns
+  the traits, the styles, the autonomy levels and the caps; a copy of those
+  lists here would be a second copy to keep current, and the one that drifts is
+  the one somebody is choosing from. The tab sends every field on save, because
+  one document is rendered from all of them server-side — sending only what
+  changed would render the rest away.
 - **Hold the element, do not re-query it.** The profile's Save button is kept in
   `profSaveEl` by whichever pane built it, and `appearance.js` keeps its five
   parts in `apBox` / `apSaveBtn` / `apResetBtn` / `apNameEl` / `apNoteEl` for
