@@ -2,7 +2,9 @@
  *
  * Four agents used to be *the* agents: all present, none chosen. This screen is
  * the other half of `agents/library.py` — a shelf per kind of work, a card per
- * specialist, and Add / In your roster as the only two states a card can be in.
+ * specialist, and Add / In your roster as the only two states a card can be
+ * in — a state, not a toggle. Taking an agent off the team is a decision made
+ * in its own profile, beside the permanent one it has to be told apart from.
  *
  * Two things on a card are not decoration and must not be dropped:
  *
@@ -204,38 +206,41 @@ function libCard(t) {
     foot.appendChild(warn);
   }
 
-  const btn = document.createElement("button");
-  btn.className = t.in_roster ? "lib-btn ghost" : "lib-btn";
-  btn.textContent = t.in_roster ? "In your roster · Remove" : "Add agent →";
-  btn.onclick = () => toggleRoster(t, btn);
-  foot.appendChild(btn);
+  // **The Library adds; it never takes away.** This was a toggle reading
+  // "In your roster · Remove", which did the same thing the agent profile
+  // calls Retire — one act, two names, two screens, and only one of them said
+  // what was kept. Taking an agent off the team is now a decision made in its
+  // own profile, next to the other one it has to be told apart from.
+  if (t.in_roster) {
+    const state = document.createElement("span");
+    state.className = "lib-state";
+    state.textContent = "In your roster";
+    foot.appendChild(state);
+  } else {
+    const btn = document.createElement("button");
+    btn.className = "lib-btn";
+    btn.textContent = "Add agent →";
+    btn.onclick = () => addToRoster(t, btn);
+    foot.appendChild(btn);
+  }
   el.appendChild(foot);
   return el;
 }
 
-async function toggleRoster(t, btn) {
+async function addToRoster(t, btn) {
   btn.disabled = true;
-  const wasMine = t.in_roster;
-  btn.textContent = wasMine ? "Removing…" : "Adding…";
+  btn.textContent = "Adding…";
   try {
-    if (wasMine) {
-      await api(`/api/agents/roster/${encodeURIComponent(t.id)}`,
-                { method: "DELETE" });
-      // Removing is not deleting, and saying so is the difference between a
-      // button people press and one they are afraid of.
-      toast(`${t.name} removed — its chat is kept`);
-    } else {
-      await api("/api/agents/roster", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ template_id: t.id }),
-      });
-      toast(`${t.name} added to your agents`);
-    }
+    await api("/api/agents/roster", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ template_id: t.id }),
+    });
+    toast(`${t.name} added to your agents`);
     await loadLibrary();
     if (typeof loadAgents === "function") await loadAgents();
   } catch (e) {
     toast(String(e));
-    btn.textContent = wasMine ? "In your roster · Remove" : "Add agent →";
+    btn.textContent = "Add agent →";
   } finally {
     btn.disabled = false;
   }
