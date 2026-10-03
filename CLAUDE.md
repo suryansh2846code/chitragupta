@@ -236,6 +236,22 @@ even when every test is green. Reasoning and measurements:
   checking wall-clock through a wait killed every run that waited.
 
 **Agents — `agents/`** · [`docs/AGENTS.md`](docs/AGENTS.md)
+- **Nothing an agent needs is a settings path it reads out.** Asked to shop, one
+  answered *"Settings → Agents & tools → Health & Fitness → let it browse the
+  web, plus allow changes on `amazon.in`. Say 'go' when it's on."* — true, and
+  the end of the conversation. `request_permission` already existed and could
+  carry a tool group and nothing else, so an ask needing a group *and* a site
+  was half a card and half a paragraph; it became all paragraph.
+  `agents/access.py` is now the **one vocabulary** of what can be asked for —
+  tool group, site, folder, account — and the one place that knows, per item,
+  what it is called, whether it is already on, and who writes it. The chat gets
+  a **panel of live switches, not a Confirm**: each switch is the decision, which
+  is the only shape that can say "allow two of these three". The agent asks and
+  never grants; the endpoint re-parses the card's own ask and refuses a key that
+  ask never named, because the model raising it may be summarising a stranger's
+  web page. **A refusal a tap would fix names the tap, never the screen** —
+  `browse_tools` hands back `site:HOST:read|change`, built from
+  `origins.READ`/`CHANGE` rather than transcribed.
 - **A routine pre-authorises the routine, not the stranger who wrote the email it
   read.** Outbound actions need a recipient on the explicit allow-list; a derived
   list is exactly what an injection would name. Interactive chat is deliberately
@@ -499,8 +515,8 @@ In order: **the focused test → the subsystem's suite → `pytest` →
 `ruff check chitragupta tests` → `mypy chitragupta` → the `tests/js/` harnesses if
 the frontend changed → `chitragupta app` opens and renders.**
 
-Baseline, measured 2026-10-03: **6149 passed, 34 skipped in ~7min31**, ruff
-clean, mypy clean over 221 files. With `PLAYWRIGHT_BROWSERS_PATH` pointed at the managed
+Baseline, measured 2026-10-03: **6204 passed, 34 skipped in ~9min37**, ruff
+clean, mypy clean over 222 files. With `PLAYWRIGHT_BROWSERS_PATH` pointed at the managed
 browser the same run adds twelve more — `tests/test_browser_driver.py`'s
 real-Chromium tests, which skip when there is
 no browser to find. Worth setting: they are the only tests that drive a real

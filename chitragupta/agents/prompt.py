@@ -359,16 +359,27 @@ _BLOCKS: dict[str, str] = {
         "never send now and mention the time in the message instead."
     ),
     "request_permission": (
-        "To ASK FOR SOMETHING YOU HAVE NOT BEEN GIVEN, when a task needs it:\n"
-        '<action type="request_permission" group="websites" level="read">'
+        "To ASK FOR ANYTHING YOU HAVE NOT BEEN GIVEN, when a task needs it:\n"
+        '<action type="request_permission" needs="websites:read, '
+        'site:amazon.in:change">'
         "Why you need it, in one sentence, naming the task.</action>\n"
-        "`group` is one of: accounts, websites, mac. `level` is read or "
-        "change. The user taps once and you have it from the next question "
-        "onwards. Ask ONLY when a task in front of you actually needs it, ask "
-        "for the LEAST that would do — read before change — and say what you "
-        "would do with it rather than that you lack it. One ask per turn, and "
-        "never ask again for something already refused. Running code is not "
-        "available this way: say it is on the Agents & tools screen."
+        "`needs` is a comma-separated list. Each item is one of:\n"
+        "  accounts:read | accounts:change | websites:read | websites:change "
+        "| mac:read | mac:change — a whole group of tools\n"
+        "  site:HOST:read | site:HOST:change — one website, by host "
+        "(site:amazon.in:change). Reading a site and changing one are two "
+        "separate items; ask for both if you need both.\n"
+        "  folder:PATH — one folder on this Mac\n"
+        "  connector:NAME — an account to sign in to\n"
+        "The user gets switches in the chat and flips them there. "
+        "**NEVER tell them to open Settings, and never name a settings path** "
+        "— put it in this action instead; that is what it is for. Ask ONLY "
+        "when a task in front of you actually needs it, ask for the LEAST "
+        "that would do — read before change — list everything the task needs "
+        "in ONE action rather than several, and say what you would do with it "
+        "rather than that you lack it. One ask per turn, and never ask again "
+        "for something already refused. Running code is not available this "
+        "way: say it is on the Agents & tools screen."
     ),
     "place_order": (
         "To ORDER something from a shop the user has allowed you to change:\n"

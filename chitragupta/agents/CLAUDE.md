@@ -69,6 +69,18 @@ permissions — and `library.py`, which is what Chitragupta *offers*.
   **`tool_facts` is a leaf and must stay one.** `prompt.py` reads it, and
   importing it from `tools.py` grew the frozen `agents_tools` cycle from five
   modules to ten the first time it was tried.
+- **What an agent lacks, it asks for where the work is.** `access.py` is the one
+  vocabulary of askable things — `websites:read`, `site:amazon.in:change`,
+  `folder:PATH`, `connector:NAME` — and the one place that resolves each to a
+  sentence, a current state and the module that already owned that write. It is
+  a **leaf**: `actions.py`, the route and `prompt.py` read it, and nothing reads
+  back up. Unknown fails closed on every path, because the strings arrive from a
+  model and some of those models are reading a page a stranger wrote. Running
+  code is deliberately not askable — a tap given to unblock a task is not the
+  decision made while reading the sentence that explains it.
+  An account is **not** offered as a switch: Google wants a sign-in window,
+  Telegram wants credentials typed, an MCP server wants a URL, and a control
+  that pretended one press did all three could not work.
 - **An agent is told what it has NOT been given.** A withheld tool is simply
   absent from its list, so it cannot tell "never granted" from "does not exist"
   — asked whether it could post to a site, one answered *"You haven't enabled

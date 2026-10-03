@@ -49,7 +49,7 @@ COMPLETE: dict[str, dict] = {
     # the confirm adds it on the way through — but the handler refuses without
     # it, so the fixture carries it or every refusal here reads as the missing
     # agent rather than the missing field under test.
-    "request_permission": {"group": "websites", "level": "read",
+    "request_permission": {"needs": "websites:read, site:example.test:read",
                            "why": "To read the page you linked.",
                            "agent_id": "chotu"},
     "create_draft": {"to": "a@b.test", "subject": "Hi", "body": "Text"},

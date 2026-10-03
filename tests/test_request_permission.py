@@ -206,7 +206,15 @@ def test_the_prompt_tells_an_agent_that_can_ask_to_ask():
                         actions=["request_permission"])
 
     assert "ASK FOR IT with the request_permission action" in said
-    assert "To ASK FOR SOMETHING YOU HAVE NOT BEEN GIVEN" in said
+    assert "To ASK FOR ANYTHING YOU HAVE NOT BEEN GIVEN" in said
+    # It is told the general form, not only the tool-group pair. An agent that
+    # knew how to ask for a group and not for a website wrote half its ask as a
+    # card and the other half as prose — and then wrote all of it as prose.
+    for shape in ("site:HOST:read", "site:HOST:change", "folder:PATH",
+                  "connector:NAME", "websites:change"):
+        assert shape in said, shape
+    # And it is told not to do the thing this whole mechanism replaces.
+    assert "NEVER tell them to open Settings" in said
 
 
 def test_an_agent_that_cannot_ask_is_told_the_screen_instead():

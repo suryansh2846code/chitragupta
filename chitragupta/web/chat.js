@@ -289,6 +289,17 @@ function parseActions(text) {
     if (a.type === "send_email") a.params.body = inner.trim();
     else if (a.type === "create_event") a.params.description = inner.trim();
     else if (a.type === "set_reminder") a.params.message = inner.trim();
+    // Mirrors `actions.parse_actions`, both halves. The older `group=` +
+    // `level=` pair folds into the general `needs` form, so one field is the
+    // contract downstream; and `why` — the agent's own sentence, which the card
+    // exists to show — is the body, which nothing had been carrying across at
+    // all, on either side.
+    else if (a.type === "request_permission") {
+      if (!a.params.needs && a.params.group) {
+        a.params.needs = `${a.params.group}:${a.params.level || ""}`;
+      }
+      a.params.why = inner.trim();
+    }
     else if (a.type === "create_routine") a.params.instruction = inner.trim();
     else if (a.type === "message_send") a.params.text = inner.trim();
     else if (a.type === "mcp_action") {
@@ -1558,45 +1569,12 @@ function rowsHtml(rows, skip) {
     .join("");
 }
 
-//: What each grant MEANS, in a sentence a person can answer.
-//:
-//: `group` and `level` are the server's words — "websites", "change" — and a
-//: card that printed them would be asking somebody to consent to a pair of
-//: identifiers. The pair is the key; the sentence is the card.
-//:
-//: An unrecognised pair falls back to printing the pair, which is ugly and
-//: honest. It cannot be granted anyway: `actions._request_permission` resolves
-//: the same pair server-side and refuses what it does not know, so a card the
-//: UI could not name is a card whose Confirm correctly fails.
-const PERMISSION_WORDS = {
-  "accounts:read": {
-    title: "Let it read your accounts",
-    means: "Mail, calendar and messages from the accounts you have connected. "
-         + "Reading only — it cannot send or change anything.",
-  },
-  "websites:read": {
-    title: "Let it read websites",
-    means: "Pages on sites you have already allowed. Reading only — it cannot "
-         + "click, type or send on them.",
-  },
-  "websites:change": {
-    title: "Let it change websites",
-    means: "Clicking, typing and sending on sites you have already allowed. "
-         + "Still only the sites on that list, and never when nobody is "
-         + "watching.",
-  },
-  "mac:read": {
-    title: "Let it read files on this Mac",
-    means: "Opening and searching files and folders. Reading only — it cannot "
-         + "write, move or delete anything.",
-  },
-  "mac:change": {
-    title: "Let it change files on this Mac",
-    means: "Writing, editing and moving files. Running code is not included "
-         + "and is not available this way.",
-  },
-};
-
+//: The sentences that used to live here are in `agents/access.py` now, beside
+//: the code that reads whether each grant is already on. They were a second
+//: copy of the server's vocabulary, keyed by the same `group:level` pair — and
+//: a label and the state it describes arriving from different places is the
+//: failure this whole feature is a fix for, one level up. `access.describe`
+//: returns both together, so the panel renders what the server resolved.
 
 function actionFace(type, params) {
   const p = params || {};
@@ -1623,18 +1601,19 @@ function actionFace(type, params) {
       bodyOf(p.body, ["body"]),
     ];
   } else if (type === "request_permission") {
-    // The agent is asking to be allowed something, and the only thing a person
-    // needs in order to answer is WHAT and WHY. The reason is the agent's own
-    // sentence — it goes in the body, where an email's body goes, because it is
-    // the part worth reading rather than a label to skim.
-    const what = PERMISSION_WORDS[`${p.group}:${p.level}`];
-    title = what ? what.title : "Give access";
+    // **The approvals queue still draws this face; the chat does not.**
+    // `accessCard` replaced the confirm card with a panel of live switches, and
+    // each switch carries its own sentence resolved server-side by
+    // `access.describe` — so the wording a person reads comes from the same
+    // place as the state it describes. What is left here is the row the queue
+    // shows for an ask that arrived from a run with nobody watching, where
+    // there are no switches to offer because there is nobody at the screen.
+    title = "Give access";
     verb = "allow";
     rows = [
-      what ? noteOf(what.means) : rowOf("Asking for", `${p.group} — ${p.level}`),
-      // Said on every one of these cards, because it is the thing that makes
-      // the tap safe to give: it is this agent only, and it is revocable in a
-      // place the sentence names.
+      rowOf("Asking for", p.needs || `${p.group || ""} ${p.level || ""}`.trim()),
+      // Said on every one of these, because it is what makes the tap safe to
+      // give: it is this agent only, and it is revocable where the sentence says.
       noteOf("This agent only. You can take it back any time under "
              + "Settings → Agents & tools."),
       bodyOf(p.why, ["why"]),
@@ -1826,6 +1805,151 @@ function workoutVolume(blocks) {
   return volume ? `${volume.toLocaleString()} kg of work, as it stands.` : "";
 }
 
+/** The ask, as a working panel instead of a route to a settings screen.
+ *
+ * An agent that needed the browser and one website wrote this: *"Settings →
+ * Agents & tools → Health & Fitness → let it browse the web, plus allow changes
+ * on `amazon.in`. Say 'go' when it's on."* Every word true, and it ends the
+ * conversation, hands the user a path to re-derive a decision they were already
+ * being asked to make, and then asks them to come back and say "go".
+ *
+ * So the switches come to the conversation. **This is not a confirm card and
+ * must never become one.** There is no Confirm, because there is nothing to
+ * propose: each switch IS the decision, and pressing it is the same act as
+ * flipping it on the Agents & tools screen — the same endpoint, the same write,
+ * three screens closer to the work. A Confirm on top would make "allow two of
+ * these three" impossible to express, which is the case the panel exists for.
+ *
+ * **It never remembers what it drew.** Every other card in this file settles
+ * into `CARD_STATE` and comes back as what it became; this one re-reads the
+ * real grants each time it is rendered, because a panel of switches that showed
+ * a remembered state would be a settings screen that lies — turn something off
+ * elsewhere and the old card would still say it was on.
+ *
+ * Everything on it is escaped. The hosts, the paths and the agent's sentence
+ * were all chosen by a model that may have been reading a stranger's web page,
+ * which is the reason to escape them rather than a reason not to bother.
+ */
+function accessCard(a) {
+  const p = a.params || {};
+  // Captured now, not read at press time. The card is built while its own
+  // conversation is on screen, and turns run per agent — so a panel left open
+  // while another agent answers must still grant to the agent that asked.
+  const agentId = current;
+  const agent = agents.find((x) => x.id === agentId);
+  const who = (agent && agent.name) || "This agent";
+
+  const el = document.createElement("div");
+  el.className = "action-card access-card";
+  el.dataset.card = cardKey(a);
+  el.dataset.kind = "access";
+  // RED is what the registry says this action is, and the attribute is what the
+  // styling and the tests read. It stays true even though nothing here runs the
+  // action: the tier is about who may RAISE the ask, which is still the rule.
+  el.dataset.risk = "red";
+  el.innerHTML = `<div class="ac-chrome" aria-hidden="true">
+      <span class="ac-dot red"></span><span class="ac-dot yellow"></span><span class="ac-dot green"></span>
+    </div>
+    <div class="ac-head">${esc(who)} is asking for access</div>
+    <span class="ac-kind">access</span>
+    ${p.why ? `<div class="ac-body acc-why">${esc(p.why)}</div>` : ""}
+    <div class="acc-rows" role="group" aria-label="What ${esc(who)} is asking for"></div>
+    <div class="acc-foot">Nothing else changes, and only for ${esc(who)}.
+      You can take any of these back under Settings &rarr; Agents &amp; tools.</div>`;
+
+  const box = el.querySelector(".acc-rows");
+  box.innerHTML = `<div class="acc-wait">Checking what is already on…</div>`;
+
+  //: The ask, exactly as the agent wrote it, sent back on every call. The server
+  //: re-parses it and refuses a key that is not in it — so a press can only ever
+  //: grant something this card actually asked for, and the panel cannot be
+  //: talked into addressing a different permission than the one it is showing.
+  const asked = { needs: p.needs || "", group: p.group || "", level: p.level || "" };
+
+  const draw = (rows) => {
+    if (!rows.length) {
+      // An ask that resolved to nothing. Said plainly rather than left as an
+      // empty box: the agent asked for something we could not name, and a card
+      // with no controls and no explanation reads as the app having broken.
+      box.innerHTML = `<div class="acc-wait">${esc(who)} asked for something
+        that is not a permission here. Nothing to turn on.</div>`;
+      return;
+    }
+    box.innerHTML = rows.map((r) => {
+      const on = !!r.granted;
+      // Three states, three controls, and the difference is honest.
+      // Already-on is not a switch: taking a permission back belongs where the
+      // user can see what else it sits beside, which is the same reason this
+      // action ships without an Undo.
+      let control;
+      if (on) {
+        control = `<span class="acc-on">${IC.tick} On</span>`;
+      } else if (r.control === "opens") {
+        // Signing in to an account happens in its own window — Google wants a
+        // browser, Telegram wants credentials typed, an MCP server wants a URL.
+        // A switch here would be a control that cannot work, so this says what
+        // it actually does.
+        control = `<button type="button" class="acc-open tiny"
+          data-opens="${esc(r.screen || "connectors")}">Set up</button>`;
+      } else {
+        control = `<button type="button" class="acc-sw" role="switch"
+          aria-checked="false" data-grant="${esc(r.key)}"
+          aria-label="${esc(r.title)}"><span class="acc-knob"></span></button>`;
+      }
+      return `<div class="acc-row${on ? " is-on" : ""}" data-row="${esc(r.key)}">
+        <div class="acc-tx"><b>${esc(r.title)}</b>
+          ${r.means ? `<span>${esc(r.means)}</span>` : ""}</div>
+        ${control}
+        <div class="acc-err" role="status"></div>
+      </div>`;
+    }).join("");
+    wire();
+  };
+
+  const wire = () => {
+    box.querySelectorAll("[data-opens]").forEach((b) => {
+      b.onclick = () => {
+        const go = b.dataset.opens === "connectors" ? openConnectorsScreen : null;
+        if (typeof go === "function") go();
+        else toast("Open Settings to finish this one");
+      };
+    });
+    box.querySelectorAll("[data-grant]").forEach((b) => {
+      b.onclick = async () => {
+        if (b.disabled) return;
+        b.disabled = true;
+        const row = b.closest(".acc-row");
+        const err = row ? row.querySelector(".acc-err") : null;
+        if (err) err.textContent = "";
+        try {
+          const r = await api(`/api/agents/${agentId}/access/grant`, {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ ...asked, key: b.dataset.grant }) });
+          // Redrawn from what the server read back, never from what we hoped
+          // we sent — the same rule the tools panel follows, and the reason a
+          // grant that silently did not land shows as off rather than as on.
+          draw(r.rows || []);
+          toast(resultLine(r.detail) || "Done");
+        } catch (e) {
+          b.disabled = false;
+          if (err) err.textContent = resultLine(e) || "That could not be done.";
+        }
+      };
+    });
+  };
+
+  api(`/api/agents/${agentId}/access`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(asked) })
+    .then((r) => draw(r.rows || []))
+    .catch(() => {
+      box.innerHTML = `<div class="acc-wait">Could not check what is already
+        on. Settings &rarr; Agents &amp; tools has all of it.</div>`;
+    });
+  return el;
+}
+
+
 /** One proposal, as a card the user can read, correct and confirm.
  *
  * **`title` and `verb` are TEXT; `rows` is MARKUP.** The head escapes the
@@ -1846,6 +1970,13 @@ function workoutVolume(blocks) {
  * next branch safe without its author having to know any of this.
  */
 function actionCard(a) {
+  // **An ask for access is not a proposal, so it does not get a Confirm.**
+  // It used to: one card, one tap, one group of tools. That shape could not
+  // carry an ask for a tool group AND a website AND a folder, because Confirm
+  // means all of them — and the agent that needed two of the three wrote the
+  // whole ask out as prose instead, pointing at a settings screen. See
+  // `accessCard`, which is a panel of real switches rather than a question.
+  if (a.type === "request_permission") return accessCard(a);
   const p = a.params;
   // Before the editors and the handlers, all of which close over it.
   const key = cardKey(a);
