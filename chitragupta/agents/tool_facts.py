@@ -454,19 +454,18 @@ class App:
     #: can show **this app's** standing grants rather than sending somebody to
     #: a screen holding everybody's. The value is `ActionSpec.recipient_kind`.
     #:
+    #: Read-only on the card, deliberately. A grant is **made** from the
+    #: approval it would have cleared — the queue offers it there with the
+    #: exact value the gate reads, at the moment somebody learns they want one.
+    #: A box on a settings screen asks them to predict it instead, and writes
+    #: to the same global list from a second place.
+    #:
     #: Declared beside the two strings above rather than derived from the
     #: action registry: `tool_facts` is a leaf and importing `actions` here
     #: would grow the frozen `agents_tools` cycle — the thing this module was
     #: extracted to stop. `tests/test_tool_permissions.py` pins each one
     #: against what the registry actually says.
     ask_kind: str = ""
-
-    #: Can a person type a new entry for that list? An email address and a chat
-    #: id are things somebody can name in advance. A connector key
-    #: (`server:tool@scope`) is not — it is minted by the call it describes and
-    #: only ever granted from the card that was asking. Offering a box for one
-    #: would be a control nobody could fill in.
-    ask_addable: bool = False
 
     #: True for the surface that cannot leave this machine — granted at
     #: creation, never shown as a switch. Same meaning as `Group.always`.
@@ -487,27 +486,30 @@ APPS: tuple[App, ...] = (
         "Searching and reading the mail in the account you connected.",
         ask_label="Send", ask_blurb=(
             "Sending or drafting mail always comes to you as a card you "
-            "confirm, whatever is switched on here."),
-        ask_kind="email_recipient", ask_addable=True,
+            "confirm. This only changes when an automation runs it with "
+            "nobody watching."),
+        ask_kind="email_recipient",
         more_screen="connectors", more_label="Connect an account"),
     App("calendar", "Calendar",
         "Reading what is in the day, and finding a time that works.",
         ask_label="Add or change", ask_blurb=(
             "Creating, moving or cancelling an event always comes to you as a "
-            "card you confirm."),
+            "card you confirm. This only changes when an automation runs it "
+            "with nobody watching."),
         # The same list as Gmail, and that is not a mistake: what an event
         # reaches is the people it invites.
-        ask_kind="email_recipient", ask_addable=True,
+        ask_kind="email_recipient",
         more_screen="connectors", more_label="Connect an account"),
     App("messages", "Messages",
         "Reading the chats in an app you connected — Telegram, Slack, "
         "WhatsApp.",
         ask_label="Send", ask_blurb=(
-            "Sending a message always comes to you as a card you confirm, and "
-            "an agent running on its own may only reach a chat you allowed."),
+            "Sending a message always comes to you as a card you confirm. "
+            "This only changes when an automation runs it with nobody "
+            "watching."),
         # Its own list, keyed `app:chat`. A chat id means nothing outside the
         # app it came from, so it is never judged against the email one.
-        ask_kind="chat_recipient", ask_addable=True,
+        ask_kind="chat_recipient",
         more_screen="connectors", more_label="Connect an account"),
     App("contacts", "Contacts", "People from an account you connected.",
         more_screen="connectors", more_label="Connect an account"),
@@ -584,7 +586,7 @@ def permission_apps() -> list[dict[str, Any]]:
         }
         if app.ask_label:
             row["ask"] = {"label": app.ask_label, "blurb": app.ask_blurb,
-                          "kind": app.ask_kind, "addable": app.ask_addable}
+                          "kind": app.ask_kind}
         if app.more_screen:
             row["more"] = {"screen": app.more_screen, "label": app.more_label}
         out.append(row)

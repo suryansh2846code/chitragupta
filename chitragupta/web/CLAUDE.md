@@ -268,13 +268,20 @@ script out of eleven does not fail; it passes.
   by hand. `reachFor` slices the one list by the card it is drawn on — by
   **server id** for a connector, never by label, because a rename must not
   change which permissions look like its — and each grant gets the one control
-  a standing permission needs: take it back. Adding one is a box on the card
-  too, where `ask.addable` says a person could name the next entry in advance;
-  the first fix made it *Allow someone new*, which opened the same list on the
-  same screen under a better label. A connector key is minted by the call it
-  describes, so there is no box for one — and no grant is ever *made* here from
-  nothing: that happens on the approval card that was asking, while somebody is
-  reading what it would do.
+  a standing permission needs: take it back.
+  **Read-only, and it says what it governs.** Two more versions of this row
+  were wrong before it settled. The second put a box on the card to add a
+  grant; the third took it away again, because `approvals.run_or_queue` is
+  "the seam every **unattended** action goes through — interactive chat does
+  not come this way". So the list changes nothing a person will ever see in a
+  conversation, and a row that read *"always comes to you as a card you
+  confirm"* and then offered a control undoing it was two true sentences about
+  two different situations, naming neither. It says *when an automation runs it
+  with nobody watching* now, and the chips say *across every agent*, because
+  the list is global and the card is not. A grant is **made** where the exact
+  value is known and somebody has just learnt they want one: the blocked
+  approval, which already offers it. An empty list draws nothing — there is
+  nothing worth saying about it on a screen that cannot change it.
 - **Leaving this panel means leaving the profile it is a tab inside.** Every
   button that opens another screen used to navigate **behind** the dialog: the
   page changed, the modal stayed up, and the user was looking at a profile over

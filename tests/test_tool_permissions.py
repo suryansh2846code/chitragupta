@@ -378,15 +378,65 @@ def test_each_ask_row_names_the_list_its_actions_are_actually_judged_against():
             f"judged against {spec.recipient_kind}")
 
 
-def test_only_a_list_a_person_could_type_an_entry_for_is_addable():
-    """An email address and a chat id are things somebody can name in advance.
-    A connector key is minted by the call it describes and only ever granted
-    from the card that was asking — a box for one is a box nobody can fill."""
-    from chitragupta.actions import TOOL_RECIPIENT
-    from chitragupta.agents.tool_facts import APPS
+def test_no_card_offers_to_create_a_grant():
+    """A grant is **made** from the approval it would have cleared: the queue
+    offers it there with the exact value the gate reads, at the moment somebody
+    learns they want one. A box on a settings screen asks them to predict it,
+    and writes to the same global list from a second place — so `App` declares
+    which list to *read* and nothing about adding to it."""
+    from dataclasses import fields
 
-    for app in APPS:
-        if app.ask_addable:
-            assert app.ask_kind, f"{app.key} is addable to no list at all"
-            assert app.ask_kind != TOOL_RECIPIENT, (
-                f"{app.key} offers to type a connector key")
+    from chitragupta.agents.tool_facts import App
+
+    names = {f.name for f in fields(App)}
+    assert "ask_addable" not in names, "the box came back"
+    assert "ask_kind" in names, "the row still has to know which list to show"
+
+
+# ── reaching an app is a permission of its own ───────────────────────────
+#
+# Every agent on a real machine had the browser switched on and only one could
+# open a page. `browse_open` is in `connector_grants.FIRST_PARTY_TOOLS`, so the
+# loop gates it on *reaching the browser* — a second permission, stored per
+# agent, exempted by exactly one template. The card drew the tool switch and
+# the site list and nothing for this, so there was no control anywhere in the
+# app, and the refusal sent people to the switch that was already on.
+
+def test_a_card_whose_tools_are_connector_gated_carries_the_grant():
+    """Derived from the gate's own map, so a tool added to it cannot leave a
+    card silently ungrantable — which is the whole failure."""
+    from chitragupta.agents.connector_grants import FIRST_PARTY_TOOLS
+    from chitragupta.api.routes.agents import _apps
+
+    for app in _apps():
+        gated = {FIRST_PARTY_TOOLS[n]
+                 for n in (*app["read"], *app["change"], *app["run"])
+                 if n in FIRST_PARTY_TOOLS}
+        if not gated:
+            assert not app.get("grant"), (
+                f"{app['key']} offers a grant for nothing")
+            continue
+        assert app.get("grant"), (
+            f"{app['key']} holds {sorted(gated)}-gated tools and offers no way "
+            "to grant it — the switches on it can never work")
+        assert app["grant"]["connector"] in gated
+
+
+def test_the_browser_is_one_of_them():
+    """Named explicitly, because it is the one that was reported and a derived
+    test can be right about an empty set."""
+    from chitragupta.api.routes.agents import _apps
+
+    browser = next(a for a in _apps() if a["key"] == "browser")
+    assert browser["grant"]["connector"] == "browser"
+
+
+def test_the_grant_label_is_readable_even_when_nothing_is_set_up():
+    """`first_party_labels` only names connectors that are configured. A card
+    that dropped its grant control when the browser was not installed yet would
+    be a control that disappears exactly when somebody needs to find it."""
+    from chitragupta.api.routes.agents import _apps
+
+    for app in _apps():
+        if app.get("grant"):
+            assert app["grant"]["label"].strip()

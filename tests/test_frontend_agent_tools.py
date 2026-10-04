@@ -63,9 +63,9 @@ APPS = [
      "write_label": "Write", "run_label": "",
      "ask": {"label": "Send",
              "blurb": "Sending mail always comes to you as a card you confirm.",
-             # Which list its cards are judged against, and whether a person
-             # could type the next entry for it. A connector key could not be.
-             "kind": "email_recipient", "addable": True},
+             # Which list its cards are judged against. Read-only: a grant is
+             # made from the approval it would have cleared, not from here.
+             "kind": "email_recipient"},
      "more": {"screen": "connectors", "label": "Connect an account"}},
     {"key": "mac", "label": "Your Mac", "blurb": "Files on this computer.",
      "always": False, "read": [], "change": [], "run": [],
@@ -297,58 +297,44 @@ def test_a_grant_can_be_taken_back_from_the_card():
     assert 'data-reach-kind="email_recipient"' in out["html"]
 
 
-def test_only_a_list_you_could_type_into_offers_a_box():
-    """A connector key is minted by the call it describes, so there is nothing
-    anybody could type into a box for one."""
-    out = run(["notion__search"], [*BUILTIN, CATEGORY, NOTION_TOOL], [READY],
-              panel={"reach": []})
-    assert "data-reach-add" in _card(out["html"], "Gmail")
-    assert "data-reach-add" not in _card(out["html"], "Notion")
-
-
-def test_a_new_recipient_is_added_on_the_card_not_on_another_screen():
-    """The first fix replaced the dead button with "Allow someone new", which
-    still opened the Actions screen — the same trip to the same list under a
-    better label. The card already knows which list this app is judged
-    against, so there is nothing to go and find."""
-    out = run(["gmail_search"], BUILTIN, [], panel={"reach": []},
-              addReach={"card": "gmail", "value": "dana@acme.com"})
+def test_no_card_offers_to_create_a_grant():
+    """A grant is made from the approval it would have cleared: the queue
+    offers it there with the exact value the gate reads, at the moment
+    somebody learns they want one. A box on a settings screen asked people to
+    predict that, and wrote to the same global list from a second place."""
+    out = run(["gmail_search"], BUILTIN, [], panel={"reach": []})
     assert "Allow someone new" not in out["html"]
-    assert out["reachAdded"], "the box did not reach the endpoint"
-    assert out["reachAdded"]["path"] == "/api/agents/permissions"
-    assert out["reachAdded"]["body"] == {
-        "value": "dana@acme.com", "kind": "email_recipient", "note": ""}
-
-
-def test_the_box_asks_for_what_that_list_actually_stores():
-    """A placeholder reading "someone" over a box that needs `telegram:12345`
-    is a box somebody fills in wrong once and then stops trusting."""
-    apps = [{"key": "messages", "label": "Messages", "blurb": "Chats.",
-             "always": False, "read": [], "change": [], "run": [],
-             "write_label": "Write", "run_label": "",
-             "ask": {"label": "Send", "blurb": "Asks first.",
-                     "kind": "chat_recipient", "addable": True}}]
-    rows = [{"name": "list_chats", "label": "List", "category": "Messages",
-             "description": "List chats.", "source": "builtin", "connector": "",
-             "app": "messages", "access": "read"}]
-    out = run(["list_chats"], rows, [], apps=apps, panel={"reach": []})
-    assert "telegram:12345" in out["html"]
+    assert "data-reach-add" not in out["html"]
     assert "someone@example.com" not in out["html"]
 
 
 def test_nothing_is_claimed_about_grants_before_the_answer_is_back():
     out = run(["gmail_search"], BUILTIN, [])
-    assert "Nothing runs on its own yet" not in out["html"]
-    assert "Runs without asking" not in out["html"]
+    assert "Runs unattended for" not in out["html"]
 
 
-def test_an_app_with_no_grants_says_how_one_is_made():
-    """A bare "nothing yet" leaves somebody looking for the control that adds
-    one. There isn't one here, and the sentence says where it is."""
+def test_an_app_with_no_grants_draws_nothing_extra():
+    """There is nothing worth saying about an empty list on a screen that
+    cannot change it — and "Nothing runs on its own yet" is a sentence every
+    user reads once, about something other than what they came for."""
     out = run(["gmail_search"], BUILTIN, [], panel={"reach": []})
     gmail = _card(out["html"], "Gmail")
-    assert "Nothing runs on its own yet" in gmail
-    assert "you allow it from that card" in gmail
+    assert "at-reach" not in gmail, gmail[:400]
+    assert "Nothing runs on its own yet" not in gmail
+
+
+def test_the_row_says_the_grants_only_apply_when_nobody_is_watching():
+    """`approvals.run_or_queue` is the seam every *unattended* action goes
+    through and interactive chat does not come that way — so the list changes
+    nothing a person will ever see in a conversation. The row read "always
+    comes to you as a card you confirm" and then listed exceptions to it."""
+    out = run(["gmail_search"], BUILTIN, [], panel={"reach": [
+        {"kind": "email_recipient", "value": "rahul@acme.com",
+         "label": "rahul@acme.com"}]})
+    gmail = _card(out["html"], "Gmail")
+    assert "Runs unattended for" in gmail
+    assert "across every agent" in gmail, (
+        "the list is global and the card is per agent")
 
 
 def test_a_connector_tool_is_named_after_its_connector(full):
@@ -633,17 +619,77 @@ def test_the_browser_card_says_when_no_site_is_allowed():
     assert "No site is allowed yet" in _card(out["html"], "The browser")
 
 
-def test_a_connector_card_says_whether_this_agent_must_ask_first():
+def test_a_connector_card_says_whether_this_agent_may_reach_it_at_all():
     """A separate permission from the switches above it, and deliberately a
     separate control: the switches decide whether the agent can see the tools,
-    and this decides whether reaching the account behind them interrupts the
-    user first. Collapsing the two would be one tap granting two things."""
+    and this decides whether it may reach the account behind them at all.
+    Collapsing the two would be one tap granting two things."""
     out = run(["notion__search"], [*BUILTIN, CATEGORY, NOTION_TOOL], [READY],
               panel={"grants": {"allowed": [], "must_ask": ["notion"],
                                 "unrestricted": False}})
     notion = _card(out["html"], "Notion")
-    assert "Asks you the first time" in notion
+    assert "not something this agent may reach" in notion
     assert 'data-grant="notion"' in notion
+
+
+def test_a_built_in_card_gated_as_a_connector_offers_the_grant_too():
+    """**The bug five trips to the settings screen could not fix.**
+    `browse_open` is in `connector_grants.FIRST_PARTY_TOOLS`, so reaching the
+    browser is a permission of its own — stored per agent, exempted by exactly
+    one template. The card drew only the tool switch and the site list, so
+    there was no control anywhere in the app for it: every agent showed the
+    browser as on and only Chief of Staff could open a page."""
+    browser = [{"name": "browse_open", "label": "Open page", "category": "Web",
+                "description": "Open a page.", "source": "builtin",
+                "connector": "", "app": "browser", "access": "read"}]
+    apps = [{"key": "browser", "label": "The browser", "blurb": "Pages.",
+             "always": False, "read": [], "change": [], "run": [],
+             "write_label": "Change", "run_label": "",
+             "grant": {"connector": "browser", "label": "Browser"}}]
+    out = run(["browse_open"], browser, [], apps=apps,
+              panel={"grants": {"allowed": [], "must_ask": ["browser"],
+                                "unrestricted": False}, "sites": []})
+    card = _card(out["html"], "The browser")
+    assert 'data-grant="browser"' in card, card[:500]
+    assert "not something this agent may reach" in card
+
+
+def test_the_grant_says_the_switches_above_it_are_refused_until_it_is_given():
+    """"Asks you the first time" was the old wording and it is not what
+    happens: the tool comes back refused and the turn says so. Reading it as a
+    question is what let five attempts look like a switch that had not taken."""
+    browser = [{"name": "browse_open", "label": "Open page", "category": "Web",
+                "description": "Open a page.", "source": "builtin",
+                "connector": "", "app": "browser", "access": "read"}]
+    apps = [{"key": "browser", "label": "The browser", "blurb": "Pages.",
+             "always": False, "read": [], "change": [], "run": [],
+             "write_label": "Change", "run_label": "",
+             "grant": {"connector": "browser", "label": "Browser"}}]
+    out = run(["browse_open"], browser, [], apps=apps,
+              panel={"grants": {"allowed": [], "must_ask": ["browser"],
+                                "unrestricted": False}, "sites": []})
+    card = _card(out["html"], "The browser")
+    assert "refused until it is" in card
+    assert "is-warn" in card, "a blocked agent must not read as a normal state"
+
+
+def test_the_grant_comes_before_the_site_list():
+    """"May it reach the browser at all" is upstream of "which sites". A card
+    that led with the sites answered the second question while the first was
+    still no."""
+    browser = [{"name": "browse_open", "label": "Open page", "category": "Web",
+                "description": "Open a page.", "source": "builtin",
+                "connector": "", "app": "browser", "access": "read"}]
+    apps = [{"key": "browser", "label": "The browser", "blurb": "Pages.",
+             "always": False, "read": [], "change": [], "run": [],
+             "write_label": "Change", "run_label": "",
+             "grant": {"connector": "browser", "label": "Browser"}}]
+    out = run(["browse_open"], browser, [], apps=apps,
+              panel={"grants": {"allowed": [], "must_ask": ["browser"],
+                                "unrestricted": False},
+                     "sites": [{"host": "amazon.in"}]})
+    card = _card(out["html"], "The browser")
+    assert card.index("data-grant") < card.index("1 site allowed")
 
 
 def test_the_grant_is_keyed_by_the_connector_s_id_not_its_name():

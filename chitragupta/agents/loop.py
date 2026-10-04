@@ -76,11 +76,15 @@ STOPPED_OUTPUT = ToolResult("Not run — the user stopped this turn.")
 NEEDS_PERMISSION = (
     "Needs the user's permission: reading {label}. You have not been allowed to "
     "use it yet. Ask them for it in your reply — say plainly what you wanted it "
-    "for, and tell them where to turn it on: " + signposts.PERMISSIONS + ". "
-    "Never name a tool: the user has never seen one and a "
-    "name like `calendar_lookup` reads as a fault in the app rather than a "
-    "switch they can flip. Do not try a different connector instead, and do "
-    "not answer as though you had read it."
+    "for, and tell them where: " + signposts.PERMISSIONS + ", and allow it "
+    "on the {label} card. **Say that card, and nothing about switches.** This "
+    "is a second permission, separate from the read switch above it, and the "
+    "read switch is usually already on — a user sent to look at it finds it on, "
+    "turns it off and back, and is refused again. That happened five times to "
+    "one person before this sentence was written. Never name a tool either: the "
+    "user has never seen one and a name like `calendar_lookup` reads as a fault "
+    "in the app rather than something they can grant. Do not try a different "
+    "connector instead, and do not answer as though you had read it."
 )
 
 

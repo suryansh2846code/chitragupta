@@ -39,13 +39,28 @@ permissions — and `library.py`, which is what Chitragupta *offers*.
   (a turn, from `@` or *Allow once*), `always` (per agent+connector), `unrestricted` —
   declared by a template, and only Chief of Staff has it.
   [`connector-permissions.md`](../../docs/development/connector-permissions.md)
+  **The browser is one of these connectors, and forgetting that shipped the
+  worst bug this permission screen has had.** Every agent had the browser
+  switched on and only Chief of Staff could open a page — `browse_open` is in
+  `FIRST_PARTY_TOOLS`, so reaching the browser is a second permission, and the
+  one agent exempt from it is the one template with `unrestricted_connectors`.
+  The screen drew a tool switch and a site list and nothing for the grant, so
+  there was no control anywhere in the app, and `NEEDS_PERMISSION` sent people
+  to the switch — which was already on. A user did that five times before
+  giving up. Any card holding connector-gated tools now carries the grant,
+  derived from this map in `api/routes/agents._apps` so a tool added here
+  cannot leave one silently ungrantable, and `tests/test_tool_permissions.py`
+  fails if one does.
   **The refusal names a screen and never a tool.** `NEEDS_PERMISSION` is the
   whole of what the model knows about the problem, so what it omits the user
   never hears. It shipped saying only "ask them for it", and an agent wrote
   "reading it (`calendar_lookup`) is still blocked. Please grant Google
   Calendar read access" — an internal name the user has never seen, and no
-  control to go and find. It now names Settings → Agents & tools and forbids
-  printing a tool name.
+  control to go and find. It names a route the user can walk and forbids
+  printing a tool name — and the route itself lives in `signposts.py`, once.
+  It was written out in four strings, which held exactly until the screen it
+  named was deleted: every one of them carried on naming a page that was not
+  there, which is the invented-route failure arrived at from the other side.
 - A routine pre-authorises the routine, not the stranger who wrote the email it
   read. Outbound actions need a recipient on the explicit allow-list; everything
   else queues for one tap. Interactive chat is deliberately not gated.

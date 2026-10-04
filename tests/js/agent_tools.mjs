@@ -10,8 +10,8 @@
  * blank while every test passed.
  *
  * argv: <a path inside chitragupta/web/>
- * stdin: {agent, tools, connectors, apps?, panel?, toggle?, addReach?,
- *          clickScreen?, failSave?}
+ * stdin: {agent, tools, connectors, apps?, panel?, toggle?, clickScreen?,
+ *          failSave?}
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -62,7 +62,7 @@ const parsedButtons = () => {
   const out = { "[data-tool]": [], "[data-bulk]": [],
                 "[data-tool-fix]": [], "[data-group]": [], "[data-screen]": [],
                 "[data-folder-add]": [], "[data-folder-off]": [],
-                "[data-grant]": [], "[data-reach-add]": [], ".at-err": [] };
+                "[data-grant]": [], ".at-err": [] };
   // One section standing in for the group a control sits in. Both directions
   // of the "the screen must not argue with itself" rule walk up to it — a
   // bucket switch to reach the rows under it, a row to reach the switches above
@@ -130,12 +130,6 @@ const parsedButtons = () => {
     b.dataset = { folderOff: m[1] };
     out["[data-folder-off]"].push(b);
   }
-  for (const m of box.innerHTML.matchAll(
-      /data-reach-add="([^"]*)"\s*\n?\s*data-reach-for="([^"]*)"/g)) {
-    const b = makeEl("button"); b._sel = "[data-reach-add]";
-    b.dataset = { reachAdd: m[1], reachFor: m[2] };
-    out["[data-reach-add]"].push(b);
-  }
   for (const m of box.innerHTML.matchAll(/data-grant="([^"]*)"[^>]*data-on="([^"]*)"/g)) {
     const b = makeEl("button"); b._sel = "[data-grant]";
     b.dataset = { grant: m[1], on: m[2] };
@@ -149,8 +143,7 @@ const parsedButtons = () => {
 };
 let buttons = { "[data-tool]": [], "[data-bulk]": [],
                 "[data-tool-fix]": [], "[data-group]": [], "[data-screen]": [],
-                "[data-folder-add]": [], "[data-folder-off]": [], "[data-grant]": [],
-                "[data-reach-add]": [] };
+                "[data-folder-add]": [], "[data-folder-off]": [], "[data-grant]": [] };
 box.querySelectorAll = (sel) => buttons[sel] || [];
 
 const registry = new Map();
@@ -306,18 +299,6 @@ if (input.clickScreen) {
   }
 }
 
-let reachAdded = null;
-if (input.addReach) {
-  const key = `[data-reach-in="${input.addReach.card}"]`;
-  registry.set(key, makeEl("input"));
-  registry.get(key).value = input.addReach.value;
-  const b = buttons["[data-reach-add]"].find((x) => x.dataset.reachFor === input.addReach.card);
-  if (b && typeof b.onclick === "function") {
-    await b.onclick();
-    const post = calls.filter((c) => c.path.includes("/permissions") && c.method === "POST").pop();
-    reachAdded = post ? { path: post.path, body: post.body } : null;
-  }
-}
 let grantToggled = null;
 if (input.toggleGrant) {
   const b = buttons["[data-grant]"].find((x) => x.dataset.grant === input.toggleGrant);
@@ -335,7 +316,7 @@ if (input.clickFix && buttons["[data-tool-fix]"].length) {
 
 process.stdout.write(JSON.stringify({
   html: firstHtml,
-  bulked, folderAdded, grantToggled, reachAdded, screenClicked,
+  bulked, folderAdded, grantToggled, screenClicked,
   groups: globalThis.__groups(input.tools, input.connectors, input.agent.tools,
                               input.categories, specs, apps)
     .map((g) => ({ name: g.name, kind: g.kind, tools: g.tools.map((t) => t.row.name) })),
