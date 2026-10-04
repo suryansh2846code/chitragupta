@@ -101,12 +101,17 @@ def test_asking_for_something_unknown_names_what_is_allowed():
     assert "read" in out["error"] and "change" in out["error"]
 
 
-def test_asking_to_run_code_points_at_the_screen_instead():
+def test_asking_to_run_code_points_at_the_control_instead():
+    """It named a Settings page, which was deleted when permissions moved into
+    each agent's own profile. The route is `signposts.PERMISSIONS` now, written
+    once, because four strings carried on naming the old one."""
+    from chitragupta.agents import signposts
+
     out = actions.REGISTRY["request_permission"].handler(
         {"group": "mac", "level": "run", "agent_id": "chotu"})
 
     assert out["ok"] is False
-    assert "Agents & tools" in out["error"]
+    assert signposts.PERMISSIONS in out["error"]
 
 
 # ── the grant itself ─────────────────────────────────────────────────────
@@ -226,7 +231,9 @@ def test_an_agent_that_cannot_ask_is_told_the_screen_instead():
     said = prompt.build(name="a", role="r", system_prompt="",
                         tools=tf.granted_by_default(), actions=[])
 
-    assert "Settings → Agents & tools" in said
+    from chitragupta.agents import signposts
+
+    assert signposts.PERMISSIONS in said
     assert "request_permission" not in said
 
 

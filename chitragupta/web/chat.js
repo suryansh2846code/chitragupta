@@ -1618,8 +1618,11 @@ function actionFace(type, params) {
       rowOf("Asking for", p.needs || `${p.group || ""} ${p.level || ""}`.trim()),
       // Said on every one of these, because it is what makes the tap safe to
       // give: it is this agent only, and it is revocable where the sentence says.
-      noteOf("This agent only. You can take it back any time under "
-             + "Settings → Agents & tools."),
+      // The route a person actually walks. It named a Settings page that was
+      // deleted when permissions moved into each agent's own profile — the
+      // same class of mistake this card exists to stop an agent making.
+      noteOf("This agent only. You can take it back any time from its "
+             + "profile — the ⋯ beside its name."),
       bodyOf(p.why, ["why"]),
     ];
   } else if (type === "update_event" || type === "cancel_event") {
@@ -1859,7 +1862,7 @@ function accessCard(a) {
     ${p.why ? `<div class="ac-body acc-why">${esc(p.why)}</div>` : ""}
     <div class="acc-rows" role="group" aria-label="What ${esc(who)} is asking for"></div>
     <div class="acc-foot">Nothing else changes, and only for ${esc(who)}.
-      You can take any of these back under Settings &rarr; Agents &amp; tools.</div>`;
+      You can take any of these back from its profile — the <b>⋯</b> beside its name.</div>`;
 
   const box = el.querySelector(".acc-rows");
   box.innerHTML = `<div class="acc-wait">Checking what is already on…</div>`;
@@ -1948,7 +1951,7 @@ function accessCard(a) {
     .then((r) => draw(r.rows || []))
     .catch(() => {
       box.innerHTML = `<div class="acc-wait">Could not check what is already
-        on. Settings &rarr; Agents &amp; tools has all of it.</div>`;
+        on. Its profile has all of it — the <b>&middot;&middot;&middot;</b> beside its name.</div>`;
     });
   return el;
 }

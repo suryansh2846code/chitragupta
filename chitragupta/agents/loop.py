@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 
 from ..log import get_logger
 from ..models.base import ToolCall
-from . import cancellation, connector_grants, mcp_tools
+from . import cancellation, connector_grants, mcp_tools, signposts
 from .effort import Effort
 from .results import ToolResult, worked
 from .tools import run_tool
@@ -76,8 +76,8 @@ STOPPED_OUTPUT = ToolResult("Not run — the user stopped this turn.")
 NEEDS_PERMISSION = (
     "Needs the user's permission: reading {label}. You have not been allowed to "
     "use it yet. Ask them for it in your reply — say plainly what you wanted it "
-    "for, and tell them where to turn it on: Settings, then Agents & tools, "
-    "then this agent. Never name a tool: the user has never seen one and a "
+    "for, and tell them where to turn it on: " + signposts.PERMISSIONS + ". "
+    "Never name a tool: the user has never seen one and a "
     "name like `calendar_lookup` reads as a fault in the app rather than a "
     "switch they can flip. Do not try a different connector instead, and do "
     "not answer as though you had read it."

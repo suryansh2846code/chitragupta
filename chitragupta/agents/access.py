@@ -35,6 +35,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from ..log import suppressed
+from . import signposts
 from .tool_facts import ASKABLE, permission_groups, tools_for
 
 #: The kinds of thing an agent may ask for. A closed list, and the reason it is
@@ -73,7 +74,7 @@ def nothing_to_ask_for(asked: str) -> str:
     return (f"“{asked}” is not something to ask for. A tool group is one of "
             f"{', '.join(askable_groups())} at {' or '.join(ASKABLE)}; a site "
             "is site:HOST:read or site:HOST:change; a folder is folder:PATH. "
-            "Running code is granted on the Agents & tools screen rather than "
+            "Running code is granted under " + signposts.PERMISSIONS + " rather than "
             "from a card.")
 
 

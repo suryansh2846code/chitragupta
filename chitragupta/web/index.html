@@ -425,8 +425,14 @@
     <div class="modal" role="dialog" aria-modal="true" aria-labelledby="amTitle">
       <div class="modal-head"><b id="amTitle">Create an agent</b><button id="amClose" class="ghost tiny" aria-label="Close"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 4.5l7 7M11.5 4.5l-7 7"/></svg></button></div>
       <div class="am-body">
-        <p class="am-intro">Give it a name and a focus. What it can reach is set below, and
-          can be changed any time from <b>Agents &amp; tools</b>.</p>
+        <!-- Named the settings page this control used to point at, which was
+             deleted when permissions moved into the agent's own profile. A
+             sentence telling somebody to go to a screen that is not there is
+             the same failure as a button that goes nowhere — it just takes
+             longer to find out. -->
+        <p class="am-intro">Give it a name and a focus. What it can reach is set below,
+          and everything about it can be changed afterwards in its own profile —
+          the <b>⋯</b> beside its name.</p>
 
         <label class="am-label" for="amName">Name</label>
         <input id="amName" placeholder="e.g. Sales" />

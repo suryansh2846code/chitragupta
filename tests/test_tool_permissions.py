@@ -176,9 +176,17 @@ def test_it_is_told_it_cannot_grant_itself_anything():
 
 
 def test_it_is_given_the_real_route_so_it_stops_inventing_one():
-    assert "Settings → Agents & tools" in _prompt_for(tools.granted_by_default())
-    assert "Never guess at a different route" in _prompt_for(
-        tools.granted_by_default())
+    """Against `signposts.PERMISSIONS`, not a literal.
+
+    This asserted "Settings → Agents & tools" — and when that screen was
+    deleted the sentence carried on naming it, which is the same invented-route
+    failure the test exists to prevent, arrived at from the other direction.
+    """
+    from chitragupta.agents import signposts
+
+    said = _prompt_for(tools.granted_by_default())
+    assert signposts.PERMISSIONS in said
+    assert "Never guess at a different route" in said
 
 
 def test_an_agent_that_has_everything_is_told_nothing():

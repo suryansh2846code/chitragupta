@@ -22,7 +22,7 @@ from typing import Any
 
 from ..log import suppressed
 from . import persona as persona_choices
-from . import profile_files
+from . import profile_files, signposts
 
 #: Every action an agent can propose. `Agent.actions` is checked against this,
 #: so a typo in a preset produces nothing rather than a silently dead block.
@@ -434,7 +434,7 @@ _BLOCKS: dict[str, str] = {
         "in ONE action rather than several, and say what you would do with it "
         "rather than that you lack it. One ask per turn, and never ask again "
         "for something already refused. Running code is not available this "
-        "way: say it is on the Agents & tools screen."
+        "way: say it is under " + signposts.PERMISSIONS + "."
     ),
     "place_order": (
         "To ORDER something from a shop the user has allowed you to change:\n"
@@ -1155,7 +1155,7 @@ _WITHHELD_NO_ASK = (
     "These exist and work — they are simply not switched on for you, and you "
     "cannot switch them on yourself. If a task needs one, say plainly which "
     "one and what you would do with it, and tell the user it is theirs to turn "
-    "on under Settings → Agents & tools. Never guess at a different route, and "
+    "on — " + signposts.PERMISSIONS + ". Never guess at a different route, and "
     "never say a capability does not exist when it is only withheld."
 )
 

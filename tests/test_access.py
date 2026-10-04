@@ -258,7 +258,8 @@ def test_an_ask_that_names_nothing_real_is_refused_with_the_list(agent):
 
     assert out["ok"] is False
     assert "site:HOST:read" in out["error"]
-    assert "Agents & tools" in out["error"]
+    from chitragupta.agents import signposts
+    assert signposts.PERMISSIONS in out["error"]
 
 
 # ── the endpoint behind the switches ─────────────────────────────────────

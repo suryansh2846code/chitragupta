@@ -70,8 +70,13 @@ def test_the_refusal_says_where_the_user_turns_it_on():
     """"Please grant Google Calendar read access" is not an instruction anybody
     can follow. An error that names no control is a dead end, and the user is
     left believing the app is broken rather than that a switch is off."""
-    assert "Agents & tools" in NEEDS_PERMISSION
-    assert "Settings" in NEEDS_PERMISSION
+    from chitragupta.agents import signposts
+
+    # The route, not a copy of the words — it is written once in `signposts`
+    # precisely because this sentence named a Settings page that was later
+    # deleted, and four strings carried on naming it.
+    assert signposts.PERMISSIONS in NEEDS_PERMISSION
+    assert "⋯" in NEEDS_PERMISSION, "it names no control the user can press"
 
 
 def test_the_refusal_forbids_naming_the_tool():
