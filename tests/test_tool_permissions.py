@@ -440,3 +440,20 @@ def test_the_grant_label_is_readable_even_when_nothing_is_set_up():
     for app in _apps():
         if app.get("grant"):
             assert app["grant"]["label"].strip()
+
+
+def test_a_grant_is_named_the_same_on_the_card_and_in_the_chat():
+    """One function names it, because two screens offer the same grant: the
+    permission card's row and the access card an agent raises with
+    `reach:`. And neither may fall back to the card's heading — "The browser"
+    is written to sit above a card and reads as a stray capital mid-sentence,
+    which is what "Allow The browser" looked like."""
+    from chitragupta.agents.access import connector_label
+    from chitragupta.api.routes.agents import _apps
+
+    for app in _apps():
+        if not app.get("grant"):
+            continue
+        found = app["grant"]
+        assert found["label"] == connector_label(found["connector"])
+        assert not found["label"].startswith("The "), found["label"]

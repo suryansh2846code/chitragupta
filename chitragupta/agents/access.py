@@ -12,6 +12,19 @@ could not reach was everything else: a site, a folder, an account. So the agent
 fell back to prose for the whole ask, because a half-answer in a card and a
 half-answer in a paragraph is worse than one paragraph.
 
+**`reach` is the fifth kind and it was the expensive one to be missing.**
+Whether an agent may use a connected app at all is a permission of its own,
+kept per agent in `connector_grants` — and the browser is one of those
+connectors. Every agent had the browser's tools switched on and only the one
+template with `unrestricted_connectors` could open a page; the refusal named a
+settings screen, the switch there was already on, and a user flipped it five
+times. The agent could describe the problem perfectly and had no way to ask for
+the thing that would fix it. Now it does, and the tap writes the grant.
+
+`connector` and `reach` are different asks and both are real: `connector` is
+*this account is not signed in anywhere* and opens its own window, `reach` is
+*it is signed in and I am not allowed to use it* and is one switch.
+
 So this is the **one vocabulary of things that can be asked for**, and the one
 place that knows, for each of them, what it is called, whether it is already
 granted, and who writes it. Three callers read it and none of them keeps a
@@ -41,7 +54,7 @@ from .tool_facts import ASKABLE, permission_groups, tools_for
 #: The kinds of thing an agent may ask for. A closed list, and the reason it is
 #: closed is the same reason `capability.parse` fails closed: the caller is a
 #: handler behind a card, and the strings arrive from a model.
-KINDS = ("tool_group", "site", "folder", "connector")
+KINDS = ("tool_group", "site", "folder", "connector", "reach")
 
 #: Site grants carry one of these, and they are `browser.origins`' own words.
 #: Named here rather than imported so this module stays readable on its own;
@@ -162,6 +175,8 @@ def normalise_text(raw: str) -> Need | None:
         return normalise({"kind": "folder", "target": ":".join(parts[1:])})
     if head == "connector":
         return normalise({"kind": "connector", "target": parts[1]})
+    if head == "reach":
+        return normalise({"kind": "reach", "target": parts[1]})
     if head in KINDS:
         return None            # `tool_group:x` without a level says nothing
     # The shorthand: `<group>:<level>`.
@@ -227,6 +242,21 @@ def normalise(need: Any) -> Need | None:
         # exactly the control-that-cannot-work this panel exists to remove.
         from .file_tools import folder_problem
         return None if folder_problem(str(resolved)) else Need(kind, str(resolved), "")
+
+    if kind == "reach":
+        # **Exactly what the gate can refuse**, which is what `connector_of`
+        # can return: the first-party map plus whatever the user's own servers
+        # offer. Not `first_party_labels`, which lists only what is *set up* —
+        # the gate refuses either way, so validating against it would make the
+        # one ask that fixes a refusal unavailable on the machine where the
+        # refusal happens. And not the branch below: the browser is in
+        # `connectors.REGISTRY` nowhere, because it is the browser.
+        from .connector_grants import FIRST_PARTY_TOOLS
+        from .mcp_tools import labels_by_id
+
+        name = target.lower()
+        known = {*FIRST_PARTY_TOOLS.values(), *labels_by_id()}
+        return Need(kind, name, "") if name in known else None
 
     from ..connectors import REGISTRY
     name = target.lower()
@@ -341,6 +371,8 @@ def describe(agent_id: str, needs: list[Need]) -> list[dict[str, Any]]:
             row["title"] = f"Open {need.target.rstrip('/').rsplit('/', 1)[-1] or need.target}"
             row["means"] = f"Agents may read and write inside {need.target}."
             row["granted"] = need.target in set(granted_roots())
+        elif need.kind == "reach":
+            row.update(_reach_row(agent_id, need))
         else:
             # A connector is the one kind with no switch behind it, and saying
             # so is the point. Google wants a sign-in window, Telegram wants
@@ -350,6 +382,53 @@ def describe(agent_id: str, needs: list[Need]) -> list[dict[str, Any]]:
             row.update(_connector_row(need))
         rows.append(row)
     return rows
+
+
+def connector_label(target: str) -> str:
+    """What this connector is called, whichever kind of connector it is.
+
+    Public because two screens name the same thing: the access card and the
+    permission card's grant row. A card heading ("The browser") is written to
+    sit above a card and reads as a stray capital in the middle of a sentence,
+    so neither of them may fall back to one.
+
+    The browser is in neither registry — it is the browser — so it is named
+    here. `connector_grants.first_party_labels` already knows it, and this goes
+    through that rather than spelling it a second time.
+    """
+    from .connector_grants import first_party_labels
+    from .mcp_tools import labels_by_id
+
+    found = {**labels_by_id(), **first_party_labels()}.get(target)
+    if found:
+        return str(found)
+    # The browser is in no registry and `first_party_labels` only names it once
+    # the one-time download has happened — but it can be refused before then,
+    # so the card has to be able to say its name before then too.
+    if target == "browser":
+        return "Browser"
+    with suppressed("naming a connector for an access card"):
+        from ..connectors import REGISTRY
+
+        cls = REGISTRY.get(target)
+        if cls is not None:
+            return str(getattr(cls, "label", target))
+    return target
+
+
+def _reach_row(agent_id: str, need: Need) -> dict[str, Any]:
+    """May this agent use a connected app at all — the second permission.
+
+    A real switch, unlike `connector`: the write is one row in
+    `agent_connector_grants` and nothing has to be signed in to or typed.
+    """
+    from .connector_grants import may_use
+
+    label = connector_label(need.target)
+    return {"title": f"Let it use {label}",
+            "granted": may_use(agent_id, need.target),
+            "means": f"This agent may reach {label} without stopping to ask "
+                     "each time. Kept per agent — the others are unaffected."}
 
 
 def _connector_row(need: Need) -> dict[str, Any]:
@@ -440,6 +519,20 @@ def grant(agent_id: str, need: Need) -> dict[str, Any]:
             return {"ok": False, "error": str(exc)}
         return {"ok": True, "changed": True, "added": [],
                 "detail": f"{need.target} is open to agents."}
+
+    if need.kind == "reach":
+        from .connector_grants import allow_always, may_use
+
+        label = connector_label(need.target)
+        if may_use(agent_id, need.target):
+            # Said rather than implied from an empty `added`: a caller showing
+            # "granted" for a press that wrote nothing reports our bookkeeping
+            # as the user's news.
+            return {"ok": True, "changed": False, "added": [],
+                    "detail": f"It could already use {label}."}
+        allow_always(agent_id, need.target)
+        return {"ok": True, "changed": True, "added": [],
+                "detail": f"It can now use {label}."}
 
     return {"ok": False,
             "error": "Connecting an account happens on its own screen."}

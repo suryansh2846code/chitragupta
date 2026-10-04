@@ -628,7 +628,7 @@ def test_a_connector_card_says_whether_this_agent_may_reach_it_at_all():
               panel={"grants": {"allowed": [], "must_ask": ["notion"],
                                 "unrestricted": False}})
     notion = _card(out["html"], "Notion")
-    assert "not something this agent may reach" in notion
+    assert "cannot use Notion yet" in notion
     assert 'data-grant="notion"' in notion
 
 
@@ -651,7 +651,7 @@ def test_a_built_in_card_gated_as_a_connector_offers_the_grant_too():
                                 "unrestricted": False}, "sites": []})
     card = _card(out["html"], "The browser")
     assert 'data-grant="browser"' in card, card[:500]
-    assert "not something this agent may reach" in card
+    assert "cannot use Browser yet" in card
 
 
 def test_the_grant_says_the_switches_above_it_are_refused_until_it_is_given():
@@ -669,8 +669,18 @@ def test_the_grant_says_the_switches_above_it_are_refused_until_it_is_given():
               panel={"grants": {"allowed": [], "must_ask": ["browser"],
                                 "unrestricted": False}, "sites": []})
     card = _card(out["html"], "The browser")
-    assert "refused until it is" in card
-    assert "is-warn" in card, "a blocked agent must not read as a normal state"
+    # A fragment that does not cross the template literal's own line wrap.
+    assert "every one of them is refused until" in card
+    assert "at-reach-state is-off" in card, (
+        "a blocked agent must not read as a normal state")
+    # On the section's own tag, which sits before the heading `_card` splits
+    # on — so this one is asserted against the whole render.
+    assert "is-gated" in out["html"], (
+        "the switches above a refusal must not look live")
+    # A real button, not a sentence with a link in it. As a footnote under two
+    # switches that both said "on", this is what sent somebody to the switches
+    # five times.
+    assert 'class="tiny at-reach-go"' in card
 
 
 def test_the_grant_comes_before_the_site_list():

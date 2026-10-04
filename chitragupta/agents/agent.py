@@ -24,6 +24,14 @@ class Agent:
     recall_sources: list[str] = field(default_factory=list)  # soft-preferred brain sources
     model_provider: str | None = None   # override global BYO model per agent
     model_name: str | None = None
+    #: Does this agent skip asking before it reaches a connected app?
+    #:
+    #: A template declares it and only Chief of Staff does. It rides on the
+    #: Agent so `connector_grants` can ask `roster` instead of `library`:
+    #: that import was the edge that closed a ten-module cycle the moment
+    #: `access` needed the gate, and `roster` is the seam this package already
+    #: uses for "tell me about an agent" from underneath.
+    unrestricted_connectors: bool = False
 
     #: Which proposals this agent may make. Empty means it has no way to
     #: propose an action at all — and is not told how to, which is the point:

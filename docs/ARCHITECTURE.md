@@ -249,24 +249,37 @@ connection per thread, or a write queue.
 > level. `PROSE_EXT` moved down to `core/chunk.py` at the same time, for the
 > same reason: `brain` was importing a *sibling* to read it (§3 rule 2).
 
-### 6.8 Three import cycles remain · **OPEN, and bounded**
+### 6.8 Two import cycles remain · **OPEN, and bounded**
 
 Measured 2026-09-25, counting lazy imports as the real edges they are. **27
-modules were in cycles; 11 are.** `tests/test_import_layering.py` pins the
-remaining three as a closed list — a new cycle fails, and a listed one that
-*grows* fails, which is the direction this rots in: `models/` reached fourteen
-by absorbing one more module each time somebody needed a fact from it.
+modules were in cycles; 6 are.** `tests/test_import_layering.py` pins the
+remaining two as a closed list — a new cycle fails, a listed one that *grows*
+fails (the direction this rots in: `models/` reached fourteen by absorbing one
+more module each time somebody needed a fact from it), and a listed one that
+has been **fixed** fails too, because a ceiling nobody lowers stops meaning
+anything.
 
 | cycle | modules | why it is still here |
 |---|---|---|
-| `agents.tools` · `library` · `connector_grants` · `browse_tools` · `message_tools` | 5 | `connector_grants` reads one **security-relevant** flag off a library template — `unrestricted_connectors`, which only Chief of Staff has — and `library` resolves the "everything" tool marker against `tools`. Moving where a template declares that flag changes how consent is expressed, which deserves more care than a cycle costs. |
 | `connectors.mcp_auth` · `mcp_source` · `mcp_tools` | 3 | One subsystem split three ways: auth needs the server spec, the spec needs its tools, the tools need auth to call them. |
 | `browser.chromium` · `session` · `signin` | 3 | A driver, the session it owns, and the sign-in flow that drives both. |
 
-*Should become:* for the first, the flag published from a leaf both sides read,
-so it is declared once and neither imports the other. The other two are single
-subsystems whose internal split is the accident; they read as cycles because the
-file boundaries do not match the concept boundaries.
+*Should become:* both are single subsystems whose internal split is the
+accident; they read as cycles because the file boundaries do not match the
+concept boundaries.
+
+**`agents.tools` · `library` · `connector_grants` · `browse_tools` ·
+`message_tools` was the third, and it is closed.** Its note said moving where a
+template declares `unrestricted_connectors` "deserves more care than a cycle
+costs", and that was true right up until the care was forced rather than
+chosen: `agents/access.py` needed the gate in order to describe a `reach:`
+switch in the chat, and `connector_grants` → `library` turned five modules into
+ten. The flag is still declared on the template, so consent is expressed
+exactly where it was; it rides on the `Agent` now, and the gate reads it
+through `roster` — the seam this package already had for "tell me about an
+agent" from underneath. That is the third of the three shapes in `/CLAUDE.md`
+rather than the leaf the old note predicted, and it is the better one: the
+roster already existed.
 
 ### 6.3 Eight feature modules have no package
 `actions.py`, `routines.py`, `tasks.py`, `reminders.py`, `scheduled.py`,

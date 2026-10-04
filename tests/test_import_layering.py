@@ -11,7 +11,7 @@ Where it stood on 2026-09-25, before and after:
 | cycle | was | now |
 |---|---|---|
 | `models/` | 14 | **0** |
-| `agents/` + `actions` + `routines` | 19 | **5** |
+| `agents/` + `actions` + `routines` | 19 | **0** |
 | `agents.approvals` ↔ `agents.outcomes` | 2 | **0** |
 | `config` ↔ `log` | 2 | **0** |
 | `api/` ↔ `desktop`/`hud` | yes | **0** |
@@ -19,10 +19,11 @@ Where it stood on 2026-09-25, before and after:
 | `connectors.mcp_*` | 3 | 3 |
 | `browser.*` | 3 | 3 |
 
-The three that remain are listed in `KNOWN` with what each is. **The list is a
-ceiling, not a licence**: a new cycle fails this test, and a listed one that
-grows fails it too. Each is recorded in `docs/ARCHITECTURE.md` §6 with the fix
-it is waiting for.
+The two that remain are listed in `KNOWN` with what each is. **The list is a
+ceiling, not a licence**: a new cycle fails this test, a listed one that grows
+fails it too, and a listed one that has been *fixed* fails it as well — a
+ceiling nobody lowers is a ceiling that stops meaning anything. Each is
+recorded in `docs/ARCHITECTURE.md` §6 with the fix it is waiting for.
 """
 from __future__ import annotations
 
@@ -45,14 +46,14 @@ KNOWN: dict[str, frozenset[str]] = {
     # need auth to call them. One subsystem split three ways.
     "mcp": frozenset({"connectors.mcp_auth", "connectors.mcp_source",
                       "connectors.mcp_tools"}),
-    # `connector_grants` reads one security-relevant flag off a library
-    # template (`unrestricted_connectors`, which only Chief of Staff has), and
-    # `library` resolves the "everything" tool marker against `tools`.
-    # Deliberately not cut: moving where a template declares that flag is a
-    # change to how consent is expressed, which is worth more care than a cycle.
-    "agents_tools": frozenset({"agents.browse_tools", "agents.connector_grants",
-                               "agents.library", "agents.message_tools",
-                               "agents.tools"}),
+    # `agents_tools` was here, and its note said moving where a template
+    # declares `unrestricted_connectors` was "worth more care than a cycle".
+    # That care was eventually forced rather than chosen: `access` needed the
+    # gate in order to describe a `reach:` switch, and the edge
+    # `connector_grants` → `library` turned a five-module cycle into a ten.
+    # The flag is still declared on the template — consent is expressed in the
+    # same place — it just rides on the `Agent` now, so the gate reads it
+    # through `roster`, the seam this package already has for exactly that.
 }
 
 
