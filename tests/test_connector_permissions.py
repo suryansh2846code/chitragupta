@@ -17,7 +17,7 @@ from agent_harness import ScriptedProvider
 from chitragupta.agents import connector_grants, mcp_tools, runtime
 from chitragupta.agents.effort import get_effort
 from chitragupta.agents.library import BY_ID
-from chitragupta.agents.loop import NEEDS_PERMISSION, ToolRunner
+from chitragupta.agents.loop import NEEDS_PERMISSION, NEEDS_PERMISSION_NO_ASK, ToolRunner
 from chitragupta.models.base import ToolCall
 
 NOTION = SimpleNamespace(
@@ -61,33 +61,40 @@ def test_an_agent_must_ask_before_reaching_a_connector():
 
 def test_the_refusal_tells_the_model_what_to_do_with_it():
     """An agent that just sees "failed" tries another connector."""
-    assert "Ask them for it in your reply" in NEEDS_PERMISSION
-    assert "Do not try a different connector instead" in NEEDS_PERMISSION
-    assert "do not answer as though" in NEEDS_PERMISSION
+    for text in (NEEDS_PERMISSION, NEEDS_PERMISSION_NO_ASK):
+        assert "Do not try a different connector instead" in text
+        assert "do not answer as though" in text
 
 
-def test_the_refusal_says_where_the_user_turns_it_on():
-    """"Please grant Google Calendar read access" is not an instruction anybody
-    can follow. An error that names no control is a dead end, and the user is
-    left believing the app is broken rather than that a switch is off.
-
-    It used to name "Settings, then Agents & tools". That screen is the agent's
-    own profile now — and, worse, naming it was what made the browser bug
-    unfixable from the user's side: the switch there was already on, so five
-    trips to it changed nothing. The route has to name the **card**, which is
-    where the grant actually is."""
-    assert "Permissions" in NEEDS_PERMISSION
-    assert "open this agent" in NEEDS_PERMISSION
-    assert "card" in NEEDS_PERMISSION
+def test_the_refusal_puts_a_switch_in_the_chat_rather_than_naming_a_screen():
+    """The whole point of `request_permission`, and the refusal never mentioned
+    it — so the agent described a settings screen, and the switch it named was
+    already on. One user followed that sentence five times. `reach:` is the ask
+    that actually fixes it, and it comes back as one tap in the conversation."""
+    assert 'type="request_permission"' in NEEDS_PERMISSION
+    assert "reach:{connector}" in NEEDS_PERMISSION
+    assert "never send them to a settings screen" in NEEDS_PERMISSION
 
 
-def test_the_refusal_does_not_send_the_user_to_a_switch_that_is_already_on():
+def test_the_agent_that_cannot_ask_names_the_card_and_not_the_switch():
+    """A template may withhold `request_permission`. Telling that agent to emit
+    the action produces a tag nothing will run, printed at the user — so it
+    gets the other sentence, and that one names the **card**, which is where
+    the grant is. Naming the switch is what made this unfixable from outside:
+    it was already on."""
+    assert "Permissions" in NEEDS_PERMISSION_NO_ASK
+    assert "open this agent" in NEEDS_PERMISSION_NO_ASK
+    assert "card" in NEEDS_PERMISSION_NO_ASK
+
+
+def test_neither_refusal_sends_the_user_to_a_switch_that_is_already_on():
     """The grant and the read switch are two permissions, and the read switch
     is usually already on — so a refusal that says "turn it on" sends somebody
-    to flip something that was never the problem. That is the loop this
-    sentence exists to break, and it ran five times on one machine."""
-    assert "second permission" in NEEDS_PERMISSION
-    assert "already on" in NEEDS_PERMISSION
+    to flip something that was never the problem. That loop ran five times on
+    one machine."""
+    for text in (NEEDS_PERMISSION, NEEDS_PERMISSION_NO_ASK):
+        assert "separate permission" in text
+        assert "already on" in text
 
 
 def test_the_refusal_forbids_naming_the_tool():

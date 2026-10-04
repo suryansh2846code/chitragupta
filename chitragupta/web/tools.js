@@ -524,15 +524,32 @@ function grantStrip(card, draft) {
   // card it can wait on: the tool comes back refused and the turn says so.
   // Wording it as a question is what let five attempts read as a switch that
   // had not taken.
-  return `<p class="at-strip${allowed ? "" : " is-warn"}">
-    ${allowed
-      ? `<b>${esc(named)}</b> is one this agent may reach without asking.`
-      : `<b>${esc(named)}</b> is not something this agent may reach yet, so the
-         switches above are refused until it is. This is a second permission,
-         kept per agent.`}
-    <button type="button" class="link" data-grant="${esc(connector)}"
-      data-on="${allowed ? "1" : ""}"
-      >${allowed ? "Make it ask again" : "Allow it"}</button></p>`;
+  // **Blocked has to look blocked.** As a sentence with a link in it this read
+  // as a footnote under two switches that both said "on", which is the exact
+  // picture that sent somebody to the switches five times. A headline, the
+  // consequence under it, and a real button — and the switches above are dimmed
+  // by `is-gated` on the card, because a live-looking switch over a refusal is
+  // the screen arguing with itself.
+  if (allowed) {
+    // One element, not a bold and a text node: `at-reach-txt` is a column
+    // flex, so an anonymous text node beside a `<b>` becomes a second item and
+    // the sentence breaks after the name.
+    return `<div class="at-reach-state is-on">
+      <span class="at-reach-txt"><span><b>${esc(named)}</b> — this agent may
+        reach it without asking.</span></span>
+      <button type="button" class="tiny ghost" data-grant="${esc(connector)}"
+        data-on="1">Make it ask again</button>
+    </div>`;
+  }
+  return `<div class="at-reach-state is-off">
+    <span class="at-reach-txt">
+      <b class="at-reach-hd">This agent cannot use ${esc(named)} yet</b>
+      <span>The switches above are set, and every one of them is refused until
+      you allow this. It is a second permission and it is kept per agent.</span>
+    </span>
+    <button type="button" class="tiny at-reach-go" data-grant="${esc(connector)}"
+      data-on="">Allow ${esc(named)}</button>
+  </div>`;
 }
 
 //: Where the other half of this card's permission is set.
@@ -790,8 +807,15 @@ function renderAgentTools(boxEl, { agent, tools, connectors, categories, specs, 
           : `Show all ${card.tools.length} tools`}</summary>
         <div class="at-card">${rows}</div>
       </details>` : "";
+    // A card whose grant is missing has live-looking switches over a refusal.
+    // Dimming them is not cosmetic: it is the only thing on screen that says
+    // the switch is not the answer.
+    const gated = !isDraftAgent(agent) && _PANEL.grants && grantConnectorId(card)
+      && !(_PANEL.grants.unrestricted
+           || (_PANEL.grants.allowed || []).includes(grantConnectorId(card)));
     return `<section class="at-group${why ? " is-blocked" : ""}${
-        card.tools.length ? "" : " is-empty"}${card.always ? " is-always" : ""}">
+        card.tools.length ? "" : " is-empty"}${card.always ? " is-always" : ""}${
+        gated ? " is-gated" : ""}">
       <div class="at-group-head">
         <h3 class="at-group-nm">${esc(card.name)}</h3>
         ${why ? `<span class="at-group-why">${esc(why)}</span>${fix}` : ""}

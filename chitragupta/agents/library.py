@@ -188,6 +188,14 @@ _PROACTIVE = ["set_reminder", "create_routine", "create_followup",
               # for the reason `_BROWSE` is in `BASE_TOOLS`: one that cannot
               # ask can only describe a settings screen, and the one that
               # tried invented the path it described.
+              #
+              # **"Every agent" was a claim three templates did not keep.**
+              # They spelled their actions out by hand and so never picked this
+              # up — Health & Fitness among them, which is the agent somebody
+              # spent five attempts trying to give the browser to. It could
+              # describe the problem exactly and had no way to ask. Start from
+              # this list and add, never retype it;
+              # `tests/test_agent_library.py` fails if a template cannot ask.
               "request_permission"]
 
 #: `create_draft` travels with `send_email` and never without it.
@@ -280,6 +288,7 @@ class Template:
             id=self.id, name=self.name, role=self.role,
             system_prompt=self.system_prompt, tools=self.resolved_tools(),
             recall_sources=list(self.recall_sources), actions=list(self.actions),
+            unrestricted_connectors=self.unrestricted_connectors,
         )
 
 
@@ -424,7 +433,7 @@ TEMPLATES: tuple[Template, ...] = (
             "three weak options, and say what you would cut."
         ),
         tools=[*BASE_TOOLS, *_FILES, *_TASKS],
-        actions=["set_reminder", "create_routine"],
+        actions=[*_PROACTIVE],
         recall_sources=["notes", "gdrive", "notion"],
         works_with=["notes", "gdrive", "notion", "files"],
     ),
@@ -444,7 +453,7 @@ TEMPLATES: tuple[Template, ...] = (
             "used. Never guess an amount — say you could not find it."
         ),
         tools=[*BASE_TOOLS, *_FILES, "run_python", *_MAIL, *_TASKS, *_LOOPS],
-        actions=["set_reminder", "create_routine"],
+        actions=[*_PROACTIVE],
         recall_sources=["gmail", "files"],
         works_with=["gmail", "files"],
         needs=["gmail"],
@@ -505,8 +514,8 @@ TEMPLATES: tuple[Template, ...] = (
         # does in `_ALL_ACTIONS`: an agent that can book a session and cannot
         # move it books a second one beside the first the moment the user's
         # week shifts, which for a training plan is most weeks.
-        actions=["set_reminder", "create_event", "update_event",
-                 "cancel_event", "create_routine", "log_workout",
+        actions=[*_PROACTIVE, "create_event", "update_event",
+                 "cancel_event", "log_workout",
                  # A food plan ends in a shopping list, and an agent that can
                  # write one and not order it hands the user a list to retype.
                  # RED, so every order is still one card and one tap.

@@ -1930,6 +1930,30 @@ textarea.ac-field-wide { resize: vertical; min-height: 58px; line-height: 1.45; 
 /* No empty state and no box. A grant is made from the approval it would have
    cleared, where the exact value is known; this row only ever shows what is
    already standing, and shows nothing when nothing is. */
+
+/* ── may this agent reach the app at all ────────────────────────────────
+   A second permission, upstream of every switch on the card. It was a
+   sentence with a link in it, which read as a footnote under two switches
+   that both said "on" — the exact picture that sent somebody to those
+   switches five times. */
+.at-reach-state { display: flex; align-items: center; gap: 14px;
+  margin: 0 0 10px; padding: 12px 14px; border-radius: 12px;
+  border: 1px solid var(--line); background: var(--panel); max-width: 66ch; }
+.at-reach-txt { flex: 1; min-width: 0; display: flex; flex-direction: column;
+  gap: 3px; font-size: 12.5px; line-height: 1.5; color: var(--muted); }
+.at-reach-state.is-on { color: var(--muted); }
+/* Not an error — it is the correct starting state for a new agent — but it is
+   the one thing on the card that has to be read before the switches above it. */
+.at-reach-state.is-off { border-color: var(--north-track);
+  background: var(--north-dim); }
+.at-reach-hd { font-size: 13.5px; color: var(--text); }
+.at-reach-state b { color: var(--text); }
+.at-reach-go { flex: none; }
+
+/* The switches a missing grant refuses. Dimmed, never disabled: they are a
+   real setting and turning one on while the grant is pending is a reasonable
+   thing to do — it just is not what makes the agent work. */
+.at-group.is-gated .at-bulks, .at-group.is-gated .at-detail { opacity: .55; }
 /* The count for a group somebody part-granted with the per-tool rows. Tabular
    so "3 of 7" and "11 of 13" do not shift the switch beside them. */
 .at-part { flex: none; font-size: 12px; color: var(--faint);

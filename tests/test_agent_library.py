@@ -189,3 +189,19 @@ def test_there_is_no_lead_agent_any_more():
     assert not hasattr(routes, "create_lead_agent")
     assert not hasattr(routes, "_fallback_welcome")
     assert "chief-of-staff" in BY_ID, "the role has to live somewhere"
+
+
+def test_every_template_can_ask_for_permission():
+    """`_PROACTIVE`'s own comment says every agent needs this — "one that
+    cannot ask can only describe a settings screen, and the one that tried
+    invented the path it described". Three templates spelled their actions out
+    by hand and so never picked it up, Health & Fitness among them: the agent
+    somebody spent five attempts trying to give the browser to. It could
+    describe the problem exactly and had no way to ask for the fix."""
+    from chitragupta.agents.library import BY_ID
+
+    missing = sorted(t.id for t in BY_ID.values()
+                     if "request_permission" not in (t.actions or []))
+    assert not missing, (
+        f"{missing} can only describe a settings screen — start from "
+        "_PROACTIVE and add, never retype it")

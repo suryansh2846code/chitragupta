@@ -50,7 +50,13 @@ permissions — and `library.py`, which is what Chitragupta *offers*.
   giving up. Any card holding connector-gated tools now carries the grant,
   derived from this map in `api/routes/agents._apps` so a tool added here
   cannot leave one silently ungrantable, and `tests/test_tool_permissions.py`
-  fails if one does.
+  fails if one does. **And the agent can ask for it in the chat**, which is
+  what it should have been able to do all along: `access.KINDS` gained
+  `reach`, the refusal emits `request_permission needs="reach:browser"`
+  instead of describing a screen, and the tap writes the grant. The agent that
+  spent five turns describing the problem held no `request_permission` at all —
+  three templates spelled their actions out by hand and missed it, the one
+  constant that says every agent needs it notwithstanding.
   **The refusal names a screen and never a tool.** `NEEDS_PERMISSION` is the
   whole of what the model knows about the problem, so what it omits the user
   never hears. It shipped saying only "ask them for it", and an agent wrote

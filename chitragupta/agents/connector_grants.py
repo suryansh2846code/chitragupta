@@ -272,12 +272,21 @@ def forget_agent(agent_id: str) -> None:
 
 # ── the question everything else asks ────────────────────────────────────
 def unrestricted(agent_id: str) -> bool:
-    """Does this agent's template exempt it from asking at all?"""
-    with suppressed("checking whether an agent may use connectors freely"):
-        from .library import BY_ID
+    """Does this agent's template exempt it from asking at all?
 
-        template = BY_ID.get(agent_id)
-        return bool(template and template.unrestricted_connectors)
+    Asked of `roster`, not of `library`. That import pointed the arrow
+    backwards — `library` sits above this module — and it was harmless only
+    until `access` needed the gate to describe a `reach:` switch, at which
+    point it closed a ten-module cycle. The flag rides on the `Agent` now, so
+    this reads it from the same seam `prompt` and `delegation` already use.
+
+    Unregistered roster means False, which is the fail-closed direction: an
+    agent nobody can look up does not get the exemption.
+    """
+    with suppressed("checking whether an agent may use connectors freely"):
+        from .roster import get_agent
+
+        return bool(getattr(get_agent(agent_id), "unrestricted_connectors", False))
     return False
 
 

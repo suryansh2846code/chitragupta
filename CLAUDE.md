@@ -417,8 +417,10 @@ even when every test is green. Reasoning and measurements:
   not break a cycle — it hides it.** `models/` reached a fourteen-module
   strongly-connected component with `ruff` clean throughout, because every edge
   had been pushed into a function body. 27 modules were in cycles on
-  2026-09-25; 11 are, and `tests/test_import_layering.py` pins the remaining
-  three as a **closed list that may not grow**. When you need a fact that lives
+  2026-09-25; 6 are, and `tests/test_import_layering.py` pins the remaining
+  two as a **closed list that may not grow — and may not go stale either**: a
+  listed cycle that has been fixed fails the test too, because a ceiling
+  nobody lowers stops meaning anything. When you need a fact that lives
   above you, the answer is one of three shapes, never an upward import:
   move the fact **down** to a leaf both sides read (`entitlement_rules`,
   `core/schedule`, `core/routine_store`, `action_phrasing`, `home`); **invert**
@@ -561,7 +563,7 @@ In order: **the focused test → the subsystem's suite → `pytest` →
 `ruff check chitragupta tests` → `mypy chitragupta` → the `tests/js/` harnesses if
 the frontend changed → `chitragupta app` opens and renders.**
 
-Baseline, measured 2026-10-04: **6401 passed, 36 skipped in ~7min36**, ruff
+Baseline, measured 2026-10-04: **6407 passed, 36 skipped in ~7min23**, ruff
 clean, mypy clean over 228 files.
 **The count is the number to compare against,
 never the clock** — the same suite took 11min10 earlier the same day while it

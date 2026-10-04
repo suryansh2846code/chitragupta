@@ -19,7 +19,7 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 
-from ..log import get_logger
+from ..log import get_logger, suppressed
 from ..models.base import ToolCall
 from . import cancellation, connector_grants, mcp_tools
 from .effort import Effort
@@ -73,18 +73,39 @@ STOPPED_OUTPUT = ToolResult("Not run — the user stopped this turn.")
 #: connector yet. Phrased as an instruction, because the model's next move is
 #: the thing that matters: ask, in the user's terms, and do not go looking for
 #: another way round.
+#: Said when the agent can put a switch in the conversation.
+#:
+#: **This is the whole point of `request_permission`, and the refusal did not
+#: mention it.** The agent was told to describe a settings screen, so it did —
+#: and the switch it named was already on, because reaching an app is a second
+#: permission from the tools that reach it. One user followed that sentence
+#: five times. `reach:` is the ask that actually fixes it, and it comes back as
+#: one tap in the chat.
 NEEDS_PERMISSION = (
-    "Needs the user's permission: reading {label}. You have not been allowed to "
-    "use it yet. Ask them for it in your reply — say plainly what you wanted it "
-    "for, and tell them where: open this agent, then Permissions, and allow it "
-    "on the {label} card. **Say that card, and nothing about switches.** This "
-    "is a second permission, separate from the read switch above it, and the "
-    "read switch is usually already on — a user sent to look at it finds it on, "
-    "turns it off and back, and is refused again. That happened five times to "
-    "one person before this sentence was written. Never name a tool either: the "
-    "user has never seen one and a name like `calendar_lookup` reads as a fault "
-    "in the app rather than something they can grant. Do not try a different "
-    "connector instead, and do not answer as though you had read it."
+    "Needs the user's permission: reading {label}. You have not been allowed "
+    "to use it yet, and this is a **separate permission from the tool switch, "
+    "which is usually already on** — so never send them to a settings screen "
+    "for it. Ask with the action instead, in this reply:\n"
+    '<action type="request_permission" needs="reach:{connector}">'
+    "What you wanted it for, in one sentence.</action>\n"
+    "They get a switch in the conversation and tap it once. Never name a tool: "
+    "the user has never seen one and a name like `calendar_lookup` reads as a "
+    "fault in the app. Do not try a different connector instead, and do not "
+    "answer as though you had read it."
+)
+
+#: The same refusal for an agent whose template withholds `request_permission`.
+#: It cannot put a switch in the chat, so the card is the only route left — and
+#: naming the card rather than the switch is what stops the five-trip loop.
+NEEDS_PERMISSION_NO_ASK = (
+    "Needs the user's permission: reading {label}. You have not been allowed "
+    "to use it yet. Say plainly what you wanted it for, and tell them where: "
+    "open this agent, then Permissions, and allow it on the {label} card. "
+    "**Say that card, and nothing about switches** — this is a separate "
+    "permission and the switch is usually already on, so somebody sent to look "
+    "at it finds it on, turns it off and back, and is refused again. Never "
+    "name a tool either. Do not try a different connector instead, and do not "
+    "answer as though you had read it."
 )
 
 
@@ -203,7 +224,21 @@ class ToolRunner:
         label = (mcp_tools.labels_by_id().get(connector)
                  or connector_grants.first_party_labels().get(connector)
                  or connector)
-        return ToolResult.failed(NEEDS_PERMISSION.format(label=label))
+        # Which sentence depends on whether this agent can actually raise the
+        # card. Telling one that cannot to emit an action it holds no protocol
+        # for produces a tag nothing will run, printed at the user.
+        template = NEEDS_PERMISSION if self._can_ask() else NEEDS_PERMISSION_NO_ASK
+        return ToolResult.failed(
+            template.format(label=label, connector=connector))
+
+    def _can_ask(self) -> bool:
+        """Does this agent hold `request_permission`?"""
+        with suppressed("checking whether an agent may ask for permission"):
+            from .roster import get_agent
+
+            found = get_agent(self.agent_id) if self.agent_id else None
+            return bool(found and "request_permission" in (found.actions or []))
+        return False
 
     def _execute(self, call: ToolCall, key: str) -> ToolOutcome:
         if cancellation.stopped(self.cancel):

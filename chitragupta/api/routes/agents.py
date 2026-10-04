@@ -518,10 +518,10 @@ def _apps() -> list[dict]:
     and may not import `connector_grants` — and derived rather than listed,
     because a tool added to that map must not need a second edit here.
     """
-    from ...agents.connector_grants import FIRST_PARTY_TOOLS, first_party_labels
+    from ...agents.access import connector_label
+    from ...agents.connector_grants import FIRST_PARTY_TOOLS
     from ...agents.tool_facts import permission_apps
 
-    labels = first_party_labels()
     rows = permission_apps()
     for row in rows:
         named = {FIRST_PARTY_TOOLS[n]
@@ -532,11 +532,12 @@ def _apps() -> list[dict]:
         # better to show nothing than something that is right about one.
         if len(named) == 1:
             found = named.pop()
-            # The label only when the connector is actually set up; the card's
-            # own name otherwise, because a grant is still the thing that
-            # unblocks it and the control must not disappear.
-            row["grant"] = {"connector": found,
-                            "label": labels.get(found) or row["label"]}
+            # `access.connector_label`, not the card's own heading. "The
+            # browser" is written to sit above a card and reads as a stray
+            # capital mid-sentence — and it is the same name the in-chat
+            # access card uses for the same grant, which is the point of
+            # taking it from one function.
+            row["grant"] = {"connector": found, "label": connector_label(found)}
     return rows
 
 

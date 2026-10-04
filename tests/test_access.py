@@ -385,3 +385,60 @@ def test_a_granted_folder_reads_back_as_granted(agent, tmp_path):
     assert access.grant("asker", need)["ok"] is True
 
     assert access.describe("asker", [need])[0]["granted"] is True
+
+
+# ── reaching a connected app, asked for in the chat ──────────────────────
+#
+# Whether an agent may use a connected app at all is a permission of its own,
+# kept per agent — and the browser is one of those connectors. Every agent had
+# the browser's tools switched on and only the one template with
+# `unrestricted_connectors` could open a page. The agent could describe the
+# problem perfectly and had no way to ask for the thing that would fix it.
+
+def test_reach_is_something_an_agent_can_ask_for():
+    from chitragupta.agents import access
+
+    assert "reach" in access.KINDS
+    assert [n.key for n in access.parse("reach:browser")] == ["reach:browser"]
+
+
+def test_reach_is_refused_for_an_app_nothing_is_behind():
+    """A grant for a name nothing offers is a switch that turns on and changes
+    nothing — the shape of every bug this module exists to stop."""
+    from chitragupta.agents import access
+
+    assert access.parse("reach:nonsense") == []
+
+
+def test_reach_is_not_the_same_ask_as_connecting_an_account():
+    """Both are real and they are different: `connector` is *this account is
+    not signed in anywhere* and opens its own window; `reach` is *it is signed
+    in and I am not allowed to use it* and is one switch."""
+    from chitragupta.agents import access
+
+    rows = access.describe("chief-of-staff", access.parse("reach:browser"))
+    assert rows[0]["control"] == "switch", (
+        "a reach grant is a tap, not a screen to open")
+
+
+def test_granting_reach_writes_the_per_agent_grant(tmp_path, monkeypatch):
+    """The tap has to write the row the gate reads, or the switch turns on and
+    the agent is refused anyway — which is the failure it was added for."""
+    from chitragupta.agents import access
+    from chitragupta.agents.connector_grants import may_use, revoke
+
+    needs = access.parse("reach:browser")
+    if not needs:
+        pytest.skip("no browser connector on this machine to grant")
+    agent = "social-media-manager"
+    revoke(agent, "browser")
+    assert not may_use(agent, "browser")
+    try:
+        out = access.grant(agent, needs[0])
+        assert out["ok"] and out["changed"], out
+        assert may_use(agent, "browser"), "the tap did not reach the gate"
+        # Twice is not an error and is not news either.
+        again = access.grant(agent, needs[0])
+        assert again["ok"] and again["changed"] is False
+    finally:
+        revoke(agent, "browser")
