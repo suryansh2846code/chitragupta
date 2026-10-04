@@ -927,6 +927,57 @@ def revoke_agent_folder(path: str):
             "folders": file_tools.granted_roots()}
 
 
+class AgentFoldersIn(BaseModel):
+    """Which folders one agent works in.
+
+    `None` is not `[]`. `[]` is the user saying *look at nothing for this
+    conversation*, which is a thing they asked to be able to say; `None` puts
+    the agent back to undecided and it follows whatever the machine already had
+    open. Two words for "empty" would make those indistinguishable over the
+    wire, and the whole feature is the difference between them.
+    """
+
+    folders: list[str] | None = None
+
+
+@router.get("/api/agents/{agent_id}/folders")
+def agent_folders(agent_id: str):
+    """What this agent can reach on disk, and what it could be given.
+
+    `available` is the machine's grant list — the boundary. `chosen` is what
+    the user picked for this agent, or null if they never have. `folders` is
+    what the agent actually sees, which is the intersection and the only one of
+    the three a sentence about this agent should be written from.
+    """
+    from ...agents import file_tools
+
+    return {
+        "agent": agent_id,
+        "available": file_tools.granted_roots(),
+        "chosen": file_tools.agent_scope(agent_id),
+        "folders": file_tools.roots_for(agent_id),
+    }
+
+
+@router.put("/api/agents/{agent_id}/folders")
+def set_agent_folders(agent_id: str, body: AgentFoldersIn):
+    """Choose this agent's folders.
+
+    A path that is not open to agents yet is opened by this call: choosing a
+    folder here is the same consent gesture as choosing one in the panel, and
+    an agent scoped to a folder nothing had granted would be a switch that can
+    never do anything. The refusal is `file_tools`' sentence, written for a
+    person, so it is passed through rather than replaced.
+    """
+    from ...agents import file_tools
+
+    try:
+        file_tools.set_agent_scope(agent_id, body.folders)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from None
+    return agent_folders(agent_id)
+
+
 @router.post("/api/agents/turns/{turn_id}/stop")
 async def stop_turn(turn_id: str):
     """Stop a running turn.

@@ -467,14 +467,10 @@ function initComposerModelPicker() {
   const modelRow = $("#cmpModelRow");
   const provFlyout = $("#cmpProvFlyout");
   const modelFlyout = $("#cmpModelFlyout");
-  const wsPill = $("#cmpWorkspacePill");
-
-  if (wsPill && !wsPill._wired) {
-    wsPill._wired = true;
-    wsPill.onclick = () => {
-      openDrawer("sources");
-    };
-  }
+  // The pill that used to be here said "workspace", opened the Connectors
+  // screen and was about a different thing entirely — those folders go into
+  // the shared brain. It is the agent's own folder control now and `folders.js`
+  // owns it, pill and menu together, the way `autonomy.js` owns the mode pill.
 
   if (pill && menu && !pill._wired) {
     pill._wired = true;

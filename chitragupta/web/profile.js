@@ -41,6 +41,7 @@ const PROF_TABS = [
   { key: "profile", label: "Profile", icon: "account" },
   { key: "persona", label: "Persona", icon: "pencil" },
   { key: "memory", label: "Memory", icon: "brain" },
+  { key: "folders", label: "Folders", icon: "folder" },
   { key: "model", label: "Model", icon: "model" },
   { key: "permissions", label: "Permissions", icon: "shield" },
 ];
@@ -161,6 +162,7 @@ function renderProfilePane() {
   if (profTab === "profile") return renderProfileIdentity(pane, a);
   if (profTab === "persona") return renderProfilePersona(pane, a);
   if (profTab === "memory") return renderProfileDoc(pane, a, "memory");
+  if (profTab === "folders") return renderProfileFolders(pane, a);
   if (profTab === "model") return renderProfileModel(pane, a);
   if (profTab === "permissions") return renderProfilePermissions(pane, a);
   if (profTab === "appearance") return renderProfileAppearance(pane, a);
@@ -182,6 +184,29 @@ function renderProfileAppearance(pane, a) {
   // every function in that file reaches its parts by id, so assembling them
   // here would be a second copy of its contract living outside it.
   if (typeof mountAppearanceFor === "function") mountAppearanceFor(box, a.id);
+}
+
+// ── Folders: what this agent may read on disk ──────────────────────────────
+//
+// Composed here and drawn by `folders.js`, the way Permissions is drawn by
+// `tools.js` and Appearance by `appearance.js`. The composer pill is the same
+// setting and the same endpoint; a second drawing of it here is the drift this
+// file's own entry about the agent builder warns about.
+
+function renderProfileFolders(pane, a) {
+  const head = document.createElement("div");
+  head.innerHTML =
+    `<h2>What ${esc(a.name)} can read on your Mac</h2>
+     <p class="ms-sub">Only this agent. Pick as many folders as you like, or
+       none at all — with none it answers from what it knows and never opens a
+       file. Folders added under Connectors are a different thing: those are
+       read into the shared brain that every agent uses.</p>`;
+  pane.appendChild(head);
+
+  const box = document.createElement("div");
+  box.id = "profFolders";
+  pane.appendChild(box);
+  if (typeof mountAgentFoldersIn === "function") mountAgentFoldersIn(box, a.id);
 }
 
 // ── Profile: what it is called, and the way out ────────────────────────────

@@ -36,7 +36,11 @@ def test_with_no_grant_nothing_on_disk_is_reachable(monkeypatch):
                  ("list_dir", {"path": "/"})):
         out = run_tool(*call)
         assert not out.ok, f"{call[0]} worked with no folder granted"
-        assert "No folder has been opened" in out
+        # The refusal has to name the control that fixes it, not just say no.
+        # A refusal a tap would fix and that never says which tap is the dead
+        # end the whole access vocabulary exists to stop.
+        assert "no folder to work in" in str(out)
+        assert "folder button" in str(out)
 
 
 def test_the_whole_home_directory_cannot_be_granted():

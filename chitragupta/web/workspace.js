@@ -517,32 +517,35 @@ $("#taskAdd").onclick = addTask;
 $("#taskInput").addEventListener("keydown", (e) => { if (e.key === "Enter") addTask(); });
 
 // ── folder picker ──────────────────────────────────────────────────────────
-let pickPath = null;
-async function openPicker(path) {
-  const d = await api("/api/fs/browse" + (path ? `?path=${encodeURIComponent(path)}` : ""));
-  pickPath = d.path;
-  $("#picker").hidden = false;
-  $("#pickPath").textContent = d.path;
-  $("#pickInfo").textContent = d.ingestible_here
-    ? `${d.ingestible_here} ingestible file(s) directly here` : "no text files directly here (subfolders may still have them)";
-  let rows = "";
-  if (d.parent) rows += `<div class="pick-row up" data-go="${esc(d.parent)}">⤴  ..</div>`;
-  rows += d.dirs.map((name) => `<div class="pick-row" data-go="${esc(d.path.replace(/\/$/, "") + "/" + name)}">${esc(name)}</div>`).join("");
-  $("#pickList").innerHTML = rows || `<div class="pick-row up">(no subfolders)</div>`;
-  document.querySelectorAll("#pickList [data-go]").forEach((el) => el.onclick = () => openPicker(el.dataset.go));
+//
+// Walking the disk lives in `folders.js`, which needed the same modal for
+// giving one agent a folder. Two copies of it would drift, and the copy that
+// drifts is always the one nobody is looking at — so what stays here is the
+// **action**: where a folder goes once it has been chosen.
+//
+// And that is genuinely a different action, which is why each caller passes
+// its own title and its own button. A folder chosen here is ingested into the
+// brain, which every agent and the whole graph share. A folder chosen for an
+// agent is that agent's alone, and nothing is read until it asks. Same
+// gesture, opposite blast radius; a button reading "Use this folder" over this
+// one would be the card describing something other than what it runs.
+async function openPicker() {
+  chooseFolder({
+    title: "Pick a folder to ingest",
+    cta: "Ingest this folder",
+    onPick: async (path) => {
+      toast(`ingesting ${path.split("/").pop()}…`);
+      try {
+        const r = await api(`/api/connectors/files/sync`, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ params: { path } }) });
+        toast(r.errors?.length ? `files: ${r.errors[0]}`
+                               : `files: +${r.added} added from ${r.detail}`);
+        loadBrain();
+      } catch (e) { toast(String(e)); }
+    },
+  });
 }
-$("#pickClose").onclick = () => $("#picker").hidden = true;
-$("#pickIngest").onclick = async () => {
-  $("#picker").hidden = true;
-  toast(`ingesting ${pickPath.split("/").pop()}…`);
-  try {
-    const r = await api(`/api/connectors/files/sync`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ params: { path: pickPath } }) });
-    toast(r.errors?.length ? `files: ${r.errors[0]}` : `files: +${r.added} added from ${r.detail}`);
-    loadBrain();
-  } catch (e) { toast(String(e)); }
-};
 
 $("#composer").onsubmit = (e) => {
   e.preventDefault();

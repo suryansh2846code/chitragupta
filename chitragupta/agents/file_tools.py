@@ -18,6 +18,15 @@ not the thing standing between that sentence and the filesystem — `_resolve` i
 So it resolves symlinks before deciding, compares real paths rather than
 strings, and refuses anything it cannot place inside a grant. A refusal is
 cheap; the other mistake is not.
+
+**And the boundary has two layers, which answer different questions.** The
+grant says what may be reached from this app at all — one list, the user's
+consent, the thing `_resolve` enforces. The *scope* says which of those folders
+one agent works in, because a team of agents sharing one machine is not a team
+sharing one filing cabinet: the folders a social-media agent should read are
+not the ones a tax agent should, and before this there was no way to say so.
+A scope only ever narrows a grant, so closing a folder still closes it for
+everybody.
 """
 from __future__ import annotations
 
@@ -27,6 +36,7 @@ from datetime import datetime
 from pathlib import Path
 
 from ..log import get_logger, suppressed
+from .acting import acting
 from .results import ToolResult
 
 log = get_logger(__name__)
@@ -124,6 +134,154 @@ def revoke_folder(path: str) -> bool:
     return True
 
 
+# ── which of those folders THIS agent may see ────────────────────────────
+#
+# The grant above is the boundary: it says what may be reached from this app at
+# all, it is written once, and `_resolve` is what stands between an injected
+# "save this to ~/.ssh/authorized_keys" and the disk. That has not moved.
+#
+# This is a second, narrower question, and it is the user's rather than the
+# security model's: **which of those folders does this particular agent work
+# in?** A social-media agent and a tax agent on the same machine have no
+# business reading each other's folders, and until now they could not help it —
+# one list, every agent, no way to say otherwise. The folders the Connectors
+# panel ingests are the opposite of this on purpose: those go into the brain,
+# which is shared by everybody.
+#
+# Narrowing only. A scope can never reach a folder the user has not granted, so
+# the intersection below is not an optimisation — it is what makes revoking a
+# grant still revoke it everywhere.
+
+#: `{agent_id: [paths]}`. A key that is **absent** and a key holding `[]` mean
+#: different things and must stay distinguishable — the same distinction
+#: `tool_overrides` draws, and for the same reason. Absent is "never chosen",
+#: and takes `default_scope()`. `[]` is the user saying *look at nothing*,
+#: which is a thing they asked to be able to say.
+SCOPES_KEY = "agent_file_scopes"
+
+#: What an agent that has never been given a scope sees, captured **once**.
+#:
+#: Without this the feature has to pick between two wrong answers. Default to
+#: every granted folder and "exclusive to this agent" is a lie: picking a
+#: folder for one agent hands it to every agent that has not been configured.
+#: Default to nothing and every machine that already had folders open loses
+#: them on upgrade, silently, which is the one thing the root `CLAUDE.md`
+#: forbids outright.
+#:
+#: So the answer is frozen at the moment this code first runs: whatever was
+#: granted *then* is what an unconfigured agent sees, and nothing granted
+#: afterwards is ever added to it. Existing machines carry on working; every
+#: folder chosen from here on belongs to the agent it was chosen for.
+DEFAULT_SCOPE_KEY = "agent_file_scope_default"
+
+
+def _read_json(key: str, fallback):
+    # A literal label, not an f-string: `suppressed` is what makes a swallowed
+    # failure legible afterwards, and `tests/test_failures_are_recorded.py`
+    # reads these labels out of the AST — a computed one is a blank to it.
+    with suppressed("reading a stored folder list"):
+        raw = _store().get_meta(key)
+        if not raw:
+            return fallback
+        try:
+            return json.loads(raw)
+        except (TypeError, ValueError):
+            log.warning("unreadable %s — ignoring it", key)
+    return fallback
+
+
+def default_scope() -> list[str]:
+    """What an agent with no scope of its own sees. Captured once, then fixed."""
+    stored = _read_json(DEFAULT_SCOPE_KEY, None)
+    if isinstance(stored, list):
+        return [str(v) for v in stored if isinstance(v, str)]
+    captured = granted_roots()
+    with suppressed("recording the folders agents could already reach"):
+        _store().set_meta(DEFAULT_SCOPE_KEY, json.dumps(captured))
+    return captured
+
+
+def _scopes() -> dict[str, list[str]]:
+    value = _read_json(SCOPES_KEY, {})
+    if not isinstance(value, dict):
+        return {}
+    return {str(k): [str(p) for p in v if isinstance(p, str)]
+            for k, v in value.items() if isinstance(v, list)}
+
+
+def agent_scope(agent_id: str) -> list[str] | None:
+    """The folders this agent was given, or None if it was never asked.
+
+    None is not `[]`. The caller has to tell them apart, which is why this
+    returns the stored value rather than a resolved one.
+    """
+    return _scopes().get(str(agent_id or ""))
+
+
+def set_agent_scope(agent_id: str, folders: list[str] | None) -> list[str]:
+    """Choose this agent's folders. `None` puts it back to undecided.
+
+    Every path is granted on the way in, because choosing a folder here is the
+    same consent gesture as choosing one in the panel — and because a scope
+    naming a folder that was never granted would be a switch that cannot do
+    anything. `grant_folder` raises the sentence a person reads.
+    """
+    key = str(agent_id or "").strip()
+    if not key:
+        raise ValueError("Say which agent.")
+    scopes = _scopes()
+    if folders is None:
+        scopes.pop(key, None)
+        _store().set_meta(SCOPES_KEY, json.dumps(scopes))
+        return roots_for(key)
+
+    chosen: list[str] = []
+    for raw in folders:
+        resolved = grant_folder(str(raw))["path"]
+        if resolved not in chosen:
+            chosen.append(resolved)
+    scopes[key] = chosen
+    _store().set_meta(SCOPES_KEY, json.dumps(scopes))
+    log.info("agent %s works in %d folder(s)", key, len(chosen))
+    return chosen
+
+
+def forget_agent_scope(agent_id: str) -> None:
+    """Drop an agent's scope — for when the agent itself is deleted."""
+    scopes = _scopes()
+    if scopes.pop(str(agent_id or ""), None) is not None:
+        _store().set_meta(SCOPES_KEY, json.dumps(scopes))
+
+
+def roots_for(agent_id: str) -> list[str]:
+    """The folders this agent can actually reach, now.
+
+    Intersected with the live grant list rather than trusted: closing a folder
+    in the panel has to close it for everyone, including an agent that still
+    names it in a scope written before.
+    """
+    granted = granted_roots()
+    chosen = agent_scope(agent_id)
+    if chosen is None:
+        chosen = default_scope()
+    allowed = {str(Path(r).resolve(strict=False)) for r in granted}
+    return [c for c in chosen if str(Path(c).resolve(strict=False)) in allowed]
+
+
+def active_roots() -> list[str]:
+    """The folders the agent whose turn is running may reach.
+
+    **No acting agent means the grant list**, not nothing. An approved action
+    is executed from the queue long after the turn that proposed it, with no
+    turn context around it — `actions._attachments_for` goes through `_resolve`
+    for exactly the injection reason that boundary exists, and scoping a
+    question we cannot attribute to an agent would break attachments rather
+    than protect anything. The boundary is still the grant.
+    """
+    who = acting()
+    return roots_for(who) if who else granted_roots()
+
+
 def _resolve(path: str) -> tuple[Path | None, str]:
     """The real path this refers to, if it is inside a granted folder.
 
@@ -132,11 +290,12 @@ def _resolve(path: str) -> tuple[Path | None, str]:
     defeated by a link planted inside a granted folder — which is reachable,
     because writing into that folder is exactly what an agent is allowed to do.
     """
-    roots = granted_roots()
+    roots = active_roots()
     if not roots:
-        return None, ("No folder has been opened to agents yet. The user can "
-                      "choose one in Chitragupta; nothing on disk is reachable "
-                      "until they do.")
+        return None, ("This agent has no folder to work in. The user chooses "
+                      "which folders each agent can see from the folder button "
+                      "beside the message box, or in the agent's Folders tab — "
+                      "nothing on disk is reachable until they do.")
     raw = str(path or "").strip()
     if not raw:
         return None, "Give a path."
@@ -159,8 +318,8 @@ def _resolve(path: str) -> tuple[Path | None, str]:
 
 # ── the tools ────────────────────────────────────────────────────────────
 def list_dir(path: str = "") -> ToolResult:
-    """What is in a folder the user opened."""
-    roots = granted_roots()
+    """What is in a folder the user opened to this agent."""
+    roots = active_roots()
     if not path and roots:
         listing = "\n".join(f"- {r}" for r in roots)
         return ToolResult("Folders you can work in:\n" + listing)
@@ -221,11 +380,12 @@ def find_file(name: str, newest_first: bool = True) -> ToolResult:
     if not words:
         return ToolResult.failed("Say what to look for — a word from the "
                                  "filename is enough.")
-    roots = granted_roots()
+    roots = active_roots()
     if not roots:
         return ToolResult.failed(
-            "No folder has been opened to agents yet, so there is nothing to "
-            "search. The user can pick one in the Files connector.")
+            "This agent has no folder to work in, so there is nothing to "
+            "search. The user chooses its folders from the folder button "
+            "beside the message box.")
 
     found: list[tuple[float, Path]] = []
     for root in roots:

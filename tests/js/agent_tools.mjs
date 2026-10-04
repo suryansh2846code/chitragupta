@@ -285,7 +285,14 @@ if (input.addFolder) {
   if (b && typeof b.onclick === "function") {
     await b.onclick();
     const post = calls.filter((c) => c.path.includes("/folders") && c.method === "POST").pop();
-    folderAdded = post ? { path: post.path, body: post.body } : null;
+    // Granting alone is not enough: which agent reads a folder is a second
+    // choice, and it defaults to nothing. Without the PUT, a press inside one
+    // agent's own settings left that agent still unable to open the folder.
+    const put = calls.filter((c) => c.path.includes("/folders") && c.method === "PUT").pop();
+    folderAdded = post
+      ? { path: post.path, body: post.body,
+          gaveToAgent: put ? { path: put.path, body: put.body } : null }
+      : null;
   }
 }
 let screenClicked = null;

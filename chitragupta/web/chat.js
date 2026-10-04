@@ -92,6 +92,10 @@ async function selectAgent(id) {
   // edits — showing the level of the agent you just left would be a label
   // about somebody else.
   if (typeof loadAutonomy === "function") loadAutonomy(id);
+  // And which folders it may read while answering — per agent for the same
+  // reason, and a different thing from the folders the Connectors screen
+  // ingests into the brain everybody shares.
+  if (typeof loadAgentFolders === "function") loadAgentFolders(id);
   const chip = $("#agentModelChip");
   if (chip && !chip._wired) {
     chip._wired = 1;

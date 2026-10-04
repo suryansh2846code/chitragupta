@@ -41,6 +41,14 @@
  * only possible answer was *"No folder has been opened to agents yet"*, and no
  * screen anywhere opened one. They are all on the card they belong to now.
  *
+ * **The folder strip answers the machine's question, and says so.** There are
+ * two: which folders may be reached from this app at all — that list, global,
+ * and the thing a grant means — and which of them *this* agent works in, which
+ * is `folders.js` and the Folders tab one tab away. The strip sits inside one
+ * agent's Permissions tab, so a heading reading "Agents can work in:" made the
+ * second answer look as though it had already been given, which is the same
+ * granted-but-still-refused dead end this card was built to close.
+ *
  * There used to be a second screen as well — a read-only "Tools & skills"
  * drawer off the sidebar. Same endpoint, same grouping, same rows, no switches,
  * and it printed each connector's description in full where this one trims to
@@ -426,7 +434,7 @@ function cardStrip(card, ctx) {
   // sites answered the second question while the first one was still no.
   const grant = grantStrip(card, draft);
   if (card.key === "browser") return grant + sitesStrip(draft);
-  if (card.key === "mac") return foldersStrip(draft);
+  if (card.key === "mac") return foldersStrip(draft, ctx.agent);
   return grant;
 }
 
@@ -472,28 +480,43 @@ function sitesStrip(draft) {
 //: nothing in the app called it, so every agent granted "Your Mac → Read" got a
 //: tool that could only ever answer *"No folder has been opened to agents
 //: yet"*. A control in the card beats a button that sends somebody somewhere.
-function foldersStrip(draft) {
+//:
+//: **This list is the machine's, not this agent's, and it has to say so.**
+//: There are two questions now — which folders may be reached from this app at
+//: all, and which of them one agent works in — and this strip answers the
+//: first while sitting inside one agent's Permissions tab. Saying "Agents can
+//: work in:" over it made the second answer look like it had already been
+//: given, which is the same agent-granted-but-still-refused dead end this card
+//: was built to close. So it names what it is and names where the other half
+//: is set; the Folders tab is one tab away rather than another screen.
+function foldersStrip(draft, agent) {
   const folders = _PANEL.folders;
   if (!Array.isArray(folders)) return "";        // see `sitesStrip`
   const rows = folders.map((p) => `
     <span class="at-chip">${esc(p)}
       ${draft ? "" : `<button type="button" class="at-chip-x" data-folder-off="${esc(p)}"
-        aria-label="Close ${esc(p)} to agents">×</button>`}</span>`).join("");
+        aria-label="Close ${esc(p)} to this app">×</button>`}</span>`).join("");
   const add = draft ? "" : `
     <span class="at-folder-add">
       <input id="atFolderPath" class="set-input" type="text" autocomplete="off"
-             placeholder="~/Documents/work" aria-label="A folder to open to agents" />
+             placeholder="~/Documents/work" aria-label="A folder to open to this app" />
       <button type="button" class="tiny" data-folder-add="1">Open</button>
     </span>
     <span class="at-err" id="atFolderErr" hidden></span>`;
   if (!folders.length) {
     return `<div class="at-strip is-warn">
-      <p>No folder is open to agents yet, so nothing here can reach anything on
-      this Mac. Opening one is the consent — there are no default grants.</p>
+      <p>No folder is open to this app yet, so nothing here can reach anything
+      on this Mac. Opening one is the consent — there are no default grants.</p>
       ${add}</div>`;
   }
-  return `<div class="at-strip"><p>Agents can work in:</p>
-    <div class="at-chips">${rows}</div>${add}</div>`;
+  const who = agent && agent.name ? esc(agent.name) : "this agent";
+  return `<div class="at-strip">
+    <p>Open to this app:</p>
+    <div class="at-chips">${rows}</div>
+    <p class="at-note">Which of these ${who} actually reads is its own
+      choice — the <b>Folders</b> tab, or the folder button beside the message
+      box. Closing one here closes it for every agent.</p>
+    ${add}</div>`;
 }
 
 //: Whether this agent may use this connector without asking, per agent.
@@ -1018,7 +1041,19 @@ async function toggleAgentTool(agent, btn) {
 
 // ── the other half of three permissions ────────────────────────────────────
 
-//: Open a folder to agents. The grant IS the consent — there are no defaults.
+//: Open a folder to this app, and give it to the agent whose card this is.
+//:
+//: **Both, or the press does nothing visible.** Opening a folder is the grant —
+//: what may be reached from this app at all — and which agent reads it is a
+//: second, narrower choice that defaults to nothing for an agent nobody has
+//: configured. So on a machine with no folders yet, granting alone left every
+//: agent still unable to open the folder the user had just pointed at, from a
+//: button inside one agent's own settings. The second call is what makes the
+//: press mean what the screen says it means.
+//:
+//: It is additive on both counts: the folder joins whatever this agent already
+//: reads, and every other agent is left exactly as it was. Taking it away again
+//: is the × beside the chip, and that one IS global — the strip says so.
 //:
 //: The server validates and answers with a sentence written for a person
 //: ("Pick a folder inside your home directory rather than the whole of it"), so
@@ -1035,8 +1070,28 @@ async function openFolderToAgents(agent, btn) {
   try {
     const out = await api("/api/agents/folders", { method: "POST", body: { path } });
     _PANEL.folders = out.folders || _PANEL.folders || [];
+    // `out.path` is the resolved spelling the server stored, not what was
+    // typed — a scope naming `~/Documents` against a grant on
+    // `/Users/x/Documents` would be a choice that never matches anything.
+    const opened = out.path || path;
+    let gave = false;
+    if (agent && agent.id) {
+      const held = await api(`/api/agents/${encodeURIComponent(agent.id)}/folders`);
+      const now = (held.folders || []);
+      if (!now.includes(opened)) {
+        await api(`/api/agents/${encodeURIComponent(agent.id)}/folders`, {
+          method: "PUT", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ folders: [...now, opened] }),
+        });
+      }
+      gave = true;
+      // The composer pill is this same setting and is now behind.
+      if (typeof loadAgentFolders === "function" && typeof current !== "undefined"
+          && current === agent.id) loadAgentFolders(agent.id);
+    }
     if (input) input.value = "";
-    toast("Agents can work in that folder");
+    toast(gave ? `${agent.name || "This agent"} can work in that folder`
+               : "That folder is open to this app");
     redrawAgentTools();
   } catch (e) {
     if (err) { err.textContent = String(e); err.hidden = false; }
