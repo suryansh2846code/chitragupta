@@ -257,8 +257,9 @@ exactly what cannot be reconstructed from any other source.
 
 ### The fix is local, and it is small
 
-It is all **one SQLite file plus a Keychain**. A whole-home backup is far less
-work than 44 per-table exporters:
+It is **eleven SQLite files plus a Keychain** — measured, after this document
+first said "one SQLite file" and was wrong. A whole-home backup is still far
+less work than 44 per-table exporters, and the file count barely changes it:
 
 1. **Export** — the SQLite file (`VACUUM INTO` for a consistent copy without
    stopping the app), plus a manifest with the schema version. Secrets stay out

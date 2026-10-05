@@ -18,6 +18,13 @@ dependencies = [
     "typer>=0.12",
     "rich>=13.7",
     "ddgs>=9.0",
+    # AES-GCM for encrypted backups (`chitragupta/archive/`). There is no AEAD
+    # cipher in the standard library, which is the only reason this is here —
+    # the KDF is `hashlib.scrypt`. Declared explicitly rather than leaned on
+    # transitively: it arrives with `google-auth-oauthlib`, which is an
+    # optional extra, so a base install without the Gmail connector would
+    # otherwise have no way to write or read a backup.
+    "cryptography>=42.0",
 ]
 
 [project.optional-dependencies]

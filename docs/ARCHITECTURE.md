@@ -19,9 +19,11 @@
 A local-first agent workspace. A team of agents share one on-device brain built
 from the user's own connected sources, running on whatever model the user
 already pays for. Everything stays on the machine: one FastAPI server bound to
-loopback, one SQLite file for the raw index and another for curated facts, and
-either a browser tab (`chitragupta serve`) or a native macOS window
-(`chitragupta app`) in front of it.
+loopback, eleven SQLite files in one home directory, and either a browser tab
+(`chitragupta serve`) or a native macOS window (`chitragupta app`) in front of
+it. The raw index and the curated facts are two of those files; agents,
+actions, tasks, metrics, reminders, messages, connectors, routines and
+automation own the other nine.
 
 Two consequences shape every boundary below:
 
