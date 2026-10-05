@@ -1390,6 +1390,56 @@ textarea.ac-field-wide { resize: vertical; min-height: 58px; line-height: 1.45; 
 .cmp-auto-blurb { font-size: 11.5px; color: var(--muted); line-height: 1.45; }
 
 
+/* The composer's folder pill and its menu. Beside the mode pill, because both
+   are about how this turn gets answered rather than what it is about. Several
+   folders can be on at once, so the rows are checkboxes and the menu stays
+   open under them — a menu that closed on the first tick would make choosing
+   three folders three trips. */
+.cmp-folder-wrap { position: relative; display: inline-flex; }
+.cmp-folder-menu { position: absolute; bottom: calc(100% + 8px); left: 0;
+  z-index: 40; width: 320px; max-height: 60vh; overflow-y: auto; padding: 5px;
+  border-radius: 13px; background: var(--panel); border: 1px solid var(--border2);
+  box-shadow: 0 16px 40px rgba(0,0,0,.45); display: flex;
+  flex-direction: column; gap: 2px; }
+.cmp-folder-menu[hidden] { display: none; }
+.cmp-folder-head { font-size: 12px; font-weight: 600; color: var(--text);
+  padding: 7px 11px 2px; }
+.cmp-folder-note { font-size: 11.5px; color: var(--muted); line-height: 1.45;
+  padding: 0 11px 7px; }
+.cmp-folder-row, .fld-row { display: flex; align-items: center; gap: 9px;
+  text-align: left; width: 100%; padding: 8px 11px; border-radius: 9px;
+  background: none; border: 1px solid transparent; }
+.cmp-folder-row:hover, .fld-row:hover { background: rgba(255,255,255,.05); }
+.cmp-folder-row.is-on, .fld-row.is-on { background: var(--panel-2);
+  border-color: var(--border); }
+/* The tick keeps its box whether or not it is drawn, or every row shifts
+   sideways the moment one is ticked. */
+.cmp-folder-tick, .fld-tick { flex: 0 0 14px; width: 14px; height: 14px;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: var(--accent); }
+.cmp-folder-text, .fld-text { display: flex; flex-direction: column; gap: 1px;
+  min-width: 0; }
+.cmp-folder-name, .fld-name { font-size: 13px; font-weight: 600;
+  color: var(--text); }
+/* The path is the only way to tell two folders with the same name apart, so it
+   truncates at the FRONT — the end is the half that distinguishes them. */
+.cmp-folder-path, .fld-path { font-size: 11px; color: var(--muted);
+  direction: rtl; text-align: left; white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis; }
+.cmp-folder-foot { display: flex; gap: 6px; padding: 5px 6px 2px;
+  border-top: 1px solid var(--border2); margin-top: 4px; }
+.cmp-folder-act { flex: 1; font-size: 12px; padding: 7px 9px; border-radius: 9px;
+  background: var(--panel-2); border: 1px solid var(--border); color: var(--text); }
+.cmp-folder-act:hover { border-color: var(--accent); }
+.cmp-folder-act.is-on { color: var(--accent); border-color: var(--accent); }
+
+/* The same setting in the agent's profile. Wider, and it says which of the
+   three answers is current in a sentence, because a tab has room for one. */
+.fld-list { display: flex; flex-direction: column; gap: 3px; margin: 14px 0 10px; }
+.fld-state { font-size: 12.5px; color: var(--muted); margin: 0 0 12px; }
+.fld-acts { display: flex; gap: 8px; }
+
+
 .am-next { font-size: 11.5px; color: var(--muted); }
 
 /* Icon and word on the two buttons that take an agent away. */
@@ -2001,6 +2051,9 @@ textarea.ac-field-wide { resize: vertical; min-height: 58px; line-height: 1.45; 
   background: var(--panel); border: 1px solid var(--line); max-width: 66ch; }
 .at-strip p { margin: 0 0 8px; }
 .at-strip p:last-child { margin-bottom: 0; }
+/* The line that says where the OTHER half of this permission is set. Sits
+   under the chips rather than beside them, because it is about them. */
+.at-strip .at-note { margin-top: 8px; }
 /* Not an error — it is the correct starting state, and the warning tint is
    what stops somebody reading the switches above as already working. */
 .at-strip.is-warn { border-color: var(--north-track); background: var(--north-dim);

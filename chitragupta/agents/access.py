@@ -365,12 +365,16 @@ def describe(agent_id: str, needs: list[Need]) -> list[dict[str, Any]]:
         elif need.kind == "site":
             row["title"], row["means"], row["granted"] = _site_rows(need)
         elif need.kind == "folder":
-            from .file_tools import granted_roots
+            from .file_tools import roots_for
             # The last segment, or the whole path when there is no last segment
             # to take. A row reading "Open " is not a thing anyone can answer.
             row["title"] = f"Open {need.target.rstrip('/').rsplit('/', 1)[-1] or need.target}"
-            row["means"] = f"Agents may read and write inside {need.target}."
-            row["granted"] = need.target in set(granted_roots())
+            row["means"] = f"This agent may read and write inside {need.target}."
+            # Whether **this** agent can reach it, not whether the machine has
+            # it granted to somebody. A switch drawn as already on, over an
+            # agent that still cannot open the folder, is the switch saying
+            # something untrue about the only agent it is shown beside.
+            row["granted"] = need.target in set(roots_for(agent_id))
         elif need.kind == "reach":
             row.update(_reach_row(agent_id, need))
         else:
@@ -510,9 +514,23 @@ def grant(agent_id: str, need: Need) -> dict[str, Any]:
                 "detail": f"{made.host} is allowed."}
 
     if need.kind == "folder":
-        from .file_tools import grant_folder
+        from .file_tools import grant_folder, roots_for, set_agent_scope
         try:
             grant_folder(need.target)
+            # **The agent that asked is the agent that gets it.** A folder has
+            # a grant and a per-agent scope, and granting alone leaves the
+            # asking agent still unable to open it — a tap that answers a
+            # request by changing nothing the requester can observe, which is
+            # the dead end this whole module exists to stop.
+            #
+            # The base is `roots_for`, never `agent_scope`: an agent that has
+            # never been scoped reads back as None, and writing `[target]` over
+            # that would take away everything it could already reach in the act
+            # of granting it one more thing. Adding to what it has is the only
+            # version of this that cannot subtract.
+            reaches = roots_for(agent_id)
+            if need.target not in reaches:
+                set_agent_scope(agent_id, [*reaches, need.target])
         except ValueError as exc:
             # The message is written for a person, so it is passed through
             # rather than replaced with something about paths.

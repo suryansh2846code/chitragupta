@@ -34,6 +34,7 @@ read before its definition is a temporal dead-zone `ReferenceError` that
 | `webscreen.js` | the browser itself, shown and driven inside the app |
 | `appearance.js` | what one agent looks like — the profile's Appearance tab |
 | `autonomy.js` | the composer's mode pill — how much the open agent decides alone |
+| `folders.js` | the composer's folder pill and the profile's Folders tab — which folders the open agent reads — plus the one folder browser, used for this and for ingesting |
 | `profile.js` | the agent profile popup — one agent's identity, files, model and permissions |
 | `app.js` | the shell: state, chrome, agent rail, nav, keyboard, boot |
 
@@ -385,6 +386,27 @@ script out of eleven does not fail; it passes.
   pill reading "Mode" is a control reporting something nobody told it; and the
   label moves before the server answers and **moves back if the save fails**,
   or the pill reports a mode the agent is not in.
+- **The folder pill and the Folders tab are one setting, and it is one
+  agent's.** Same shape as the mode pill above: `GET`/`PUT
+  /api/agents/{id}/folders`, re-read on every `selectAgent`, the label moved
+  before the server answers and moved back if it refuses. What is different is
+  the thing next to it — the Connectors screen also picks folders, and those
+  are **ingested into the brain every agent shares**. One word apart on screen,
+  opposite blast radius, so the menu says which it is. The pill it replaced
+  said "workspace" and opened that other screen.
+  **Three answers, not two.** `null` is *never chosen* and the agent follows
+  whatever the machine already had open; `[]` is *look at no files*, which is a
+  thing the user asked to be able to say and which has to survive a reload. The
+  menu's "Look at no files" therefore sends `{folders: []}` and never `null` —
+  sending `null` reads back as undecided and the agent quietly carries on
+  reading. `[]` is also why the Folders tab prints a sentence rather than a
+  count: a count cannot tell those two apart.
+  **The menu stays open while folders are ticked.** Several can be on at once —
+  a menu that closed on the first tick would make choosing three folders three
+  trips. And there is **one** folder browser: `chooseFolder` takes the title,
+  the button and the action, because the two callers do opposite things to the
+  folder they are handed and a button reading "Use this folder" over the ingest
+  flow would be the card describing something other than what it runs.
 - **The persona picker's options come down the wire.** `agents/persona.py` owns
   the traits, the styles, the autonomy levels and the caps; a copy of those
   lists here would be a second copy to keep current, and the one that drifts is

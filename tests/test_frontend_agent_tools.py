@@ -570,8 +570,25 @@ def test_the_mac_card_says_when_no_folder_is_open():
     stops somebody reading the switches above as already working."""
     out = run(["read_file"], BUILTIN, [], panel={"folders": [], "sites": []})
     mac = _card(out["html"], "Your Mac")
-    assert "No folder is open to agents yet" in mac
+    assert "No folder is open to this app yet" in mac
     assert "is-warn" in mac
+
+
+def test_the_mac_card_does_not_claim_this_list_is_what_the_agent_reads():
+    """Two questions, and this card answers the machine's one.
+
+    Which folders may be reached from this app at all is global; which of them
+    *this* agent works in is the Folders tab. The strip sits inside one agent's
+    Permissions tab, so a heading reading "Agents can work in:" made the second
+    answer look as though it had already been given — the same
+    granted-but-still-refused dead end this card exists to close.
+    """
+    out = run(["read_file"], BUILTIN, [], panel={"folders": ["/Users/x/work"]})
+    mac = _card(out["html"], "Your Mac")
+    assert "Open to this app:" in mac
+    assert "Agents can work in" not in mac
+    assert "Folders" in mac, "it does not say where the other half is set"
+    assert "closes it for every agent" in mac
 
 
 def test_the_mac_card_is_where_a_folder_is_opened():
@@ -582,6 +599,25 @@ def test_the_mac_card_is_where_a_folder_is_opened():
     assert out["folderAdded"], "the control did not reach the endpoint"
     assert out["folderAdded"]["path"] == "/api/agents/folders"
     assert out["folderAdded"]["body"] == {"path": "~/Documents/work"}
+
+
+def test_opening_a_folder_here_also_gives_it_to_this_agent():
+    """Otherwise the press does nothing anybody can see.
+
+    Opening a folder is the grant — what may be reached from this app at all.
+    Which agent reads it is a second, narrower choice that defaults to nothing
+    for an agent nobody has configured. So on a machine with no folders yet,
+    granting alone left every agent still unable to open the folder the user
+    had just pointed at, from a button inside one agent's own settings.
+    """
+    out = run(["read_file"], BUILTIN, [], panel={"folders": []},
+              addFolder="~/Documents/work")
+    gave = out["folderAdded"]["gaveToAgent"]
+    assert gave, "the folder was opened and given to nobody"
+    assert gave["path"].endswith("/folders")
+    # The per-agent route, not the global grant one it was just called beside.
+    assert gave["path"] != "/api/agents/folders"
+    assert gave["body"] == {"folders": ["~/Documents/work"]}
 
 
 def test_an_open_folder_can_be_closed_again():
@@ -720,7 +756,7 @@ def test_a_strip_says_nothing_until_its_answer_is_back():
     panel that claimed "no folder is open" before asking would be wrong for the
     first few hundred milliseconds of every open."""
     out = run(["read_file"], BUILTIN, [])
-    assert "No folder is open to agents yet" not in out["html"]
+    assert "No folder is open to this app yet" not in out["html"]
 
 
 def test_a_draft_agent_is_offered_no_control_it_cannot_use():

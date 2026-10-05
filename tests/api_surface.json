@@ -38,6 +38,7 @@
   "GET /api/agents/{agent_id}/connectors",
   "GET /api/agents/{agent_id}/files",
   "GET /api/agents/{agent_id}/files/{name}",
+  "GET /api/agents/{agent_id}/folders",
   "GET /api/agents/{agent_id}/history",
   "GET /api/agents/{agent_id}/model",
   "GET /api/agents/{agent_id}/persona",
@@ -214,6 +215,7 @@
   "POST /api/webhooks/{provider}",
   "PUT /api/agents/{agent_id}/avatar",
   "PUT /api/agents/{agent_id}/files/{name}",
+  "PUT /api/agents/{agent_id}/folders",
   "PUT /api/agents/{agent_id}/identity",
   "PUT /api/agents/{agent_id}/model",
   "PUT /api/agents/{agent_id}/persona"

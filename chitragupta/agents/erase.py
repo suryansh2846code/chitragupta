@@ -49,6 +49,9 @@ def everything(agent_id: str) -> None:
     with suppressed("clearing an erased agent's connector grants"):
         from .connector_grants import forget_agent
         forget_agent(agent_id)
+    with suppressed("clearing an erased agent's folders"):
+        from .file_tools import forget_agent_scope
+        forget_agent_scope(agent_id)
     with suppressed("clearing an erased agent's tool overrides"):
         from .tool_overrides import get_tool_overrides
         get_tool_overrides().clear(agent_id)

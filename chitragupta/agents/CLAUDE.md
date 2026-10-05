@@ -28,6 +28,37 @@ permissions — and `library.py`, which is what Chitragupta *offers*.
   it.** The date note goes in with `grounding.prefixed` and comes out with
   `grounding.strip_arguments` — a model copies its own input, and a date inside
   `search_brain`'s query is read by recall as a filter.
+- **A folder has a grant and a scope, and they answer different questions.**
+  The grant is `granted_roots()` — what may be reached from this app at all,
+  one list, the thing `_resolve` enforces against a path an injection wrote. It
+  has not moved. The **scope** is which of those folders one agent works in,
+  and it exists because a team of agents sharing one brain is not a team
+  sharing one filing cabinet: there was one list, every agent read all of it,
+  and nobody could say *the tax folder is not the social-media agent's
+  business*. `active_roots()` is what the tools read, and it resolves through
+  the acting agent. A scope **only ever narrows** a grant, so closing a folder
+  still closes it for everybody — including an agent whose stored scope still
+  names it.
+  **Undecided is not empty.** No scope means the agent follows
+  `default_scope()`, which is captured **once**, the first time this code runs,
+  and never widened afterwards. Both other options are wrong: default to the
+  live grant list and "exclusive to this agent" is a lie, because a folder
+  picked for one agent appears in every agent nobody has configured; default to
+  nothing and every machine that already had folders open loses them silently
+  on upgrade. An explicit `[]` is the user saying *look at no files*, and it
+  has to stay distinguishable from None the whole way out to the wire.
+  **Granting what an agent asked for adds to what it already had.** `access`
+  builds the new scope from `roots_for`, never `agent_scope`: an agent that was
+  never scoped reads back as None, and writing `[target]` over that would take
+  away everything it could already reach in the act of granting it one more
+  thing.
+  **`acting.py` is a leaf and must stay one.** It holds nothing but the
+  ContextVar naming whose turn is running. It was in `connector_grants`, which
+  reaches `roster` → `library` → `file_tools` — so the one-line import that
+  `file_tools` needed would have closed a four-module cycle, and
+  `tests/test_import_layering.py` counts a lazy import as a real edge precisely
+  so that burying it in a function cannot hide it. `connector_grants`
+  re-exports the three names.
 - **An agent's conversation is its own.** A delegated turn runs `persist=False`
   — no history in, nothing written out, no learning — because the "user" of that
   turn is another agent. The brain stays shared; the chat does not.

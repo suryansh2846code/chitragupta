@@ -113,11 +113,23 @@
 
         <div class="cmp-bottom-bar">
           <div class="cmp-bar-left">
-            <button type="button" class="cmp-pill" id="cmpWorkspacePill" title="Workspace: Chitragupta">
-              <span class="cmp-pill-ic"><svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4.6h4l1.2 1.6h6.8v6.4a1.2 1.2 0 0 1-1.2 1.2H3.2A1.2 1.2 0 0 1 2 12.6z"/></svg></span>
-              <span class="cmp-pill-label" id="cmpWorkspaceLabel">workspace</span>
-              <span class="cmp-pill-arrow"><svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6.2L8 10l4-3.8"/></svg></span>
-            </button>
+            <!-- Which folders THIS agent may read while answering. It said
+                 "workspace" and opened the Connectors screen, which is a
+                 different thing entirely — those folders go into the brain and
+                 are shared by every agent. This one is the agent's own, and it
+                 is here rather than only in a settings tab because it is a
+                 decision about the message you are about to send. Same setting
+                 as the profile's Folders tab, one endpoint, both directions. -->
+            <div class="cmp-folder-wrap">
+              <button type="button" class="cmp-pill" id="cmpFolderPill" hidden
+                      title="Folders this agent can read" aria-haspopup="true" aria-expanded="false">
+                <span class="cmp-pill-ic"><svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4.6h4l1.2 1.6h6.8v6.4a1.2 1.2 0 0 1-1.2 1.2H3.2A1.2 1.2 0 0 1 2 12.6z"/></svg></span>
+                <span class="cmp-pill-label" id="cmpFolderLabel">No folders</span>
+                <span class="cmp-pill-arrow"><svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6.2L8 10l4-3.8"/></svg></span>
+              </button>
+              <div id="cmpFolderMenu" class="cmp-folder-menu" hidden role="menu"
+                   aria-label="Folders this agent can read"></div>
+            </div>
 
             <!-- How much this agent decides on its own, next to the thing you
                  are about to ask it. It is the same setting as the Persona
@@ -1039,10 +1051,10 @@
   <button id="bbClose" hidden></button><button id="bbSync" hidden></button>
   <div id="picker" class="modal-bg" hidden>
     <div class="modal" role="dialog" aria-modal="true" aria-labelledby="pickTitle">
-      <div class="modal-head"><b id="pickTitle">Pick a folder to ingest</b><button id="pickClose" class="ghost tiny" aria-label="Close"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 4.5l7 7M11.5 4.5l-7 7"/></svg></button></div>
+      <div class="modal-head"><b id="pickTitle">Pick a folder</b><button id="pickClose" class="ghost tiny" aria-label="Close"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 4.5l7 7M11.5 4.5l-7 7"/></svg></button></div>
       <div id="pickPath" class="pick-path"></div>
       <div id="pickList" class="pick-list"></div>
-      <div class="modal-foot"><span id="pickInfo" class="muted"></span><button id="pickIngest">Ingest this folder</button></div>
+      <div class="modal-foot"><span id="pickInfo" class="muted"></span><button id="pickConfirm">Use this folder</button></div>
     </div>
   </div>
 
@@ -1079,6 +1091,7 @@
   <!-- After `profile.js`: the composer's mode pill edits the same setting the
        profile's Persona tab does, and nudges that pane when it is open. -->
   <script src="/static/autonomy.js"></script>
+  <script src="/static/folders.js"></script>
   <script src="/static/app.js"></script>
 </body>
 </html>

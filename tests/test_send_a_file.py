@@ -128,11 +128,17 @@ def test_nothing_outside_a_granted_folder_is_reachable(tmp_path, monkeypatch):
 
 
 def test_with_no_folder_opened_it_says_so_rather_than_finding_nothing(monkeypatch):
-    """"Nothing matched" and "you have not opened a folder" are different
-    answers, and only one of them tells the user what to do."""
+    """"Nothing matched" and "this agent has no folder" are different answers,
+    and only one of them tells the user what to do.
+
+    Which control to press is half the answer, so it is asserted too — a
+    refusal a tap would fix that never names the tap is the dead end the whole
+    access vocabulary exists to close.
+    """
     monkeypatch.setattr(ft, "granted_roots", list)
     said = _found(name="proposal")
-    assert "No folder has been opened" in said
+    assert "no folder to work in" in said
+    assert "folder button" in said
 
 
 def test_a_search_for_nothing_is_refused(library):
