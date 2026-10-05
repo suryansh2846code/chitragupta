@@ -94,11 +94,20 @@ def _icon_only_buttons():
 
 def test_icon_only_buttons_have_an_accessible_name():
     """`title` is a tooltip. A screen reader announces such a button as
-    'button', and the ✕ ones as 'times'."""
+    'button', and the ✕ ones as 'times'.
+
+    ``data-soon`` is the one other source of a name, and it is a stronger one,
+    not an exemption: `markSoon()` writes the label *and* the tooltip from that
+    single string, so the two cannot drift the way two hand-written copies can.
+    An `aria-label` spelled out here as well would be the copy that drifts, and
+    `markSoon` would overwrite it anyway. That the name really lands is asserted
+    at runtime in ``test_frontend_locked_controls.py``, which clicks the control
+    rather than reading the markup.
+    """
     unnamed = [
         re.search(r'id="([^"]+)"', a).group(1) if 'id="' in a else a.strip()[:40]
         for a, _ in _icon_only_buttons()
-        if "aria-label" not in a
+        if "aria-label" not in a and "data-soon" not in a
     ]
     assert not unnamed, f"icon-only buttons with no accessible name: {unnamed}"
 

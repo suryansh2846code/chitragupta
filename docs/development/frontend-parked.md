@@ -175,3 +175,22 @@ two slow endpoints on a path a user now takes freely and often.
 The fix is not a frontend one alone. `/api/connectors` is the shape to look at
 first — it is nine seconds of provider probing on a page load, and the labels the
 `@` picker wants out of it do not change between two switches a second apart.
+
+## `#agentModelModal` is forty lines of markup nothing can open
+
+Found while locking the composer's voice buttons, which was a sweep for
+controls that cannot work. `index.html` carries a whole dialog — provider
+select, model select, custom-model box, hint, status badge, and four buttons
+(`ammClose`, `ammReset`, `ammCancel`, `ammSave`) — and **no script references
+any of it**. `models.js` superseded it with the `.cmp-model-picker-wrap`
+flyout; the dialog was left behind.
+
+It is not the bug the voice buttons were: it is `hidden` and nothing opens it,
+so no user ever meets a control that does nothing. What it is instead is a
+second, plausible-looking answer to "where is the agent's model chosen" sitting
+in the file the next person greps — and four button ids reserved against
+handlers that will never be written.
+
+Deleting it is the fix, and deleting it is also the only thing that could be
+wrong about it, so it wants its own commit rather than a ride on an unrelated
+one. Check `tests/test_frontend_model_screen.py` first: it reads this file.

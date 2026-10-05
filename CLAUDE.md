@@ -563,7 +563,7 @@ In order: **the focused test → the subsystem's suite → `pytest` →
 `ruff check chitragupta tests` → `mypy chitragupta` → the `tests/js/` harnesses if
 the frontend changed → `chitragupta app` opens and renders.**
 
-Baseline, measured 2026-10-04: **6447 passed, 36 skipped in ~7min28**, ruff
+Baseline, measured 2026-10-05: **6458 passed, 35 skipped in ~7min31**, ruff
 clean, mypy clean over 230 files. **The count is the number to compare against,
 never the clock** — the same suite took 11min10 earlier the same day while it
 shared the machine with another session's run. See the shared-machine rules at
