@@ -3688,3 +3688,45 @@ button.tiny.running:hover { background: linear-gradient(to right,
    button. It redraws on every keystroke, so it never disagrees with the boxes. */
 .ac-live { margin-top: var(--ac-tight); }
 .ac-live .ac-row { margin: 2px 0; }
+
+/* ── locked until a future update ──────────────────────────────────────────
+   One class for every control that is drawn but not built yet, driven by
+   `data-soon` in the markup and `markSoon()` in core.js. It has to read as
+   locked at a glance — dulled, with a small lock sitting on it — or it is just
+   a button that does nothing, which is the thing this exists to stop.
+
+   The badge is a pseudo-element on purpose: `applyIcons()` assigns innerHTML to
+   these buttons, so any node appended inside one is wiped on the next repaint.
+   A mask rather than a background image, so the lock takes `currentColor` and
+   follows the theme instead of being a baked-in grey. */
+:root {
+  --soon-lock: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 1a3.3 3.3 0 0 0-3.3 3.3V6H4.1A1.1 1.1 0 0 0 3 7.1v5.8A1.1 1.1 0 0 0 4.1 14h7.8A1.1 1.1 0 0 0 13 12.9V7.1A1.1 1.1 0 0 0 11.9 6h-.6V4.3A3.3 3.3 0 0 0 8 1Zm0 1.7a1.6 1.6 0 0 1 1.6 1.6V6H6.4V4.3A1.6 1.6 0 0 1 8 2.7Z'/%3E%3C/svg%3E");
+}
+.is-soon {
+  position: relative;
+  opacity: .4;
+  cursor: not-allowed;
+}
+/* Hover must not brighten it back up. Every control in this app lifts on
+   hover, and a locked one lifting is the exact "it works, I promise" signal
+   this is here to avoid — it lifts just enough to show the tap registered.
+   Same specificity as `.cmp-bar-btn:hover` and later in the file, which is
+   what makes it win. */
+.is-soon:hover,
+.is-soon:focus-visible {
+  background: transparent;
+  color: var(--muted);
+  opacity: .55;
+}
+.is-soon::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 9px;
+  height: 9px;
+  background: currentColor;
+  -webkit-mask: var(--soon-lock) center / contain no-repeat;
+  mask: var(--soon-lock) center / contain no-repeat;
+  pointer-events: none;          /* the click belongs to the button, not the badge */
+}
