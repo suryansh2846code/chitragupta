@@ -14,5 +14,8 @@
   resolves the annotation at decoration time.
 - `tests/api_surface.json` pins the endpoint list. A red `test_api_surface.py`
   means a path moved.
+- `routes/backup.py` is also where a restore's **follow-up** lives:
+  `archive/` may not import `brain/` (siblings), so re-running migrations after
+  a restore is done at this layer, which is allowed to know about both.
 
 Rules: [`/CLAUDE.md`](../../CLAUDE.md).

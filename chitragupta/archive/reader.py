@@ -32,8 +32,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from ..core import exclusions
 from ..log import get_logger
-from . import crypto
+from . import crypto, progress
 from .writer import MANIFEST_NAME, PAYLOAD_DIR
 
 log = get_logger(__name__)
@@ -79,9 +80,16 @@ def inspect(path: Path) -> Inspection:
     )
 
 
-def _master_key(header: crypto.Header, passphrase: str | None,
-                recovery_code: str | None) -> bytes:
-    """Unwrap the master key with whichever secret was offered."""
+def master_key_from(header: crypto.Header, passphrase: str | None,
+                    recovery_code: str | None) -> bytes:
+    """Unwrap the master key with whichever secret was offered.
+
+    Public because `job.start_restore` calls it *before* spawning a thread, so
+    a wrong passphrase is refused on the spot instead of becoming a background
+    job that appears to start and then fails somewhere the user has to go
+    looking for. It is also what the restore then remembers as this machine's
+    master key, so the next backup from a recovered Mac joins the same set.
+    """
     wraps = header.wrapped_mk
     if passphrase:
         wrapped = wraps.get(crypto.BY_PASSPHRASE)
@@ -128,7 +136,8 @@ def _safe_members(tar: tarfile.TarFile, root: str) -> list[tarfile.TarInfo]:
 
 def restore(path: Path, home: Path, *, passphrase: str | None = None,
             recovery_code: str | None = None,
-            replace_existing: bool = True) -> dict[str, Any]:
+            replace_existing: bool = True,
+            prog: progress.Progress | None = None) -> dict[str, Any]:
     """Decrypt `path` and put its contents into `home`.
 
     Order matters, and it is the opposite of the obvious one: **everything is
@@ -142,17 +151,21 @@ def restore(path: Path, home: Path, *, passphrase: str | None = None,
     onto a populated home is recoverable too.
     """
     path, home = Path(path), Path(home)
+    prog = prog or progress.inert()
     with path.open("rb") as src:
         header, raw_header, base = crypto.read_header(src)
-        mk = _master_key(header, passphrase, recovery_code)
+        mk = master_key_from(header, passphrase, recovery_code)
         dek = crypto.unwrap(mk, header.wrapped_dek, crypto.WRAP_DEK)
 
         with tempfile.TemporaryDirectory(prefix="chitragupta-restore-") as tmp:
             tmpdir = Path(tmp)
+            prog.enter(progress.VERIFYING, total=header.total_chunks)
             tarball = tmpdir / "payload.tar.gz"
             with tarball.open("wb") as sink:
-                crypto.open_payload(src, sink, header, raw_header, base, dek)
+                crypto.open_payload(src, sink, header, raw_header, base, dek,
+                                    on_chunk=lambda _n: prog.step())
 
+            prog.enter(progress.WRITING)
             unpacked = tmpdir / "unpacked"
             unpacked.mkdir()
             with tarfile.open(tarball, "r:gz") as tar:
@@ -162,11 +175,39 @@ def restore(path: Path, home: Path, *, passphrase: str | None = None,
             if not payload.is_dir():
                 raise crypto.CorruptArchiveError("the backup has no payload")
 
-            return _place(payload, home, header, replace_existing)
+            placed = _place(payload, home, header, replace_existing, prog)
+            prog.finish()
+            return placed
+
+
+def _clear_sidecars(database: Path) -> None:
+    """Remove the stale `-wal` / `-shm` sitting beside a replaced database.
+
+    **Without this a restore silently does nothing.** Every database runs in
+    WAL mode, so a home that has been open has a `-wal` beside each file. Write
+    a different database over the main file and leave the old log there, and
+    SQLite applies that log on the next open — measured: a fresh read after the
+    restore returned **the old rows**, while the app reported success. A backup
+    feature that says "Restored" and leaves the old brain in place is worse
+    than one that refuses.
+
+    Safe to do unconditionally: `VACUUM INTO` writes a fully checkpointed
+    database, so a restored file never has outstanding log to apply. Named by
+    `core/exclusions.is_sidecar`, so the rule about which files these are lives
+    in one place.
+    """
+    if database.suffix != ".db":
+        return
+    for suffix in ("-wal", "-shm", "-journal"):
+        companion = database.with_name(database.name + suffix)
+        if companion.exists() and exclusions.is_sidecar(companion.name):
+            companion.unlink()
+            log.debug("cleared stale %s before using the restored database",
+                      companion.name)
 
 
 def _place(payload: Path, home: Path, header: crypto.Header,
-           replace_existing: bool) -> dict[str, Any]:
+           replace_existing: bool, prog: progress.Progress) -> dict[str, Any]:
     """Move a verified payload into the home. The last step, and the only
     destructive one."""
     home.mkdir(parents=True, exist_ok=True)
@@ -175,7 +216,10 @@ def _place(payload: Path, home: Path, header: crypto.Header,
     replaced: list[str] = []
     skipped: list[str] = []
 
-    for entry in sorted(payload.iterdir(), key=lambda p: p.name):
+    entries = sorted(payload.iterdir(), key=lambda p: p.name)
+    prog.enter(progress.WRITING, total=len(entries))
+    for entry in entries:
+        prog.step(entry.name)
         if entry.name == MANIFEST_NAME:
             continue
         target = home / entry.name
@@ -190,6 +234,7 @@ def _place(payload: Path, home: Path, header: crypto.Header,
             shutil.copytree(entry, target)
         else:
             shutil.copy2(entry, target)
+            _clear_sidecars(target)
         restored.append(entry.name)
 
     log.info("restore complete: %d restored, %d replaced, %d skipped",

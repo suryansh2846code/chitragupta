@@ -70,6 +70,24 @@ DERIVED: dict[str, str] = {
 #: Archived by pattern. Databases only — see the module docstring.
 ARCHIVED_PATTERNS: tuple[str, ...] = ("*.db",)
 
+#: SQLite's sidecars, matched by pattern because their names follow the
+#: database's. **Derived, and dangerous to carry either way.**
+#:
+#: Every database here runs in WAL mode (`core/db.py`: `PRAGMA
+#: journal_mode=WAL`), so a live home always has `<name>.db-wal` and
+#: `<name>.db-shm` beside each file. They must not be archived — `VACUUM INTO`
+#: already produces a fully checkpointed standalone database, so the snapshot
+#: is complete without them — and they must not be left in place across a
+#: restore either.
+#:
+#: That second half was a shipped bug, found by running the real server rather
+#: than a fixture: a restore replaced `chitragupta.db` and left the old
+#: `-wal` next to it, and SQLite then applied the stale log on the next open.
+#: Measured — a fresh read after the restore returned **the old rows**. The
+#: app said "Restored", the user still had their old brain, and nothing
+#: anywhere reported a failure. `reader._place` now clears them.
+SIDECAR_PATTERNS: tuple[str, ...] = ("*.db-wal", "*.db-shm", "*.db-journal")
+
 #: Archived by name. Each one is user configuration worth carrying to a new
 #: Mac, and each needs a declared sanitiser below if it can hold a credential.
 ARCHIVED_FILES: dict[str, str] = {
@@ -148,6 +166,8 @@ def classify(name: str, *, is_dir: bool = False) -> Verdict:
         return Verdict(REFUSE, NEVER_ARCHIVE[name])
     if name in DERIVED:
         return Verdict(SKIP, DERIVED[name])
+    if is_sidecar(name):
+        return Verdict(SKIP, "a SQLite write-ahead log — rebuilt, never copied")
 
     if is_dir:
         if name in ARCHIVED_DIRS:
@@ -162,6 +182,16 @@ def classify(name: str, *, is_dir: bool = False) -> Verdict:
     # Unknown fails closed. See the module docstring: the file this branch
     # exists for is the credential written by a connector built after it.
     return Verdict(SKIP, "an unrecognised file — not archived")
+
+
+def is_sidecar(name: str) -> bool:
+    """Is this one of SQLite's `-wal` / `-shm` / `-journal` companions?
+
+    Used twice, which is why it is a function: to keep them out of an archive,
+    and to clear a stale one out of the way on restore. See
+    `SIDECAR_PATTERNS` for what leaving one behind cost.
+    """
+    return any(fnmatch(name, pat) for pat in SIDECAR_PATTERNS)
 
 
 def strip_keys_for(name: str) -> tuple[str, ...]:

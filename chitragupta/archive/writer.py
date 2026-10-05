@@ -38,7 +38,7 @@ from typing import Any
 
 from ..core import exclusions
 from ..log import get_logger
-from . import crypto
+from . import crypto, progress
 
 log = get_logger(__name__)
 
@@ -85,7 +85,9 @@ def snapshot_database(src: Path, dest: Path) -> None:
         con.close()
 
 
-def stage(home: Path, into: Path) -> tuple[list[dict[str, Any]], dict[str, str]]:
+def stage(home: Path, into: Path,
+          prog: progress.Progress | None = None) -> tuple[list[dict[str, Any]],
+                                                          dict[str, str]]:
     """Copy everything archivable out of `home`, and report what was withheld.
 
     Returns `(manifest, withheld)`. `withheld` is Tier 0 — the things that may
@@ -94,10 +96,14 @@ def stage(home: Path, into: Path) -> tuple[list[dict[str, Any]], dict[str, str]]
     rather than letting them find out when an agent fails.
     """
     into.mkdir(parents=True, exist_ok=True)
+    prog = prog or progress.inert()
     manifest: list[dict[str, Any]] = []
     withheld: dict[str, str] = {}
 
-    for entry in sorted(home.iterdir(), key=lambda p: p.name):
+    entries = sorted(home.iterdir(), key=lambda p: p.name)
+    prog.enter(progress.READING, total=len(entries))
+    for entry in entries:
+        prog.step(entry.name)
         verdict = exclusions.classify(entry.name, is_dir=entry.is_dir())
         if verdict.refused:
             withheld[entry.name] = verdict.reason
@@ -181,7 +187,9 @@ def _size_of(path: Path) -> int:
 
 def pack(home: Path, out: Path, passphrase: str, *,
          recovery_code: str | None = None,
-         master_key: bytes | None = None) -> Packed:
+         recovery_wrap: str | None = None,
+         master_key: bytes | None = None,
+         prog: progress.Progress | None = None) -> Packed:
     """Write an encrypted backup of `home` to `out`.
 
     `passphrase` and the recovery code are two independent doors to the same
@@ -189,8 +197,12 @@ def pack(home: Path, out: Path, passphrase: str, *,
     supplied, and it is returned **once**: it cannot be recovered from the
     archive afterwards, by design.
 
-    `master_key` lets a later backup reuse the key of an earlier one, so one
-    passphrase opens every generation. Omit it for a first backup.
+    `master_key` and `recovery_wrap` let a later backup reuse the key *and the
+    recovery code* of an earlier one, so one passphrase and one code open every
+    generation. Pass both or neither: a wrap made against a different master
+    key unwraps to nothing, and an archive that advertises an unlock method
+    which cannot work is worse than one that admits it has only a passphrase.
+    Omit both for a first backup.
     """
     if not passphrase:
         raise crypto.WrongSecretError("a passphrase is required to encrypt a backup")
@@ -199,15 +211,25 @@ def pack(home: Path, out: Path, passphrase: str, *,
     if not home.is_dir():
         raise FileNotFoundError(f"no Chitragupta home at {home}")
 
-    code = recovery_code or crypto.new_recovery_code()
+    prog = prog or progress.inert()
+    if recovery_wrap and not master_key:
+        raise ValueError(
+            "a recovery wrap only unwraps the master key it was made for — "
+            "pass both or neither")
     mk = master_key or crypto.new_key()
+    # A reused wrap means nothing new to show the user; a fresh one means a
+    # code they must be shown exactly once. `Packed.recovery_code` is how the
+    # caller tells those two cases apart.
+    code = None if recovery_wrap else (recovery_code or crypto.new_recovery_code())
+    wrapped_recovery = recovery_wrap or crypto.wrap(
+        crypto.derive_from_recovery_code(code or ""), mk, crypto.WRAP_RECOVERY)
     dek = crypto.new_key()
     salt = crypto.new_salt()
 
     with tempfile.TemporaryDirectory(prefix="chitragupta-backup-") as tmp:
         tmpdir = Path(tmp)
         payload_root = tmpdir / PAYLOAD_DIR
-        manifest, withheld = stage(home, payload_root)
+        manifest, withheld = stage(home, payload_root, prog)
         (payload_root / MANIFEST_NAME).write_text(json.dumps({
             "manifest": manifest,
             "withheld": withheld,
@@ -215,9 +237,14 @@ def pack(home: Path, out: Path, passphrase: str, *,
             "created_at": datetime.now(UTC).isoformat(),
         }, indent=2))
 
+        # No granular progress: `tar` does not report how far through it is,
+        # and `Progress.fraction` returns 0.0 for a phase with no total rather
+        # than inventing a percentage.
+        prog.enter(progress.COMPRESSING)
         tarball = tmpdir / "payload.tar.gz"
         with tarfile.open(tarball, "w:gz") as tar:
             tar.add(payload_root, arcname=PAYLOAD_DIR)
+        prog.check()
 
         plaintext_bytes = tarball.stat().st_size
         digest = _sha256_of(tarball)
@@ -230,9 +257,7 @@ def pack(home: Path, out: Path, passphrase: str, *,
                 crypto.BY_PASSPHRASE: crypto.wrap(
                     crypto.derive_from_passphrase(passphrase, salt), mk,
                     crypto.WRAP_PASSPHRASE),
-                crypto.BY_RECOVERY: crypto.wrap(
-                    crypto.derive_from_recovery_code(code), mk,
-                    crypto.WRAP_RECOVERY),
+                crypto.BY_RECOVERY: wrapped_recovery,
             },
             total_chunks=chunks,
             plaintext_sha256=digest,
@@ -247,14 +272,17 @@ def pack(home: Path, out: Path, passphrase: str, *,
         # Written to a sibling and moved into place, so an interrupted backup
         # never leaves a half-file where a user would later try to restore it.
         staging_out = out.with_name(out.name + ".partial")
+        prog.enter(progress.ENCRYPTING, total=chunks)
         try:
             with tarball.open("rb") as payload, staging_out.open("wb") as sink:
-                crypto.seal(payload, sink, header, dek)
+                crypto.seal(payload, sink, header, dek,
+                            on_chunk=lambda _n: prog.step())
             staging_out.replace(out)
         except BaseException:
             staging_out.unlink(missing_ok=True)
             raise
 
+    prog.finish()
     written = out.stat().st_size
     log.info("backup written: %s (%d bytes, %d item(s), %d withheld)",
              out.name, written, len(manifest), len(withheld))

@@ -50,6 +50,7 @@ import hmac
 import json
 import os
 import secrets
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, BinaryIO
 
@@ -300,7 +301,8 @@ class Header:
 
 # ── sealing and opening the payload ─────────────────────────────────────────
 
-def seal(payload: BinaryIO, out: BinaryIO, header: Header, dek: bytes) -> None:
+def seal(payload: BinaryIO, out: BinaryIO, header: Header, dek: bytes,
+         on_chunk: Callable[[int], None] | None = None) -> None:
     """Encrypt `payload` into `out`, chunk by chunk.
 
     `header` must already be final — it is the AAD, so nothing in it can be
@@ -325,6 +327,8 @@ def seal(payload: BinaryIO, out: BinaryIO, header: Header, dek: bytes) -> None:
         out.write(len(sealed).to_bytes(4, "big"))
         out.write(sealed)
         written += 1
+        if on_chunk:
+            on_chunk(written)
     if written != header.total_chunks:
         raise CorruptArchiveError(
             f"the backup changed while it was being written "
@@ -351,7 +355,8 @@ def read_header(src: BinaryIO) -> tuple[Header, bytes, bytes]:
 
 
 def open_payload(src: BinaryIO, out: BinaryIO, header: Header,
-                 raw_header: bytes, base: bytes, dek: bytes) -> None:
+                 raw_header: bytes, base: bytes, dek: bytes,
+                 on_chunk: Callable[[int], None] | None = None) -> None:
     """Decrypt into `out`, verifying as it goes, one chunk at a time.
 
     Three independent checks, because a backup that restores *most* of a brain
@@ -380,6 +385,8 @@ def open_payload(src: BinaryIO, out: BinaryIO, header: Header,
                 f"(block {index + 1} of {header.total_chunks})") from exc
         digest.update(block)
         out.write(block)
+        if on_chunk:
+            on_chunk(index + 1)
 
     if not hmac.compare_digest(digest.hexdigest(), header.plaintext_sha256):
         raise CorruptArchiveError("the backup did not match its own checksum")

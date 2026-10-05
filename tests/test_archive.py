@@ -405,3 +405,93 @@ def test_a_backup_cannot_smuggle_a_symlink(tmp_path: Path) -> None:
     _rebuild_with_payload(tarball, archive, tarball, "pw")
     with pytest.raises(crypto.CorruptArchiveError, match="not a file"):
         reader.restore(archive, tmp_path / "home2", passphrase="pw")
+
+
+def test_a_recovery_wrap_without_its_master_key_is_refused(populated_home: Path,
+                                                           tmp_path: Path) -> None:
+    """The pair is only meaningful together.
+
+    A wrap made against a different master key unwraps to nothing, so an
+    archive built from a mismatched pair would advertise a `recovery` unlock
+    method that could never work — which is the bug this guard replaced, in a
+    quieter form.
+    """
+    with pytest.raises(ValueError, match="both or neither"):
+        writer.pack(populated_home, tmp_path / "x.cgarch", passphrase="pw",
+                    recovery_wrap="not-paired-with-anything")
+
+
+def test_a_reused_wrap_reports_no_new_code(populated_home: Path,
+                                           tmp_path: Path) -> None:
+    """`Packed.recovery_code` is how the caller knows whether to show one."""
+    first = writer.pack(populated_home, tmp_path / "a.cgarch", passphrase="pw")
+    assert first.recovery_code
+
+    with (tmp_path / "a.cgarch").open("rb") as src:
+        header, _, _ = crypto.read_header(src)
+    mk = reader.master_key_from(header, "pw", None)
+
+    second = writer.pack(populated_home, tmp_path / "b.cgarch", passphrase="pw",
+                         master_key=mk,
+                         recovery_wrap=header.wrapped_mk[crypto.BY_RECOVERY])
+    assert second.recovery_code is None
+    # and the original code still opens the new file
+    reader.restore(tmp_path / "b.cgarch", tmp_path / "out",
+                   recovery_code=first.recovery_code)
+
+
+# ── SQLite's sidecars ───────────────────────────────────────────────────────
+
+@pytest.mark.parametrize("name", ["chitragupta.db-wal", "chitragupta.db-shm",
+                                  "agents.db-journal"])
+def test_sidecars_are_never_archived(name: str) -> None:
+    """A write-ahead log in an archive is the same bug, delivered."""
+    verdict = exclusions.classify(name)
+    assert not verdict.archived
+    assert exclusions.is_sidecar(name)
+
+
+def test_a_restore_clears_a_stale_write_ahead_log(tmp_path: Path) -> None:
+    """The one that made a successful restore do nothing at all.
+
+    Every database runs in WAL mode (`core/db.py`), so a home that has been
+    open has a `-wal` beside each file. Replace the main file and leave the old
+    log, and SQLite applies the log on the next open: measured against the real
+    server, a fresh read after a restore returned **the old rows** while the
+    app reported success.
+
+    Built with live connections on purpose. The rest of this file uses
+    `tmp_path` fixtures that never open a database in WAL mode, which is
+    exactly why they all passed while this was broken — `CLAUDE.md`: *verify
+    against the real thing, not only the harness*.
+    """
+    home = tmp_path / "home"
+    home.mkdir()
+    live = home / "chitragupta.db"
+
+    # A database with rows sitting in an un-checkpointed WAL.
+    con = sqlite3.connect(live)
+    con.execute("PRAGMA journal_mode=WAL")
+    con.execute("CREATE TABLE t (v TEXT)")
+    con.execute("INSERT INTO t VALUES ('OLD')")
+    con.commit()
+    assert (home / "chitragupta.db-wal").exists(), "fixture made no WAL"
+
+    # Back up a DIFFERENT home, so the restore is distinguishable.
+    source = tmp_path / "source"
+    source.mkdir()
+    _make_db(source / "chitragupta.db", "t", "RESTORED")
+    out = tmp_path / "b.cgarch"
+    writer.pack(source, out, passphrase="pw")
+
+    reader.restore(out, home, passphrase="pw")
+    con.close()
+
+    assert not (home / "chitragupta.db-wal").exists(), \
+        "a stale write-ahead log survived the restore"
+    fresh = sqlite3.connect(home / "chitragupta.db")
+    try:
+        assert fresh.execute("SELECT v FROM t").fetchone()[0] == "RESTORED", \
+            "the restore reported success and left the old data in place"
+    finally:
+        fresh.close()

@@ -38,3 +38,21 @@ between two near-identical names silently is a coin toss wearing a decision's
 clothes. A refusal always names the real options — "no" without them is an
 error the next attempt repeats.
 
+`exclusions.py` is the rule about what may **leave** this machine, and it sits
+here for the same reason `redact.py` does: redact decides what may be written to
+the database, this decides what may be read out of the home. **Unknown fails
+closed** — a file nobody classified is not archived, because the file that rule
+exists for is the credential a connector written later drops in the home.
+Databases are the one pattern-based exception (`*.db`), so a database added next
+year is in the backup without anyone remembering; `tests/test_archive.py` pins
+the known set.
+
+Its sharpest rule is about SQLite's **sidecars**. Every database here is WAL
+mode, so a home that has been open has a `-wal` and `-shm` beside each file.
+They are never archived — `VACUUM INTO` already writes a checkpointed
+standalone database — and `archive/reader._clear_sidecars` removes a stale one
+before the restored file is used. Leaving it shipped the worst failure this
+feature has: SQLite applied the old log on the next open, so a fresh read
+after a successful restore returned **the old rows**, with the app reporting
+success. Found by running the real server; every `tmp_path` test passed
+throughout, because none of them opened a database in WAL mode.

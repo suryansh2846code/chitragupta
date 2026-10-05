@@ -246,6 +246,31 @@
     </div>
   </div>
 
+  <!-- ── Modal: the recovery code, shown exactly once ───────────────────── -->
+  <!-- There is deliberately no way to reopen this. The code is generated,
+       handed over and forgotten — only its wrap is kept (`archive/identity.py`)
+       — so no endpoint could serve it a second time. Hence the close button is
+       "I have saved it" and nothing else: a plain dismiss would let somebody
+       lose their only way past a forgotten passphrase in one click. -->
+  <div id="bkCodeModal" class="modal-bg" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="bkCodeTitle">
+      <div class="modal-head"><b id="bkCodeTitle">Your recovery code</b></div>
+      <div class="modal-body" style="padding:16px 18px;display:flex;flex-direction:column;gap:12px">
+        <p class="model-hint" style="margin:0">
+          Keep this somewhere safe and private. It is the only way into your
+          backups if you forget your passphrase, and <b>it cannot be shown
+          again</b>. If you lose both, nobody can open your backups —
+          including us.
+        </p>
+        <code id="bkCodeValue" class="bk-code"></code>
+      </div>
+      <div class="modal-foot">
+        <button id="bkCodeCopy" class="ghost tiny">Copy</button>
+        <button id="bkCodeDone" class="tiny">I have saved it</button>
+      </div>
+    </div>
+  </div>
+
   <!-- ── Modal: Agent Model Binding Popover/Dialog ──────────────────────── -->
   <div id="agentModelModal" class="modal-bg" hidden>
     <div class="modal agent-model-card" role="dialog" aria-modal="true" aria-labelledby="ammTitle">
@@ -539,6 +564,7 @@
       <div class="ms-nav-label">Settings</div>
       <nav class="ms-nav-list">
         <button class="ms-nav-item" data-msnav="account"><span class="ms-nav-ic" aria-hidden="true"></span><span>Account</span></button>
+        <button class="ms-nav-item" data-msnav="backup"><span class="ms-nav-ic" aria-hidden="true"></span><span>Backup</span></button>
         <button class="ms-nav-item" data-msnav="connectors"><span class="ms-nav-ic" aria-hidden="true"></span><span>Connectors</span></button>
         <button class="ms-nav-item is-active" data-msnav="model" aria-current="page"><span class="ms-nav-ic" aria-hidden="true"></span><span>Model</span></button>
         <!-- Leaves the app rather than showing a panel, so it is last and it
@@ -817,6 +843,19 @@
       </section>
     </div>
 
+    <!-- Backup and recovery. The body is rendered by `backup.js` into #bkBody
+         rather than written here, because every section of it depends on
+         server state: whether backup has been set up, what is being withheld,
+         and which backups already exist. The code modal lives here, not in
+         that file, because `app.js` binds the Escape handler and the focus
+         observer to every `.modal-bg` once at load — an overlay injected later
+         opens without focus and never closes on Escape. -->
+    <div class="ms-body sp" data-sp="backup" hidden>
+      <h1 class="ms-h1">Backup &amp; recovery</h1>
+      <p class="ms-sub" style="margin-bottom:26px">One encrypted file holds everything your agents know. Keep it anywhere — it is unreadable without your passphrase.</p>
+      <div id="bkBody"></div>
+    </div>
+
     <div class="ms-body sp" data-sp="model" hidden>
       <h1 class="ms-h1">Models</h1>
 
@@ -1083,6 +1122,10 @@
   <script src="/static/browser.js"></script>
   <script src="/static/webscreen.js"></script>
   <script src="/static/automations.js"></script>
+  <!-- Before `app.js`, which routes the Backup nav item to
+       `openBackupScreen`. Needs `core.js` for `api`/`esc`/`toast` and
+       `models.js` for `showSettingsPanel`. -->
+  <script src="/static/backup.js"></script>
   <script src="/static/appearance.js"></script>
   <!-- After `tools.js` and `appearance.js`: the profile composes their
        renderers rather than carrying copies of them. Before `app.js`, which

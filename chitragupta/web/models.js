@@ -1012,6 +1012,7 @@ document.querySelectorAll(".ms-nav-item").forEach((b) => {
     const to = b.dataset.msnav;
     if (to === "model") return openModelScreen();
     if (to === "account") return openAccountScreen();
+    if (to === "backup") return openBackupScreen();
     if (to === "connectors") return openConnectorsScreen();
     if (to === "inbox") return openInboxScreen();
     if (to === "actions") return openActionsScreen();
