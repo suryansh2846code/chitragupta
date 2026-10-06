@@ -122,6 +122,11 @@ try {
     reachable: CONTROLS.filter((c) => !hidden(nodes[c.owner])).map((c) => c.name),
     // And the same question for assistive tech, which reads `aria-hidden`.
     exposed: Object.keys(nodes).filter((k) => nodes[k].getAttribute("aria-hidden") !== "true"),
+    // The classes on `.stage`, because **they are what the eyes see**: every
+    // pane's visibility is a CSS rule keyed on one of them. `inert` governs the
+    // tab order and nothing else, so a harness that reported only `reachable`
+    // watched two screens draw on top of each other and called it green.
+    stageClasses: [...stage.classList._set].sort(),
     current: ["stepConnect", "stepBuild", "stepBrain"]
       .filter((s) => nodes[s].getAttribute("aria-current") === "step"),
     active: ["stepConnect", "stepBuild", "stepBrain"]

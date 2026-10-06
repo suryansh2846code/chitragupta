@@ -190,10 +190,13 @@ Chitragupta does with the data and that it stays on the machine.
   newer release, and links to it. It does **not** install anything — replacing
   a signed, notarised app needs Sparkle, an EdDSA key and changes to
   `build-dmg.sh`, and a half-built auto-updater is worse than a link.
-  **`CHITRAGUPTA_UPDATE_FEED` ships empty**, so a build with no feed never
-  makes a request and the screen says so rather than offering a dead button.
-  Point it at a JSON appcast (`{"releases": [{"version", "url", "notes",
-  "published"}]}`) to turn it on.
+  The feed is **live** at <https://chitragupta-bf7.pages.dev/appcast.json> and
+  is the default in `config.py` — a default rather than an env var, because a
+  frozen `.app` reads no `.env` and so never sees one. `CHITRAGUPTA_UPDATE_FEED`
+  overrides it; `""` turns the check off for a build entirely, at which point no
+  request is made at all and the screen says so rather than offering a dead
+  button. The file itself is in [`appcast/`](../appcast/README.md), in the repo
+  so that what is published is version-controlled.
   The check is also the only answer this app has to *"how many people use
   this"* — once a day per install with **no identifier**, so request volume is
   an active-install count and nothing can profile anybody. That is the whole

@@ -11,33 +11,35 @@ typed into a dashboard and forgotten.
 
 ---
 
-## Deploying it
+## Where it is deployed
 
-**Cloudflare Pages**, the whole of it:
+**Live at <https://chitragupta-bf7.pages.dev/appcast.json>**, on Cloudflare
+Pages, and that URL is the **default** in `config.py`.
 
-1. Cloudflare dashboard → **Workers & Pages** → **Create** → **Pages** →
-   **Upload assets**
-2. Drag **this folder** in. Name it, **Deploy**.
-3. Open `https://<name>.pages.dev/appcast.json` to confirm it serves.
-4. That URL becomes `CHITRAGUPTA_UPDATE_FEED` — see *Turning it on* below.
+A default rather than an environment variable, because a shipped `.app` reads no
+`.env`: `config.py::uses_dotenv()` returns false when `sys.frozen` is set, and
+deliberately so — a bundle's cwd is `/`, and a bare `load_dotenv()` would read
+whatever `~/.env` the user happened to have lying around. Anything not defaulted
+in `config.py` therefore never reaches a real build. A feed URL is not a secret,
+so this costs nothing.
 
-Any static host works. R2 is the better choice if the `.dmg` files will live
-beside it: no egress fees, which is what a download costs.
+`CHITRAGUPTA_UPDATE_FEED` still overrides it — point a dev build somewhere else,
+or set it to `""` to turn the check off for a build entirely, at which point
+`updates.py` makes no request at all and the Version section says so rather than
+offering a button that 404s.
 
-Re-deploying is the same drag. There is nothing to build.
+## Re-deploying
 
-## Turning it on
+Cloudflare dashboard → **Workers & Pages** → the `chitragupta-bf7` project →
+**Create deployment** → drag this folder in. There is nothing to build.
 
-`CHITRAGUPTA_UPDATE_FEED` ships **empty**, so a build with no feed makes no
-request at all and the Version section says so rather than offering a button
-that 404s.
+Note that the site has **no `index.html`** — only `appcast.json` is published,
+on purpose, because a Pages project serves a folder's whole contents and
+anything else in here would become a public URL. So the site **root 404s**, and
+that is correct: `/appcast.json` is the only thing meant to exist.
 
-* **Development** — `CHITRAGUPTA_UPDATE_FEED=https://…/appcast.json` in `.env`.
-* **A shipped `.app`** — a `.env` is **not read**: `config.py::uses_dotenv()`
-  returns false when `sys.frozen` is set, deliberately, because a bundle's cwd
-  is `/` and a bare `load_dotenv()` would read whatever `~/.env` the user
-  happened to have. So the shipped value has to be the **default in
-  `config.py`**. That is fine — a feed URL is not a secret.
+R2 is the better host if the `.dmg` files ever live beside the feed: no egress
+fees, which is what a download actually costs.
 
 ## Adding a release
 

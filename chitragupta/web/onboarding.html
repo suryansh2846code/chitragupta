@@ -75,6 +75,21 @@
   /* HERO content */
   .hero{position:absolute;inset:0;z-index:4;display:flex;align-items:center;padding:0 44px;transition:opacity .5s ease}
   .stage.on .hero{opacity:0;pointer-events:none}
+  /* The account screen, which comes BEFORE the hero.
+     It needs a class of its own rather than reusing `.hero`: every `.hero` is
+     visible whenever the stage lacks `.on`, so sharing the class drew both at
+     once, letterbox-stacked — "Make your account." over "Your world,
+     oriented." `setLive` could not have prevented that, because `inert` takes a
+     pane out of the tab order and leaves it on screen. Visibility here is CSS
+     and nothing else, which is why no `tests/js/` harness saw it. */
+  .acct{position:absolute;inset:0;z-index:5;display:flex;align-items:center;padding:0 44px;opacity:0;pointer-events:none;transition:opacity .5s ease}
+  .stage.account .acct{opacity:1;pointer-events:auto}
+  /* And the hero waits its turn. Its furniture goes with it — a counter
+     reading "0 memories" belongs to the screen about building a brain, not to
+     the one asking who you are. */
+  .stage.account .hero,
+  .stage.account .stats,
+  .stage.account .bot{opacity:0;pointer-events:none}
   .lead{width:min(560px,50%);display:flex;flex-direction:column;gap:20px}
   .eyebrow{font-size:11px;letter-spacing:.34em;text-transform:uppercase;color:var(--north)}
   .lead h1{margin:0;font-family:var(--sans);font-weight:500;font-size:clamp(40px,6vw,76px);line-height:.98;letter-spacing:-.03em}
@@ -321,10 +336,10 @@
        decision recorded in `/CLAUDE.md` and `docs/ACCOUNTS-DESIGN.md` §0. The
        one way past it without signing in is a build that *cannot* sign in (no
        OAuth client configured) — a gate with no possible key is a bricked app,
-       not a strict one, so `acGate` opens itself and says why.
+       not a strict one, so `acoLoad` opens the gate itself and says why.
        `#skipTop` is inert here for the same reason: it leads straight into the
        workspace, which would be the skip this screen is not supposed to have. -->
-  <div class="hero" id="paneAccount"><div class="lead">
+  <div class="acct" id="paneAccount"><div class="lead">
     <div class="eyebrow">Step one</div>
     <h1><span class="l1">Make your</span><span class="l2">account.</span></h1>
     <p class="sub" id="acoSub">One account keeps your backups together, so a new
@@ -576,6 +591,10 @@
         // no way past it. `accountDone` is set by signing in, or by discovering
         // that this build cannot sign in at all.
         account=!on&&!accountDone;
+    // `inert` hides a pane from the keyboard; **the class is what hides it from
+    // the eyes.** Both are needed, and only the second was missing the first
+    // time: the account screen and the hero drew on top of each other.
+    stage.classList.toggle("account",account);
     setLive(pane("paneAccount"),account);
     setLive(pane("paneHero"),!on&&accountDone);
     setLive(pane("paneConnect"),connecting);
