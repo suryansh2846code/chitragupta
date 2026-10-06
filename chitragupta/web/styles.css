@@ -3689,6 +3689,66 @@ button.tiny.running:hover { background: linear-gradient(to right,
 .ac-live { margin-top: var(--ac-tight); }
 .ac-live .ac-row { margin: 2px 0; }
 
+/* ── Backup & recovery ─────────────────────────────────────────────────── */
+/* The screen is `backup.js`; the inputs and buttons are the existing
+   `.ctx-input` / `.ctx-label` / `button.tiny` so this page reads as the same
+   product as the model and connector screens. Only the five things that have
+   no precedent are defined here. */
+
+.bk-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+/* A list of names-with-reasons: what a backup withholds, what to reconnect,
+   which backups exist. Rows rather than bullets — the disc glyph adds nothing
+   when every line starts with a `<code>`. */
+.bk-list { list-style: none; margin: 10px 0 0; padding: 0;
+  display: flex; flex-direction: column; gap: 6px; }
+.bk-list li { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;
+  font-size: 13px; color: var(--muted); }
+.bk-list code { font-family: var(--mono); font-size: 12px; color: var(--text); }
+
+/* The standing warning that a recovery code was never saved. Amber, not red:
+   nothing is broken, and the user still has a working passphrase — it is a
+   weaker position than they think they are in, which is a different message
+   from a failure. */
+.bk-warn { border: 1px solid var(--warn); border-radius: 10px;
+  background: color-mix(in srgb, var(--warn) 10%, transparent);
+  padding: 12px 14px; margin-bottom: 28px; font-size: 13px; line-height: 1.55; }
+.bk-warn strong { display: block; margin-bottom: 4px; color: var(--text); }
+
+.bk-progress { margin-top: 14px; }
+.bk-bar { height: 6px; border-radius: 3px; background: var(--panel-2);
+  overflow: hidden; }
+.bk-bar-fill { height: 100%; width: 0; border-radius: 3px;
+  background: var(--accent); transition: width .25s ease; }
+
+/* A phase with no countable total (compressing, writing) gets a moving stripe
+   instead of a bar pinned at 0%, which reads as stuck. `Progress.fraction`
+   returns 0.0 for exactly this case rather than inventing a percentage, so the
+   honesty is in the data and this is only how it looks. */
+.bk-bar-fill.is-indeterminate {
+  background: linear-gradient(90deg,
+    transparent 0%, var(--accent) 50%, transparent 100%);
+  background-size: 40% 100%; background-repeat: no-repeat;
+  transition: none; animation: bk-sweep 1.1s linear infinite; }
+@keyframes bk-sweep {
+  from { background-position: -40% 0; }
+  to   { background-position: 140% 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bk-bar-fill.is-indeterminate { animation: none;
+    background: var(--accent); opacity: .5; }
+}
+
+.bk-inspected { margin-top: 16px; padding-top: 14px; }
+
+/* The recovery code itself. Monospace and spaced out because it is read off a
+   screen and typed somewhere else, and selectable because copying it by hand
+   has to work when the clipboard API is refused. */
+.bk-code { display: block; font-family: var(--mono); font-size: 15px;
+  letter-spacing: .06em; line-height: 1.8; word-break: break-all;
+  user-select: all; background: var(--panel-2); color: var(--text);
+  border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px;
+  text-align: center; }
 /* ── locked until a future update ──────────────────────────────────────────
    One class for every control that is drawn but not built yet, driven by
    `data-soon` in the markup and `markSoon()` in core.js. It has to read as
@@ -3730,3 +3790,10 @@ button.tiny.running:hover { background: linear-gradient(to right,
   mask: var(--soon-lock) center / contain no-repeat;
   pointer-events: none;          /* the click belongs to the button, not the badge */
 }
+
+/* A path field with a Choose button beside it. The button only exists in the
+   desktop app (`bkCanPickFile`), so the row has to look right with one child
+   and with two. */
+.bk-pathrow { display: flex; align-items: center; gap: 8px; }
+.bk-pathrow .ctx-input { flex: 1; min-width: 0; }
+.bk-pathrow button { flex: none; white-space: nowrap; }

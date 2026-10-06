@@ -44,7 +44,7 @@ function applyIcons() {
   // an empty 18px slot and its label sits out of line with every other one —
   // the `|| ""` fallback makes a missing icon silent, so it has to be mapped
   // rather than noticed later.
-  const MS_IC = { onboarding: "help" };
+  const MS_IC = { onboarding: "help", backup: "archive" };
   document.querySelectorAll(".ms-nav-item").forEach((b) => {
     const el = b.querySelector(".ms-nav-ic"); if (!el) return;
     const key = b.dataset.msnav;

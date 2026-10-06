@@ -46,7 +46,7 @@ read, and gives you a team rather than a single chatbot:
 | 🧠 **One brain, many agents** | Memories *and* an entity/relation graph, built locally from your own sources. Every agent reads the same one, so you explain yourself once. |
 | 🔌 **Bring your own model** | Claude, GPT, Gemini, Grok, DeepSeek, OpenRouter, local Ollama — or a plan you already pay for. Swap any time; a stored model id is re-checked before use, never trusted. |
 | ✋ **It asks before it acts** | Reading is free. Anything that leaves your machine stops at a card you can read, correct and confirm — or a queue, if an agent proposed it while you were away. |
-| 🔒 **Local-first, no telemetry** | Everything in `~/Library/Chitragupta`. No cloud copy, no account, no analytics. Works offline with zero keys. |
+| 🔒 **Local-first, no analytics** | Everything in `~/Library/Chitragupta`. No cloud copy, no account, no tracking. Works offline with zero keys. The one request it ever makes to us is a daily check for a newer version — your app version, your macOS version, and Apple silicon or Intel. No identifier, so it cannot count you twice or follow you between releases, and you can turn it off. |
 
 ---
 

@@ -18,6 +18,7 @@ from fastapi import APIRouter
 from . import (
     agents,
     automations,
+    backup,
     brain,
     browser,
     connector_health,
@@ -26,6 +27,7 @@ from . import (
     messages,
     providers,
     sync,
+    updates,
     workspace,
 )
 
@@ -51,6 +53,10 @@ ALL_ROUTERS: tuple[APIRouter, ...] = (
     messages.router,
     diagnostics.router,
     browser.router,
+    # All literal paths (`/api/backup/...`, `/api/updates/...`), so order
+    # against the others does not matter; mounted last as the newest surfaces.
+    backup.router,
+    updates.router,
 )
 
 __all__ = ["ALL_ROUTERS"]

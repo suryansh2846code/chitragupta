@@ -19,9 +19,11 @@
 A local-first agent workspace. A team of agents share one on-device brain built
 from the user's own connected sources, running on whatever model the user
 already pays for. Everything stays on the machine: one FastAPI server bound to
-loopback, one SQLite file for the raw index and another for curated facts, and
-either a browser tab (`chitragupta serve`) or a native macOS window
-(`chitragupta app`) in front of it.
+loopback, eleven SQLite files in one home directory, and either a browser tab
+(`chitragupta serve`) or a native macOS window (`chitragupta app`) in front of
+it. The raw index and the curated facts are two of those files; agents,
+actions, tasks, metrics, reminders, messages, connectors, routines and
+automation own the other nine.
 
 Two consequences shape every boundary below:
 
@@ -44,6 +46,7 @@ where today's code does not yet match it.
 | **agents** | `chitragupta/agents/` | agent execution, the tool loop, conversation memory, effort, delegation, planning, approvals and the unattended-action gate | which model to *offer*; how a provider authenticates |
 | **models** | `chitragupta/models/` | providers, model discovery and entitlements, provider configuration, authentication flows, the vendor-CLI manager, the error taxonomy, streaming wire formats | brain content, agent policy, HTTP routing |
 | **connectors** | `chitragupta/connectors/` | external integrations, ingestion, sync lifecycle and cancellation, the MCP client | how ingested text is scored or recalled |
+| **archive** | `chitragupta/archive/` | backup and restore of the whole home: what may leave the machine, the encrypted archive format, the master key, and the one-at-a-time job | what a restored database *means* — re-running migrations and re-embedding belong to the caller |
 | **api** | `chitragupta/api/` | the HTTP boundary: routing, request/response translation, the origin guard, the concurrency lanes, static assets | business logic of any kind; native window behaviour |
 | **desktop** | `desktop.py`, `hud.py` | the native macOS window, port reservation, the sign-in HUD, vendor-login process reaping | HTTP routes, provider logic |
 | **web** | `chitragupta/web/` | browser UI, presentation, browser-side state | anything the server can decide |
@@ -77,32 +80,36 @@ Allowed direction, top to bottom. **An arrow may never be reversed.**
                  cli.py  ·  desktop.py → hud.py          entry points
                     │            │
                     ▼            ▼
-                api/app.py  ──►  api/routes/{6}          HTTP boundary
+                api/app.py  ──►  api/routes/…          HTTP boundary
                                    │
-          ┌────────────┬───────────┼───────────┬──────────────┐
-          ▼            ▼           ▼           ▼              ▼
-       agents/      models/      brain/    connectors/   workspace features
-          │            │           │           │          (actions, routines,
-          │            │           │           │           tasks, scheduler…)
-          │            │           │           │                 ▲
-          │            │           │           │          automation/ — above
-          │            │           │           │          agents/, below api/;
-          │            │           │           │          its durable state is
-          │            │           │           │          in core/
-          └────────────┴─────┬─────┴───────────┘
-                             ▼
-                          core/                            storage
-                             │
-                             ▼
-                   config.py · log.py                      leaf utilities
+ ┌───────────┬───────────┬─────────┴─┬───────────┬──────────────┐
+ ▼           ▼           ▼           ▼           ▼              ▼
+ archive/    agents/     models/     brain/      connectors/    workspace
+ │           │           │           │           │              features
+ │           │           │           │           │              (actions,
+ │           │           │           │           │               routines,
+ │           │           │           │           │               tasks …)
+ │           │           │           │           │                 ▲
+ │           │           │           │           │          automation/ — above
+ │           │           │           │           │          agents/, below api/;
+ │           │           │           │           │          its durable state is
+ │           │           │           │           │          in core/
+ └───────────┴───────────┴─────┬─────┴───────────┘
+                               ▼
+                            core/                        storage
+                               │
+                               ▼
+                     config.py · log.py                  leaf utilities
 ```
 
 **The rules that follow from it:**
 
 1. `core/` depends on nothing above it. It is the bottom.
-2. `brain/`, `models/`, `connectors/` are **siblings and do not import each
-   other**, with one sanctioned exception: a connector writes what it ingests
-   through `brain.ingest()`.
+2. `brain/`, `models/`, `connectors/` and `archive/` are **siblings and do not
+   import each other**, with one sanctioned exception: a connector writes what
+   it ingests through `brain.ingest()`. `archive/` has no exception — it
+   restores *files*, and `api/routes/backup.py` is the seam that then asks
+   `brain/` to migrate and re-embed them.
 3. `agents/` may depend on `brain/` and `models/` — it composes them. Neither
    may depend on `agents/`.
 4. `api/` may depend on anything below it and **nothing may depend on `api/`**
