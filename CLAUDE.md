@@ -111,7 +111,14 @@ installed this" disagree, choose the second and make it correct underneath.
 - **Never lose the user's state to our mistakes.** A retired model id is
   repaired, not fatal. An unusable connection is reported, not dropped.
 - **Assume nothing is installed and nothing is configured.** First launch, no
-  keys, no CLIs, no accounts — it must still open and explain itself.
+  keys, no CLIs — it must still open and explain itself. **One exception, added
+  deliberately on 2026-10-06: making an account is the first screen of
+  onboarding and has no skip.** Everything *after* that screen still holds the
+  rule, and the account screen itself may never become a trap — a build with no
+  OAuth client, or an unreachable `/api/account/state`, passes the user straight
+  through, because a gate whose key does not exist is a bricked app rather than
+  a strict one (`tests/test_onboarding_account.py`). The cost is real and was
+  accepted: a first run with no network cannot get past screen one.
 
 When in doubt: would a non-technical user understand what just happened, and
 what to do next? If not, it is not finished.
@@ -556,6 +563,12 @@ Many users, many machines. Do not bake in anything specific to one of either.
   chat. Everything else is a full-screen surface. **Keep every element id** —
   `app.js` injects into many of them.
 - **Every left-nav item opens a screen.** There is no slide-over drawer.
+- **Onboarding is Account → Hero → Connect → Build → Your Brain.** The account
+  screen is first and is the only one with no way around it; `skipTop` is inert
+  there, because it enters the workspace and would be exactly the skip that
+  screen is not supposed to have. The rule that *a way out exists on every
+  screen* was narrowed to "after the account step" rather than deleted — see
+  `tests/test_onboarding_flow.py`, which says so where somebody would read it.
 - **No emoji, and no dingbat doing an icon's job.** `IC` in `web/core.js` is the
   icon set; an emoji is a colour font that ignores `currentColor`, so it can
   never take the accent. Arrows inside sentences are typography, not icons.
@@ -630,7 +643,7 @@ In order: **the focused test → the subsystem's suite → `pytest` →
 `ruff check chitragupta tests` → `mypy chitragupta` → the `tests/js/` harnesses if
 the frontend changed → `chitragupta app` opens and renders.**
 
-Baseline, measured 2026-10-06: **6743 passed, 35 skipped in ~8min21**, ruff
+Baseline, measured 2026-10-06: **6758 passed, 35 skipped in ~8min23**, ruff
 clean, mypy clean over 249 files. **The count is the number to compare against,
 never the clock** — the same suite took 11min10 earlier the same day while it
 shared the machine with another session's run. See the shared-machine rules at

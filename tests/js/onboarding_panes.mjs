@@ -2,7 +2,7 @@
  * Run the onboarding's pane switching and report WHAT IS REACHABLE on each
  * screen.
  *
- * The four screens are layered, not switched: each is `position:absolute;
+ * The five screens are layered, not switched: each is `position:absolute;
  * inset:0` and is hidden with `opacity:0; pointer-events:none`. That hides a
  * screen from the eyes and from the mouse and from nothing else — `Tab` still
  * walks every control on every screen. On the finale, five of seven tab stops
@@ -13,7 +13,8 @@
  * touches, and this file reports the tab order the way a keyboard sees it.
  *
  * argv: <path to onboarding.html>
- * stdin: { stages: ["on","building"], inertSupported: true }
+ * stdin: { stages: ["on","building"], inertSupported: true,
+ *          accountDone: true }   // false = the account screen, which is first
  */
 import fs from "node:fs";
 
@@ -58,6 +59,7 @@ function el(id, { focusable = false } = {}) {
 // pane whose reachability governs the control, exactly as the browser applies
 // `inert` down a subtree.
 const nodes = {
+  paneAccount: el("paneAccount"),
   paneHero: el("paneHero"),
   paneConnect: el("paneConnect"),
   paneBuild: el("paneBuild"),
@@ -73,6 +75,11 @@ const nodes = {
 //: What a keyboard would reach, and which pane governs each one. The two that
 //: matter most: `buildBtn` erases the brain, and `toBrain` finishes onboarding.
 const CONTROLS = [
+  // The account screen's sign-in buttons are rendered into `#acoButtons` by
+  // `acoRender`, which this harness does not run — but reachability is governed
+  // by the pane either way, exactly as the browser applies `inert` down a
+  // subtree.
+  { name: "acoButtons", owner: "paneAccount" },
   { name: "buildBtn", owner: "paneHero" },
   { name: "sourceTile", owner: "paneConnect" },
   { name: "continue", owner: "continue" },
@@ -96,9 +103,16 @@ let result = null;
 try {
   const make = new Function(
     "document", "stage", "redraw", "HTMLElement",
-    block + "\nreturn { syncPanes: syncPanes, setStage: setStage, setLive: setLive };");
+    // `passAccount` reaches `accountDone`, which is a `var` inside the sliced
+    // block. Harness-side on purpose: the page has no reason to expose it, and
+    // a setter added to production code for a test is a seam nobody asked for.
+    block + "\nreturn { syncPanes: syncPanes, setStage: setStage, setLive: setLive,"
+          + " passAccount: function(v){ accountDone = (v !== false); } };");
   const api = make(document, stage, () => redrawn.push(1), HTMLElement);
 
+  // Default true, so every existing scenario still describes the screens AFTER
+  // the account step — which is what they were written about.
+  api.passAccount(plan.accountDone !== false);
   api.setStage(plan.stages || []);
 
   const hidden = (n) => (INERT_SUPPORTED ? n.inert === true : n.style.visibility === "hidden");

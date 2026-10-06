@@ -101,12 +101,17 @@ def test_the_hint_names_everything_that_is_missing():
 
 
 # ── what a keyboard can reach on each screen ────────────────────────────────
-def panes(stages: list[str], inert_supported: bool = True) -> dict:
+def panes(stages: list[str], inert_supported: bool = True,
+          account_done: bool = True) -> dict:
     return _run("onboarding_panes.mjs",
-                {"stages": stages, "inertSupported": inert_supported})
+                {"stages": stages, "inertSupported": inert_supported,
+                 "accountDone": account_done})
 
 
 #: Which screen is live → the only controls a keyboard may land on.
+#:
+#: Every entry here is a screen *after* the account step, which is why they pass
+#: `accountDone`. The account screen is first and is covered on its own below.
 REACHABLE = {
     ("hero", ()): {"buildBtn", "skipTop"},
     ("connect", ("on",)): {"sourceTile", "continue", "skipTop"},
@@ -129,6 +134,40 @@ def test_only_the_live_screen_is_reachable(name, stages):
         f"on the {name} screen a keyboard reaches {sorted(out['reachable'])}")
 
 
+# ── the account screen, which is now the first one ──────────────────────────
+
+def test_the_account_screen_is_the_first_one():
+    """Making an account is step one — a deliberate product decision, recorded
+    in `/CLAUDE.md` and `docs/ACCOUNTS-DESIGN.md` §0. Before it, the hero was
+    first and `#buildBtn` — which **erases the brain** — was the first control a
+    keyboard could reach on a fresh install."""
+    out = panes([], account_done=False)
+    assert set(out["reachable"]) == {"acoButtons"}
+    assert "buildBtn" not in out["reachable"], \
+        "the brain-erasing button is reachable on the very first screen"
+
+
+def test_the_account_screen_has_no_way_around_it():
+    """The decision this screen exists to carry: signing in is the way past it.
+
+    `#skipTop` enters the workspace, so leaving it live here would be exactly
+    the skip this screen is not supposed to have.
+    """
+    assert "skipTop" not in panes([], account_done=False)["reachable"]
+
+
+def test_passing_the_account_step_hands_over_to_the_hero():
+    before = panes([], account_done=False)["reachable"]
+    after = panes([], account_done=True)["reachable"]
+    assert "acoButtons" in before and "buildBtn" not in before
+    assert "buildBtn" in after and "acoButtons" not in after
+
+
+def test_the_account_screen_is_hidden_from_assistive_tech_once_passed():
+    assert "paneAccount" not in panes([], account_done=True)["exposed"]
+    assert "paneAccount" in panes([], account_done=False)["exposed"]
+
+
 def test_the_reset_button_is_gone_once_onboarding_has_started():
     """Stated on its own, because it is the one with teeth."""
     for stages in (["on"], ["on", "building"], ["on", "brainready"]):
@@ -149,10 +188,18 @@ def test_visibility_is_the_fallback_where_inert_is_unsupported():
     assert set(out["reachable"]) == {"toBrain"}
 
 
-def test_a_way_out_exists_on_every_screen_before_the_handover():
+def test_a_way_out_exists_on_every_screen_after_the_account_step():
     """`Skip for now` used to disappear the instant `.stage.on` was set, which
     left the connect screen with no exit at all — and the build screen's own
-    "Continue anyway" is 150 seconds away."""
+    "Continue anyway" is 150 seconds away.
+
+    **Narrowed, not weakened.** The rule used to read "every screen before the
+    handover" and now reads "every screen after the account step", because
+    making an account became step one. The account screen's own way through is
+    signing in — and when a build genuinely *cannot* sign in, it opens itself
+    rather than trapping anybody; that is
+    `tests/test_onboarding_account.py::test_a_build_that_cannot_sign_in_does_not_trap_the_user`.
+    """
     assert "skipTop" in panes([])["reachable"]
     assert "skipTop" in panes(["on"])["reachable"]
     assert {"cancel", "bSkip"} <= set(panes(["on", "building"])["reachable"])

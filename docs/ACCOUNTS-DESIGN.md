@@ -8,9 +8,11 @@ RFC 8252's loopback+PKCE flow runs entirely on-device (`chitragupta/account/`).
 verified domain. Neither is anything that *enforces* a plan: local identity
 tells you who signed in, and a server is what would make that binding.
 
-**Decided** (2026-10-06): sign-in is **skippable**, **one Mac per licence**,
-local backup **free** and hosted backup **paid**, and **no money yet** — ship,
-count users, price later.
+**Decided** (2026-10-06): account creation is the **first onboarding screen
+with no skip** (§0 — this reverses the skippable position below), **one Mac per
+licence** (recorded, not enforceable without a server), local backup **free**
+and hosted backup **paid**, and **no money yet** — ship, count users, price
+later.
 **Written:** 2026-10-05, Phase 1 landed 2026-10-06. **Mode:** DESIGN.
 **Prerequisite reading:** [`AUTH-ANALYSIS.md`](AUTH-ANALYSIS.md) — why this is
 three systems, not one.
@@ -35,10 +37,18 @@ A **mandatory** login screen breaks that invariant, and with it the offline
 promise — an app that cannot open on a plane is not local-first. The rest of
 this design therefore assumes:
 
-> **Sign-in is offered at first launch and skippable.** "Continue without an
-> account" keeps everything local and free. The account unlocks cloud backup,
-> cross-machine recovery, and paid plans — nothing else. No local feature ever
-> checks for a session.
+> **Making an account is the first screen of onboarding, and it has no skip.**
+> Decided 2026-10-06, reversing the skippable position this section argued for.
+> The account unlocks cloud backup and cross-machine recovery; **no local
+> feature ever checks for a session**, which is the half of the original design
+> that survives intact and is enforced by a test that walks the source.
+
+The invariant in `/CLAUDE.md` was edited in the same commit, as a change of this
+kind requires. What was traded away is stated plainly rather than buried: **a
+first run with no network cannot get past screen one.** What was kept is that
+the screen can never *trap* anybody — a build with no OAuth client, or an
+unreachable account endpoint, passes the user through, because a gate whose key
+does not exist is a bricked app rather than a strict one.
 
 That gives you the full account system you asked for and keeps the invariant.
 **If you want sign-in to be mandatory instead, that is your call to make** — but
