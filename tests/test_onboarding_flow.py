@@ -441,3 +441,43 @@ def test_there_is_exactly_one_onboarding():
     index = (WEB / "index.html").read_text()
     for dead in ("openOnboard", "obSkip", "obDone", "obGoogle", "obFact"):
         assert f'"#{dead}"' not in ws and f'id="{dead}"' not in index, dead
+
+
+# ── what the EYES see, which `inert` does not govern ────────────────────────
+
+def test_the_stage_says_when_the_account_screen_is_up():
+    """Every pane's visibility is a CSS rule keyed on a `.stage` class.
+
+    `setLive` only sets `inert`, which takes a pane out of the tab order and
+    leaves it **on screen** — so without this class the account screen and the
+    hero drew stacked on top of each other, and every harness stayed green
+    because a fake DOM has no opacity.
+    """
+    assert "account" in panes([], account_done=False)["stageClasses"]
+    assert "account" not in panes([], account_done=True)["stageClasses"]
+    assert "account" not in panes(["on"])["stageClasses"]
+
+
+def test_the_account_screen_does_not_share_the_heros_class():
+    """The bug itself, as a source check.
+
+    `.hero` is visible whenever the stage lacks `.on`, so two elements with that
+    class are two screens drawn at once. This is the one assertion that would
+    have caught it.
+    """
+    page = PAGE.read_text()
+    start = page.index('id="paneAccount"')
+    tag = page[page.rindex("<", 0, start):page.index(">", start) + 1]
+    assert 'class="acct"' in tag, f"paneAccount's class changed: {tag}"
+    assert 'class="hero"' not in tag
+
+
+def test_the_hero_is_hidden_by_css_while_the_account_screen_is_up():
+    """And its furniture with it — a counter reading "0 memories" belongs to the
+    screen about building a brain, not to the one asking who you are."""
+    page = PAGE.read_text()
+    assert ".stage.account .acct{opacity:1" in page, \
+        "the account screen has no rule making it visible"
+    for hidden in (".stage.account .hero", ".stage.account .stats",
+                   ".stage.account .bot"):
+        assert hidden in page, f"{hidden} is not hidden during the account step"
