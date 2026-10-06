@@ -38,7 +38,7 @@ from typing import Any
 
 from ..core import exclusions
 from ..log import get_logger
-from . import crypto, progress
+from . import crypto, identity, progress
 
 log = get_logger(__name__)
 
@@ -55,7 +55,6 @@ class Packed:
     plaintext_bytes: int
     manifest: list[dict[str, Any]]
     withheld: dict[str, str]
-    recovery_code: str | None
 
     @property
     def summary(self) -> str:
@@ -185,46 +184,32 @@ def _size_of(path: Path) -> int:
     return path.stat().st_size
 
 
-def pack(home: Path, out: Path, passphrase: str, *,
-         recovery_code: str | None = None,
-         recovery_wrap: str | None = None,
-         master_key: bytes | None = None,
+def pack(home: Path, out: Path, keys: identity.Keyring, *,
          prog: progress.Progress | None = None) -> Packed:
     """Write an encrypted backup of `home` to `out`.
 
-    `passphrase` and the recovery code are two independent doors to the same
-    master key — see `crypto`. A fresh recovery code is generated unless one is
-    supplied, and it is returned **once**: it cannot be recovered from the
-    archive afterwards, by design.
+    Takes a `Keyring` rather than a passphrase, which is what lets the
+    scheduler write one with no secret from the user: the wraps were minted
+    from the passphrase at setup and are reused verbatim, so the archive is
+    still openable by the passphrase and the recovery code without either ever
+    being stored. See `identity`.
 
-    `master_key` and `recovery_wrap` let a later backup reuse the key *and the
-    recovery code* of an earlier one, so one passphrase and one code open every
-    generation. Pass both or neither: a wrap made against a different master
-    key unwraps to nothing, and an archive that advertises an unlock method
-    which cannot work is worse than one that admits it has only a passphrase.
-    Omit both for a first backup.
+    The master key, the salt and the wraps arrive as one object on purpose.
+    They are only meaningful together — a wrap made against a different master
+    key unwraps to nothing — and they used to be three optional arguments that
+    a guard had to catch being mismatched.
     """
-    if not passphrase:
-        raise crypto.WrongSecretError("a passphrase is required to encrypt a backup")
+    if not keys or not keys.wraps:
+        raise crypto.WrongSecretError("backup has not been set up on this Mac")
     home = Path(home)
     out = Path(out)
     if not home.is_dir():
         raise FileNotFoundError(f"no Chitragupta home at {home}")
 
     prog = prog or progress.inert()
-    if recovery_wrap and not master_key:
-        raise ValueError(
-            "a recovery wrap only unwraps the master key it was made for — "
-            "pass both or neither")
-    mk = master_key or crypto.new_key()
-    # A reused wrap means nothing new to show the user; a fresh one means a
-    # code they must be shown exactly once. `Packed.recovery_code` is how the
-    # caller tells those two cases apart.
-    code = None if recovery_wrap else (recovery_code or crypto.new_recovery_code())
-    wrapped_recovery = recovery_wrap or crypto.wrap(
-        crypto.derive_from_recovery_code(code or ""), mk, crypto.WRAP_RECOVERY)
+    mk = keys.master_key
     dek = crypto.new_key()
-    salt = crypto.new_salt()
+    salt = keys.salt
 
     with tempfile.TemporaryDirectory(prefix="chitragupta-backup-") as tmp:
         tmpdir = Path(tmp)
@@ -253,12 +238,9 @@ def pack(home: Path, out: Path, passphrase: str, *,
         header = crypto.Header(
             salt=crypto._b64(salt),
             wrapped_dek=crypto.wrap(mk, dek, crypto.WRAP_DEK),
-            wrapped_mk={
-                crypto.BY_PASSPHRASE: crypto.wrap(
-                    crypto.derive_from_passphrase(passphrase, salt), mk,
-                    crypto.WRAP_PASSPHRASE),
-                crypto.BY_RECOVERY: wrapped_recovery,
-            },
+            # Verbatim from the keyring. Re-deriving one would need the
+            # passphrase, which is exactly what is not here.
+            wrapped_mk=dict(keys.wraps),
             total_chunks=chunks,
             plaintext_sha256=digest,
             plaintext_bytes=plaintext_bytes,
@@ -287,7 +269,7 @@ def pack(home: Path, out: Path, passphrase: str, *,
     log.info("backup written: %s (%d bytes, %d item(s), %d withheld)",
              out.name, written, len(manifest), len(withheld))
     return Packed(path=out, bytes_written=written, plaintext_bytes=plaintext_bytes,
-                  manifest=manifest, withheld=withheld, recovery_code=code)
+                  manifest=manifest, withheld=withheld)
 
 
 def _sha256_of(path: Path) -> str:

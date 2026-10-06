@@ -1,7 +1,17 @@
 # Accounts, identity and recovery — design
 
-**Status:** design, not built. Nothing here is implemented.
-**Written:** 2026-10-05. **Mode:** DESIGN.
+**Status:** **Phase 1 is built** (§8) — the local encrypted archive, restore,
+the native file picker, and automatic backups. **Google sign-in is built** too,
+and needed no server after all: §2's constraint is Apple's, not Google's, and
+RFC 8252's loopback+PKCE flow runs entirely on-device (`chitragupta/account/`).
+**Apple and Microsoft are not built**, and Apple still cannot be without a
+verified domain. Neither is anything that *enforces* a plan: local identity
+tells you who signed in, and a server is what would make that binding.
+
+**Decided** (2026-10-06): sign-in is **skippable**, **one Mac per licence**,
+local backup **free** and hosted backup **paid**, and **no money yet** — ship,
+count users, price later.
+**Written:** 2026-10-05, Phase 1 landed 2026-10-06. **Mode:** DESIGN.
 **Prerequisite reading:** [`AUTH-ANALYSIS.md`](AUTH-ANALYSIS.md) — why this is
 three systems, not one.
 
@@ -430,12 +440,20 @@ Non-negotiable rules for the client:
 Each phase is independently shippable. **Phase 1 ships before any server
 exists** and is the one users are hurt by today.
 
-**Phase 1 — local archive, no account, no backend.**
-The export/import format, Tier 0 stripping, `VACUUM INTO` snapshotting,
-encryption with a passphrase, restore + `run_migrations()` + re-embed, and the
-reconnect checklist. Users get real recovery immediately by putting one file in
-iCloud Drive. **Everything hard about the data is solved here**, and solved
-without a privacy surface. Phase 3 only adds transport.
+**Phase 1 — local archive, no account, no backend. ✅ SHIPPED.**
+The format, Tier 0 stripping, `VACUUM INTO` snapshotting, encryption, restore +
+`run_migrations()`, the reconnect checklist, a native file picker, and a timer
+that writes one without being asked. **Everything hard about the data is solved
+here**, and solved without a privacy surface — Phase 3 only adds transport.
+
+Two things learnt building it, both worth carrying into Phase 3:
+
+* **The wraps are not secrets.** Storing the master key wrapped under the
+  passphrase is what lets an *unattended* backup still be openable by that
+  passphrase without it existing on disk. The same fact is what will let a
+  hosted backup be written on a timer.
+* **It is eleven SQLite files, not one** — the reason the old export missed
+  nine of them. Anything that reasons about "the database" is wrong here.
 
 **Phase 2 — identity.** The server, the three IdPs, PKCE, JWKS verification,
 session tokens, the device list, account linking. No data uploaded yet.

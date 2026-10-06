@@ -841,8 +841,20 @@
          loadProviders() renders here untouched. -->
     <div class="ms-body sp" data-sp="account" hidden>
       <h1 class="ms-h1">Account</h1>
-      <p class="ms-sub" style="margin-bottom:26px">The accounts Chitragupta signs in to on your behalf. Everything it builds from them stays on this Mac.</p>
+      <p class="ms-sub" style="margin-bottom:26px">Who you are to Chitragupta, and the accounts it signs in to on your behalf. Everything it builds from them stays on this Mac.</p>
+
+      <!-- Signing in to Chitragupta ITSELF, which is not the same as any
+           provider card below. Rendered by `account.js` because every word of
+           it depends on server state: whether a client is configured, and who
+           is signed in. Signing in is always optional. -->
       <section class="ms-sec">
+        <h2 class="ms-h2">You</h2>
+        <div id="acBody" class="set-group"></div>
+      </section>
+
+      <section class="ms-sec">
+        <h2 class="ms-h2">Services</h2>
+        <p class="ms-sub">The accounts your agents read from. Separate from the above \u2014 signing out of Chitragupta leaves these connected.</p>
         <div id="providerCards" class="provider-cards"></div>
       </section>
     </div>
@@ -1143,6 +1155,8 @@
   <script src="/static/backup.js"></script>
   <!-- After `models.js`, whose `openModelScreen` calls `loadUpdates()`. -->
   <script src="/static/updates.js"></script>
+  <!-- After `models.js`, whose `openAccountScreen` calls `loadAccount()`. -->
+  <script src="/static/account.js"></script>
   <script src="/static/appearance.js"></script>
   <!-- After `tools.js` and `appearance.js`: the profile composes their
        renderers rather than carrying copies of them. Before `app.js`, which

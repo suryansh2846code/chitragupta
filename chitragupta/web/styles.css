@@ -3797,3 +3797,19 @@ button.tiny.running:hover { background: linear-gradient(to right,
 .bk-pathrow { display: flex; align-items: center; gap: 8px; }
 .bk-pathrow .ctx-input { flex: 1; min-width: 0; }
 .bk-pathrow button { flex: none; white-space: nowrap; }
+
+/* ── the account's sign-in buttons ─────────────────────────────────────── */
+/* One per provider the server declared. An unavailable one carries
+   `data-soon`, so `.is-soon` (above) dulls it and puts a lock on it — the row
+   has to look right with a mix of live and locked buttons. */
+.ac-providers { display: flex; flex-wrap: wrap; gap: 8px; }
+.ac-providers button { flex: none; }
+
+/* Which sign-ins reach this account. Rows, because each one may carry a
+   Remove — and the last one carries a sentence instead, since removing it
+   would leave an account nobody can get into. */
+.ac-linked { list-style: none; margin: 10px 0 0; padding: 0;
+  display: flex; flex-direction: column; gap: 6px; }
+.ac-linked li { display: flex; align-items: baseline; gap: 10px;
+  font-size: 13px; color: var(--text); }
+.ac-linked .model-hint { margin: 0; }

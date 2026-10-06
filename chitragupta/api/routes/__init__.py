@@ -16,6 +16,7 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from . import (
+    account,
     agents,
     automations,
     backup,
@@ -57,6 +58,7 @@ ALL_ROUTERS: tuple[APIRouter, ...] = (
     # against the others does not matter; mounted last as the newest surfaces.
     backup.router,
     updates.router,
+    account.router,
 )
 
 __all__ = ["ALL_ROUTERS"]

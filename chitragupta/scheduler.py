@@ -328,6 +328,14 @@ class Scheduler:
                 engine.tick()
             except Exception:
                 log.exception("the automation tick failed")
+            # Checked every minute like the reminders above, and for the same
+            # reason: a backup set for every 24 hours should land when it is due
+            # rather than whenever the next connector sync happens to be. It
+            # decides for itself whether anything is due and never raises.
+            with suppressed("deciding whether an automatic backup is due"):
+                from .archive import automatic
+                if automatic.run_if_due().get("started"):
+                    automatic.prune()
             if time.time() >= next_sync:
                 try:
                     self.sync_all(interactive=False)

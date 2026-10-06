@@ -97,6 +97,25 @@ class Settings(BaseSettings):
     # which is read from the environment on every start.
     update_check: bool = True
 
+    # Shipped defaults for automatic backups. **Off**: a feature that starts
+    # writing hundreds of megabytes to somebody's disk because they installed
+    # an update is not a feature they chose. The user's own answers live in
+    # `backup-schedule.json` and override these. See `archive/automatic.py`.
+    auto_backup: bool = False
+    auto_backup_hours: int = 24
+    auto_backup_keep: int = 7
+
+    # A dedicated OAuth client for *signing in to Chitragupta*, if there is one.
+    # Empty means reuse the connector client that already ships — which works
+    # with nothing to register, and keeps the separation that matters (two
+    # consents, two tokens, two revocations). See `account/google.py`.
+    account_client_id: str = ""
+    # Microsoft allows the same loopback flow, so it is one client id away.
+    account_microsoft_client_id: str = ""
+    # Apple is declared but cannot work without a server whatever is set here —
+    # it refuses loopback redirects. See `account/providers.py`.
+    account_apple_client_id: str = ""
+
     # raw keys (read outside the prefix, so declared explicitly)
     @property
     def openai_api_key(self) -> str | None:

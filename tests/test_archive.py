@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-from chitragupta.archive import crypto, reader, writer
+from chitragupta.archive import crypto, identity, reader, writer
 from chitragupta.core import exclusions
 
 #: A recognisable secret per Tier 0 entry. The value is what the leak test
@@ -35,6 +35,21 @@ TIER0_DIRS = {
     "telegram": ("session.session", "LEAKCANARY_telegram_mtproto"),
     "browser": ("Cookies", "LEAKCANARY_browser_cookie"),
 }
+
+
+def _keys(passphrase: str = "pw") -> identity.Keyring:
+    """A keyring, built the way the app builds one but stored nowhere.
+
+    `identity.mint` rather than a hand-rolled pair of wraps: the rule about how
+    a keyring is made lives in one place, and a test that rebuilt it would be
+    the second.
+    """
+    keys, _code = identity.mint(passphrase)
+    return keys
+
+
+def _keys_and_code(passphrase: str = "pw") -> tuple[identity.Keyring, str]:
+    return identity.mint(passphrase)
 
 
 def _make_db(path: Path, table: str, value: str) -> None:
@@ -144,7 +159,7 @@ def test_no_tier0_byte_reaches_the_archive(populated_home: Path, tmp_path: Path,
     assert on_disk, f"fixture did not plant {canary} — the test would be vacuous"
 
     out = tmp_path / "backup.cgarch"
-    packed = writer.pack(populated_home, out, passphrase="a strong passphrase")
+    packed = writer.pack(populated_home, out, _keys("a strong passphrase"))
     assert packed.withheld, "Tier 0 was present, so something must be withheld"
     assert needle not in out.read_bytes()
 
@@ -154,7 +169,7 @@ def test_inline_mcp_tokens_are_stripped_but_config_survives(
     """The legacy shape kept MCP tokens inline. The token must go; the server
     the user configured must not."""
     out = tmp_path / "backup.cgarch"
-    writer.pack(populated_home, out, passphrase="pw")
+    writer.pack(populated_home, out, _keys("pw"))
     assert b"LEAKCANARY_mcp_inline_token" not in out.read_bytes()
 
     home2 = tmp_path / "restored"
@@ -167,7 +182,7 @@ def test_inline_mcp_tokens_are_stripped_but_config_survives(
 def test_unrecognised_files_are_not_archived(populated_home: Path,
                                              tmp_path: Path) -> None:
     out = tmp_path / "backup.cgarch"
-    writer.pack(populated_home, out, passphrase="pw")
+    writer.pack(populated_home, out, _keys("pw"))
     assert b"LEAKCANARY_unknown_file" not in out.read_bytes()
 
 
@@ -175,7 +190,7 @@ def test_unrecognised_files_are_not_archived(populated_home: Path,
 
 def test_every_database_round_trips(populated_home: Path, tmp_path: Path) -> None:
     out = tmp_path / "backup.cgarch"
-    writer.pack(populated_home, out, passphrase="pw")
+    writer.pack(populated_home, out, _keys("pw"))
 
     home2 = tmp_path / "restored"
     result = reader.restore(out, home2, passphrase="pw")
@@ -194,7 +209,7 @@ def test_every_database_round_trips(populated_home: Path, tmp_path: Path) -> Non
 def test_derived_and_tier0_do_not_come_back(populated_home: Path,
                                             tmp_path: Path) -> None:
     out = tmp_path / "backup.cgarch"
-    writer.pack(populated_home, out, passphrase="pw")
+    writer.pack(populated_home, out, _keys("pw"))
     home2 = tmp_path / "restored"
     reader.restore(out, home2, passphrase="pw")
 
@@ -206,7 +221,7 @@ def test_restore_reports_what_must_be_reconnected(populated_home: Path,
                                                   tmp_path: Path) -> None:
     """Tier 0 never travels, so the user must be told what to re-authorise."""
     out = tmp_path / "backup.cgarch"
-    writer.pack(populated_home, out, passphrase="pw")
+    writer.pack(populated_home, out, _keys("pw"))
 
     seen = reader.inspect(out)
     assert "google_token.json" in seen.reconnect_needed
@@ -219,7 +234,7 @@ def test_restore_reports_what_must_be_reconnected(populated_home: Path,
 
 def test_inspect_needs_no_secret(populated_home: Path, tmp_path: Path) -> None:
     out = tmp_path / "backup.cgarch"
-    packed = writer.pack(populated_home, out, passphrase="pw")
+    packed = writer.pack(populated_home, out, _keys("pw"))
     seen = reader.inspect(out)
     assert seen.unlock_methods == [crypto.BY_PASSPHRASE, crypto.BY_RECOVERY]
     assert {m["name"] for m in seen.manifest} == {m["name"] for m in packed.manifest}
@@ -231,26 +246,28 @@ def test_inspect_needs_no_secret(populated_home: Path, tmp_path: Path) -> None:
 def test_recovery_code_opens_what_the_passphrase_opens(populated_home: Path,
                                                        tmp_path: Path) -> None:
     out = tmp_path / "backup.cgarch"
-    packed = writer.pack(populated_home, out, passphrase="pw")
-    assert packed.recovery_code
+    keys, code = _keys_and_code("pw")
+    writer.pack(populated_home, out, keys)
 
-    home2 = tmp_path / "by-code"
-    reader.restore(out, home2, recovery_code=packed.recovery_code)
-    assert (home2 / "chitragupta.db").exists()
+    reader.restore(out, tmp_path / "by-phrase", passphrase="pw")
+    reader.restore(out, tmp_path / "by-code", recovery_code=code)
+    assert (tmp_path / "by-phrase" / "chitragupta.db").exists()
+    assert (tmp_path / "by-code" / "chitragupta.db").exists()
 
 
 def test_recovery_code_survives_how_a_person_types_it(populated_home: Path,
                                                       tmp_path: Path) -> None:
     out = tmp_path / "backup.cgarch"
-    packed = writer.pack(populated_home, out, passphrase="pw")
-    typed = packed.recovery_code.lower().replace("-", " ")
+    keys, code = _keys_and_code("pw")
+    writer.pack(populated_home, out, keys)
+    typed = code.lower().replace("-", " ")
     reader.restore(out, tmp_path / "typed", recovery_code=typed)
 
 
 def test_wrong_secret_is_refused_and_changes_nothing(populated_home: Path,
                                                      tmp_path: Path) -> None:
     out = tmp_path / "backup.cgarch"
-    writer.pack(populated_home, out, passphrase="pw")
+    writer.pack(populated_home, out, _keys("pw"))
 
     target = tmp_path / "untouched"
     target.mkdir()
@@ -263,7 +280,7 @@ def test_wrong_secret_is_refused_and_changes_nothing(populated_home: Path,
 
 def test_no_secret_at_all_is_refused(populated_home: Path, tmp_path: Path) -> None:
     out = tmp_path / "backup.cgarch"
-    writer.pack(populated_home, out, passphrase="pw")
+    writer.pack(populated_home, out, _keys("pw"))
     with pytest.raises(crypto.WrongSecretError):
         reader.restore(out, tmp_path / "nope")
 
@@ -273,7 +290,7 @@ def test_no_secret_at_all_is_refused(populated_home: Path, tmp_path: Path) -> No
 def test_a_truncated_backup_refuses_rather_than_half_restoring(
         populated_home: Path, tmp_path: Path) -> None:
     out = tmp_path / "backup.cgarch"
-    writer.pack(populated_home, out, passphrase="pw")
+    writer.pack(populated_home, out, _keys("pw"))
     blob = out.read_bytes()
     out.write_bytes(blob[: len(blob) // 2])
 
@@ -285,7 +302,7 @@ def test_a_truncated_backup_refuses_rather_than_half_restoring(
 
 def test_a_modified_backup_is_refused(populated_home: Path, tmp_path: Path) -> None:
     out = tmp_path / "backup.cgarch"
-    writer.pack(populated_home, out, passphrase="pw")
+    writer.pack(populated_home, out, _keys("pw"))
     blob = bytearray(out.read_bytes())
     blob[-100] ^= 0x01
     out.write_bytes(bytes(blob))
@@ -309,7 +326,7 @@ def test_an_interrupted_backup_leaves_no_file_to_restore_from(
 
     monkeypatch.setattr(crypto, "seal", boom)
     with pytest.raises(OSError):
-        writer.pack(populated_home, out, passphrase="pw")
+        writer.pack(populated_home, out, _keys("pw"))
     assert not out.exists()
     assert not list(tmp_path.glob("*.partial"))
 
@@ -319,7 +336,7 @@ def test_an_interrupted_backup_leaves_no_file_to_restore_from(
 def test_existing_files_are_moved_aside_not_destroyed(populated_home: Path,
                                                       tmp_path: Path) -> None:
     out = tmp_path / "backup.cgarch"
-    writer.pack(populated_home, out, passphrase="pw")
+    writer.pack(populated_home, out, _keys("pw"))
 
     target = tmp_path / "occupied"
     target.mkdir()
@@ -335,7 +352,7 @@ def test_existing_files_are_moved_aside_not_destroyed(populated_home: Path,
 def test_replace_existing_false_skips_instead(populated_home: Path,
                                               tmp_path: Path) -> None:
     out = tmp_path / "backup.cgarch"
-    writer.pack(populated_home, out, passphrase="pw")
+    writer.pack(populated_home, out, _keys("pw"))
 
     target = tmp_path / "occupied"
     target.mkdir()
@@ -407,37 +424,58 @@ def test_a_backup_cannot_smuggle_a_symlink(tmp_path: Path) -> None:
         reader.restore(archive, tmp_path / "home2", passphrase="pw")
 
 
-def test_a_recovery_wrap_without_its_master_key_is_refused(populated_home: Path,
-                                                           tmp_path: Path) -> None:
-    """The pair is only meaningful together.
+def test_a_keyring_with_no_wraps_is_refused(populated_home: Path,
+                                            tmp_path: Path) -> None:
+    """An archive advertising no way in is worse than no archive.
 
-    A wrap made against a different master key unwraps to nothing, so an
-    archive built from a mismatched pair would advertise a `recovery` unlock
-    method that could never work — which is the bug this guard replaced, in a
-    quieter form.
+    The mismatched-pair bug this replaced — a wrap made against a different
+    master key, so a `recovery` unlock method that could never work — is now
+    unrepresentable: the key, the salt and the wraps arrive as one frozen
+    object instead of three arguments a guard had to check agreed.
     """
-    with pytest.raises(ValueError, match="both or neither"):
-        writer.pack(populated_home, tmp_path / "x.cgarch", passphrase="pw",
-                    recovery_wrap="not-paired-with-anything")
+    empty = identity.Keyring(master_key=crypto.new_key(),
+                             salt=crypto.new_salt(), wraps={})
+    with pytest.raises(crypto.WrongSecretError, match="not been set up"):
+        writer.pack(populated_home, tmp_path / "x.cgarch", empty)
 
 
-def test_a_reused_wrap_reports_no_new_code(populated_home: Path,
-                                           tmp_path: Path) -> None:
-    """`Packed.recovery_code` is how the caller knows whether to show one."""
-    first = writer.pack(populated_home, tmp_path / "a.cgarch", passphrase="pw")
-    assert first.recovery_code
+def test_one_keyring_opens_every_backup_it_wrote(populated_home: Path,
+                                                 tmp_path: Path) -> None:
+    """The regression for a recovery code nobody was ever shown.
 
-    with (tmp_path / "a.cgarch").open("rb") as src:
-        header, _, _ = crypto.read_header(src)
-    mk = reader.master_key_from(header, "pw", None)
+    Every backup after the first used to mint a fresh code, so the header
+    advertised a `recovery` method that nothing could use and the code the user
+    wrote down opened only their first file. Reusing the keyring is what fixes
+    it — and it is also what lets the scheduler write one with no secret.
+    """
+    keys, code = _keys_and_code("pw")
+    for name in ("a.cgarch", "b.cgarch", "c.cgarch"):
+        writer.pack(populated_home, tmp_path / name, keys)
 
-    second = writer.pack(populated_home, tmp_path / "b.cgarch", passphrase="pw",
-                         master_key=mk,
-                         recovery_wrap=header.wrapped_mk[crypto.BY_RECOVERY])
-    assert second.recovery_code is None
-    # and the original code still opens the new file
-    reader.restore(tmp_path / "b.cgarch", tmp_path / "out",
-                   recovery_code=first.recovery_code)
+    for name in ("a.cgarch", "b.cgarch", "c.cgarch"):
+        seen = reader.inspect(tmp_path / name)
+        assert seen.unlock_methods == [crypto.BY_PASSPHRASE, crypto.BY_RECOVERY]
+        # BOTH doors, on EVERY generation.
+        reader.restore(tmp_path / name, tmp_path / f"p-{name}", passphrase="pw")
+        reader.restore(tmp_path / name, tmp_path / f"c-{name}",
+                       recovery_code=code)
+
+
+def test_a_backup_needs_no_passphrase_once_a_keyring_exists(populated_home: Path,
+                                                            tmp_path: Path) -> None:
+    """What makes an automatic backup possible at all.
+
+    `pack` takes a keyring, never a passphrase — so the scheduler can write an
+    archive the user's passphrase still opens, without that passphrase existing
+    anywhere on disk. See `archive/automatic.py`.
+    """
+    keys, _code = _keys_and_code("the user's passphrase")
+    out = tmp_path / "unattended.cgarch"
+    writer.pack(populated_home, out, keys)      # no secret passed in
+
+    restored = tmp_path / "back"
+    reader.restore(out, restored, passphrase="the user's passphrase")
+    assert (restored / "chitragupta.db").exists()
 
 
 # ── SQLite's sidecars ───────────────────────────────────────────────────────
@@ -482,7 +520,7 @@ def test_a_restore_clears_a_stale_write_ahead_log(tmp_path: Path) -> None:
     source.mkdir()
     _make_db(source / "chitragupta.db", "t", "RESTORED")
     out = tmp_path / "b.cgarch"
-    writer.pack(source, out, passphrase="pw")
+    writer.pack(source, out, _keys("pw"))
 
     reader.restore(out, home, passphrase="pw")
     con.close()

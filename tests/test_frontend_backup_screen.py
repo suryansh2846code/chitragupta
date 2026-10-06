@@ -27,6 +27,9 @@ pytestmark = pytest.mark.skipif(shutil.which("node") is None,
                                 reason="node is needed to execute the frontend")
 
 NOT_SET_UP = {"set_up": False, "recovery_code_saved": False,
+              "automatic": {"enabled": False, "possible": False,
+                            "reason": "Automatic backups are off.",
+                            "every_hours": 24, "keep": 7},
               "default_dir": "/tmp/bk", "backups": [],
               "withheld": {"google_token.json": "a Google refresh token",
                            "telegram": "a Telegram session"}}
@@ -411,3 +414,70 @@ def test_a_panel_that_fails_says_to_type_the_path():
     result = run(state=SET_UP_SAVED, bridge={"open": "/tmp/x.cgarch"},
                  bridge_throws=True, actions=["press_pick_open"])
     assert any("type the path" in t for t in result["toasts"]), result["toasts"]
+
+
+# ── backing up on its own ───────────────────────────────────────────────────
+
+AUTO_OFF = {"enabled": False, "possible": False, "due": False,
+            "reason": "Automatic backups are off.", "every_hours": 24,
+            "keep": 7, "last_at": 0, "last_path": ""}
+AUTO_ON = {**AUTO_OFF, "enabled": True, "possible": True,
+           "reason": "Last backup 2 hours ago."}
+AUTO_BLOCKED = {**AUTO_OFF, "enabled": True,
+                "reason": "Back up once with your passphrase to let this run "
+                          "on its own."}
+
+
+def test_the_automatic_switch_is_offered_before_a_first_backup_exists():
+    """Turning it on first is a reasonable thing to do; the reason line then
+    says what is still needed, rather than the control being absent."""
+    rendered = step(run(state={**NOT_SET_UP, "automatic": AUTO_OFF}), "rendered")
+    assert "bkAutoToggle" in rendered["ids"]
+
+
+def test_off_and_cannot_run_yet_are_not_the_same_sentence():
+    """One sentence for both is how a user concludes the app is broken. The
+    server owns the wording; the screen only draws it."""
+    off = step(run(state={**SET_UP_SAVED, "automatic": AUTO_OFF}), "rendered")
+    blocked = step(run(state={**SET_UP_SAVED, "automatic": AUTO_BLOCKED}),
+                   "rendered")
+    assert "Automatic backups are off." in off["body_html"]
+    assert "Back up once with your passphrase" in blocked["body_html"]
+    assert "Automatic backups are off." not in blocked["body_html"]
+
+
+def test_the_interval_and_keep_controls_appear_only_when_it_is_on():
+    off = step(run(state={**SET_UP_SAVED, "automatic": AUTO_OFF}), "rendered")
+    on = step(run(state={**SET_UP_SAVED, "automatic": AUTO_ON}), "rendered")
+    assert "bkAutoHours" not in off["ids"]
+    assert "bkAutoHours" in on["ids"]
+    assert "bkAutoKeep" in on["ids"]
+
+
+def test_it_says_that_pruning_leaves_your_own_files_alone():
+    """The feature deletes files on a timer, so it has to say what it will not
+    touch."""
+    on = step(run(state={**SET_UP_SAVED, "automatic": AUTO_ON}), "rendered")
+    assert "left alone" in on["body_html"]
+
+
+def test_turning_it_on_sends_only_that_field():
+    """One request per change, so a switch cannot clobber the two dropdowns
+    with stale values."""
+    result = run(state={**SET_UP_SAVED, "automatic": AUTO_OFF},
+                 actions=["press_auto_toggle"],
+                 responses={"/api/backup/automatic": AUTO_ON})
+    sent = posts(result, "/api/backup/automatic")
+    assert len(sent) == 1
+    assert sent[0]["body"] == {"enabled": True}
+    assert step(result, "press_auto_toggle")["auto_pressed"] == "true"
+
+
+def test_a_refused_change_does_not_show_the_state_it_wanted():
+    result = run(state={**SET_UP_SAVED, "automatic": AUTO_OFF},
+                 actions=["press_auto_toggle"],
+                 responses={"/api/backup/automatic":
+                            {"__status": 500, "__detail": "nope"}})
+    assert step(result, "press_auto_toggle")["auto_pressed"] == "false", \
+        "the switch moved on a request the server refused"
+    assert result["toasts"]

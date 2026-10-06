@@ -31,7 +31,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from ...archive import crypto, identity, job, reader
+from ...archive import automatic, crypto, identity, job, reader
 from ...config import get_settings
 from ...core import exclusions
 from ...log import get_logger, suppressed
@@ -63,8 +63,18 @@ def _checked(raw: str | None) -> Path:
 
 
 class BackupIn(BaseModel):
-    passphrase: str = Field(min_length=1, max_length=1024)
+    # Optional: needed the first time to mint the keyring, and never again —
+    # see `archive/identity.py`. A later backup that sends one anyway is still
+    # accepted, because that is how an install upgraded from the older keyring
+    # shape gets its passphrase wrap.
+    passphrase: str | None = Field(default=None, max_length=1024)
     path: str | None = None
+
+
+class AutoBackupIn(BaseModel):
+    enabled: bool | None = None
+    every_hours: int | None = Field(default=None, ge=1, le=24 * 30)
+    keep: int | None = Field(default=None, ge=0, le=1000)
 
 
 class RestoreIn(BaseModel):
@@ -100,6 +110,7 @@ def backup_state() -> dict[str, Any]:
         "default_dir": str(folder),
         "backups": existing[:50],
         "withheld": exclusions.refusals(),
+        "automatic": automatic.plan().as_dict(),
     }
 
 
@@ -116,6 +127,8 @@ def backup_start(body: BackupIn) -> dict[str, Any]:
     out.parent.mkdir(parents=True, exist_ok=True)
     try:
         return job.start_backup(get_settings().home, out, body.passphrase)
+    except crypto.WrongSecretError as exc:         # no keyring and no passphrase
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except RuntimeError as exc:                    # the single-job lock
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except OSError as exc:
@@ -221,3 +234,37 @@ def backup_finish_restore() -> dict[str, Any]:
     with suppressed("reading stats from a restored brain"):
         out["stats"] = get_brain().stats()
     return out
+
+
+# ── backing up without being asked ──────────────────────────────────────────
+
+@router.get("/api/backup/automatic")
+def backup_automatic() -> dict[str, Any]:
+    """Whether automatic backups are on, due, and possible.
+
+    `possible` is separate from `enabled` on purpose: "off" and "on but it
+    cannot run yet" are different situations and the screen must not show one
+    sentence for both. See `archive/automatic.plan`.
+    """
+    return automatic.plan().as_dict()
+
+
+@router.post("/api/backup/automatic")
+def backup_automatic_set(body: AutoBackupIn) -> dict[str, Any]:
+    """Turn automatic backups on or off, and say how often and how many to keep.
+
+    Only the fields present move, so the screen can send one switch without
+    having to restate the other two.
+    """
+    return automatic.set_settings(on=body.enabled, hours=body.every_hours,
+                                  keep_count=body.keep)
+
+
+@router.post("/api/backup/prune")
+def backup_prune() -> dict[str, Any]:
+    """Delete automatic backups past the keep window, now.
+
+    Only files this feature wrote are ever considered — a backup the user
+    renamed to mean "keep this" is not ours to tidy.
+    """
+    return {"removed": automatic.prune()}
