@@ -71,6 +71,23 @@ class Provider:
     #: Can the native loopback+PKCE flow be used? False means a server is
     #: required and this provider cannot be offered yet.
     loopback: bool
+    #: Does this provider's **token endpoint** require `client_secret`?
+    #:
+    #: Google does, for a Desktop client, and it took a real sign-in to find
+    #: out. Measured against the live endpoint with a deliberately invalid
+    #: code, which is enough to tell the two apart:
+    #:
+    #:     without it → invalid_request  "client_secret is missing."
+    #:     with it    → invalid_grant    "Bad Request"   (the code, as expected)
+    #:
+    #: The reasoning that left it out was right about one thing and wrong about
+    #: another: a secret shipped inside every copy of an app really is not
+    #: confidential — Google says so itself, which is why PKCE carries the
+    #: security — but Google's endpoint **requires the parameter regardless**.
+    #: "Not confidential" and "not required" are different claims, and only the
+    #: first was true. Microsoft's public-client flow genuinely omits it; Apple
+    #: wants a signed JWT instead, and is not reachable anyway.
+    sends_client_secret: bool = False
     #: Exact issuer strings. Both spellings where a provider uses two.
     issuers: frozenset[str] = frozenset()
     #: For an issuer that embeds a tenant id and so cannot be an exact match.
@@ -119,6 +136,7 @@ GOOGLE = Provider(
     discovery_url="https://accounts.google.com/.well-known/openid-configuration",
     client_setting="account_client_id",
     loopback=True,
+    sends_client_secret=True,
     issuers=frozenset({"https://accounts.google.com", "accounts.google.com"}),
     extra_auth_params={
         # Ask which account rather than silently taking whoever the browser

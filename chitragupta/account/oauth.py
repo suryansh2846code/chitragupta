@@ -31,10 +31,14 @@ absent.
   `tokens.verify`, so a token from an earlier sign-in cannot be replayed into a
   later one.
 
-**No `client_secret` is ever sent.** An installed-app secret ships inside every
-copy of the app, so the security is PKCE plus the loopback redirect — which is
-what `docs/DISTRIBUTION.md` already records about the shipped Google client.
-Sending the secret would imply a confidentiality a public download cannot have.
+**The `client_secret` is sent when the provider's token endpoint demands it**,
+which Google's does — see `Provider.sends_client_secret` for the measurement
+that settled it. This module first refused to send one, reasoning that a secret
+shipped inside every copy of an app is not confidential and that implying
+otherwise would be dishonest. The first half of that is true and is exactly why
+PKCE carries the security here. The second half confused *not confidential* with
+*not required*: Google answers `invalid_request: client_secret is missing.` and
+the sign-in simply fails. A real sign-in is what found it; no test could.
 
 **One client id for Google today.** It reuses the connector's, which is why
 Google sign-in works with nothing to register; the separation that matters to a
@@ -58,7 +62,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Any
 
 from ..config import get_settings
-from ..log import get_logger
+from ..log import get_logger, suppressed
 from . import providers, session, tokens
 from .providers import Provider
 
@@ -99,12 +103,30 @@ def client_id(provider: Provider) -> str:
     configured = str(getattr(get_settings(), provider.client_setting, "") or "")
     if configured.strip():
         return configured.strip()
-    if provider.id == providers.GOOGLE.id:
-        return _shipped_client_id()
+    if _has_shipped_client(provider):
+        return _shipped("client_id")
     return ""
 
 
-def _shipped_client_id() -> str:
+def _has_shipped_client(provider: Provider) -> bool:
+    """Does a client for this provider ship inside the app?
+
+    Only Google's does — it is the connector's, reused. The **one** place a
+    provider is named in this module, which is what
+    `test_nothing_outside_providers_names_a_provider` allows: the client id and
+    the client secret both need this answer, and asking it twice would be two
+    places to update when a second provider ever ships a client.
+    """
+    return provider.id == providers.GOOGLE.id
+
+
+def _shipped(field: str) -> str:
+    """One field out of the Google client that ships with the app.
+
+    `client_id` and `client_secret` come from the same file, so they are read
+    the same way rather than by two functions that could drift about which
+    file wins.
+    """
     from pathlib import Path
     for candidate in (
         Path(__file__).resolve().parent.parent / "data" / "google_client.json",
@@ -117,9 +139,28 @@ def _shipped_client_id() -> str:
         except Exception:
             continue
         for shape in ("installed", "web"):
-            found = (data.get(shape) or {}).get("client_id")
+            found = (data.get(shape) or {}).get(field)
             if found:
                 return str(found)
+    return ""
+
+
+def client_secret(provider: Provider) -> str:
+    """The secret this provider's token endpoint wants, or "".
+
+    Only read for a provider that declares it needs one — see
+    `Provider.sends_client_secret`. Not a confidential value: it ships inside
+    every copy of the app, which is why PKCE is what actually protects the
+    exchange. It is sent because Google requires the parameter, not because it
+    proves anything.
+    """
+    if not provider.sends_client_secret:
+        return ""
+    configured = str(getattr(get_settings(), "account_client_secret", "") or "")
+    if configured.strip():
+        return configured.strip()
+    if _has_shipped_client(provider):
+        return _shipped("client_secret")
     return ""
 
 
@@ -275,16 +316,29 @@ def exchange(attempt: Attempt, code: str, *,
     import httpx
 
     provider = attempt.provider
-    response = httpx.post(provider.token_uri, timeout=30.0, data={
+    form = {
         "client_id": client_id(provider),
         "code": code,
         "code_verifier": attempt.verifier,
         "grant_type": "authorization_code",
         "redirect_uri": attempt.redirect_uri,
-    })
+    }
+    secret = client_secret(provider)
+    if secret:
+        form["client_secret"] = secret
+
+    response = httpx.post(provider.token_uri, timeout=30.0, data=form)
     if response.status_code >= 400:
-        log.info("the %s token exchange failed: %s", provider.id,
-                 response.status_code)
+        # The provider's own words, logged. A bare status code is what made the
+        # first real failure take a live experiment to diagnose — `400` alone
+        # could not say `client_secret is missing.` The body carries no secret
+        # of ours; it is the provider describing our request back to us.
+        detail = ""
+        with suppressed("reading the provider's refusal"):
+            body = response.json()
+            detail = str(body.get("error_description") or body.get("error") or "")
+        log.info("the %s token exchange failed: %s %s", provider.id,
+                 response.status_code, detail)
         raise ValueError(f"{provider.label} refused that sign-in — try again")
     payload = response.json()
 

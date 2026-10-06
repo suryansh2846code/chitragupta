@@ -171,3 +171,24 @@ def test_the_first_screen_says_what_it_does_not_ask_for():
     # And it says so in words a person reads.
     for promise in ("not your mail", "not your files", "not your calendar"):
         assert promise in pane
+
+
+def test_the_screen_paints_itself_without_the_rest_of_boot():
+    """The regression for "there is no login screen".
+
+    `syncPanes()` is what puts `account` on the stage, and that class is what
+    the CSS makes visible. It used to be reached only at the very end of the
+    boot chain — after `refreshConnectors()` and `verifyLLM()` — so one throw
+    anywhere in there left `.acct` at `opacity:0` with the hero showing, which
+    from the outside is indistinguishable from the screen not existing. It
+    shipped exactly that way.
+
+    A screen's own visibility may not depend on two unrelated requests
+    succeeding, so `acoLoad` paints on every path of its own.
+    """
+    out = run(state=SIGNED_OUT)
+    assert out["passed"] is False, "the screen should still be up"
+    assert out["synced"] >= 1, (
+        "acoLoad decided to show the screen and never painted it — the stage "
+        "class the CSS needs was left to the end of the boot chain")
+    assert out["buttons"], "nothing was drawn"

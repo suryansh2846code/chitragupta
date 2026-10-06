@@ -114,6 +114,10 @@ class Settings(BaseSettings):
     # with nothing to register, and keeps the separation that matters (two
     # consents, two tokens, two revocations). See `account/google.py`.
     account_client_id: str = ""
+    # The secret that goes with `account_client_id`. Google's token endpoint
+    # requires one even for a Desktop client — see `account/providers.py`. Not
+    # confidential: one already ships inside the app.
+    account_client_secret: str = ""
     # Microsoft allows the same loopback flow, so it is one client id away.
     account_microsoft_client_id: str = ""
     # Apple is declared but cannot work without a server whatever is set here —
