@@ -38,7 +38,48 @@ function _encodeBody(o) {
 }
 const api = (p, o) => fetch(p, _encodeBody(o)).then((r) => r.ok ? r.json() : r.json().then((e) => Promise.reject(e.detail || r.statusText)));
 
-function toast(m) { const t = $("#toast"); t.textContent = m; t.classList.add("show"); setTimeout(() => t.classList.remove("show"), 2200); }
+function toast(m) { const t = $("#toast"); if (!t) return; t.textContent = m; t.classList.add("show"); setTimeout(() => t.classList.remove("show"), 2200); }
+
+// ── controls that are drawn but not built yet ──────────────────────────────
+// "Never show a control that cannot work" is the rule, and the one shape that
+// gets past it is a control that *says* it cannot work yet. A full-strength
+// button that does nothing reads as "the app is broken"; the same button
+// dulled, lock-badged, and answering a tap with when it arrives reads as a
+// roadmap. The mic and the waveform in the composer were the first two.
+//
+// One mechanism, because the alternative is a special case per button and the
+// second one is always the one that gets missed. The markup declares *what*
+// (`data-soon="Voice input"`); this declares what happens to anything carrying
+// it, anywhere, on any screen.
+//
+// The listener is delegated and in the **capture** phase on purpose: it covers
+// controls drawn long after boot without anyone remembering to re-run
+// `markSoon`, and it stops the event before a handler the control might grow
+// later can run. `markSoon` only paints — a tap is refused either way, so a
+// control that never gets painted still cannot fire.
+function soonMessage(el) {
+  const what = ((el.dataset && el.dataset.soon) || "").trim();
+  return `${what || "This"} is locked — it arrives in a future update.`;
+}
+function markSoon(root) {
+  (root || document).querySelectorAll("[data-soon]").forEach((el) => {
+    el.classList.add("is-soon");
+    el.setAttribute("aria-disabled", "true");
+    // Both strings come from `data-soon`, so the tooltip and what a screen
+    // reader hears cannot drift apart the way two hand-written copies do.
+    const msg = soonMessage(el);
+    el.setAttribute("title", msg);
+    el.setAttribute("aria-label", msg);
+  });
+}
+document.addEventListener("click", (e) => {
+  const el = e.target && e.target.closest && e.target.closest("[data-soon]");
+  if (!el) return;
+  e.preventDefault();
+  e.stopPropagation();
+  toast(soonMessage(el));
+}, true);
+
 // Has the user asked the system for less motion? A *function declaration*, not
 // a const arrow: it is called from _bsDraw, which runs far above this point in
 // the file, and a temporal-dead-zone ReferenceError here would blank the brain

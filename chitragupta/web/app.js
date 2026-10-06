@@ -52,6 +52,11 @@ function applyIcons() {
   });
   const set = (id, name) => { const e = $(id); if (e) e.innerHTML = IC[name]; };
   set("#attachBtn", "attach"); set("#micBtn", "mic"); set("#send", "arrowUp");
+  // Here with the icons because this is the one boot pass over static markup,
+  // and a locked control is an icon with a lock on it. Skipping it would not
+  // un-lock anything — core.js refuses the click whether or not we ever paint
+  // — it would only leave the button looking live, which is the whole bug.
+  markSoon();
 }
 
 // collapse / expand the sidebar (persisted)
