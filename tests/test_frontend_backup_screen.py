@@ -337,3 +337,77 @@ def test_a_finished_job_is_reported_once_and_does_not_loop():
     assert len(states) <= 2, (
         f"the screen re-read its state {len(states)} times for one finished "
         f"job — the recursion is back")
+
+
+# ── the native file picker ──────────────────────────────────────────────────
+
+def test_no_choose_button_without_the_desktop_bridge():
+    """`chitragupta serve` has no pywebview, so the button must not be drawn.
+
+    `/CLAUDE.md`: never show a control that cannot work. The path field is still
+    there, so nothing becomes unreachable.
+    """
+    ids = set(step(run(state=SET_UP_SAVED), "rendered")["ids"])
+    assert "bkPickOpen" not in ids
+    assert "bkPickSave" not in ids
+    assert "bkRestorePath" in ids, "the typed path must remain the fallback"
+    assert "bkPath" in ids
+
+
+def test_the_choose_buttons_appear_in_the_desktop_app():
+    ids = set(step(run(state=SET_UP_SAVED, bridge={}), "rendered")["ids"])
+    assert "bkPickOpen" in ids
+    assert "bkPickSave" in ids
+
+
+def test_picking_a_backup_fills_the_field_and_inspects_it():
+    """One press should do the whole thing — pick, then show what is inside."""
+    result = run(state=SET_UP_SAVED,
+                 bridge={"open": "/Users/x/Desktop/mine.cgarch"},
+                 actions=["press_pick_open"],
+                 responses={"/api/backup/inspect": INSPECTED})
+    assert result["picks"] == ["open"]
+    after = step(result, "press_pick_open")
+    assert after["restore_path_field"] == "/Users/x/Desktop/mine.cgarch"
+    sent = posts(result, "/api/backup/inspect")
+    assert len(sent) == 1
+    assert sent[0]["body"]["path"] == "/Users/x/Desktop/mine.cgarch"
+    assert "bkRestoreGo" in after["inspected_html"]
+
+
+def test_picking_a_destination_fills_the_field_without_inspecting():
+    result = run(state=SET_UP_SAVED,
+                 bridge={"save": "/Users/x/Desktop/out.cgarch"},
+                 actions=["press_pick_save"])
+    assert step(result, "press_pick_save")["save_path_field"] \
+        == "/Users/x/Desktop/out.cgarch"
+    assert not posts(result, "/api/backup/inspect"), \
+        "a save destination is not a file to read"
+
+
+def test_the_save_panel_is_offered_a_dated_filename():
+    """Twelve files all called chitragupta-backup.cgarch is a folder nobody can
+    read, so the suggestion carries the date and time."""
+    result = run(state=SET_UP_SAVED, bridge={"save": "/tmp/a.cgarch"},
+                 actions=["press_pick_save"])
+    assert len(result["picks"]) == 1
+    suggested = result["picks"][0].split("save:", 1)[1]
+    assert suggested.startswith("chitragupta-")
+    assert suggested.endswith(".cgarch")
+    assert any(ch.isdigit() for ch in suggested)
+
+
+def test_cancelling_the_panel_leaves_a_typed_path_alone():
+    """An empty answer is the user cancelling, which must not wipe their input."""
+    result = run(state=SET_UP_SAVED, bridge={"open": ""},
+                 actions=["press_pick_open"])
+    assert result["picks"] == ["open"]
+    assert not posts(result, "/api/backup/inspect"), \
+        "cancelling must not inspect an empty path"
+    assert step(result, "press_pick_open")["restore_path_field"] == ""
+
+
+def test_a_panel_that_fails_says_to_type_the_path():
+    result = run(state=SET_UP_SAVED, bridge={"open": "/tmp/x.cgarch"},
+                 bridge_throws=True, actions=["press_pick_open"])
+    assert any("type the path" in t for t in result["toasts"]), result["toasts"]

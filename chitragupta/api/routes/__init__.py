@@ -27,6 +27,7 @@ from . import (
     messages,
     providers,
     sync,
+    updates,
     workspace,
 )
 
@@ -52,9 +53,10 @@ ALL_ROUTERS: tuple[APIRouter, ...] = (
     messages.router,
     diagnostics.router,
     browser.router,
-    # All literal paths (`/api/backup/...`), so order against the others does
-    # not matter; mounted last because it is the newest surface.
+    # All literal paths (`/api/backup/...`, `/api/updates/...`), so order
+    # against the others does not matter; mounted last as the newest surfaces.
     backup.router,
+    updates.router,
 )
 
 __all__ = ["ALL_ROUTERS"]

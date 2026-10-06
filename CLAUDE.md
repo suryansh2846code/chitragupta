@@ -74,6 +74,7 @@ and that document is the one to update when the rule changes.
 | `archive/` | backup and restore of the whole home — one encrypted file, two ways in |
 | `web/` | the whole frontend. Vanilla JS, **no build step** |
 | `desktop.py` · `hud.py` | the native window and the floating sign-in card |
+| `updates.py` | whether a newer build exists — one request a day, no identifier |
 | `metrics.py` · `training.py` | numbers over time — measurements and sets/reps/load, kept as numbers not prose |
 | `config.py` · `log.py` | settings and logging. Leaf utilities — keep them that way |
 
@@ -564,8 +565,8 @@ In order: **the focused test → the subsystem's suite → `pytest` →
 `ruff check chitragupta tests` → `mypy chitragupta` → the `tests/js/` harnesses if
 the frontend changed → `chitragupta app` opens and renders.**
 
-Baseline, measured PENDING-MEASUREMENT, ruff
-clean, mypy clean. **The count is the number to compare against,
+Baseline, measured 2026-10-06: **6625 passed, 35 skipped in ~8min00**, ruff
+clean, mypy clean over 241 files. **The count is the number to compare against,
 never the clock** — the same suite took 11min10 earlier the same day while it
 shared the machine with another session's run. See the shared-machine rules at
 the top.

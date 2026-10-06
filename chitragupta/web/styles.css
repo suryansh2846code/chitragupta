@@ -3790,3 +3790,10 @@ button.tiny.running:hover { background: linear-gradient(to right,
   mask: var(--soon-lock) center / contain no-repeat;
   pointer-events: none;          /* the click belongs to the button, not the badge */
 }
+
+/* A path field with a Choose button beside it. The button only exists in the
+   desktop app (`bkCanPickFile`), so the row has to look right with one child
+   and with two. */
+.bk-pathrow { display: flex; align-items: center; gap: 8px; }
+.bk-pathrow .ctx-input { flex: 1; min-width: 0; }
+.bk-pathrow button { flex: none; white-space: nowrap; }

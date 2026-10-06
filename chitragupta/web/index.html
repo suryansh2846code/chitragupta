@@ -956,6 +956,17 @@
            and wrote them where a shipped user cannot look, which made "it just
            doesn't work" unfalsifiable. This is that evidence, plus a Copy
            button, and nothing that runs anything. -->
+      <!-- Updates. Rendered by `updates.js` into #upBody, because every word
+           of it depends on server state: whether this build has a feed at all,
+           whether the user left the daily check on, and what the last check
+           found. A build with no feed says so rather than drawing a Check
+           button that cannot work. -->
+      <section class="ms-sec">
+        <h2 class="ms-h2">Version</h2>
+        <p class="ms-sub">A <code>.dmg</code> has no updater, so without this you would stay on the version you first installed — including through a security fix.</p>
+        <div id="upBody" class="set-group"></div>
+      </section>
+
       <section class="ms-sec">
         <h2 class="ms-h2">What just happened</h2>
         <p class="ms-sub">The app's own record of what it tried and what went wrong — useful if something looks broken. Passwords and keys are removed before it is shown.</p>
@@ -1130,6 +1141,8 @@
        `openBackupScreen`. Needs `core.js` for `api`/`esc`/`toast` and
        `models.js` for `showSettingsPanel`. -->
   <script src="/static/backup.js"></script>
+  <!-- After `models.js`, whose `openModelScreen` calls `loadUpdates()`. -->
+  <script src="/static/updates.js"></script>
   <script src="/static/appearance.js"></script>
   <!-- After `tools.js` and `appearance.js`: the profile composes their
        renderers rather than carrying copies of them. Before `app.js`, which

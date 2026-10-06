@@ -10,7 +10,8 @@ import socket
 import sys
 import threading
 import time
-from pathlib import Path
+from pathlib import Path, PurePosixPath
+from typing import Any
 
 from .log import suppressed
 
@@ -202,6 +203,61 @@ def _install_edit_menu() -> None:
         AppHelper.callAfter(_install_edit_menu_now)
 
 
+
+#: What a save panel should open with when the page offers no name.
+BACKUP_SUFFIX = ".cgarch"
+DEFAULT_BACKUP_NAME = "chitragupta-backup" + BACKUP_SUFFIX
+
+
+def backup_filename(suggested: str = "") -> str:
+    """The filename to put in a save panel's name field.
+
+    Module level, and so is `first_path` below, because `_AppBridge` is nested
+    inside `run_app` and needs a live pywebview window — which makes the two
+    parts of the file pickers that can actually be wrong unreachable from a
+    test unless they live out here.
+
+    The suffix is appended rather than required: the page suggests a name, and
+    a user who clears the field and types `brain` should still get a file the
+    restore screen will recognise.
+
+    **It is a name, never a path.** This is the one bridge method that takes an
+    argument from the page, and `tests/test_full_disk_access_refusal.py` pins
+    why the others do not: an argument is a thing a page can redirect, and
+    `open_privacy_settings` deliberately takes none so there is nothing to
+    point somewhere else. A *filename* cannot redirect a save panel — the user
+    still chooses the directory and confirms — but only as long as it stays a
+    filename, so every separator and every `..` is stripped here rather than
+    handed to a filesystem API to interpret.
+    """
+    raw = (suggested or "").strip().replace("\\", "/")
+    # The basename, and nothing above it. `PurePosixPath(...).name` drops every
+    # directory part, so "../../etc/passwd" becomes "passwd" and "/" becomes "".
+    name = PurePosixPath(raw).name.strip() if raw else ""
+    if name in ("", ".", ".."):
+        name = DEFAULT_BACKUP_NAME
+    return name if name.endswith(BACKUP_SUFFIX) else name + BACKUP_SUFFIX
+
+
+def first_path(chosen: object) -> str:
+    """One path out of whatever a pywebview dialog answered with.
+
+    `OPEN_DIALOG` returns a sequence and `SAVE_DIALOG` has returned a bare
+    string in some versions and a one-item sequence in others, so neither shape
+    is assumed. Cancelling gives `None` or an empty sequence, and that is not
+    an error — it must come back as `""` so the page leaves whatever the user
+    had already typed alone.
+    """
+    if not chosen:
+        return ""
+    if isinstance(chosen, str):
+        return chosen
+    try:
+        first = next(iter(chosen))      # type: ignore[call-overload]
+    except (TypeError, StopIteration):
+        return ""
+    return str(first) if first else ""
+
 def run_app(dev: bool = False) -> None:
     try:
         import webview
@@ -267,6 +323,12 @@ def run_app(dev: bool = False) -> None:
         the webview.
         """
 
+        #: Assigned after `create_window` below — the bridge has to exist first,
+        #: because it is passed in as `js_api`. Deliberately untyped: `webview`
+        #: is imported inside this function (it is an optional extra), so there
+        #: is no module-level name for mypy to annotate against.
+        window: Any = None
+
         def open_signin_hud(self, provider: str, brand: str, auth_url: str = "") -> bool:
             return hud.open_signin(provider, brand, auth_url)
 
@@ -295,12 +357,61 @@ def run_app(dev: bool = False) -> None:
                 return True
             return False
 
+        # ── picking a backup file ───────────────────────────────────────────
+        #
+        # Here rather than behind an endpoint, for the same reason as
+        # `open_privacy_settings` above and one more. A real `NSOpenPanel`
+        # returns **only what the user chose**, so nothing has to list the
+        # user's files to offer a picker — and `/api/fs/browse` can stay
+        # directories-only, which is what it was deliberately written as.
+        #
+        # **Safe from this worker thread, and only because we let pywebview do
+        # the dispatching.** `js_api` calls arrive off the main thread, and
+        # CLAUDE.md's desktop invariant is that every Cocoa mutation goes
+        # through `AppHelper.callAfter` or the process hangs. pywebview's
+        # `create_file_dialog` already does exactly that when its
+        # `main_thread` argument is left at its default of False: it
+        # `callAfter`s the panel onto the main thread and blocks on a
+        # semaphore until it closes. **Never pass `main_thread=True` from
+        # here** — that branch runs `runModal()` on the calling thread, which
+        # is the hang the invariant is about.
+
+        def pick_backup_file(self) -> str:
+            """Ask the user for an existing backup. "" if they cancelled."""
+            if self.window is None:
+                return ""
+            return first_path(self.window.create_file_dialog(
+                webview.OPEN_DIALOG,
+                directory=str(get_settings().home),
+                allow_multiple=False,
+                file_types=("Chitragupta backup (*.cgarch)", "All files (*.*)"),
+            ))
+
+        def pick_backup_destination(self, suggested_name: str = "") -> str:
+            """Ask the user where to write a backup. "" if they cancelled.
+
+            A save panel rather than a folder picker: the user gets to name the
+            file, and macOS handles "this already exists, replace it?" — which
+            is a question we would otherwise have to ask badly.
+            """
+            if self.window is None:
+                return ""
+            return first_path(self.window.create_file_dialog(
+                webview.SAVE_DIALOG,
+                directory=str(get_settings().home),
+                save_filename=backup_filename(suggested_name),
+            ))
+
+    bridge = _AppBridge()
     window = webview.create_window(
         "Chitragupta" + (" (dev)" if dev else ""),
         f"http://{host}:{port}",
         width=1280, height=860, min_size=(920, 620),
-        js_api=_AppBridge(),
+        js_api=bridge,
     )
+    # The file dialogs need a window to hang off, and the bridge had to exist
+    # before there was one to give it. Same handover `hud.configure` does.
+    bridge.window = window
     hud.configure(f"http://{host}:{port}", window)
     # Built now, on the main thread, and shown later from the page.
     hud.prepare(webview.create_window)

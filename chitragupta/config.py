@@ -88,6 +88,15 @@ class Settings(BaseSettings):
     host: str = "127.0.0.1"
     port: int = 8787
 
+    # Where to ask whether a newer build exists. **Empty by default**, so a
+    # build with no feed configured never makes a request and the UI says so
+    # rather than offering a button that 404s. See `updates.py`.
+    update_feed: str = ""
+    # The shipped default for the daily check. The user's own answer lives in
+    # `updates.json` and overrides this — a preference cannot live in Settings,
+    # which is read from the environment on every start.
+    update_check: bool = True
+
     # raw keys (read outside the prefix, so declared explicitly)
     @property
     def openai_api_key(self) -> str | None:

@@ -997,8 +997,10 @@ async function openModelScreen() {
   // nothing at all.
   try { await loadProviders(); } catch (_) {}
   try { await loadAgentDefaults(); } catch (_) {}
-  // Last, and never awaited into the others: a log that cannot be read must not
-  // stop the settings screen rendering the parts that can.
+  // Neither of these may reject into the others: a version row that cannot
+  // load must not stop the log rendering, and a log that cannot be read must
+  // not stop the settings screen rendering the parts that can.
+  try { await loadUpdates(); } catch (_) {}
   try { await loadDiagnosticsLog(); } catch (_) {}
 }
 function closeModelScreen() {

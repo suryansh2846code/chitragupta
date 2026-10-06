@@ -184,10 +184,21 @@ Chitragupta does with the data and that it stays on the machine.
   universal2 build is not worth carrying for it. The image is named
   `…-arm64.dmg` and `READ ME FIRST.txt` says so, because the failure on an Intel
   Mac is otherwise indistinguishable from a broken download.
-* **Updates.** A `.dmg` has no update mechanism. Every new version is a fresh
-  download unless something like Sparkle is added. Worth deciding early: the
-  in-app "check for updates" affordance is much easier to add before there are
-  users on old versions.
+* **Updates.** A `.dmg` has no update mechanism, so a new version is a fresh
+  download. The **in-app check** now exists (`chitragupta/updates.py`, the
+  Version section on the Model screen): it asks a feed once a day, names a
+  newer release, and links to it. It does **not** install anything — replacing
+  a signed, notarised app needs Sparkle, an EdDSA key and changes to
+  `build-dmg.sh`, and a half-built auto-updater is worse than a link.
+  **`CHITRAGUPTA_UPDATE_FEED` ships empty**, so a build with no feed never
+  makes a request and the screen says so rather than offering a dead button.
+  Point it at a JSON appcast (`{"releases": [{"version", "url", "notes",
+  "published"}]}`) to turn it on.
+  The check is also the only answer this app has to *"how many people use
+  this"* — once a day per install with **no identifier**, so request volume is
+  an active-install count and nothing can profile anybody. That is the whole
+  reason the interval exists; see `updates.py` before changing it, and
+  [`docs/AUTH-ANALYSIS.md`](AUTH-ANALYSIS.md) §4 for why it matters.
 * **The bundled Google OAuth client.** `chitragupta/data/google_client.json`
   ships inside the `.app`. That is a deliberate decision recorded in
   `.gitignore` (an installed-app client, which Google treats as

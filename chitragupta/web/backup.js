@@ -45,6 +45,37 @@ let bkSeen = 0;
 
 const BK_PHRASE_MIN = 8;
 
+/* The desktop app exposes real `NSOpenPanel` / `NSSavePanel` dialogs on the
+ * pywebview bridge (`desktop.py::_AppBridge`). `chitragupta serve` in a browser
+ * tab has no bridge, so the Choose buttons are **not drawn at all** there
+ * rather than drawn dead — `/CLAUDE.md`: never show a control that cannot work.
+ * The path field is always there, so nothing is unreachable either way.
+ *
+ * A native panel is also why no endpoint has to list the user's files: it hands
+ * back only what the user picked, which lets `/api/fs/browse` stay
+ * directories-only as it was deliberately written. */
+function bkCanPickFile() {
+  return !!window.pywebview?.api?.pick_backup_file;
+}
+
+async function bkPick(which, field, suggested) {
+  const bridge = window.pywebview?.api;
+  if (!bridge) return;
+  try {
+    const picked = which === "save"
+      ? await bridge.pick_backup_destination(suggested || "")
+      : await bridge.pick_backup_file();
+    // "" is the user cancelling, which is not an error and must not clear a
+    // path they had already typed.
+    if (!picked) return;
+    const box = $(field);
+    if (box) box.value = picked;
+    if (which === "open") await bkInspect(picked);
+  } catch (_) {
+    toast("Could not open the file panel — type the path instead");
+  }
+}
+
 /* ── reading the current situation ──────────────────────────────────────── */
 
 async function openBackupScreen() {
@@ -98,8 +129,12 @@ function bkRender(extra) {
       <p id="bkPhraseHint" class="model-hint"></p>
 
       <label class="ctx-label" for="bkPath">Save to</label>
-      <input id="bkPath" class="ctx-input" type="text" spellcheck="false"
-             placeholder="${esc(s.default_dir || "")}" />
+      <div class="bk-pathrow">
+        <input id="bkPath" class="ctx-input" type="text" spellcheck="false"
+               placeholder="${esc(s.default_dir || "")}" />
+        ${bkCanPickFile()
+          ? `<button id="bkPickSave" class="tiny ghost">Choose…</button>` : ""}
+      </div>
       <p class="model-hint">Leave empty to use the folder above.</p>
 
       <div class="bk-row" style="margin-top:14px">
@@ -135,8 +170,12 @@ function bkRender(extra) {
         undoable.
       </p>
       <label class="ctx-label" for="bkRestorePath">Backup file</label>
-      <input id="bkRestorePath" class="ctx-input" type="text" spellcheck="false"
-             placeholder="Path to a .cgarch file" />
+      <div class="bk-pathrow">
+        <input id="bkRestorePath" class="ctx-input" type="text" spellcheck="false"
+               placeholder="Path to a .cgarch file" />
+        ${bkCanPickFile()
+          ? `<button id="bkPickOpen" class="tiny ghost">Choose…</button>` : ""}
+      </div>
       <div class="bk-row" style="margin-top:10px">
         <button id="bkInspect" class="tiny ghost">Have a look first</button>
       </div>
@@ -186,6 +225,13 @@ function bkBind() {
   if (inspect) inspect.onclick = () => bkInspect($("#bkRestorePath").value);
   const saved = $("#bkSaved");
   if (saved) saved.onclick = bkMarkSaved;
+
+  const pickOpen = $("#bkPickOpen");
+  if (pickOpen) pickOpen.onclick = () => bkPick("open", "#bkRestorePath");
+  const pickSave = $("#bkPickSave");
+  if (pickSave) {
+    pickSave.onclick = () => bkPick("save", "#bkPath", bkSuggestedName());
+  }
 
   const phrase = $("#bkPhrase");
   if (phrase) phrase.oninput = bkCheckPhrase;
@@ -468,6 +514,16 @@ async function bkAfterRestore(result) {
 }
 
 /* ── small formatting helpers ──────────────────────────────────────────── */
+
+/* What the save panel opens with. Dated, because a user who backs up monthly
+ * ends up with a folder of these and "chitragupta-backup.cgarch" twelve times
+ * is a folder they cannot read. Matches the server's own default name. */
+function bkSuggestedName() {
+  const d = new Date();
+  const p = (n) => String(n).padStart(2, "0");
+  return `chitragupta-${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}`
+       + `-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}.cgarch`;
+}
 
 function bkSize(bytes) {
   const n = Number(bytes) || 0;

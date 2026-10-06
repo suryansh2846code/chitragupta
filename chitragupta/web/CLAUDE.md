@@ -27,6 +27,7 @@ read before its definition is a temporal dead-zone `ReferenceError` that
 | `workspace.js` | approvals, tasks, reminders, routines, first-run |
 | `brain-screen.js` | the full-screen canvas view |
 | `usage.js` | the token meter and enrichment progress |
+| `updates.js` | the version row on the Model screen — what you are running, whether there is more, and what the check sends |
 | `backup.js` | the Backup & recovery screen — making one, watching it, restoring one, and the recovery code shown once |
 | `library.js` | the Agent Library screen — templates, shelves, the roster |
 | `tools.js` | what one agent may use, with switches — drawn into the profile's Permissions tab and into the agent builder |

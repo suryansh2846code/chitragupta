@@ -28,6 +28,7 @@ const requests = [];
 const toasts = [];
 const alerts = [];
 const clipboard = [];
+const picks = [];
 const registry = new Map();
 
 const ID_IN_HTML = /\bid="([^"]+)"/g;
@@ -119,6 +120,24 @@ Object.defineProperty(globalThis, "navigator", {
     },
   },
 });
+// The pywebview bridge, present only when the scenario says so — which is what
+// the desktop app looks like and `chitragupta serve` does not.
+if (scenario.bridge) {
+  globalThis.window.pywebview = {
+    api: {
+      pick_backup_file: async () => {
+        picks.push("open");
+        if (scenario.bridge_throws) throw new Error("panel failed");
+        return scenario.bridge.open ?? "";
+      },
+      pick_backup_destination: async (suggested) => {
+        picks.push(`save:${suggested}`);
+        if (scenario.bridge_throws) throw new Error("panel failed");
+        return scenario.bridge.save ?? "";
+      },
+    },
+  };
+}
 globalThis.localStorage = { getItem: () => null, setItem() {}, removeItem() {} };
 globalThis.sessionStorage = { getItem: () => null, setItem() {} };
 globalThis.requestAnimationFrame = () => 0;
@@ -156,7 +175,7 @@ const api = new Function(`${src}
 api.setToast((m) => toasts.push(String(m)));
 api.setPanel(() => {});
 
-const result = { requests, toasts, alerts, clipboard, steps: [] };
+const result = { requests, toasts, alerts, clipboard, picks, steps: [] };
 
 function snapshot(label) {
   const body = el("#bkBody")._html;
@@ -175,6 +194,8 @@ function snapshot(label) {
     bar_width: fill ? (fill.style.width || "") : "",
     bar_indeterminate: fill ? fill._classes.has("is-indeterminate") : false,
     phrase_field: el("#bkPhrase").value,
+    restore_path_field: el("#bkRestorePath").value,
+    save_path_field: el("#bkPath").value,
     hint_text: el("#bkPhraseHint")._text,
     hint_colour: el("#bkPhraseHint").style.color || "",
     code_modal_hidden: el("#bkCodeModal").hidden,
@@ -213,6 +234,8 @@ async function main() {
       case "press_code_done": await press("#bkCodeDone"); break;
       case "press_code_copy": await press("#bkCodeCopy"); break;
       case "press_saved": await press("#bkSaved"); break;
+      case "press_pick_open": await press("#bkPickOpen"); break;
+      case "press_pick_save": await press("#bkPickSave"); break;
       default: throw new Error(`unknown action ${act}`);
     }
     snapshot(act);
