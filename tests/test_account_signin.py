@@ -250,18 +250,50 @@ def _fake_google(monkeypatch, signing_key, attempt, **claims) -> dict:
     return sent
 
 
-def test_no_client_secret_is_ever_sent(monkeypatch, signing_key):
-    """An installed-app secret ships in every copy of the app, so sending it
-    would imply a confidentiality the download cannot have. PKCE is the
-    security."""
+def test_the_token_exchange_sends_what_google_requires(monkeypatch, signing_key):
+    """**This test used to assert the opposite, and the opposite was broken.**
+
+    It read "no client_secret is ever sent", reasoning that a secret shipped
+    inside every copy of an app is not confidential and that sending it would
+    imply otherwise. The first half is true and is why PKCE carries the
+    security here. The second half confused *not confidential* with *not
+    required*: measured against Google's live endpoint with a deliberately
+    invalid code, which is enough to tell the two apart —
+
+        without it -> invalid_request  "client_secret is missing."
+        with it    -> invalid_grant    "Bad Request"   (the code, as expected)
+
+    — so every real sign-in failed at the exchange while this test stayed
+    green. No test could have found it; a real sign-in did.
+    """
     attempt = oauth.begin()
     sent = _fake_google(monkeypatch, signing_key, attempt)
 
     oauth.exchange(attempt, "an-auth-code")
-    assert "client_secret" not in sent
-    assert sent["code_verifier"] == attempt.verifier
+    assert sent["client_secret"], "Google refuses an exchange without it"
+    assert sent["code_verifier"] == attempt.verifier, "PKCE is still the security"
     assert sent["grant_type"] == "authorization_code"
     assert sent["redirect_uri"] == attempt.redirect_uri
+
+
+def test_a_provider_that_does_not_want_a_secret_is_not_sent_one():
+    """Microsoft's public-client flow genuinely omits it, so the field is a
+    provider's declaration rather than something every exchange does."""
+    assert providers.MICROSOFT.sends_client_secret is False
+    assert oauth.client_secret(providers.MICROSOFT) == ""
+    # And Google's is only read because Google asked for it.
+    assert providers.GOOGLE.sends_client_secret is True
+    assert oauth.client_secret(providers.GOOGLE)
+
+
+def test_the_secret_never_reaches_the_authorize_url():
+    """It belongs in the back-channel POST and nowhere a browser can see."""
+    attempt = oauth.begin()
+    secret = oauth.client_secret(attempt.provider)
+    assert secret, "this test is vacuous without one"
+    url = attempt.authorize_url
+    assert secret not in url
+    assert "client_secret" not in url
 
 
 def test_a_full_exchange_signs_the_user_in(monkeypatch, signing_key):
@@ -398,7 +430,7 @@ def test_state_says_plainly_that_the_limit_is_not_enforced():
 def test_a_build_with_no_client_says_so_rather_than_offering_a_dead_button(
         monkeypatch):
     monkeypatch.setattr(get_settings(), "account_client_id", "")
-    monkeypatch.setattr(oauth, "_shipped_client_id", lambda: "")
+    monkeypatch.setattr(oauth, "_shipped", lambda field: "")
     ok, why = oauth.is_available(GOOGLE)
     assert ok is False
     assert "not available" in why
@@ -449,7 +481,7 @@ def test_cancelling_drops_the_attempt(client):
 def test_a_build_with_no_client_refuses_to_begin(client, monkeypatch):
     """Rather than opening a browser at a URL that cannot work."""
     monkeypatch.setattr(get_settings(), "account_client_id", "")
-    monkeypatch.setattr(oauth, "_shipped_client_id", lambda: "")
+    monkeypatch.setattr(oauth, "_shipped", lambda field: "")
     refused = client.post("/api/account/signin/begin", json={"provider": "google"})
     assert refused.status_code == 400
     assert "not available" in refused.json()["detail"]

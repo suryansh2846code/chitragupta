@@ -1050,6 +1050,17 @@
   }
 
   async function acoLoad(){
+    // **This screen paints itself.** `syncPanes()` is what puts `account` on the
+    // stage, and the stage class is what the CSS makes visible — so until it
+    // runs, `.acct` sits at `opacity:0` and the hero shows instead.
+    //
+    // It used to be reached only at the very end of the boot chain, after
+    // `refreshConnectors()` and `verifyLLM()`. One throw anywhere in there and
+    // the account screen never appeared while the hero did, which from the
+    // outside is indistinguishable from "there is no login screen" — and is
+    // exactly what shipped. A screen's own visibility may not depend on two
+    // unrelated requests succeeding.
+    syncPanes();
     try{ACCOUNT=await api("/api/account/state");}
     catch(e){
       // The account endpoint being unreachable must not be a locked door on the
@@ -1065,6 +1076,7 @@
       return;
     }
     acoRender();
+    syncPanes();
   }
 
   async function acoSignIn(provider){
