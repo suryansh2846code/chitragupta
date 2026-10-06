@@ -316,6 +316,23 @@
       <button class="pill" id="skipTop">Skip for now →</button>
     </div>
   </div>
+  <!-- ACCOUNT — the first screen, before anything else.
+       Deliberately has **no skip**: making an account is the first step now, a
+       decision recorded in `/CLAUDE.md` and `docs/ACCOUNTS-DESIGN.md` §0. The
+       one way past it without signing in is a build that *cannot* sign in (no
+       OAuth client configured) — a gate with no possible key is a bricked app,
+       not a strict one, so `acGate` opens itself and says why.
+       `#skipTop` is inert here for the same reason: it leads straight into the
+       workspace, which would be the skip this screen is not supposed to have. -->
+  <div class="hero" id="paneAccount"><div class="lead">
+    <div class="eyebrow">Step one</div>
+    <h1><span class="l1">Make your</span><span class="l2">account.</span></h1>
+    <p class="sub" id="acoSub">One account keeps your backups together, so a new
+      Mac can pick up where this one left off. It asks for your name and email
+      address — not your mail, not your files, not your calendar.</p>
+    <div class="actions" id="acoButtons"></div>
+    <p class="sub" id="acoNote" style="margin-top:14px;min-height:1.4em"></p>
+  </div></div>
   <!-- HERO -->
   <div class="hero" id="paneHero"><div class="lead">
     <div class="eyebrow">Local · Private · Yours</div>
@@ -541,6 +558,9 @@
   // — whether a hidden screen is REACHABLE is invisible to a grep and invisible
   // on screen; the only way to know is to run it and look at the tab order.)
   var INERT_OK=("inert" in HTMLElement.prototype);
+  //: Has the account step been passed? Starts false, so the very first paint is
+  //: the account screen rather than a flash of the hero.
+  var accountDone=false;
   function pane(id){return document.getElementById(id);}
   function setLive(el,live){
     if(!el)return;
@@ -551,8 +571,13 @@
     var on=stage.classList.contains("on"),
         building=stage.classList.contains("building"),
         brainready=stage.classList.contains("brainready"),
-        connecting=on&&!building&&!brainready;
-    setLive(pane("paneHero"),!on);
+        connecting=on&&!building&&!brainready,
+        // The account screen sits BEFORE the hero and is the only screen with
+        // no way past it. `accountDone` is set by signing in, or by discovering
+        // that this build cannot sign in at all.
+        account=!on&&!accountDone;
+    setLive(pane("paneAccount"),account);
+    setLive(pane("paneHero"),!on&&accountDone);
     setLive(pane("paneConnect"),connecting);
     setLive(pane("paneBuild"),building);
     setLive(pane("paneDigest"),brainready);
@@ -563,7 +588,9 @@
     // A way out exists on every screen up to the handover. It used to vanish
     // the moment `.stage.on` was set, which left the connect screen with no
     // exit at all — and the build screen's own "Continue anyway" is 150s away.
-    setLive(document.getElementById("skipTop"),!building&&!brainready);
+    // `skipTop` enters the workspace, so leaving it live on the account screen
+    // would be exactly the skip that screen is not supposed to have.
+    setLive(document.getElementById("skipTop"),!account&&!building&&!brainready);
     // Steps: `aria-current` says which one is live, because colour alone does
     // not reach a screen reader.
     var steps=[["stepConnect",connecting||!on],["stepBuild",building],["stepBrain",brainready]];
@@ -949,6 +976,108 @@
     renderSources(CONNECTORS.length?CONNECTORS:FALLBACK);
     return true;}
 
+  // >>> account-step >>>  (sliced out and EXECUTED by
+  // tests/js/onboarding_account.mjs — whether the first screen can be got past,
+  // and whether it can trap somebody, is invisible to a grep.)
+  //
+  // Three outcomes, and the third is the one that stops this bricking the app:
+  //   1. already signed in  → straight through, no screen at all
+  //   2. can sign in        → the screen, with no way past but signing in
+  //   3. CANNOT sign in     → through anyway, saying why. A build with no OAuth
+  //      client has no key for this gate, and a gate with no key is not strict,
+  //      it is broken.
+  var ACCOUNT=null;
+  function acoProviders(){return (ACCOUNT&&ACCOUNT.providers)||[];}
+  function acoCanSignIn(){return acoProviders().some(function(p){return p.available;});}
+
+  function acoRender(){
+    var box=document.getElementById("acoButtons");
+    if(!box)return;
+    var busy=!!(ACCOUNT&&ACCOUNT._busy);
+    box.innerHTML=acoProviders().map(function(p){
+      if(!p.available){
+        // Drawn, not hidden: a provider that is simply absent is
+        // indistinguishable from one nobody thought about. The reason is the
+        // title, because this page has no toast.
+        return '<button class="cta aco-soon" disabled title="'+esc(p.reason)+'">'
+             + 'Continue with '+esc(p.label)+'</button>';
+      }
+      return '<button class="cta aco-go" data-provider="'+esc(p.id)+'"'
+           + (busy?' disabled':'')+'>'
+           + (busy?'Waiting for '+esc(p.label)+'…':'Continue with '+esc(p.label))
+           + '</button>';
+    }).join("");
+    var note=document.getElementById("acoNote");
+    if(note)note.textContent=(ACCOUNT&&ACCOUNT._note)||"";
+    Array.prototype.forEach.call(box.querySelectorAll(".aco-go"),function(b){
+      b.addEventListener("click",function(){acoSignIn(b.getAttribute("data-provider"));});
+    });
+  }
+
+  function acoPass(note){
+    // `accountDone` is declared in the pane-switching block above, which is the
+    // one place the screens are decided. Setting it is the whole handover.
+    accountDone=true;
+    if(ACCOUNT)ACCOUNT._note=note||"";
+    // Written straight to the node rather than through `acoRender`, which would
+    // also draw the provider buttons — and this is the path where there are no
+    // usable ones. A missing OAuth client is not something the user can act on,
+    // so this is a record rather than an instruction; the Account screen in the
+    // app states it properly.
+    var n=document.getElementById("acoNote");
+    if(n)n.textContent=note||"";
+    syncPanes();
+    focusPane("paneHero");
+  }
+
+  async function acoLoad(){
+    try{ACCOUNT=await api("/api/account/state");}
+    catch(e){
+      // The account endpoint being unreachable must not be a locked door on the
+      // first screen a user ever sees.
+      suppressed("reading the account state",e);
+      acoPass("");
+      return;
+    }
+    if(ACCOUNT.signed_in){acoPass("");return;}
+    if(!acoCanSignIn()){
+      var why=(acoProviders().find(function(p){return !!p.reason;})||{}).reason||"";
+      acoPass(why);
+      return;
+    }
+    acoRender();
+  }
+
+  async function acoSignIn(provider){
+    if(!ACCOUNT||ACCOUNT._busy)return;
+    var started;
+    try{
+      started=await api("/api/account/signin/begin",
+        {method:"POST",headers:{"Content-Type":"application/json"},
+         body:JSON.stringify({provider:provider,link:false})});
+    }catch(e){ACCOUNT._note=String(e&&e.message||e);acoRender();return;}
+
+    ACCOUNT._busy=true;ACCOUNT._note="";acoRender();
+    try{
+      await api("/api/open-browser",
+        {method:"POST",headers:{"Content-Type":"application/json"},
+         body:JSON.stringify({url:started.url})});
+    }catch(e){suppressed("opening the browser for sign-in",e);}
+
+    try{
+      ACCOUNT=await api("/api/account/signin/finish",{method:"POST"});
+      ACCOUNT._busy=false;
+      acoPass("");
+    }catch(e){
+      // A sign-in that did not finish leaves the screen usable, never a dead
+      // spinner — the user closed the tab, or said no, and may try again.
+      ACCOUNT._busy=false;
+      ACCOUNT._note=String(e&&e.message||e);
+      acoRender();
+    }
+  }
+  // <<< account-step <<<
+
   // hero → connect view (and reset to a clean slate)
   document.getElementById("buildBtn").addEventListener("click",async function(){
     var btn=this;btn.disabled=true;
@@ -957,7 +1086,11 @@
       connectView=true;setStage(["on"]);focusPane("paneConnect");
     } finally{btn.disabled=false;}
   });
-  (async function(){await refreshConnectors();await verifyLLM();
+  (async function(){
+    // The account screen first: `syncPanes()` runs inside `acoLoad` either way,
+    // so the first paint is the right screen rather than a flash of the hero.
+    await acoLoad();
+    await refreshConnectors();await verifyLLM();
     renderSources(CONNECTORS.length?CONNECTORS:FALLBACK);syncPanes();})();
 
   // ── build: a real sync, a real first enrichment, and real progress ───────

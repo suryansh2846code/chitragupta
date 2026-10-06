@@ -1,7 +1,45 @@
 # The onboarding → workspace flow
 
 > The path a brand-new user takes, and what each screen is waiting for.
-> Order: **Hero → Connect → Build → Digest → Workspace (Agent Library)**.
+> Order: **Account → Hero → Connect → Build → Digest → Workspace (Agent
+> Library)**.
+
+---
+
+## Account
+
+**The first screen, and the only one with no way around it.** Making an account
+is step one — a product decision taken on 2026-10-06, recorded in
+[`/CLAUDE.md`](../../CLAUDE.md) and
+[`ACCOUNTS-DESIGN.md`](../ACCOUNTS-DESIGN.md) §0, which reverses the "skippable"
+position that document was written with.
+
+`#skipTop` is **inert** here. It calls `enterApp()`, so leaving it live would be
+precisely the skip this screen exists not to have — and the rule that *a way out
+exists on every screen* was narrowed to "every screen after the account step"
+rather than deleted.
+
+**It may never become a trap, and that is not a softening of the decision.**
+Three ways a user can arrive with no key, and each passes them through or lets
+them retry:
+
+| | what happens |
+|---|---|
+| the build has no OAuth client | passes through, and records why |
+| `/api/account/state` unreachable | passes through |
+| a sign-in that never finished | the screen stays usable, with the reason |
+
+A gate whose key does not exist is a bricked app rather than a strict one. The
+accepted cost is the other one: **a first run with no network cannot get past
+screen one.**
+
+The providers come from `GET /api/account/state` and nothing on the page names
+one — an unavailable provider is drawn `disabled` with its reason as the title,
+because this page has no toast. A provider the page has never heard of is drawn
+too, which is what makes adding Apple or Microsoft server data.
+
+The block is bracketed `// >>> account-step >>>` and executed by
+`tests/js/onboarding_account.mjs`.
 
 ---
 
