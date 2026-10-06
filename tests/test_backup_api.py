@@ -272,19 +272,25 @@ def test_a_restore_rebuilds_this_machines_backup_identity(client, tmp_path):
     out = tmp_path / "ident.cgarch"
     client.post("/api/backup/start", json={"passphrase": "pw", "path": str(out)})
     _wait_for_idle(client)
-    original = identity.master_key()
-    assert original
+    original = identity.keyring()
+    assert original and original.master_key
 
     identity.forget()                       # as a brand-new machine would be
-    assert identity.master_key() is None
+    assert identity.keyring() is None
 
     started = client.post("/api/backup/restore",
                           json={"path": str(out), "passphrase": "pw"})
     assert started.status_code == 200, started.text
     _wait_for_idle(client)
 
-    assert identity.master_key() == original
+    rebuilt = identity.keyring()
+    assert rebuilt and rebuilt.master_key == original.master_key
     assert identity.recovery_code_acknowledged() is True
+    # And the rebuilt keyring carries both wraps out of the archive's header,
+    # so the NEXT backup from this Mac — including an automatic one — is
+    # openable by the passphrase and the code the user already has.
+    assert rebuilt.unlock_methods == ["passphrase", "recovery"]
+    assert identity.can_run_unattended() is True
 
 
 def test_finish_restore_runs_migrations_and_does_not_raise(client):

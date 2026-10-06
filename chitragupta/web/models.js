@@ -983,6 +983,9 @@ async function openAccountScreen() {
   const m = $("#modelScreen"); if (!m) return;
   m.hidden = false;
   showSettingsPanel("account");
+  // Neither may reject into the other: who you are and which services are
+  // connected are separate questions, and one failing must not blank the other.
+  try { await loadAccount(); } catch (_) {}
   try { await loadProviders(); } catch (_) {}
 }
 async function openModelScreen() {

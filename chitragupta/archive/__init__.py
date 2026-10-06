@@ -28,6 +28,7 @@ from .crypto import (
     new_recovery_code,
     normalise_recovery_code,
 )
+from .identity import Keyring
 from .reader import Inspection, inspect, restore
 from .writer import Packed, pack, stage
 
@@ -36,6 +37,7 @@ __all__ = [
     "CorruptArchiveError",
     "Header",
     "Inspection",
+    "Keyring",
     "Packed",
     "WrongSecretError",
     "inspect",

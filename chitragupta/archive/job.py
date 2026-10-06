@@ -139,27 +139,35 @@ def _run(kind: str, work, prog: progress.Progress) -> None:
         log.warning("%s failed: %s", kind, exc)
 
 
-def start_backup(home: Path, out: Path, passphrase: str) -> dict[str, Any]:
+def start_backup(home: Path, out: Path,
+                 passphrase: str | None = None) -> dict[str, Any]:
     """Begin a backup. Returns immediately; poll `status()`.
 
-    Sets backup up on first use, and the returned `recovery_code` is the only
-    time it is ever available — see `identity.begin_setup`. On every later
+    `passphrase` is needed **only the first time**, to mint the keyring — see
+    `identity.begin_setup`. After that the keyring is reused and this runs with
+    no secret at all, which is what lets the scheduler call it. The returned
+    `recovery_code` is the one moment it is ever available; on every later
     backup it is `None`, because the code the user already has still works.
     """
-    key = identity.master_key()
+    keys = identity.keyring()
     code: str | None = None
-    wrap: str | None = None
-    if key is None:
-        key, code, wrap = identity.begin_setup()
-    else:
-        wrap = identity.recovery_wrap()
+    if keys is None:
+        if not passphrase:
+            raise crypto.WrongSecretError(
+                "a passphrase is needed the first time, to set backup up")
+        keys, code = identity.begin_setup(passphrase)
+    elif passphrase and not identity.can_run_unattended():
+        # An install upgraded from the older keyring shape has no passphrase
+        # wrap and no salt, so it cannot be backed up unattended until a user
+        # types a passphrase once more. Mint a fresh keyring from it rather
+        # than writing archives only a recovery code can open.
+        keys, code = identity.begin_setup(passphrase)
 
     prog = _claim(BACKUP)
-    master, reuse_wrap = key, wrap
+    using = keys
 
     def work(p: progress.Progress) -> dict[str, Any]:
-        packed = writer.pack(home, out, passphrase, master_key=master,
-                             recovery_wrap=reuse_wrap, prog=p)
+        packed = writer.pack(home, out, using, prog=p)
         return {
             "path": str(packed.path),
             "bytes": packed.bytes_written,
@@ -196,14 +204,13 @@ def start_restore(path: Path, home: Path, *, passphrase: str | None = None,
         placed = reader.restore(path, home, passphrase=passphrase,
                                 recovery_code=recovery_code,
                                 replace_existing=replace_existing, prog=p)
-        # Only now: a master key remembered before the restore succeeded would
+        # Only now: a keyring remembered before the restore succeeded would
         # leave this machine claiming to be part of a backup set it does not
-        # hold. It is what makes the NEXT backup from this Mac the same set.
-        # The wrap comes out of the archive we just opened, so the recovery
-        # code the user already has keeps working for backups this machine
-        # writes from now on.
-        identity.remember_master_key(
-            master, opened.wrapped_mk.get(crypto.BY_RECOVERY))
+        # hold. The wraps come out of the archive we just opened, so the
+        # passphrase and recovery code the user already has keep working for
+        # every backup this machine writes from now on — the automatic ones
+        # included.
+        identity.remember(identity.from_archive(master, opened))
         identity.acknowledge_recovery_code()
         return placed
 

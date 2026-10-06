@@ -149,6 +149,8 @@ function bkRender(extra) {
       <p id="bkOutcome" class="model-hint"></p>
     </section>
 
+    ${bkAutoHtml(s.automatic || {})}
+
     <section class="ms-sec">
       <h2 class="ms-h2">What a backup never contains</h2>
       <p class="ms-sub">
@@ -198,6 +200,54 @@ function bkRender(extra) {
   bkBind();
 }
 
+/* Automatic backups.
+ *
+ * `enabled` and `possible` are deliberately separate, because "off" and "on but
+ * it cannot run yet" are different situations and one sentence for both is how
+ * a user concludes the app is broken. The server sends the sentence
+ * (`automatic.reason`) rather than this file inferring it, so there is one
+ * place that knows why.
+ *
+ * The switch is offered even before a first backup exists — turning it on is a
+ * reasonable thing to do first, and the reason line then says what is still
+ * needed rather than the control being missing. */
+function bkAutoHtml(auto) {
+  const on = !!auto.enabled;
+  return `
+    <section class="ms-sec">
+      <h2 class="ms-h2">Back up on its own</h2>
+      <p class="ms-sub">
+        A backup you have to remember to take is one nobody takes. This writes
+        one on a timer, using the passphrase you already chose — which is never
+        stored, only the sealed key it made.
+      </p>
+      <div class="bk-row">
+        <button id="bkAutoToggle" class="tiny${on ? "" : " ghost"}"
+                aria-pressed="${on ? "true" : "false"}">${on ? "On" : "Off"}</button>
+        <span class="model-hint">${esc(auto.reason || "")}</span>
+      </div>
+      ${on ? `
+        <div class="bk-row" style="margin-top:12px">
+          <label class="ctx-label" for="bkAutoHours" style="margin:0">Every</label>
+          <select id="bkAutoHours" class="ctx-input" style="max-width:9rem">
+            ${[6, 12, 24, 72, 168].map((h) => `
+              <option value="${h}"${Number(auto.every_hours) === h ? " selected" : ""}>${
+                h < 24 ? `${h} hours` : (h === 24 ? "day" : `${h / 24} days`)}</option>`).join("")}
+          </select>
+          <label class="ctx-label" for="bkAutoKeep" style="margin:0">Keep</label>
+          <select id="bkAutoKeep" class="ctx-input" style="max-width:9rem">
+            ${[3, 7, 14, 30, 0].map((k) => `
+              <option value="${k}"${Number(auto.keep) === k ? " selected" : ""}>${
+                k === 0 ? "all of them" : `the last ${k}`}</option>`).join("")}
+          </select>
+        </div>
+        <p class="model-hint">
+          Older ones past that are deleted — only the ones this made. Anything
+          you renamed or put there yourself is left alone.
+        </p>` : ""}
+    </section>`;
+}
+
 function bkWarningHtml(s) {
   if (!s.set_up || s.recovery_code_saved) return "";
   // No "show it again" control, because there is no endpoint that could serve
@@ -225,6 +275,17 @@ function bkBind() {
   if (inspect) inspect.onclick = () => bkInspect($("#bkRestorePath").value);
   const saved = $("#bkSaved");
   if (saved) saved.onclick = bkMarkSaved;
+
+  const autoToggle = $("#bkAutoToggle");
+  if (autoToggle) {
+    autoToggle.onclick = () => bkSetAuto({
+      enabled: !(bkState && bkState.automatic && bkState.automatic.enabled),
+    });
+  }
+  const hours = $("#bkAutoHours");
+  if (hours) hours.onchange = () => bkSetAuto({ every_hours: Number(hours.value) });
+  const keep = $("#bkAutoKeep");
+  if (keep) keep.onchange = () => bkSetAuto({ keep: Number(keep.value) });
 
   const pickOpen = $("#bkPickOpen");
   if (pickOpen) pickOpen.onclick = () => bkPick("open", "#bkRestorePath");
@@ -386,6 +447,23 @@ function bkShowCode(code) {
       // dialog is closed.
       out.textContent = "";
     };
+  }
+}
+
+/* One request per change, carrying only the field that moved — the server
+ * leaves the others alone, so a switch does not have to restate the two
+ * dropdowns and cannot clobber them with stale values. */
+async function bkSetAuto(change) {
+  try {
+    const plan = await api("/api/backup/automatic",
+                           { method: "POST", body: change });
+    if (bkState) bkState.automatic = plan;
+    bkRender();
+  } catch (e) {
+    // Re-render from what the server last told us, so the switch does not sit
+    // showing a state it only asked for.
+    toast(String(e));
+    bkRender();
   }
 }
 

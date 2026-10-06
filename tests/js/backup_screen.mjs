@@ -198,6 +198,16 @@ function snapshot(label) {
     save_path_field: el("#bkPath").value,
     hint_text: el("#bkPhraseHint")._text,
     hint_colour: el("#bkPhraseHint").style.color || "",
+    body_html: body,
+    // Written in the renderer's template string, so `getAttribute` on a fake
+    // element cannot see it — read it out of the markup, as `updates_row.mjs`
+    // had to learn to do.
+    auto_pressed: (() => {
+      const tag = /<[^>]*\bid="bkAutoToggle"[^>]*>/.exec(body);
+      if (!tag) return null;
+      const found = /\baria-pressed="([^"]*)"/.exec(tag[0]);
+      return found ? found[1] : null;
+    })(),
     code_modal_hidden: el("#bkCodeModal").hidden,
     code_shown: el("#bkCodeValue")._text,
     inspected_html: el("#bkInspected")._html,
@@ -234,6 +244,7 @@ async function main() {
       case "press_code_done": await press("#bkCodeDone"); break;
       case "press_code_copy": await press("#bkCodeCopy"); break;
       case "press_saved": await press("#bkSaved"); break;
+      case "press_auto_toggle": await press("#bkAutoToggle"); break;
       case "press_pick_open": await press("#bkPickOpen"); break;
       case "press_pick_save": await press("#bkPickSave"); break;
       default: throw new Error(`unknown action ${act}`);

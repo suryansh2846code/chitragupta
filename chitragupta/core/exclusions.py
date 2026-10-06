@@ -92,6 +92,11 @@ SIDECAR_PATTERNS: tuple[str, ...] = ("*.db-wal", "*.db-shm", "*.db-journal")
 #: Mac, and each needs a declared sanitiser below if it can hold a credential.
 ARCHIVED_FILES: dict[str, str] = {
     "mcp_servers.json": "which MCP servers the user configured",
+    # The account record: its id, when it was made, and which sign-ins are
+    # linked to it. **No token** — those are in the Keychain and are Tier 0 —
+    # so restoring it means a new Mac is still the same account and the user
+    # signs in again rather than starting over. See `account/store.py`.
+    "account.json": "your Chitragupta account and its linked sign-ins",
 }
 
 #: Archived directories — user content an agent wrote, not our scratch space.

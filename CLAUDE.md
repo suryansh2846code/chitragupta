@@ -71,7 +71,8 @@ and that document is the one to update when the rule changes.
 | `connectors/` | one class per source, registered in `__init__.py::REGISTRY` |
 | `core/` | SQLite store, schema, embeddings, chunking, dates |
 | `browser/` | the browser an agent drives, and the origin allow-list in front of it |
-| `archive/` | backup and restore of the whole home — one encrypted file, two ways in |
+| `account/` | who the user is to **us** — Google sign-in, PKCE, ID-token verification. Never required |
+| `archive/` | backup and restore of the whole home — one encrypted file, two ways in, and a timer that needs neither |
 | `web/` | the whole frontend. Vanilla JS, **no build step** |
 | `desktop.py` · `hud.py` | the native window and the floating sign-in card |
 | `updates.py` | whether a newer build exists — one request a day, no identifier |
@@ -238,6 +239,70 @@ even when every test is green. Reasoning and measurements:
   the date filter are unioned on top, and below `FULL_SCAN_LIMIT` nothing
   narrows at all.
 - Graph enrichment is content-based. **Never gate it on a connector allowlist.**
+
+**Account — `account/`** · [`docs/ACCOUNTS-DESIGN.md`](docs/ACCOUNTS-DESIGN.md)
+- **Signing in is never required, and nothing local may consult a session.**
+  *"First launch, no keys, no CLIs, no accounts — it must still open."* If the
+  whole package failed to import the app would work, and
+  `test_account_signin.py` asserts that by reading the source rather than
+  hoping: one `if signed_in()` on a turn is an offline user who cannot chat.
+- **It needs no server, and that is a fact about Google specifically.** Apple
+  forbids loopback redirects and therefore needs a backend; Google's native-app
+  flow (RFC 8252, PKCE over loopback) is what `connectors/google_auth.py`
+  already uses. So Google sign-in ships with zero infrastructure and Apple
+  cannot.
+- **Local identity is not enforceable entitlement.** The app verifies Google's
+  ID token itself, so it knows who signed in — and anyone who can edit the app
+  can make it believe anything. Fine for naming a backup set; **not** fine for
+  gating payment, which needs a server there isn't one of. `one Mac per licence`
+  is therefore recorded and **not** enforced, and `/api/account/state` says
+  `enforced: false` out loud rather than letting a screen imply otherwise.
+- **An ID token is verified, never merely decoded.** Signature against the
+  JWKS, `iss`, `exp`/`iat`, `nonce`, and — the subtle one — **`aud` against our
+  own client id**, or a valid Google token minted for somebody else's app would
+  sign a user in here. `models/chatgpt_auth._decode_jwt_payload` is honestly
+  named *unverified* and is for display; reusing it here would accept anything.
+- **This is not the Gmail connector and must never become it.** `openid email
+  profile`, a separate token store, a separate consent. Signing out leaves Gmail
+  connected and disconnecting Gmail leaves you signed in — *credentials are
+  independent*, both directions. A first-run screen asking to read somebody's
+  mail is the thing they quit over.
+- **No `client_secret` is ever sent.** An installed-app secret ships inside
+  every copy of the app; PKCE plus the loopback redirect is the security, and
+  sending the secret would imply a confidentiality a public download cannot
+  have.
+
+**Backup — `archive/`** · [`docs/ACCOUNTS-DESIGN.md`](docs/ACCOUNTS-DESIGN.md)
+- **What may leave the machine is one rule, and unknown fails closed.**
+  `core/exclusions.py`, beside `redact.py` for the same reason: redact decides
+  what may be written to the database, this decides what may be read out of the
+  home. Databases are archived by pattern so one added next year is covered;
+  everything else must be declared, because the file that rule exists for is
+  the credential a connector written later drops in the home. Tokens, the
+  Telegram session and the browser's cookie jar never travel, so a restore ends
+  on a reconnect checklist rather than a surprise.
+- **A restore clears SQLite's stale write-ahead log before using the file it
+  restored.** Every database is WAL mode, so leaving the old `-wal` beside a
+  replaced file makes SQLite replay it: measured, a fresh read after a
+  *successful* restore returned **the old rows** while the app reported
+  success. Found by running the real server — every `tmp_path` test passed
+  throughout, because none opened a database in WAL mode.
+- **Nothing is touched until the whole archive has verified.** Every chunk is
+  authenticated against the header, the chunk count lives in the header the
+  chunks authenticate, and a checksum covers the lot — so a wrong passphrase or
+  a truncated download costs the user nothing. Replaced files are renamed
+  aside, never deleted.
+- **The wraps are stored and the secrets are not.** A wrap is the master key
+  encrypted under the passphrase (or the recovery code) and already travels in
+  plaintext inside every archive header, so keeping it reveals nothing — and it
+  is what lets the scheduler write an archive the user's passphrase still
+  opens, without that passphrase existing on disk. Reusing one keyring is also
+  why one recovery code opens every generation; minting a fresh wrap per backup
+  advertised an unlock method **nobody had ever been shown**.
+- **Backup appends generations; it never mirrors.** A mirror would propagate
+  `POST /api/brain/reset` and destroy the only copy of what it deleted, which
+  is the accident backups exist for. Pruning only ever deletes files this
+  feature wrote — a folder the user chose is not ours to tidy.
 
 **Automation — `automation/`** · [`docs/AUTOMATION.md`](docs/AUTOMATION.md)
 - **There is one permission system and it is not in `automation/`.** Every side
@@ -565,8 +630,8 @@ In order: **the focused test → the subsystem's suite → `pytest` →
 `ruff check chitragupta tests` → `mypy chitragupta` → the `tests/js/` harnesses if
 the frontend changed → `chitragupta app` opens and renders.**
 
-Baseline, measured 2026-10-06: **6625 passed, 35 skipped in ~8min00**, ruff
-clean, mypy clean over 241 files. **The count is the number to compare against,
+Baseline, measured 2026-10-06: **6743 passed, 35 skipped in ~8min21**, ruff
+clean, mypy clean over 249 files. **The count is the number to compare against,
 never the clock** — the same suite took 11min10 earlier the same day while it
 shared the machine with another session's run. See the shared-machine rules at
 the top.
