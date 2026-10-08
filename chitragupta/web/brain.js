@@ -267,7 +267,7 @@ async function syncConn(name) {
     SYNCING.delete(name);
     // A refusal carries a sentence naming which source holds the slot, so it is
     // shown rather than replaced with "could not sync".
-    const said = String(e).replace(/^Error:\s*/, "");
+    const said = errText(e).replace(/^Error:\s*/, "");
     toast(said);
     if (parts.sub) parts.sub.textContent = said;
     if (parts.logo) parts.logo.dataset.state = "off";
@@ -281,7 +281,7 @@ async function stopSyncConn(name) {
   try {
     await api(`/api/connectors/${encodeURIComponent(name)}/sync/stop`,
               { method: "POST" });
-  } catch (e) { toast(String(e)); return; }
+  } catch (e) { toast(errText(e)); return; }
   toast("stopping…");
 }
 

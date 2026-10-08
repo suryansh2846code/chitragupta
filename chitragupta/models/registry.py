@@ -148,6 +148,37 @@ PRIMARY_PROVIDERS = [
     "mock",
 ]
 
+#: Providers that exist for the test suite and must never be offered to a user.
+#:
+#: `mock` is a deterministic offline fixture. It stayed in `PRIMARY_PROVIDERS`
+#: — which is also what the UI lists from — so **"Mock (Offline) (Ready)"** was
+#: a selectable option in two real settings dropdowns: *Brain enrichment* and
+#: *Default AI for new agents*. It reports itself ready, so it sorted alongside
+#: genuinely working providers. The composer's picker never showed it only
+#: because `models.js` keeps a second, hand-curated list — which is the drift
+#: this constant removes: one list, one exclusion, read by both UI entry points.
+#:
+#: It stays registered and stays in `MODEL_CATALOG`, so `_REGISTRY["mock"]` and
+#: an agent bound to `mock-1` keep working — including the runtime fallback
+#: that answers before anything is connected, which goes through `_REGISTRY`
+#: and never through these lists. What it loses is the shop window.
+#:
+#: **One consequence worth knowing, and it is an improvement.** `mock` reports
+#: itself ready, so on a machine with nothing connected it was the thing making
+#: `any(connected)` true — and `automation/readiness.py` reads this same
+#: catalog to answer *"can this automation run?"*. A fresh install therefore
+#: got **"ready"** for an automation that would wake at 3am and produce the
+#: offline provider's canned text. It now says *"no model is connected"* and
+#: offers the Model screen, which is both true and actionable. Three tests in
+#: `test_automation_readiness.py` were relying on the old accident and now
+#: state the premise themselves.
+HIDDEN_PROVIDERS = frozenset({"mock"})
+
+#: The providers a user may actually be shown. Every UI-facing listing derives
+#: from this rather than filtering for itself, or the next hidden provider is
+#: hidden in one list and not the other.
+VISIBLE_PROVIDERS = [p for p in PRIMARY_PROVIDERS if p not in HIDDEN_PROVIDERS]
+
 
 # Where each backend sends your context at query time. "local" = stays on your
 # Mac; "cloud" = the injected brain context is sent off-device to that service.
@@ -370,7 +401,7 @@ def get_model_catalog(force_refresh: bool = False) -> list[dict]:
     except Exception:
         all_accts = {}
 
-    for pid in PRIMARY_PROVIDERS:
+    for pid in VISIBLE_PROVIDERS:
         entry = MODEL_CATALOG.get(pid)
         if not entry:
             continue
@@ -457,8 +488,8 @@ def list_providers() -> list[dict]:
     except Exception:
         local_accounts = {}
 
-    # Show primary providers in deterministic order
-    for name in PRIMARY_PROVIDERS:
+    # Show primary providers in deterministic order, minus the test fixtures.
+    for name in VISIBLE_PROVIDERS:
         cls = _REGISTRY.get(name)
         if not cls:
             continue

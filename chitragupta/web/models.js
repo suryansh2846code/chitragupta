@@ -191,7 +191,7 @@ function renderProviderFlyout() {
           await updateAgentModelChip(current);
           refreshPickerPopover();
         } catch (err) {
-          toast("Could not update model: " + (err.message || err));
+          toast("Could not update model: " + errText(err));
         }
       }
     };
@@ -254,7 +254,7 @@ function renderModelFlyout() {
   }).join("") + `
     <div class="cmp-flyout-item ${!isProvConn ? 'is-locked' : ''}" data-model="__custom__" data-locked="${!isProvConn ? 'true' : 'false'}">
       <div class="cmp-flyout-item-label">
-        <span style="font-size:12px;color:var(--muted)">Custom model identifier…</span>
+        <span style="font-size:12px;color:var(--muted)">Use another model…</span>
         ${!isProvConn ? `<span class="cmp-lock-badge">${IC.lock} Locked</span>` : ''}
       </div>
     </div>
@@ -279,40 +279,93 @@ function renderModelFlyout() {
         toast(`${name} needs the ${req} plan, which this account does not have.`);
         return;
       }
-      let chosen = el.dataset.model;
+      const chosen = el.dataset.model;
       if (chosen === "__custom__") {
-        const customName = prompt("Enter custom model identifier:", activePickerModel || "");
-        if (customName === null) return;
-        chosen = customName.trim();
+        // A native `prompt("Enter custom model identifier:")` used to sit
+        // here. In the packaged app that is an OS dialog stamped with a
+        // loopback URL, in a product that draws every other dialog itself —
+        // and "identifier" is the developer's word for it, not the user's.
+        $("#cmpModelMenu").hidden = true;
+        closeAllPickerFlyouts();
+        askAnotherModel(pSpec, items);
+        return;
       }
-      activePickerModel = chosen || null;
-      setActiveModel(activePickerProvider, activePickerModel);
-      const displayLabel = chosen ? (items.find((x) => x.id === chosen)?.name || chosen) : "Auto";
-      if ($("#cmpSelectedModelLabel")) $("#cmpSelectedModelLabel").textContent = displayLabel;
-      const pillLabel = $("#cmpModelLabel");
-      if (pillLabel) {
-        pillLabel.textContent = chosen ? displayLabel : (pSpec ? pSpec.label : "Auto");
-      }
-      $("#cmpModelMenu").hidden = true;
-      closeAllPickerFlyouts();
-      const pill = $("#cmpModelPill");
-      if (pill) pill.classList.remove("is-active");
-
-      if (current) {
-        try {
-          await api(`/api/agents/${current}/model`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ provider: activePickerProvider, model: activePickerModel }),
-          });
-          toast(`Selected ${displayLabel} for ${current}`);
-          await updateAgentModelChip(current);
-        } catch (err) {
-          toast("Could not update model: " + (err.message || err));
-        }
-      }
+      await applyPickedModel(chosen, pSpec, items);
     };
   });
+}
+
+/** Commit a model choice: local state, the pill, and this agent's binding.
+ *
+ * Extracted, not rewritten — this is the body the click handler used to run
+ * inline, and both routes reached it because `prompt()` blocks and the typed
+ * name just fell through. Our own dialog does not block, so the custom route
+ * now returns and comes back through a callback; without one function to come
+ * back *to*, the second copy is where the agent binding gets forgotten.
+ */
+async function applyPickedModel(chosen, pSpec, items) {
+  activePickerModel = chosen || null;
+  setActiveModel(activePickerProvider, activePickerModel);
+  const displayLabel = chosen
+    ? ((items || []).find((x) => x.id === chosen)?.name || chosen) : "Auto";
+  if ($("#cmpSelectedModelLabel")) $("#cmpSelectedModelLabel").textContent = displayLabel;
+  const pillLabel = $("#cmpModelLabel");
+  if (pillLabel) {
+    pillLabel.textContent = chosen ? displayLabel : (pSpec ? pSpec.label : "Auto");
+  }
+  $("#cmpModelMenu").hidden = true;
+  closeAllPickerFlyouts();
+  const pill = $("#cmpModelPill");
+  if (pill) pill.classList.remove("is-active");
+
+  if (current) {
+    try {
+      await api(`/api/agents/${current}/model`, {
+        method: "POST",
+        body: { provider: activePickerProvider, model: activePickerModel },
+      });
+      toast(`Selected ${displayLabel} for ${current}`);
+      await updateAgentModelChip(current);
+    } catch (err) {
+      toast(`Could not switch to ${displayLabel}. ${errText(err)}`);
+    }
+  }
+}
+
+/** "Use another model…" — our own dialog, not the operating system's.
+ *
+ * The capability is deliberately kept: shipped catalogs lag the vendors, and
+ * `/CLAUDE.md` is explicit that a hardcoded list is a fallback rather than the
+ * truth. What changed is that asking for it is now part of the app.
+ */
+function askAnotherModel(pSpec, items) {
+  const who = pSpec ? pSpec.label : activePickerProvider;
+  openBrainModal(`Use another ${who} model`,
+    `<p class="t">If ${esc(who)} has released a model that isn't in the list yet,
+      type its name exactly as ${esc(who)} writes it.</p>
+     <input id="otherModelInput" class="ctx-input" autocomplete="off" spellcheck="false"
+            placeholder="Model name" value="${esc(activePickerModel || "")}" />
+     <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px">
+       <button id="otherModelCancel" class="ghost tiny">Cancel</button>
+       <button id="otherModelUse" class="primary tiny">Use it</button>
+     </div>`);
+  const box = $("#otherModelInput");
+  const close = () => { $("#brainModal").hidden = true; };
+  const use = async () => {
+    const name = (box.value || "").trim();
+    // Empty is "never mind", not "select Auto" — Auto is its own row above.
+    if (!name) { box.focus(); return; }
+    close();
+    await applyPickedModel(name, pSpec, items);
+  };
+  if (box) {
+    box.focus(); box.select();
+    box.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") { e.preventDefault(); use(); }
+    });
+  }
+  const cancel = $("#otherModelCancel"); if (cancel) cancel.onclick = close;
+  const ok = $("#otherModelUse"); if (ok) ok.onclick = use;
 }
 
 function formatProviderPlanInfo(providerId) {
@@ -1027,9 +1080,6 @@ document.querySelectorAll(".ms-nav-item").forEach((b) => {
     // them, and each opens the profile on the right tab.
     if (to === "tools") return openToolsScreen();
     if (to === "appearance") return openAppearanceScreen();
-    // Leaves the app entirely, so nothing after it runs and the screen does not
-    // need closing — the navigation replaces the document.
-    if (to === "onboarding") { window.location.href = "/onboarding?replay=1"; return; }
     // The two that are their own full-window screens rather than panels in this
     // shell: close this one first, or it stays open underneath them.
     closeModelScreen();

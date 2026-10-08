@@ -76,7 +76,7 @@ async function wsTick() {
     if (title) title.textContent = r.title || "";
     wsNote("");
   } catch (e) {
-    wsNote(String(e).replace(/^Error:\s*/, ""));
+    wsNote(errText(e).replace(/^Error:\s*/, ""));
   }
   WS_BUSY = false;
 }
@@ -98,7 +98,7 @@ async function wsSend(body) {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body) });
   } catch (e) {
-    wsNote(String(e).replace(/^Error:\s*/, ""));
+    wsNote(errText(e).replace(/^Error:\s*/, ""));
     return;
   }
   // Straight after, rather than waiting for the next tick: a click that takes a
@@ -171,7 +171,7 @@ function closeWebScreen() {
     } catch (err) {
       // The server's own sentence — "only https addresses can be used" tells
       // somebody what to change; a 400 does not.
-      wsNote(String(err).replace(/^Error:\s*/, ""));
+      wsNote(errText(err).replace(/^Error:\s*/, ""));
     }
     wsTick();
   };
@@ -187,7 +187,7 @@ function closeWebScreen() {
       await api("/api/browser/view/window", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ visible: WS_WINDOW_OPEN }) });
-    } catch (e) { wsNote(String(e).replace(/^Error:\s*/, "")); }
+    } catch (e) { wsNote(errText(e).replace(/^Error:\s*/, "")); }
   };
 
   // Running with no window at all. Measured rather than promised: hidden means
@@ -213,7 +213,7 @@ function closeWebScreen() {
       wsSetHidden(Boolean(r.hidden));
       wsNote(r.hidden ? "Running with no window. Restarting the browser…"
                       : "The browser has a window again. Restarting…");
-    } catch (e) { wsNote(String(e).replace(/^Error:\s*/, "")); }
+    } catch (e) { wsNote(errText(e).replace(/^Error:\s*/, "")); }
     hide.disabled = false;
     wsTick();
   };

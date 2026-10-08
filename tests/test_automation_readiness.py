@@ -26,6 +26,22 @@ def _own_database():
 
 
 @pytest.fixture
+def a_connected_model(monkeypatch):
+    """A fresh home has no credentials, so nothing reports connected.
+
+    These tests are about the *verdict* — ready, asks, stuck — and the model
+    check is only one input to it. They used to get a connected model for
+    free: the `mock` offline provider was in the shipped catalog and always
+    answers "ready", so `any(connected)` was true in an empty home. It is
+    hidden from users now (`registry.HIDDEN_PROVIDERS`), which took that
+    accident with it — and an automation whose premise is "has what it needs"
+    has to be given a model rather than inherit one from a test fixture that
+    was never meant to be the answer.
+    """
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-not-a-real-key-just-present")
+
+
+@pytest.fixture
 def an_agent():
     from chitragupta.agents.custom import get_custom_store
 
@@ -42,7 +58,7 @@ def apps(**state):
 
 # ── the verdict ────────────────────────────────────────────────────────────
 
-def test_an_automation_with_what_it_needs_says_so(an_agent):
+def test_an_automation_with_what_it_needs_says_so(an_agent, a_connected_model):
     report = readiness.review(automation(agent_id=an_agent.id,
                                          trigger={"type": "manual"}))
     assert report["state"] in ("ready", "asks")
@@ -79,7 +95,7 @@ def test_a_time_of_day_with_no_time_is_caught(an_agent):
 
 # ── "it will ask you" is a setting, not a fault ────────────────────────────
 
-def test_waiting_for_a_tap_is_not_reported_as_broken(an_agent):
+def test_waiting_for_a_tap_is_not_reported_as_broken(an_agent, a_connected_model):
     """"Draft the reply and let me look" is a good automation. A screen calling
     that broken teaches the user to ignore the screen."""
     report = readiness.review(automation(agent_id=an_agent.id,
@@ -129,7 +145,7 @@ def test_the_app_the_trigger_watches_counts_too(an_agent):
     assert report["state"] == "stuck"
 
 
-def test_an_app_the_agent_must_ask_about_is_a_warning_not_a_stop(an_agent):
+def test_an_app_the_agent_must_ask_about_is_a_warning_not_a_stop(an_agent, a_connected_model):
     """It will work. It will stop once and wait for a tap, which is the system
     doing what it is for."""
     report = readiness.review(

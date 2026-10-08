@@ -2765,7 +2765,7 @@ async function send(text) {
   } catch (e) {
     think.done();
     const note = (turn.controller && turn.controller.signal.aborted)
-      ? "Stopped." : String(e);
+      ? "Stopped." : errText(e);
     if (current === aid) addMsg("assistant", note);
     else LANDED.add(aid);
   }

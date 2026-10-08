@@ -35,7 +35,7 @@ async function loadAccount() {
     acState = await api("/api/account/state");
   } catch (e) {
     host.innerHTML = `<div class="set-row"><div class="set-main">`
-      + `<div class="set-desc">${esc(String(e))}</div></div></div>`;
+      + `<div class="set-desc">${esc(errText(e))}</div></div></div>`;
     return;
   }
   acRender();
@@ -185,7 +185,7 @@ async function acSignIn(provider, link) {
       method: "POST", body: { provider: provider, link: !!link },
     });
   } catch (e) {
-    toast(String(e));
+    toast(errText(e));
     return;
   }
 
@@ -205,7 +205,7 @@ async function acSignIn(provider, link) {
     acState = await api("/api/account/signin/finish", { method: "POST" });
     toast(link ? "Added" : "Signed in");
   } catch (e) {
-    toast(String(e));
+    toast(errText(e));
     try { acState = await api("/api/account/state"); } catch (_) {}
   } finally {
     acBusy = false;
@@ -228,7 +228,7 @@ async function acUnlink(provider) {
     acState = await api("/api/account/unlink",
                         { method: "POST", body: { provider } });
   } catch (e) {
-    toast(String(e));
+    toast(errText(e));
   }
   acRender();
 }
@@ -240,7 +240,7 @@ async function acSignOut() {
   try {
     acState = await api("/api/account/signout", { method: "POST" });
   } catch (e) {
-    toast(String(e));
+    toast(errText(e));
   }
   acRender();
 }

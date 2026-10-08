@@ -14,10 +14,19 @@ is step one — a product decision taken on 2026-10-06, recorded in
 [`ACCOUNTS-DESIGN.md`](../ACCOUNTS-DESIGN.md) §0, which reverses the "skippable"
 position that document was written with.
 
-`#skipTop` is **inert** here. It calls `enterApp()`, so leaving it live would be
-precisely the skip this screen exists not to have — and the rule that *a way out
-exists on every screen* was narrowed to "every screen after the account step"
-rather than deleted.
+**No screen has a skip at all now.** The `Skip for now →` pill that used to sit
+in the header — live on Hero and Connect, inert here — was removed for the
+shipping build: setup is something a user finishes, not something they dismiss.
+The rule that *a way out exists on every screen* was first narrowed to "every
+screen after the account step" and is now reversed outright.
+
+What remains is a different thing, and the distinction is the decision. A
+**skip** abandons setup and enters the app anyway. An **escape hatch** fires
+when a step cannot be completed at all. There are exactly two — `acoPass()`
+below, and `Continue anyway →` on the build screen — and removing either turns
+a finishable setup into a trap, which is the bug the skip was added to fix.
+Pinned by `tests/test_onboarding_flow.py::test_no_screen_offers_a_skip` and
+`::test_the_two_escape_hatches_survive_the_skip_being_removed`.
 
 **It may never become a trap, and that is not a softening of the decision.**
 Three ways a user can arrive with no key, and each passes them through or lets
@@ -69,7 +78,9 @@ executed by `tests/js/onboarding_gate.mjs`.
   so a brain of Notion pages works exactly as well as one of email. What the
   check did was dead-end every user without Gmail — and the header's
   "Skip for now" used to disappear the moment the connect screen appeared, so
-  there was no way past it at all. The skip now stays until the handover.
+  there was no way past it at all. Fixing the gate is what made removing the
+  skip safe: Continue now lights for *any* source plus a model that answers,
+  so the screen is passable on its own terms rather than needing an exit.
 - It read **`localStorage.getItem("chitragupta_provider")`** — the presence of a
   string. Choosing a cloud provider and leaving the key box empty wrote that
   string, lit the button, and three minutes later the finale rendered
@@ -138,10 +149,12 @@ Three things stop it becoming a hostage situation:
   treated as unavailable and skipped, not waited on;
 - while nothing is groundable the digest is re-asked every `DIGEST_RETRY` — the
   sync is still running, so the answer really does change;
-- after `PATIENCE` a **Continue anyway →** appears. Both jobs keep running in the
-  app. The build screen needs a way out of its own because `Skip for now` is
-  hidden here — it stays up through Connect now, but not past the handover,
-  where Cancel and Continue anyway are the two exits.
+- after `PATIENCE` a **Continue anyway →** appears. Both jobs keep running in
+  the app. This is now one of only two escape hatches in the whole flow (the
+  other is `acoPass()` on the account screen), so it is load-bearing in a way
+  it was not when a header skip also existed: Cancel goes *backwards* to
+  Connect, which makes Continue anyway the single way forward out of a build
+  that never finishes. Do not remove it.
 
 The block is bracketed by `// >>> build-progress >>>` and is **executed** by
 `tests/js/onboarding_build.mjs` against a scripted backend and a scripted clock —

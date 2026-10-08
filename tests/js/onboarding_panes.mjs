@@ -66,7 +66,6 @@ const nodes = {
   paneDigest: el("paneDigest"),
   continue: el("continue"),
   creq: el("creq"),
-  skipTop: el("skipTop"),
   stepConnect: el("stepConnect"),
   stepBuild: el("stepBuild"),
   stepBrain: el("stepBrain"),
@@ -86,7 +85,6 @@ const CONTROLS = [
   { name: "cancel", owner: "paneBuild" },
   { name: "bSkip", owner: "paneBuild" },
   { name: "toBrain", owner: "paneDigest" },
-  { name: "skipTop", owner: "skipTop" },
 ];
 
 const INERT_SUPPORTED = plan.inertSupported !== false;

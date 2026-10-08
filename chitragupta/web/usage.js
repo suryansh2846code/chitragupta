@@ -137,6 +137,6 @@ $("#bsSync").onclick = async () => {
   try { const r = await api("/api/sync/now", { method: "POST" });
     toast(r.started ? "syncing your sources…" : (r.reason || "already syncing"));
     _bsRefresh(); updateBrainStatus();
-  } catch (e) { toast(String(e)); }
+  } catch (e) { toast(errText(e)); }
 };
 window.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("#brainScreen").hidden) closeBrainScreen(); });

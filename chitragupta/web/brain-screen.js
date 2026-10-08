@@ -137,23 +137,26 @@ function closeBrainScreen() {
   clearInterval(_bsPoll); _bsPoll = null; cancelAnimationFrame(_bsRaf); _bsRaf = null;
 }
 $("#bsClose").onclick = closeBrainScreen;
+// Clean up = remove junk entities, KEEP all the good (LLM/heuristic) graph work.
+//
+// It used to be two buttons wearing one coat: holding Option turned the same
+// control into `POST /api/brain/rebuild`, which **wipes the whole graph** —
+// every entity, every relation, every pass of AI enrichment the user paid a
+// model to produce — and re-extracts with the offline extractor. Nothing on
+// screen said so except the tail of a `title=` tooltip, and the modifier was
+// read off `window.event`, a deprecated global.
+//
+// That is the one thing a control may never be: something other than what it
+// says. The hidden half is gone. `/api/brain/rebuild` still exists and is still
+// tested; it simply has no way to be triggered by a stray Option key.
 { const rb = $("#rebuildBtn"); if (rb) rb.onclick = async () => {
-  // Prune = remove junk entities, KEEP all the good (LLM/heuristic) graph work.
-  // Alt/Option-click = full rebuild from scratch (wipes the graph, re-extracts).
   rb.disabled = true;
   try {
-    if (window.event && (window.event.altKey)) {
-      if (!confirm("Rebuild the knowledge graph from scratch? This WIPES the current graph (including AI enrichment) and re-extracts with the free offline extractor. Memories are kept.")) { rb.disabled = false; return; }
-      rb.textContent = "Rebuilding…";
-      await api("/api/brain/rebuild", { method: "POST" });
-      toast("Rebuilding graph in the background…");
-    } else {
-      rb.textContent = "Cleaning…";
-      const r = await api("/api/brain/prune", { method: "POST" });
-      toast(r.removed_entities ? `Removed ${r.removed_entities} junk ${r.removed_entities === 1 ? "entity" : "entities"}` : "Graph is already clean");
-    }
+    rb.textContent = "Cleaning…";
+    const r = await api("/api/brain/prune", { method: "POST" });
+    toast(r.removed_entities ? `Removed ${r.removed_entities} junk ${r.removed_entities === 1 ? "entity" : "entities"}` : "Graph is already clean");
     loadBrain(); _bsRefresh();
-  } catch (e) { toast(String(e)); }
+  } catch (e) { toast(errText(e)); }
   finally { rb.disabled = false; rb.textContent = "Clean up"; }
 }; }
 
