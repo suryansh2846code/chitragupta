@@ -29,7 +29,7 @@ async function loadUpdates() {
     upState = await api("/api/updates/state");
   } catch (e) {
     host.innerHTML = `<div class="set-row"><div class="set-main">`
-      + `<div class="set-desc">${esc(String(e))}</div></div></div>`;
+      + `<div class="set-desc">${esc(errText(e))}</div></div></div>`;
     return;
   }
   upRender();
@@ -154,7 +154,7 @@ async function upCheckNow() {
   try {
     upState = await api("/api/updates/check", { method: "POST" });
   } catch (e) {
-    toast(String(e));
+    toast(errText(e));
   } finally {
     // Re-render whatever happened: the button is inside the markup this
     // replaces, so there is nothing to re-enable by hand.
@@ -168,7 +168,7 @@ async function upToggleAuto() {
     upState = await api("/api/updates/settings",
                         { method: "POST", body: { enabled: wanted } });
   } catch (e) {
-    toast(String(e));
+    toast(errText(e));
   }
   upRender();
 }

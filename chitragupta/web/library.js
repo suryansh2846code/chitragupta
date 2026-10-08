@@ -115,7 +115,7 @@ function renderRetired() {
       try {
         await api(`/api/agents/custom/${encodeURIComponent(r.id)}/restore`,
                   { method: "POST" });
-      } catch (e) { toast(String(e)); btn.disabled = false; return; }
+      } catch (e) { toast(errText(e)); btn.disabled = false; return; }
       toast(`${r.name} is back on your team`);
       await loadLibrary();
       loadAgents();
@@ -239,7 +239,7 @@ async function addToRoster(t, btn) {
     await loadLibrary();
     if (typeof loadAgents === "function") await loadAgents();
   } catch (e) {
-    toast(String(e));
+    toast(errText(e));
     btn.textContent = "Add agent →";
   } finally {
     btn.disabled = false;

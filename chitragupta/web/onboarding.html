@@ -58,9 +58,6 @@
      accent, and it is the same everywhere now. */
   .brand .mark{width:22px;height:22px;flex:none;border-radius:5px;
     background:url("/static/brand-tile.png") center / contain no-repeat}
-  .topR{display:flex;align-items:center;gap:12px;transition:opacity .4s}
-  .pill{font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--star);background:rgba(223,231,242,.04);border:1px solid var(--line2);border-radius:999px;padding:8px 15px;cursor:pointer;display:inline-flex;gap:7px;align-items:center;transition:all .18s}
-  .pill:hover{border-color:var(--north);color:var(--north)}
   /* The step rail is a real progress indicator, so it carries the state in the
      markup too — `aria-current` on the live step, not colour alone. */
   .steps{display:flex;align-items:center;font-size:12px;opacity:0;pointer-events:none;transition:opacity .5s;position:absolute;left:50%;transform:translateX(-50%)}
@@ -70,8 +67,6 @@
   .step.act{color:var(--star)}.step.act .n{background:var(--north);border-color:var(--north);color:var(--north-ink);box-shadow:0 0 16px var(--north-track)}
   .step.done .n{border-color:var(--north-track);color:var(--north)}
   .sdash{color:var(--faint);margin:0 14px}
-  .stage.on .topR{opacity:1}
-  .stage.building .topR,.stage.brainready .topR{opacity:0;pointer-events:none}
   /* HERO content */
   .hero{position:absolute;inset:0;z-index:4;display:flex;align-items:center;padding:0 44px;transition:opacity .5s ease}
   .stage.on .hero{opacity:0;pointer-events:none}
@@ -327,9 +322,10 @@
       <li class="step" id="stepBuild"><span class="n" aria-hidden="true">2</span>Build</li><span class="sdash" aria-hidden="true">·····</span>
       <li class="step" id="stepBrain"><span class="n" aria-hidden="true">3</span>Your Brain</li>
     </ol>
-    <div class="topR">
-      <button class="pill" id="skipTop">Skip for now →</button>
-    </div>
+    <!-- Nothing on the right. "Skip for now →" lived here; setup is not
+         skippable in a shipping build — see the account pane below. The
+         step rail is `position:absolute; left:50%`, so it stays centred
+         with no spacer holding the other side. -->
   </div>
   <!-- ACCOUNT — the first screen, before anything else.
        Deliberately has **no skip**: making an account is the first step now, a
@@ -337,8 +333,11 @@
        one way past it without signing in is a build that *cannot* sign in (no
        OAuth client configured) — a gate with no possible key is a bricked app,
        not a strict one, so `acoLoad` opens the gate itself and says why.
-       `#skipTop` is inert here for the same reason: it leads straight into the
-       workspace, which would be the skip this screen is not supposed to have. -->
+       As of the shipping build **no screen has a skip**: the header pill that
+       used to offer one on Hero and Connect is gone, so setup is finished
+       rather than abandoned. The escape hatches that stop that becoming a trap
+       are unchanged and are the only ways through — `acoPass()` here, and
+       "Continue anyway →" on the build screen. -->
   <div class="acct" id="paneAccount"><div class="lead">
     <div class="eyebrow">Step one</div>
     <h1><span class="l1">Make your</span><span class="l2">account.</span></h1>
@@ -362,7 +361,7 @@
   <div class="stats" aria-hidden="true">
     <div class="stat"><b id="heroNodes">0</b><span>Memories</span></div><div class="stat"><b id="heroSources">0</b><span>Sources</span></div><div class="stat"><b>On-device</b><span>Private</span></div>
   </div>
-  <div class="bot" aria-hidden="true"><div>Built for a more focused you</div><div>———— v0.3</div></div>
+  <div class="bot" aria-hidden="true"><div>Built for a more focused you</div><div id="verBot">————</div></div>
   <!-- CONNECT (same screen) -->
   <div class="conn" id="paneConnect">
     <div class="cleft">
@@ -427,7 +426,7 @@
     <div class="dcont"><button class="dcta" id="toBrain">Continue to Your Brain →</button></div>
   </div>
   <div class="bfoot" aria-hidden="true">Built for a more focused you</div>
-  <div class="ver" aria-hidden="true">Chitragupta v0.3</div>
+  <div class="ver" id="verDigest" aria-hidden="true">Chitragupta</div>
 </div>
 <div class="cmodal" id="cmodal" role="dialog" aria-modal="true" aria-labelledby="cmTitle"><div class="cmbox">
   <h3 id="cmTitle">Connect</h3>
@@ -550,6 +549,24 @@
   //: Every swallow on this page now says what it was attempting.
   function suppressed(what,e){try{console.warn("[onboarding] "+what+":",e);}catch(_){/* no console — nothing left to do */}}
 
+  //: The version, from the build rather than from this file.
+  //:
+  //: It was typed in twice as `v0.3` while the package said `0.1.0` — so the
+  //: first screen of a shipping app showed a version number that had never
+  //: been true, in two places, each of which had to be remembered at release.
+  //: `/api/updates/state` already knows; the markup ships a dash and this
+  //: fills it. A failure leaves the dash, because a version is decoration here
+  //: and must never be the reason a first run shows an error.
+  (function(){
+    api("/api/updates/state").then(function(s){
+      var v=s&&s.current;if(!v)return;
+      var bot=document.getElementById("verBot");
+      if(bot)bot.textContent="———— v"+v;
+      var dig=document.getElementById("verDigest");
+      if(dig)dig.textContent="Chitragupta v"+v;
+    }).catch(function(e){suppressed("reading the app version",e);});
+  })();
+
   // ── the one icon set ─────────────────────────────────────────────────────
   //  `IC` comes from core.js. A missing glyph renders as nothing rather than
   //  throwing — a page that cannot draw an icon must still be usable.
@@ -604,12 +621,11 @@
     // outside it in the markup, so they are inerted with it rather than by it.
     setLive(document.getElementById("continue"),connecting);
     setLive(document.getElementById("creq"),connecting);
-    // A way out exists on every screen up to the handover. It used to vanish
-    // the moment `.stage.on` was set, which left the connect screen with no
-    // exit at all — and the build screen's own "Continue anyway" is 150s away.
-    // `skipTop` enters the workspace, so leaving it live on the account screen
-    // would be exactly the skip that screen is not supposed to have.
-    setLive(document.getElementById("skipTop"),!account&&!building&&!brainready);
+    // There is no skip on any screen. The header pill that used to offer one
+    // here was removed for the shipping build: setup is something you finish,
+    // not something you dismiss. What remains are the escape hatches, which
+    // are a different thing — `acoPass()` when an account genuinely cannot be
+    // made, and "Continue anyway →" when the build has waited long enough.
     // Steps: `aria-current` says which one is live, because colour alone does
     // not reach a screen reader.
     var steps=[["stepConnect",connecting||!on],["stepBuild",building],["stepBrain",brainready]];
@@ -941,7 +957,6 @@
   //
   //  So: ask first, and only when there is something to lose. A true first run
   //  never sees the dialog.
-  var REPLAY=/[?&]replay=1/.test(location.search);   // just re-experience it — don't wipe
   var didReset=false;
   //: What `/api/brain/reset` would actually destroy — never what merely
   //: exists. `ready` on a connector means "usable on this machine": Manual
@@ -974,10 +989,12 @@
     });}
   async function startFromZero(){
     if(didReset)return true;
-    if(REPLAY){didReset=true;await refreshConnectors();await verifyLLM();return true;}
     var have=await somethingToLose();
     if(have.any&&!await confirmWipe(have)){
-      // Carry on, keep everything. This is the replay path by another name.
+      // Carry on, keep everything — walk the screens again without erasing.
+      // This is the only way back through onboarding now that the Settings
+      // entry for it is gone, and it is the honest one: a user who ends up
+      // here is asked what to do with the brain they already have.
       didReset=true;await refreshConnectors();await verifyLLM();
       renderSources(CONNECTORS.length?CONNECTORS:FALLBACK);
       return true;}
@@ -1478,8 +1495,10 @@
     this.disabled=true;this.textContent="Entering…";setTimeout(enterApp,400);});
   // "Edit summary later" used to sit here: a second button, byte-identical to
   // the one beside it, promising an affordance that does not exist. A control
-  // that cannot do what it says is worse than no control.
-  var skipTop=document.getElementById("skipTop");if(skipTop)skipTop.addEventListener("click",enterApp);
+  // that cannot do what it says is worse than no control. The header's
+  // "Skip for now →" went the same way, for the opposite reason — it did
+  // exactly what it said, and what it said is not on offer in a shipping
+  // build. `enterApp` now has one caller: finishing.
 
   // Cmd/Ctrl+R → reload to the first screen (the hero). The desktop app runs in a
   // webview where the browser's own reload shortcut isn't wired, so we bind it.

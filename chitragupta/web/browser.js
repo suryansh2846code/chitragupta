@@ -171,7 +171,7 @@ function renderSiteShelf(grants) {
         toast(turningOn ? `Agents can ask to change things on ${host}`
                         : `${host} is read-only again`);
       } catch (e) {
-        toast(`Could not change that — ${String(e)}`);
+        toast(`Could not change that — ${errText(e)}`);
         b.disabled = false;
         return;
       }
@@ -209,7 +209,7 @@ function renderSiteShelf(grants) {
       // "agents can no longer read it" describes what changed for the user.
       toast(`Agents can no longer read ${host}`);
     } catch (e) {
-      toast(`Could not disconnect that — ${String(e)}`);
+      toast(`Could not disconnect that — ${errText(e)}`);
       b.disabled = false;
       return;
     }
@@ -296,7 +296,7 @@ function stopBrowserPoll() {
     } catch (e) {
       // The server's sentence, not a generic one: "only https addresses can be
       // used" tells somebody what to change, and a 400 does not.
-      show(String(e).replace(/^Error:\s*/, ""));
+      show(errText(e).replace(/^Error:\s*/, ""));
     }
     if (add) add.disabled = false;
     loadBrowserSites();
@@ -309,7 +309,7 @@ function stopBrowserPoll() {
   if (setup) setup.onclick = async () => {
     setup.disabled = true;
     try { await api("/api/browser/install", { method: "POST" }); }
-    catch (e) { toast(`Could not start setup — ${String(e)}`); }
+    catch (e) { toast(`Could not start setup — ${errText(e)}`); }
     setup.disabled = false;
     loadBrowserSites();
   };
@@ -322,7 +322,7 @@ function stopBrowserPoll() {
     try {
       await api("/api/browser/forget-everything", { method: "POST" });
       toast("Every sign-in forgotten");
-    } catch (e) { toast(`Could not do that — ${String(e)}`); }
+    } catch (e) { toast(`Could not do that — ${errText(e)}`); }
     loadBrowserSites();
   };
 }
@@ -554,7 +554,7 @@ function stopConnectPoll() {
         if (r.needs_window && fix) fix.hidden = false;
       } else if (input) input.value = "";
     } catch (e) {
-      show(String(e).replace(/^Error:\s*/, ""));
+      show(errText(e).replace(/^Error:\s*/, ""));
     }
     go.disabled = false;
     renderConnectRisk();
@@ -580,7 +580,7 @@ function stopConnectPoll() {
         show((r && r.error) || "Could not finish connecting.");
       }
     } catch (e) {
-      show(String(e).replace(/^Error:\s*/, ""));
+      show(errText(e).replace(/^Error:\s*/, ""));
     }
     done.disabled = false;
     await loadConnectState();
@@ -601,7 +601,7 @@ function stopConnectPoll() {
       show("");
       if (go && typeof go.onclick === "function") await go.onclick();
     } catch (e) {
-      show(String(e).replace(/^Error:\s*/, ""));
+      show(errText(e).replace(/^Error:\s*/, ""));
     }
     fix.disabled = false;
   };
@@ -612,7 +612,7 @@ function stopConnectPoll() {
     try {
       const r = await api("/api/browser/connect/cancel", { method: "POST" });
       if (r && r.detail) toast(r.detail);
-    } catch (e) { toast(`Could not stop that — ${String(e)}`); }
+    } catch (e) { toast(`Could not stop that — ${errText(e)}`); }
     cancel.disabled = false;
     show("");
     loadConnectState();

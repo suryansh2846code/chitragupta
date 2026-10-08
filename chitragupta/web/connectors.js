@@ -484,7 +484,7 @@ function bindConnectorRowActions() {
     } catch (e) {
       // And it is caught, which is the other half of that bug — the 422 was
       // invisible because the only caller swallowed it.
-      toast(`Could not disconnect ${b.dataset.cnlabel}. ${String(e)}`);
+      toast(`Could not disconnect ${b.dataset.cnlabel}. ${errText(e)}`);
       return;
     }
     toast(`${b.dataset.cnlabel} disconnected`); loadBrain();
@@ -709,7 +709,7 @@ async function telegramSetup(at = "") {
         toast(out.detail || "Telegram disconnected");
         $("#brainModal").hidden = true;
         loadBrain();
-      } catch (e) { $("#tgOut").disabled = false; toast(String(e)); }
+      } catch (e) { $("#tgOut").disabled = false; toast(errText(e)); }
     };
     return;
   }
@@ -826,14 +826,22 @@ function connectorHelp(name) {
           toast(r.reason || "saved, but not ready yet");
         }
         loadBrain();
-      } catch (e) { toast(String(e)); }
+      } catch (e) { toast(errText(e)); }
       finally { $("#secretSave").disabled = false; $("#secretSave").textContent = "Save"; }
     };
     input.addEventListener("keydown", (e) => { if (e.key === "Enter") $("#secretSave").click(); });
     return;
   }
-  openBrainModal(`Set up ${name}`, (CONNECTOR_HELP[name] || "<p>No setup needed.</p>")
-    + `<p class="t" style="margin-top:10px">Add the value to your <code>.env</code> and restart Chitragupta.</p>`);
+  // The fallback, for a source with no `secret_field` to draw a box for.
+  //
+  // It used to end with "Add the value to your `.env` and restart Chitragupta"
+  // — an instruction to edit a dotfile beside an app the user installed from a
+  // .dmg, in the same function whose own comment eight lines up promises "no
+  // .env editing, no restart needed". It also titled the dialog with `name`,
+  // the internal slug, rather than the label every other string here uses.
+  const c2 = CONNECTORS.find((x) => x.name === name);
+  openBrainModal(`Set up ${esc(c2?.label || name)}`,
+    CONNECTOR_HELP[name] || "<p>This source needs no setup.</p>");
 }
 
 // ── custom API app: connect any REST app, no code ──────────────────────────
@@ -888,7 +896,7 @@ function customAppForm(app) {
       toast("custom app saved — syncing…");
       await syncConn(r.name);
       loadBrain();
-    } catch (e) { toast(String(e)); $("#ca_save").disabled = false; $("#ca_save").textContent = "Save"; }
+    } catch (e) { toast(errText(e)); $("#ca_save").disabled = false; $("#ca_save").textContent = "Save"; }
   };
 }
 $("#addCustomApp").onclick = () => customAppForm();
@@ -917,7 +925,7 @@ async function loadConnectorCatalog() {
   try {
     data = await api("/api/connectors/catalog");
   } catch (e) {
-    box.textContent = "Could not load the connector list. " + String(e);
+    box.textContent = "Could not load the connector list. " + errText(e);
     return;
   }
   // **A shape guard, not a nicety.** This list used to live in a modal, where
@@ -1030,7 +1038,7 @@ async function connectorPermissions(entryId) {
   try {
     info = await api(`/api/connectors/catalog/${encodeURIComponent(entryId)}/permissions`);
   } catch (e) {
-    $("#cxPerm").textContent = "Could not check this connector. " + String(e);
+    $("#cxPerm").textContent = "Could not check this connector. " + errText(e);
     return;
   }
 
@@ -1107,7 +1115,7 @@ async function connectorPermissions(entryId) {
       await syncConn(r.name);
       loadBrain();
     } catch (e) {
-      err.textContent = String(e); err.hidden = false;
+      err.textContent = errText(e); err.hidden = false;
       go.disabled = false; go.textContent = info.needs_auth ? "Connect" : "Add connector";
     }
   };
@@ -1223,7 +1231,7 @@ function customServerForm() {
       toast(`${r.label} connected`);
       loadBrain();
     } catch (e) {
-      err.textContent = String(e); err.hidden = false;
+      err.textContent = errText(e); err.hidden = false;
       go.disabled = false; go.textContent = "Add connector";
     }
   };
@@ -1242,7 +1250,7 @@ async function connectorTools(name, label) {
   try {
     info = await api(`/api/connectors/mcp/${encodeURIComponent(serverId)}/tools`);
   } catch (e) {
-    $("#cxTools").textContent = "Could not reach this connector. " + String(e);
+    $("#cxTools").textContent = "Could not reach this connector. " + errText(e);
     return;
   }
   if (!info.ok) { $("#cxTools").textContent = info.error || "Could not reach it."; return; }
@@ -1397,7 +1405,7 @@ async function connectorDetails(name, label) {
       api("/api/connectors/health"),
     ]);
   } catch (e) {
-    $("#cnDetail").textContent = "Could not read this connector. " + String(e);
+    $("#cnDetail").textContent = "Could not read this connector. " + errText(e);
     return;
   }
 
@@ -1472,7 +1480,7 @@ async function connectorDetails(name, label) {
       paused ? "resume" : "pause"}`;
     try {
       await api(where, { method: "POST", body: { connection_id: btn.dataset.cnpause } });
-    } catch (e) { toast(String(e)); return; }
+    } catch (e) { toast(errText(e)); return; }
     toast(paused ? "syncing resumed" : "syncing paused");
     reload();
   });
@@ -1482,7 +1490,7 @@ async function connectorDetails(name, label) {
     try {
       await api(`/api/connectors/${encodeURIComponent(btn.dataset.cnname)}/resync`,
                 { method: "POST", body: { connection_id: btn.dataset.cnresync } });
-    } catch (e) { toast(String(e)); return; }
+    } catch (e) { toast(errText(e)); return; }
     toast("the next sync will read everything again");
     reload();
   });
@@ -1499,7 +1507,7 @@ async function connectorDetails(name, label) {
       out = await api(`/api/connectors/${encodeURIComponent(btn.dataset.cnname)}/data`
                       + `?connection_id=${encodeURIComponent(btn.dataset.cnforget)}`,
                       { method: "DELETE" });
-    } catch (e) { toast(String(e)); return; }
+    } catch (e) { toast(errText(e)); return; }
     toast(out?.detail || "imported data removed");
     reload();
   });

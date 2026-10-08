@@ -103,7 +103,7 @@ async function loadApprovals() {
       toast(r.ok === false ? (r.error || `couldn't ${verb} that`)
                            : (r.detail || `${verb}d`));
     } catch (e) {
-      toast(String(e));
+      toast(errText(e));
     }
     loadApprovals();
   };
@@ -128,7 +128,7 @@ async function loadApprovals() {
                                  note: "allowed from an approval" }) });
       }
     } catch (e) {
-      toast(`Could not save that permission — ${String(e)}`);
+      toast(`Could not save that permission — ${errText(e)}`);
       if (card) card.classList.remove("apr-busy");
       return;
     }
@@ -253,7 +253,7 @@ async function loadActionLog() {
         loadActionLog(); loadReminders(); loadRoutines();
       } catch (e) {
         b.disabled = false; b.textContent = was;
-        toast(String(e));
+        toast(errText(e));
       }
     };
   });
@@ -314,7 +314,7 @@ async function loadAllowList() {
                   { method: "DELETE" });
         toast(`${value} will be asked about again`);
       } catch (e) {
-        toast(`Could not remove that — ${String(e)}`);
+        toast(`Could not remove that — ${errText(e)}`);
         b.disabled = false;
         return;
       }
@@ -335,7 +335,7 @@ async function loadAllowList() {
       if (input) input.value = "";
       toast(`${value} won't be asked about again`);
     } catch (e) {
-      toast(`Could not allow that — ${String(e)}`);
+      toast(`Could not allow that — ${errText(e)}`);
     }
     if (add) add.disabled = false;
     loadAllowList();
@@ -394,7 +394,7 @@ async function loadTasks() {
       await api("/api/open-browser", { method: "POST", body: {
         url: `https://mail.google.com/mail/#all/${el.dataset.thread}` } });
     } catch (e) {
-      toast(`Could not open that email — ${String(e)}`);
+      toast(`Could not open that email — ${errText(e)}`);
     }
   });
   document.querySelectorAll("[data-done]").forEach((el) => el.onclick = async () => {
@@ -542,7 +542,7 @@ async function openPicker() {
         toast(r.errors?.length ? `files: ${r.errors[0]}`
                                : `files: +${r.added} added from ${r.detail}`);
         loadBrain();
-      } catch (e) { toast(String(e)); }
+      } catch (e) { toast(errText(e)); }
     },
   });
 }
@@ -905,9 +905,9 @@ $("#amCreate").onclick = async () => {
 // There used to be a SECOND onboarding here: a `#onboard` modal with its own
 // six buttons, kept alive by six empty `hidden` stubs in index.html so these
 // bindings would not throw. `openOnboard()` had no caller. Onboarding is
-// /onboarding — one implementation, and the Settings rail replays it with
-// `?replay=1`. Two answers to one question is how one of them goes stale, and
-// this one had: it still offered a lead agent that no longer exists.
+// /onboarding — one implementation, reached by being a new user. Two answers
+// to one question is how one of them goes stale, and this one had: it still
+// offered a lead agent that no longer exists.
 //
 // #helpBtn went the same way: app.js loads after this file and overwrote the
 // handler with that same redirect, but `$("#helpBtn")` was unguarded, so once
@@ -926,7 +926,7 @@ $("#brainExport").onclick = async () => {
     document.body.appendChild(a); a.click(); a.remove();
     URL.revokeObjectURL(a.href);
     toast("Brain exported");
-  } catch (e) { toast(String(e)); }
+  } catch (e) { toast(errText(e)); }
 };
 $("#brainImport").onclick = () => $("#brainImportFile").click();
 $("#brainImportFile").onchange = async (e) => {

@@ -90,7 +90,7 @@ async function bkLoad() {
   try {
     bkState = await api("/api/backup/state");
   } catch (e) {
-    bkRender({ error: String(e) });
+    bkRender({ error: errText(e) });
     return;
   }
   bkRender();
@@ -341,7 +341,7 @@ async function bkStart() {
     if (started.recovery_code) bkShowCode(started.recovery_code);
     bkWatch();
   } catch (e) {
-    bkSay(String(e), true);
+    bkSay(errText(e), true);
   }
 }
 
@@ -462,7 +462,7 @@ async function bkSetAuto(change) {
   } catch (e) {
     // Re-render from what the server last told us, so the switch does not sit
     // showing a state it only asked for.
-    toast(String(e));
+    toast(errText(e));
     bkRender();
   }
 }
@@ -473,7 +473,7 @@ async function bkMarkSaved() {
     bkState = await api("/api/backup/state");
     bkRender();
   } catch (e) {
-    toast(String(e));
+    toast(errText(e));
   }
 }
 
@@ -490,7 +490,7 @@ async function bkInspect(rawPath) {
   try {
     seen = await api("/api/backup/inspect", { method: "POST", body: { path } });
   } catch (e) {
-    box.innerHTML = `<p class="model-hint" style="color:var(--danger)">${esc(String(e))}</p>`;
+    box.innerHTML = `<p class="model-hint" style="color:var(--danger)">${esc(errText(e))}</p>`;
     return;
   }
   bkPicked = seen;
@@ -544,7 +544,7 @@ async function bkRestore(path) {
     });
     bkWatch();
   } catch (e) {
-    bkSay(String(e), true);
+    bkSay(errText(e), true);
   }
 }
 

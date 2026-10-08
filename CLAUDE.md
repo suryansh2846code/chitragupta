@@ -563,12 +563,19 @@ Many users, many machines. Do not bake in anything specific to one of either.
   chat. Everything else is a full-screen surface. **Keep every element id** —
   `app.js` injects into many of them.
 - **Every left-nav item opens a screen.** There is no slide-over drawer.
-- **Onboarding is Account → Hero → Connect → Build → Your Brain.** The account
-  screen is first and is the only one with no way around it; `skipTop` is inert
-  there, because it enters the workspace and would be exactly the skip that
-  screen is not supposed to have. The rule that *a way out exists on every
-  screen* was narrowed to "after the account step" rather than deleted — see
-  `tests/test_onboarding_flow.py`, which says so where somebody would read it.
+- **Onboarding is Account → Hero → Connect → Build → Your Brain, and no screen
+  has a skip.** The `Skip for now →` pill was removed for the shipping build:
+  setup is something a user finishes, not something they dismiss. The rule that
+  *a way out exists on every screen* had already been narrowed to "after the
+  account step"; it is now **reversed**, and the reversal is written out in
+  `tests/test_onboarding_flow.py::test_no_screen_offers_a_skip` rather than
+  only here.
+  **A skip is not an escape hatch, and the two must not be confused.** A skip
+  abandons setup and enters the app anyway; an escape hatch fires when a step
+  *cannot be completed at all*, and there are exactly two — `acoPass()` when a
+  build genuinely cannot sign in, and `Continue anyway →` after 150s of a build
+  that may never finish. Removing either turns a finishable setup into a trap,
+  which is the bug the skip was added to fix in the first place.
 - **No emoji, and no dingbat doing an icon's job.** `IC` in `web/core.js` is the
   icon set; an emoji is a colour font that ignores `currentColor`, so it can
   never take the accent. Arrows inside sentences are typography, not icons.
@@ -643,7 +650,7 @@ In order: **the focused test → the subsystem's suite → `pytest` →
 `ruff check chitragupta tests` → `mypy chitragupta` → the `tests/js/` harnesses if
 the frontend changed → `chitragupta app` opens and renders.**
 
-Baseline, measured 2026-10-06: **6764 passed, 35 skipped in ~8min23**, ruff
+Baseline, measured 2026-10-08: **6781 passed, 36 skipped in ~8min29**, ruff
 clean, mypy clean over 249 files. **The count is the number to compare against,
 never the clock** — the same suite took 11min10 earlier the same day while it
 shared the machine with another session's run. See the shared-machine rules at

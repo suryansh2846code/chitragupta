@@ -254,7 +254,7 @@ function renderProfileIdentity(pane, a) {
         body: JSON.stringify({ name: nameEl.value, role: roleEl.value }),
       });
     } catch (e) {
-      toast(String(e)); save.disabled = false; return;
+      toast(errText(e)); save.disabled = false; return;
     }
     profDirty = false;
     toast("Saved");
@@ -269,7 +269,7 @@ function renderProfileIdentity(pane, a) {
     try {
       await api(`/api/agents/${encodeURIComponent(a.id)}/identity`,
                 { method: "DELETE" });
-    } catch (e) { toast(String(e)); return; }
+    } catch (e) { toast(errText(e)); return; }
     profDirty = false;
     await loadAgents();
     renderProfileHead();
@@ -315,7 +315,7 @@ function renderProfileDanger(pane, a) {
     delete DRAFTS[a.id];
     try {
       await api(url, { method });
-    } catch (e) { toast(String(e)); btn.disabled = false; return; }
+    } catch (e) { toast(errText(e)); btn.disabled = false; return; }
     if (current === a.id) current = null;
     profDirty = false;
     closeAgentProfile();
@@ -424,7 +424,7 @@ async function renderProfilePersona(pane, a) {
     profVocab = got.vocabulary;
   } catch (e) {
     body.innerHTML = `<p class="ms-sub">Could not open this agent's persona.</p>`;
-    toast(String(e));
+    toast(errText(e));
     return;
   }
   drawPersonaBody(body, a);
@@ -567,7 +567,7 @@ function drawPersonaBody(body, a) {
       });
       profPersona = got.persona;
     } catch (e) {
-      toast(String(e)); save.disabled = false; return;
+      toast(errText(e)); save.disabled = false; return;
     }
     profDirty = false;
     toast("Saved");
@@ -680,7 +680,7 @@ async function renderProfileDoc(pane, a, kind) {
     } catch (e) {
       // The server refuses a file past its cap with a sentence written to be
       // read by the person who pressed this button. Show that, not a code.
-      toast(String(e)); save.disabled = false; return;
+      toast(errText(e)); save.disabled = false; return;
     }
     profDirty = false;
     toast("Saved");
@@ -692,7 +692,7 @@ async function renderProfileDoc(pane, a, kind) {
       : `Put ${a.name} back on the instructions it ships with?`)) return;
     try {
       await api(url, { method: "DELETE" });
-    } catch (e) { toast(String(e)); return; }
+    } catch (e) { toast(errText(e)); return; }
     area.value = "";
     profDirty = false;
     markProfileDirty(false);
@@ -774,7 +774,7 @@ async function renderProfileModel(pane, a) {
           body: JSON.stringify({ provider: prov.value, model: mod.value || null }),
         });
       }
-    } catch (e) { toast(String(e)); save.disabled = false; return; }
+    } catch (e) { toast(errText(e)); save.disabled = false; return; }
     profDirty = false;
     toast("Saved");
     if (typeof updateAgentModelChip === "function" && profAgentId === current) {

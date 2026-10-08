@@ -17,8 +17,9 @@ The sidebar and the settings-shell rail (`.ms-nav-item`) are two navigations
 over one app. Four items now open the same shell — `Connectors`, `Agents &
 tools`, `Model` and `Settings` — and `Settings` and `Model` land on the *same
 panel*. The shell is `position: fixed; inset: 0`, so entering it hides the
-sidebar, which is why `Agent Library` and `Replay onboarding` are unreachable
-without going Back.
+sidebar, which is why `Agent Library` is unreachable without going Back.
+(`Replay onboarding` used to be named here too; it was removed from the rail
+when the app was taken to a shipping build.)
 
 The consolidation: the sidebar keeps the places you *work* (Inbox, Brain, Agent
 Library), and `Settings` is the one door to the shell, which already groups
@@ -47,13 +48,6 @@ returns it on close. The small modals do all three.
 modal handler is a separate window listener. Open *New automation* from Inbox,
 press Escape, and the modal **and** the Inbox screen both close. `#brainModal`
 over `#brainScreen` has the same shape (`usage.js`).
-
-## `#agentModelModal` is dead markup
-
-A complete 31-line modal in `index.html` — provider select, model select,
-custom-model field, Reset/Cancel/Save — with **zero** JS references to any of
-its eleven ids. `openAgentModelModal()` opens the composer popover instead and
-ignores the `agentId` it is handed.
 
 ## Dead compat shims
 
@@ -92,11 +86,6 @@ where the two drifted and the pill disagreed with the turn.
 even when nothing is syncing; `brain.js` and `brain-screen.js` poll the same
 status independently.
 
-## Dead controls
-
-`#userChip` (the account chip in the sidebar foot) and `#waveformBtn` have no
-handlers at all. `#micBtn` is a visible "coming soon".
-
 ## `~49 dead CSS class families`
 
 `ctx-*` (the removed Context pane), `welcome-*`, fourteen `pc-*` from an older
@@ -112,7 +101,6 @@ and `#5fd0e0` are still in the file.
 
 ## Onboarding leftovers
 
-- `v0.3` is typed into `onboarding.html` twice and will go stale.
 - The four digest card icons use four hardcoded accents (`#b498f0`, `#5fcf8e`,
   `#5b9bff`, `#f5c877`); the brief commits to one gold.
 - `FALLBACK` hardcodes eight connectors with labels and secret-field copy, shown
@@ -175,22 +163,3 @@ two slow endpoints on a path a user now takes freely and often.
 The fix is not a frontend one alone. `/api/connectors` is the shape to look at
 first — it is nine seconds of provider probing on a page load, and the labels the
 `@` picker wants out of it do not change between two switches a second apart.
-
-## `#agentModelModal` is forty lines of markup nothing can open
-
-Found while locking the composer's voice buttons, which was a sweep for
-controls that cannot work. `index.html` carries a whole dialog — provider
-select, model select, custom-model box, hint, status badge, and four buttons
-(`ammClose`, `ammReset`, `ammCancel`, `ammSave`) — and **no script references
-any of it**. `models.js` superseded it with the `.cmp-model-picker-wrap`
-flyout; the dialog was left behind.
-
-It is not the bug the voice buttons were: it is `hidden` and nothing opens it,
-so no user ever meets a control that does nothing. What it is instead is a
-second, plausible-looking answer to "where is the agent's model chosen" sitting
-in the file the next person greps — and four button ids reserved against
-handlers that will never be written.
-
-Deleting it is the fix, and deleting it is also the only thing that could be
-wrong about it, so it wants its own commit rather than a ride on an unrelated
-one. Check `tests/test_frontend_model_screen.py` first: it reads this file.

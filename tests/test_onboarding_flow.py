@@ -113,8 +113,8 @@ def panes(stages: list[str], inert_supported: bool = True,
 #: Every entry here is a screen *after* the account step, which is why they pass
 #: `accountDone`. The account screen is first and is covered on its own below.
 REACHABLE = {
-    ("hero", ()): {"buildBtn", "skipTop"},
-    ("connect", ("on",)): {"sourceTile", "continue", "skipTop"},
+    ("hero", ()): {"buildBtn"},
+    ("connect", ("on",)): {"sourceTile", "continue"},
     ("build", ("on", "building")): {"cancel", "bSkip"},
     ("digest", ("on", "brainready")): {"toBrain"},
 }
@@ -148,12 +148,8 @@ def test_the_account_screen_is_the_first_one():
 
 
 def test_the_account_screen_has_no_way_around_it():
-    """The decision this screen exists to carry: signing in is the way past it.
-
-    `#skipTop` enters the workspace, so leaving it live here would be exactly
-    the skip this screen is not supposed to have.
-    """
-    assert "skipTop" not in panes([], account_done=False)["reachable"]
+    """The decision this screen exists to carry: signing in is the way past it."""
+    assert set(panes([], account_done=False)["reachable"]) == {"acoButtons"}
 
 
 def test_passing_the_account_step_hands_over_to_the_hero():
@@ -188,20 +184,53 @@ def test_visibility_is_the_fallback_where_inert_is_unsupported():
     assert set(out["reachable"]) == {"toBrain"}
 
 
-def test_a_way_out_exists_on_every_screen_after_the_account_step():
-    """`Skip for now` used to disappear the instant `.stage.on` was set, which
-    left the connect screen with no exit at all — and the build screen's own
-    "Continue anyway" is 150 seconds away.
+def test_no_screen_offers_a_skip():
+    """**Reversed deliberately, and this test is the record of it.**
 
-    **Narrowed, not weakened.** The rule used to read "every screen before the
-    handover" and now reads "every screen after the account step", because
-    making an account became step one. The account screen's own way through is
-    signing in — and when a build genuinely *cannot* sign in, it opens itself
-    rather than trapping anybody; that is
-    `tests/test_onboarding_account.py::test_a_build_that_cannot_sign_in_does_not_trap_the_user`.
+    The rule here used to be "a way out exists on every screen after the
+    account step", carried by a `Skip for now →` pill in the header that was
+    live on the hero and on connect. Setup is not dismissible in a shipping
+    build, so the pill is gone and the rule is now its opposite: *no* screen
+    offers a way to abandon onboarding.
+
+    What survives is a different thing, and the distinction is the whole
+    decision. A **skip** abandons setup and enters the app anyway. An **escape
+    hatch** fires when a step cannot be completed at all, and there are exactly
+    two — both asserted below and neither reachable on demand.
+
+    This asserts the control is gone from the *markup*, not merely unreachable:
+    `panes()` reports what a keyboard can land on, and a button nothing makes
+    live would pass that check while still being one `setLive` away from
+    coming back.
+
+    Comments are stripped before the check, and deliberately — the prose that
+    explains why the pill went says its name, and a test that cannot tell a
+    button from the sentence recording its removal would forbid writing the
+    reason down.
     """
-    assert "skipTop" in panes([])["reachable"]
-    assert "skipTop" in panes(["on"])["reachable"]
+    page = (ROOT / "chitragupta/web/onboarding.html").read_text()
+    code = re.sub(r"<!--.*?-->", "", page, flags=re.S)
+    code = re.sub(r"^\s*//.*$", "", code, flags=re.M)
+    assert "skipTop" not in code, "the skip pill is back in the onboarding markup"
+    assert "Skip for now" not in code, "the skip pill is back under another id"
+    for screen in ([], ["on"], ["on", "building"], ["on", "brainready"]):
+        assert "skipTop" not in panes(screen)["reachable"]
+
+
+def test_the_two_escape_hatches_survive_the_skip_being_removed():
+    """Neither is a skip, and removing the skip must not have taken them.
+
+    Without these the removal turns a dismissible setup into a trap, which is
+    the bug the skip was originally added to fix:
+
+    - `bSkip` ("Continue anyway →") appears only after 150s of waiting, and
+      still lands the user on the digest rather than past it. Covered properly
+      in `test_onboarding_digest.py::test_a_long_wait_is_never_a_trap`.
+    - `cancel` goes *backwards* to connect, so the build screen is never a
+      one-way door.
+    - the account screen opens itself when a build genuinely cannot sign in —
+      `test_onboarding_account.py::test_a_build_that_cannot_sign_in_does_not_trap_the_user`.
+    """
     assert {"cancel", "bSkip"} <= set(panes(["on", "building"])["reachable"])
 
 

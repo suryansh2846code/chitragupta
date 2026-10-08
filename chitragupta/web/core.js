@@ -38,6 +38,48 @@ function _encodeBody(o) {
 }
 const api = (p, o) => fetch(p, _encodeBody(o)).then((r) => r.ok ? r.json() : r.json().then((e) => Promise.reject(e.detail || r.statusText)));
 
+// ── what an error is allowed to say to a person ────────────────────────────
+// `api()` rejects with whatever came back, and ~45 call sites put that value
+// straight on screen with `String(e)`. Three of its shapes are not English:
+//
+//   * the body was not JSON (a 502, a crash page) → `r.json()` throws, so the
+//     rejection is a `SyntaxError` and the toast reads
+//     *"SyntaxError: Unexpected token '<'…"*;
+//   * FastAPI validation failed → `detail` is an **array**, and `String([…])`
+//     of objects is the literal text `[object Object]`;
+//   * a bare `TypeError: Failed to fetch` when the server is simply not there.
+//
+// "Never surface an internal" is a rule in `/CLAUDE.md`, and each of those is
+// an internal wearing a sentence's clothes. One translator, so the next call
+// site inherits it rather than repeating the mistake — and a real `detail`
+// string, which is the common case and is already written for a person, is
+// passed through untouched.
+function errText(e, fallback) {
+  const generic = fallback || "Something went wrong. Please try again.";
+  if (e == null) return generic;
+  if (typeof e === "string") return e.trim() || generic;
+  // FastAPI's 422 shape: a list of per-field objects. Nothing in it is a
+  // sentence, and the one readable part is the message on the first entry.
+  if (Array.isArray(e)) {
+    const first = e.find((x) => x && typeof x.msg === "string");
+    return first ? first.msg : generic;
+  }
+  if (e instanceof Error) {
+    // A parse failure is about OUR response, not about anything the user did,
+    // and "Unexpected token '<'" tells them nothing they can act on.
+    if (e.name === "SyntaxError") return "The app got an unexpected reply from its own server.";
+    if (e.name === "TypeError" && /fetch/i.test(e.message || "")) return "Could not reach Chitragupta. Is it still running?";
+    return (e.message || "").trim() || generic;
+  }
+  if (typeof e === "object") {
+    for (const k of ["detail", "message", "msg", "error"]) {
+      if (typeof e[k] === "string" && e[k].trim()) return e[k].trim();
+    }
+    return generic;                       // never `[object Object]`
+  }
+  return String(e);
+}
+
 function toast(m) { const t = $("#toast"); if (!t) return; t.textContent = m; t.classList.add("show"); setTimeout(() => t.classList.remove("show"), 2200); }
 
 // ── controls that are drawn but not built yet ──────────────────────────────

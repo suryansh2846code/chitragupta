@@ -1094,7 +1094,7 @@ async function openFolderToAgents(agent, btn) {
                : "That folder is open to this app");
     redrawAgentTools();
   } catch (e) {
-    if (err) { err.textContent = String(e); err.hidden = false; }
+    if (err) { err.textContent = errText(e); err.hidden = false; }
     btn.disabled = false;
   }
 }

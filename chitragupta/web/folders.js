@@ -213,7 +213,7 @@ async function saveAgentFolders(state, paths) {
           got.folders || []);
   } catch (e) {
     paint(was.available, was.chosen, was.effective);
-    toast(String(e));
+    toast(errText(e));
     return;
   }
   toast(state.effective.length

@@ -107,7 +107,7 @@ async function setAutonomy(key) {
   } catch (e) {
     autoCurrent = was;
     renderAutonomyPill();
-    toast(String(e));
+    toast(errText(e));
     return;
   }
   const level = autoLevels.find((l) => l.key === key);

@@ -98,10 +98,10 @@ async function raiseFloatingSigninCard(providerId, brandName, authUrl) {
   // Only the desktop app has a window to create; in a browser tab this is
   // absent and the in-app card handles the wait instead.
   const api = window.pywebview && window.pywebview.api;
-  if (!api || typeof api.open_signin_hud !== "function") {
-    console.info("[chitragupta] no native window bridge — using the in-app card");
-    return false;
-  }
+  // No trace on this branch. It is the ordinary answer in a browser tab, not a
+  // fault, and it fired on every sign-in — the two `console.warn`s below stay,
+  // because those are a bridge that exists and did not work.
+  if (!api || typeof api.open_signin_hud !== "function") return false;
   try {
     const ok = Boolean(await api.open_signin_hud(providerId, brandName, authUrl));
     // Silence here is what made this hard to diagnose: the bridge existed but
@@ -173,7 +173,7 @@ function showWaitingHud({ brandName, authUrl, providerId, requiresCode = false, 
         dismiss();
         if (onConnected) onConnected();
       } catch (err) {
-        toast(`Error: ${err.message || err}`);
+        toast(errText(err));
         codeSubmit.disabled = false;
         codeSubmit.innerText = "Connect";
       }
@@ -319,7 +319,7 @@ function showCliInstructions(containerEl, res, brandName, providerId, onRefresh)
         label.textContent = "Installed — opening sign-in…";
         onRefresh(true);            // re-run sign-in now that the CLI exists
       } catch (e) {
-        label.textContent = `Install failed: ${e.message || e}`;
+        label.textContent = `Could not install it. ${errText(e)}`;
         btn.disabled = false;
         btn.textContent = "Try again";
       }
@@ -704,7 +704,7 @@ function renderProviderConnectBox(boxEl, providerId, options = {}) {
         await loadProviders();
         if (options.onConnect) options.onConnect();
       } catch (e) {
-        setFeedback(`Connection error: ${e.message || e}`, true);
+        setFeedback(`Could not connect. ${errText(e)}`, true);
       } finally {
         continueBtn.disabled = false;
       }
@@ -837,7 +837,7 @@ function renderProviderConnectBox(boxEl, providerId, options = {}) {
 
       } catch (e) {
         stopPolling();
-        setFeedback(`Sign in error: ${e.message || e}`, true);
+        setFeedback(`Could not sign in. ${errText(e)}`, true);
       }
     };
   }
@@ -853,7 +853,7 @@ function renderProviderConnectBox(boxEl, providerId, options = {}) {
         toast(`Refreshed ${p.label || providerId}`);
         await loadProviders();
       } catch (e) {
-        setFeedback(`Refresh error: ${e.message || e}`, true);
+        setFeedback(`Could not refresh that. ${errText(e)}`, true);
       } finally {
         btn.disabled = false;
       }
@@ -875,7 +875,7 @@ function renderProviderConnectBox(boxEl, providerId, options = {}) {
         await loadProviders();
         if (options.onConnect) options.onConnect();
       } catch (e) {
-        setFeedback(`Disconnect error: ${e.message || e}`, true);
+        setFeedback(`Could not disconnect. ${errText(e)}`, true);
       } finally {
         disconnectBtn.disabled = false;
       }
@@ -902,7 +902,7 @@ function renderProviderConnectBox(boxEl, providerId, options = {}) {
         await loadProviders();
         if (options.onConnect) options.onConnect();
       } catch (e) {
-        setFeedback(`Failed to connect: ${e.message || e}`, true);
+        setFeedback(`Failed to connect: ${errText(e)}`, true);
       } finally {
         connectBtn.disabled = false;
       }
@@ -923,7 +923,7 @@ function renderProviderConnectBox(boxEl, providerId, options = {}) {
         });
         setFeedback(res.message, !res.ok);
       } catch (e) {
-        setFeedback(`Test request error: ${e.message || e}`, true);
+        setFeedback(`That key did not work. ${errText(e)}`, true);
       } finally {
         testBtn.disabled = false;
       }

@@ -39,12 +39,12 @@ function applyIcons() {
     const key = b.dataset.nav === "sources" ? "connectors" : b.dataset.nav;
     el.innerHTML = IC[key] || "";
   });
-  // The nav key and the icon key agree everywhere except onboarding, whose
-  // glyph has always been filed under "help". Without the alias that row draws
-  // an empty 18px slot and its label sits out of line with every other one —
-  // the `|| ""` fallback makes a missing icon silent, so it has to be mapped
-  // rather than noticed later.
-  const MS_IC = { onboarding: "help", backup: "archive" };
+  // The nav key and the icon key agree everywhere except backup, whose glyph
+  // is filed under "archive". Without the alias that row draws an empty 18px
+  // slot and its label sits out of line with every other one — the `|| ""`
+  // fallback makes a missing icon silent, so it has to be mapped rather than
+  // noticed later.
+  const MS_IC = { backup: "archive" };
   document.querySelectorAll(".ms-nav-item").forEach((b) => {
     const el = b.querySelector(".ms-nav-ic"); if (!el) return;
     const key = b.dataset.msnav;
@@ -233,8 +233,8 @@ function openDrawer(name) {
   if (name === "web") return openWebScreen();
   if (name === "library") return openLibrary();
 }
-// Inbox, Brain and Settings. Replay onboarding moved into the Settings rail,
-// which is why the helpBtn special case that used to live here is gone.
+// Inbox, Brain and Settings. Nothing here special-cases a route out of the
+// app any more — onboarding is reached by being a new user, not by a button.
 document.querySelectorAll(".snav").forEach((b) => b.onclick = () => openDrawer(b.dataset.nav));
 // The account chip was markup with no handler at all — a control that could not
 // do anything. It goes where its name now says it goes.
@@ -303,8 +303,9 @@ window.addEventListener("keydown", (e) => {
 // visible takes focus, and whatever opened it gets focus back on the way out.
 // Escape closes the topmost one by clicking its own close button, so each
 // modal's existing teardown still runs instead of being bypassed.
-// #welcome is deliberately excluded: its only exit is "Skip for now", which
-// writes a preference, and Escape must not quietly make that choice.
+// (This used to carve out `#welcome`, whose only exit wrote a preference that
+// Escape must not choose silently. That modal is gone — see workspace.js — so
+// the rule is now unqualified: every overlay here is Escape-closable.)
 {
   const FOCUSABLE = [
     'button:not([disabled])', 'a[href]', 'input:not([type="hidden"])',
