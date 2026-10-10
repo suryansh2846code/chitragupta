@@ -1,0 +1,10 @@
+name = "chitragupta-site"
+compatibility_date = "2024-09-02"
+
+# Pages project: `npx wrangler pages deploy . --project-name chitragupta-site`
+# The static assets are in the site/ root; functions/ is picked up automatically.
+
+[[d1_databases]]
+binding = "DB"
+database_name = "chitragupta-waitlist"
+database_id = ""  # Fill after: wrangler d1 create chitragupta-waitlist

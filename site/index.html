@@ -1,0 +1,1644 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Chitragupta — Your AI shouldn't start from zero</title>
+  <meta name="description" content="A team of AI agents that share one brain — and it lives on your Mac. Connect your mail, files, calendar and notes once. Every agent knows you from then on.">
+
+  <!-- Open Graph / Social -->
+  <meta property="og:title" content="Chitragupta — Your AI shouldn't start from zero">
+  <meta property="og:description" content="A team of AI agents that share one brain — and it lives on your Mac. Offline-ready, private, Apache-2.0.">
+  <meta property="og:type" content="website">
+  <meta property="og:image" content="/brand-tile.png">
+  <meta name="twitter:card" content="summary_large_image">
+
+  <!-- Favicon -->
+  <link rel="icon" type="image/png" sizes="64x64" href="/favicon-64.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
+
+  <!-- Schema.org -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Chitragupta",
+    "operatingSystem": "macOS",
+    "applicationCategory": "ProductivityApplication",
+    "description": "A team of AI agents that share one brain — and it lives on your Mac.",
+    "license": "https://opensource.org/licenses/Apache-2.0",
+    "url": "https://chitragupta.app"
+  }
+  </script>
+
+  <!-- Old styles archived with old design: <link rel="stylesheet" href="/styles.css"> -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@400;500;600&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/new-styles.css">
+</head>
+<body>
+  <!-- ═══════════════════════════════════════════════════════
+       FLOATING PILL NAVIGATION (TACTILE EDITORIAL)
+       ═══════════════════════════════════════════════════════ -->
+  <header class="nav-capsule" id="nav">
+    <div class="nav-capsule-inner">
+      <a href="#" class="nav-brand" aria-label="Chitragupta Home">
+        <div class="nav-logo-box">
+          <img src="/brand-tile.png" alt="Chitragupta Logo" width="22" height="22">
+        </div>
+        <span class="nav-brand-text">CHITRAGUPTA</span>
+      </a>
+
+      <nav class="nav-menu" aria-label="Main Navigation">
+        <a href="#how-it-works" class="nav-item">Product</a>
+        <a href="#how-it-works" class="nav-item">How it works</a>
+        <a href="#agents" class="nav-item">Agents</a>
+        <a href="#privacy" class="nav-item">Privacy</a>
+        <a href="https://github.com/suryansh2846code/chitragupta" class="nav-item" target="_blank" rel="noopener">Docs</a>
+      </nav>
+
+      <a href="#waitlist" class="nav-cta-btn">
+        <span>Get early access</span>
+        <span class="arr">→</span>
+      </a>
+    </div>
+  </header>
+
+  <!-- ═══════════════════════════════════════════════════════
+       HERO SECTION — TACTILE PAPER COLLAGE
+       ═══════════════════════════════════════════════════════ -->
+  <section class="hero-collage-wrapper" id="hero">
+    <!-- Collage assets, positioned against the hero box (see new-styles.css) -->
+    <div class="hero-collage-layers" aria-hidden="true">
+
+      <!-- ── LEFT GROUP ─────────────────────────────────── -->
+      <img src="/parchment.png" alt="" class="cl-parchment" loading="eager">
+      <img src="/parchment.png" alt="" class="cl-parchment-right" loading="eager">
+      <img src="/sky-scrap.png" alt="" class="cl-sky-left" loading="eager">
+      <svg class="cl-arc-bottom" viewBox="0 0 280 340" fill="none">
+        <path d="M276 336 C208 268 118 212 44 148 C16 124 2 84 8 30"
+              stroke="#B8863A" stroke-width="1.4" opacity="0.72"/>
+      </svg>
+      <img src="/sun-cloud.png" alt="" class="cl-sun" loading="eager">
+      <img src="/tree-rock.png" alt="" class="cl-tree" loading="eager">
+
+      <div class="cl-note cl-note-left">
+        <span class="hand">Your<br>context<br>stays<br>yours.</span>
+        <svg class="hand-arrow hand-arrow-left" viewBox="0 0 62 86" fill="none"
+             stroke="#8A8275" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M8 4 C34 20 48 46 50 74"/>
+          <path d="M50 78 L41 62 M50 78 L58 60"/>
+        </svg>
+      </div>
+
+      <svg class="cl-birds" viewBox="0 0 72 36" fill="none"
+           stroke="#6E675C" stroke-width="1.25" stroke-linecap="round">
+        <path d="M4 13 Q11 5 18 13 Q25 5 32 13"/>
+        <path d="M40 28 Q47 20 54 28 Q61 20 68 28"/>
+      </svg>
+
+      <!-- ── RIGHT GROUP ────────────────────────────────── -->
+      <svg class="cl-arc-right" viewBox="0 0 400 620" fill="none">
+        <path d="M243 40 A390 390 0 0 1 316 560"
+              stroke="#B8863A" stroke-width="1.2" opacity="0.55"/>
+      </svg>
+
+      <img src="/sky-scrap.png" alt="" class="cl-sky" loading="eager">
+
+      <svg class="cl-lines-right" viewBox="0 0 220 190" fill="none">
+        <path d="M196 10 L196 152" stroke="#B8863A" stroke-width="1" opacity="0.5"/>
+        <path d="M6 152 L196 152" stroke="#B8863A" stroke-width="1" opacity="0.45"/>
+        <circle cx="196" cy="10" r="3.4" fill="#B8863A" opacity="0.85"/>
+        <circle cx="196" cy="152" r="2.4" fill="#B8863A" opacity="0.6"/>
+      </svg>
+
+      <div class="cl-note cl-note-right">
+        <span class="hand">A team<br>that<br>remembers.</span>
+        <svg class="hand-arrow hand-arrow-right" viewBox="0 0 64 88" fill="none"
+             stroke="#8A8275" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 4 C30 24 36 50 32 78"/>
+          <path d="M32 82 L23 66 M32 82 L41 68"/>
+        </svg>
+      </div>
+
+      <img src="/tree-right.png" alt="" class="cl-tree-right" loading="eager">
+      <img src="/temple-pavilion.png" alt="" class="cl-temple" loading="eager">
+      <img src="/paper-note.png" alt="" class="cl-paper-note" loading="eager">
+    </div>
+
+    <!-- Center Hero Editorial Typography & Actions -->
+    <div class="hero-center">
+      <span class="hero-kicker">A PERSISTENT AI BRAIN FOR YOUR LIFE</span>
+      <h1 class="hero-heading">Your AI shouldn&rsquo;t<br>start from zero.</h1>
+      <p class="hero-subhead">
+        One private brain for your projects, people, and ideas — shared across every agent.
+      </p>
+
+      <div class="hero-actions-row">
+        <a href="#waitlist" class="btn-hero-dark">
+          <span>Meet your second brain</span>
+          <span class="arr">→</span>
+        </a>
+        <a href="https://github.com/suryansh2846code/chitragupta" class="btn-hero-light" target="_blank" rel="noopener">
+          <svg class="gh-icon" viewBox="0 0 24 24">
+            <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/>
+          </svg>
+          <span>View on GitHub</span>
+        </a>
+      </div>
+
+      <div class="hero-props-strip">
+        <span class="prop-pill"><span class="prop-dot"></span> Local on your Mac</span>
+        <span class="prop-divider"></span>
+        <span class="prop-pill">
+          <svg class="prop-icon" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          Private by design
+        </span>
+        <span class="prop-divider"></span>
+        <span class="prop-pill">
+          <svg class="prop-icon" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>
+          A team of agents
+        </span>
+        <span class="prop-divider"></span>
+        <span class="prop-pill">
+          <svg class="prop-icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          No account to use it
+        </span>
+      </div>
+    </div>
+
+    <!-- Elevated Dark macOS Showcase Window -->
+    <div class="hero-showcase">
+      <div class="mac-window-frame">
+        <img src="/app-dashboard.png" alt="Chitragupta Knowledge Graph and Chief of Staff interface" class="mac-dashboard-img">
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════
+       HOW IT WORKS SECTION
+       ═══════════════════════════════════════════════════════ -->
+  <section class="editorial-section" id="how-it-works">
+    <div class="container">
+      <span class="section-kicker">HOW IT WORKS</span>
+      <h2 class="section-title">One private brain.<br>Zero cloud sync required.</h2>
+      <p class="section-desc">
+        Your notes, calendar, emails, and codebase are indexed locally into an embedded SQLite knowledge graph. Every agent pulls from the exact same living memory.
+      </p>
+
+      <div class="editorial-cards-grid">
+        <div class="editorial-card">
+          <span class="card-num">01 / LOCAL SOURCING</span>
+          <h3 class="card-title">Connect your apps once</h3>
+          <p class="card-text">
+            Chitragupta indexes your Apple Mail, local Markdown files, Calendar events, and GitHub repositories into a unified vector & entity graph stored on your Mac.
+          </p>
+          <div class="card-visual-pill">
+            <span class="tag">STORE</span> SQLite + Vector FTS5
+          </div>
+        </div>
+
+        <div class="editorial-card">
+          <span class="card-num">02 / ENTITY GRAPH</span>
+          <h3 class="card-title">People, projects & decisions</h3>
+          <p class="card-text">
+            Automatic resolution links conversations to humans and projects. When Rahul emails about Northwind pricing, Chitragupta connects it to last week's notes.
+          </p>
+          <div class="card-visual-pill">
+            <span class="tag">GRAPH</span> 6 memories · 11 entities
+          </div>
+        </div>
+
+        <div class="editorial-card">
+          <span class="card-num">03 / MULTI-AGENT SYNC</span>
+          <h3 class="card-title">Agents that remember</h3>
+          <p class="card-text">
+            Whether you consult the Chief of Staff, Researcher, or Engineer, each agent receives relevant historical context without you ever repeating yourself.
+          </p>
+          <div class="card-visual-pill">
+            <span class="tag">ROSTER</span> Chief · Inbox · Dev · Research
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════
+       AGENTS SECTION
+       ═══════════════════════════════════════════════════════ -->
+  <section class="editorial-section" id="agents">
+    <div class="container">
+      <span class="section-kicker">THE AGENT SQUAD</span>
+      <h2 class="section-title">A coordinated team<br>with shared context.</h2>
+      <p class="section-desc">
+        Specialized agents designed for deep work. They don't just generate text; they know your past meetings, commitments, and ongoing project status.
+      </p>
+
+      <div class="agents-roster-grid">
+        <div class="agent-card">
+          <div class="agent-avatar" data-avatar-seed="chief-of-staff-leader" role="img" aria-label="Chief of Staff"></div>
+          <div class="agent-info">
+            <div class="agent-name">Chief of Staff</div>
+            <div class="agent-role">Daily Briefings & Meeting Prep</div>
+            <p class="agent-desc">Synthesizes upcoming meetings with relevant email threads, past decisions, and open questions so you are always 10 steps ahead.</p>
+          </div>
+        </div>
+
+        <div class="agent-card">
+          <div class="agent-avatar" data-avatar-seed="inbox-triage-messages-mail" role="img" aria-label="Inbox Triage"></div>
+          <div class="agent-info">
+            <div class="agent-name">Inbox Triage</div>
+            <div class="agent-role">Prioritization & Drafts</div>
+            <p class="agent-desc">Separates signal from noise. Drafts replies using your personal tone and previous agreements with each contact.</p>
+          </div>
+        </div>
+
+        <div class="agent-card">
+          <div class="agent-avatar" data-avatar-seed="researcher-scholar-intel" role="img" aria-label="Deep Researcher"></div>
+          <div class="agent-info">
+            <div class="agent-name">Deep Researcher</div>
+            <div class="agent-role">Synthesis & Investigation</div>
+            <p class="agent-desc">Cross-references external web data with your private internal archives, providing verified citations for every claim.</p>
+          </div>
+        </div>
+
+        <div class="agent-card">
+          <div class="agent-avatar" data-avatar-seed="engineer-code-terminal" role="img" aria-label="Software Engineer"></div>
+          <div class="agent-info">
+            <div class="agent-name">Software Engineer</div>
+            <div class="agent-role">Code & Architecture</div>
+            <p class="agent-desc">Understands your repos, local git commits, and API contracts. Generates patches aligned with your codebase standards.</p>
+          </div>
+        </div>
+
+        <div class="agent-card">
+          <div class="agent-avatar" data-avatar-seed="money-finance-receipts" role="img" aria-label="Money"></div>
+          <div class="agent-info">
+            <div class="agent-name">Money</div>
+            <div class="agent-role">Receipts &amp; Running Totals</div>
+            <p class="agent-desc">Reads the receipts and statements already in your mail and files, and keeps the running totals as numbers rather than prose.</p>
+          </div>
+        </div>
+
+        <div class="agent-card">
+          <div class="agent-avatar" data-avatar-seed="health-fitness-metric" role="img" aria-label="Health &amp; Fitness"></div>
+          <div class="agent-info">
+            <div class="agent-name">Health &amp; Fitness</div>
+            <div class="agent-role">Measurements &amp; Training</div>
+            <p class="agent-desc">Logs sets, reps and readings in one unit each, and reports a trend only once there is enough of one to report.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════
+       PRIVACY & LOCAL SAFEGUARD
+       ═══════════════════════════════════════════════════════ -->
+  <section class="editorial-section" id="privacy">
+    <div class="container">
+      <div class="safeguard-editorial-card">
+        <div class="safeguard-copy">
+          <span class="safeguard-badge"><svg class="badge-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>LOCAL-FIRST VERIFIED</span>
+          <h3>Your context stays yours. Forever.</h3>
+          <p>
+            Most AI tools upload your entire life to a hosted vector cloud. Chitragupta is built from the ground up to keep your raw documents and vector databases on your machine.
+          </p>
+          <ul class="safeguard-list">
+            <li class="safeguard-item">
+              <span class="safeguard-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12.5 L9.5 18 L20 6"/></svg></span>
+              <span><strong>Runs 100% offline</strong> with local models via Ollama or Apple Silicon MLX.</span>
+            </li>
+            <li class="safeguard-item">
+              <span class="safeguard-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12.5 L9.5 18 L20 6"/></svg></span>
+              <span><strong>Zero telemetry</strong>, zero training on your personal or company data.</span>
+            </li>
+            <li class="safeguard-item">
+              <span class="safeguard-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12.5 L9.5 18 L20 6"/></svg></span>
+              <span><strong>Bring your own keys</strong> (Claude, OpenAI, DeepSeek) with direct, unproxied requests.</span>
+            </li>
+            <li class="safeguard-item">
+              <span class="safeguard-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12.5 L9.5 18 L20 6"/></svg></span>
+              <span><strong>Open source core</strong> licensed under Apache-2.0. Audit everything.</span>
+            </li>
+          </ul>
+        </div>
+        <div class="safeguard-img-box">
+          <img src="/workspace.png" alt="Chitragupta privacy and offline architecture" loading="lazy">
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════
+       WAITLIST SECTION — TACTILE PARCHMENT CARD (D1 BACKEND WIRED)
+       ═══════════════════════════════════════════════════════ -->
+  <section class="waitlist-section" id="waitlist">
+    <div class="container">
+      <div class="waitlist-card-warm">
+        <span class="waitlist-kicker">EARLY ACCESS</span>
+        <h2 class="waitlist-title">Be first to claim your second brain.</h2>
+        <p class="waitlist-lead">
+          We are onboarding cohorts in waves to ensure rock-solid local setup. Reserve your spot today.
+        </p>
+
+        <!-- Form wired to /api/waitlist in app.js with exact IDs -->
+        <form id="waitlist-form" class="waitlist-form-warm">
+          <!-- Honeypot -->
+          <input type="text" name="website" style="display:none" tabindex="-1" autocomplete="off">
+
+          <div class="form-row-2">
+            <div class="form-group">
+              <label for="wl-name">Your Name <span class="req">*</span></label>
+              <input type="text" id="wl-name" name="name" required placeholder="Suryansh Singh" class="form-input">
+            </div>
+
+            <div class="form-group">
+              <label for="wl-email">Work or Personal Email <span class="req">*</span></label>
+              <input type="email" id="wl-email" name="email" required placeholder="you@example.com" class="form-input">
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="wl-linkedin">LinkedIn or Twitter Profile <span class="opt">(optional)</span></label>
+            <input type="url" id="wl-linkedin" name="linkedin" placeholder="https://linkedin.com/in/username" class="form-input">
+          </div>
+
+          <div class="form-group">
+            <label for="wl-use">Primary Use Case <span class="opt">(optional)</span></label>
+            <input type="text" id="wl-use" name="use_case" placeholder="Founder ops, personal CRM, engineering research..." class="form-input">
+          </div>
+
+          <button type="submit" id="wl-submit" class="form-submit-btn">
+            <span>Request Early Access</span>
+            <span class="arr">→</span>
+          </button>
+
+          <p class="form-note">
+            No credit card required. Apache-2.0 open source. We never share or sell your contact info.
+          </p>
+        </form>
+
+        <!-- Success state (controlled by app.js) -->
+        <div class="waitlist-success-warm" id="waitlist-success" hidden>
+          <div class="success-badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12.5 L9.5 18 L20 6"/></svg></div>
+          <h3>You're on the list!</h3>
+          <p>Your reserved position is <strong id="success-position">#412</strong>.</p>
+          <p style="margin-top: 8px; font-size: 13px; color: var(--ink-muted);" id="success-note">
+            We will send you an invitation email when your cohort opens. Thank you for building the local record with us.
+          </p>
+        </div>
+
+        <!-- Error state (controlled by app.js) -->
+        <div class="waitlist-error-warm" id="waitlist-error" hidden>
+          <p class="error-msg" id="error-msg">Something went wrong. Please check your connection and try again.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════
+       FOOTER
+       ═══════════════════════════════════════════════════════ -->
+  <footer class="editorial-footer">
+    <div class="container footer-inner">
+      <div class="footer-left">
+        <img src="/brand-tile.png" alt="Chitragupta" width="22" height="22" style="border-radius: 4px;">
+        <span class="footer-brand">CHITRAGUPTA</span>
+        <span class="footer-copy">· © 2026 Chitragupta. Apache-2.0 License.</span>
+      </div>
+      <div class="footer-links">
+        <a href="https://github.com/suryansh2846code/chitragupta" target="_blank" rel="noopener">GitHub</a>
+        <a href="https://github.com/suryansh2846code/chitragupta/tree/main/docs" target="_blank" rel="noopener">Docs</a>
+        <a href="#privacy">Privacy</a>
+        <a href="#waitlist">Waitlist</a>
+      </div>
+    </div>
+  </footer>
+
+
+  <!-- ═══════════════════════════════════════════════════════
+       ARCHIVED OLD DESIGN (COMMENTED OUT AS REQUESTED)
+       ═══════════════════════════════════════════════════════
+
+
+  <!-- ═══════════════════════════════════════════════════════ NAV (S0) -- >
+  <header class="nav" id="nav">
+    <div class="nav-inner">
+      <a href="#hero" class="nav-brand" aria-label="Chitragupta Home">
+        <img src="/brand-tile.png" alt="Chitragupta" class="nav-mark" width="22" height="22">
+        <span class="nav-name">Chitragupta</span>
+      </a>
+
+      <nav class="nav-links" aria-label="Main Navigation">
+        <a href="#workspace" class="nav-link">Workspace</a>
+        <a href="#story" class="nav-link">Story</a>
+        <a href="#context" class="nav-link">Brain</a>
+        <a href="#agents" class="nav-link">Agents</a>
+        <a href="#recall" class="nav-link">Recall</a>
+        <a href="#compare" class="nav-link">Compare</a>
+        <a href="#faq" class="nav-link">FAQ</a>
+      </nav>
+
+      <div class="nav-actions">
+        <a href="https://github.com/suryansh2846code/chitragupta" class="nav-link nav-github" target="_blank" rel="noopener">GitHub</a>
+        <a href="#waitlist" class="nav-cta">Join waitlist</a>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <!-- ═══════════════════════════════════════════════════════ HERO (S1) -- >
+    <section class="hero" id="hero">
+      <canvas id="hero-canvas" class="hero-canvas" aria-hidden="true"></canvas>
+      <div class="hero-scanlines" aria-hidden="true"></div>
+      <div class="hero-vignette" aria-hidden="true"></div>
+
+      <!-- HUD brackets & readout -- >
+      <div class="hud" aria-hidden="true">
+        <span class="hud-bracket hud-tl"></span>
+        <span class="hud-bracket hud-tr"></span>
+        <span class="hud-bracket hud-bl"></span>
+        <span class="hud-bracket hud-br"></span>
+        <div class="hud-readout">
+          <span class="hud-pulse">◆</span> NEURAL FIELD · <span id="hero-ang">000</span>° · <span id="hero-nodes">8,420</span> SYNAPSES
+        </div>
+      </div>
+
+      <div class="hero-content">
+        <div class="hero-badge fade-up">
+          <span class="badge-dot"></span> LOCAL AI WORKSPACE FOR MACOS
+        </div>
+
+        <h1 class="hero-h1 fade-up delay-1">
+          Your AI shouldn&rsquo;t<br>start from zero.
+        </h1>
+
+        <p class="hero-sub fade-up delay-2">
+          A team of AI agents that share one brain — and it lives on your Mac.
+          Connect your mail, files, calendar, and notes once. Every agent knows you
+          from then on.
+        </p>
+
+        <div class="hero-actions fade-up delay-3">
+          <a href="#waitlist" class="btn-primary" id="hero-cta-btn">Join the waitlist</a>
+          <a href="https://github.com/suryansh2846code/chitragupta" class="btn-ghost" target="_blank" rel="noopener">View on GitHub →</a>
+        </div>
+      </div>
+
+      <!-- HUD status line -- >
+      <div class="hero-hud fade-up delay-4" aria-label="Product guarantees">
+        <span class="hud-dot"></span>
+        <span>LOCAL</span>
+        <span class="hud-sep">·</span>
+        <span>OFFLINE-READY</span>
+        <span class="hud-sep">·</span>
+        <span>macOS</span>
+        <span class="hud-sep">·</span>
+        <span>APACHE-2.0</span>
+        <span class="hud-sep">·</span>
+        <span>NO ACCOUNT TO USE IT</span>
+      </div>
+
+      <!-- Interactive hint -- >
+      <div class="hero-hint fade-up delay-4" aria-hidden="true">
+        <span>drag to rotate brain · click to fire impulse · double-click to spin</span>
+      </div>
+
+      <!-- Below the fold tease -- >
+      <div class="hero-peek-anchor" aria-hidden="true">
+        <a href="#workspace" class="peek-tab" aria-label="Explore the interactive workspace">
+          <span class="peek-line"></span>
+          <span class="peek-label">INTERACTIVE WORKSPACE</span>
+        </a>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════════ INTERACTIVE WORKSPACE (S1) -- >
+    <section class="section app-peek" id="workspace">
+      <div class="container">
+        <div class="window-shell">
+          <div class="window-titlebar">
+            <div class="window-controls">
+              <span class="win-btn close"></span>
+              <span class="win-btn min"></span>
+              <span class="win-btn max"></span>
+            </div>
+            <div class="window-title">
+              <img src="/brand-tile.png" alt="" width="14" height="14">
+              <span>Chitragupta — <span id="window-agent-title">Chief of Staff</span> · ~/Library/Chitragupta (Local)</span>
+            </div>
+            <div class="window-status">
+              <span class="status-live">●</span> LOCAL MEMORY MOUNTED · AIRPLANE READY
+            </div>
+          </div>
+
+          <div class="app-workspace-layout">
+            <!-- Left: Sidebar / Agents Rail -- >
+            <aside class="app-sidebar">
+              <div class="app-brand-row">
+                <div class="app-brand-identity">
+                  <span class="app-brand-mark" aria-hidden="true"></span>
+                  <span class="app-brand-text">C H I T R A G U P T A</span>
+                </div>
+                <button type="button" class="app-sidebar-collapse" id="collapseSidebarBtn" title="Collapse sidebar" aria-label="Collapse sidebar">‹</button>
+              </div>
+
+              <div class="app-agents-head-block">
+                <div class="app-side-label">AGENTS</div>
+                <button type="button" class="app-new-agent-btn" id="newAgentBtn" title="Create new agent">
+                  <span class="new-agent-plus">+</span>
+                  <span>New Agent</span>
+                </button>
+              </div>
+
+              <nav class="app-agent-list" id="appAgentList" aria-label="Roster">
+                <button class="app-agent-item" data-agent="chief-of-staff" type="button">
+                  <span class="app-agent-orb" id="orb-chief-of-staff"></span>
+                  <div class="app-agent-meta">
+                    <div class="app-agent-name">Chief of Staff</div>
+                    <div class="app-agent-role">your day, en...</div>
+                  </div>
+                  <span class="app-active-dot" aria-hidden="true"></span>
+                </button>
+
+                <button class="app-agent-item" data-agent="chotu" type="button">
+                  <span class="app-agent-orb" id="orb-chotu"></span>
+                  <div class="app-agent-meta">
+                    <div class="app-agent-name">chotu</div>
+                    <div class="app-agent-role">lead agent - ...</div>
+                  </div>
+                  <span class="app-active-dot" aria-hidden="true"></span>
+                </button>
+
+                <button class="app-agent-item active" data-agent="personal-manager" type="button">
+                  <span class="app-agent-orb" id="orb-personal-manager"></span>
+                  <div class="app-agent-meta">
+                    <div class="app-agent-name">personal manager</div>
+                    <div class="app-agent-role">on my daily l...</div>
+                  </div>
+                  <span class="app-active-dot" aria-hidden="true"></span>
+                </button>
+
+                <button class="app-agent-item" data-agent="chef" type="button">
+                  <span class="app-agent-orb" id="orb-chef"></span>
+                  <div class="app-agent-meta">
+                    <div class="app-agent-name">CHEF</div>
+                    <div class="app-agent-role">help me with ...</div>
+                  </div>
+                  <span class="app-active-dot" aria-hidden="true"></span>
+                </button>
+
+                <button class="app-agent-item" data-agent="social-media-manager" type="button">
+                  <span class="app-agent-orb" id="orb-social-media-manager"></span>
+                  <div class="app-agent-meta">
+                    <div class="app-agent-name">social media manager</div>
+                    <div class="app-agent-role">My social me...</div>
+                  </div>
+                  <span class="app-active-dot" aria-hidden="true"></span>
+                </button>
+
+                <button class="app-agent-item" data-agent="fashion-stylist" type="button">
+                  <span class="app-agent-orb" id="orb-fashion-stylist"></span>
+                  <div class="app-agent-meta">
+                    <div class="app-agent-name">fashion manager and stylist</div>
+                    <div class="app-agent-role">manage my f...</div>
+                  </div>
+                  <span class="app-active-dot" aria-hidden="true"></span>
+                </button>
+              </nav>
+
+              <!-- Lower Rail -- >
+              <div class="app-side-nav">
+                <button type="button" class="app-snav" title="Inbox">
+                  <span class="app-snav-ic">
+                    <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M2.2 9h3.4l1 2h6.8l1-2h3.4"/><path d="M2.2 9 4.6 3.3h6.8L13.8 9v3.6a1.2 1.2 0 0 1-1.2 1.2H3.4a1.2 1.2 0 0 1-1.2-1.2z"/></svg>
+                  </span>
+                  <span class="app-snav-tx">Inbox</span>
+                </button>
+                <button type="button" class="app-snav" title="Actions">
+                  <span class="app-snav-ic">
+                    <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M9 1.5L3.5 9H8l-1 5.5L12.5 7H8z"/></svg>
+                  </span>
+                  <span class="app-snav-tx">Actions</span>
+                </button>
+                <button type="button" class="app-snav" title="Brain">
+                  <span class="app-snav-ic">
+                    <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1.6l6.4 6.4L8 14.4 1.6 8z"/></svg>
+                  </span>
+                  <span class="app-snav-tx">Brain</span>
+                </button>
+                <button type="button" class="app-snav" title="Browser">
+                  <span class="app-snav-ic">
+                    <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><rect x="2.2" y="3" width="11.6" height="10" rx="2"/><path d="M2.2 6.2h11.6"/><circle cx="4.4" cy="4.6" r=".5" fill="currentColor" stroke="none"/></svg>
+                  </span>
+                  <span class="app-snav-tx">Browser</span>
+                </button>
+              </div>
+
+              <div class="app-side-foot">
+                <div class="app-user-chip">
+                  <span class="app-user-av">S</span>
+                  <span class="app-user-nm">Account</span>
+                </div>
+                <button type="button" class="app-theme-btn" title="Settings" aria-label="Settings">
+                  <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.3">
+                    <circle cx="8" cy="8" r="2.3"/>
+                    <path d="M8 1.9v1.7M8 12.4v1.7M2.6 8H4.3M11.7 8h1.7M4.2 4.2l1.2 1.2M10.6 10.6l1.2 1.2M11.8 4.2l-1.2 1.2M5.4 10.6l-1.2 1.2"/>
+                  </svg>
+                </button>
+              </div>
+            </aside>
+
+            <!-- Center: Chat Conversation -- >
+            <main class="app-chat-main">
+              <!-- Header Bar -- >
+              <header class="app-chat-head">
+                <div class="app-ch-left">
+                  <span class="app-ch-orb" id="activeAgentOrb"></span>
+                  <div class="app-ch-meta">
+                    <span class="app-ch-name" id="activeAgentName">personal manager</span>
+                    <span class="app-ch-role" id="activeAgentRole">on my daily life and things</span>
+                  </div>
+                  <div class="app-provider-pill" id="appProviderPill" title="Active inference provider">
+                    <span class="provider-dot"></span>
+                    <span class="provider-label" id="activeProviderLabel">Anthropic</span>
+                    <svg class="chevron-mini" viewBox="0 0 10 10" width="8" height="8"><path d="M2 3.5l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+                  </div>
+                  <button type="button" class="app-more-btn" title="Options" aria-label="Conversation options">···</button>
+                </div>
+                <div class="app-ch-right">
+                  <span class="app-guarantee-line">ON-DEVICE · PRIVATE</span>
+                  <div class="app-brain-pill">
+                    <span class="brain-ready-dot"></span>
+                    <span class="brain-ready-strong">Brain ready</span>
+                    <span class="brain-ready-stats">· 3.9k memories</span>
+                  </div>
+                  <button type="button" class="btn-clear-chat" id="appResetBtn" title="Clear chat conversation">Clear chat</button>
+                </div>
+              </header>
+
+              <!-- Messages log area -- >
+              <div class="app-messages-log" id="appMessagesLog" role="log">
+                <!-- Dynamically populated via app.js -- >
+              </div>
+
+              <!-- Floating Composer Container -- >
+              <div class="app-composer-float-container">
+
+                <!-- Desktop App Composer Card -- >
+                <div class="composer app-composer">
+                  <div class="cmp-main-row">
+                    <textarea 
+                      id="appInput" 
+                      rows="1" 
+                      placeholder="Message personal manager..." 
+                      readonly 
+                      disabled
+                      aria-label="Message your agent (Interactive preview: click a prompt chip above to run)"
+                    ></textarea>
+                  </div>
+
+                  <div class="cmp-bottom-bar">
+                    <div class="cmp-bar-left">
+                      <div class="cmp-pill" title="Folders this agent can read">
+                        <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M2 4.5h4l1.2 1.5h6.8v6.5a1.2 1.2 0 0 1-1.2 1.2H3.2A1.2 1.2 0 0 1 2 12.5z"/></svg>
+                        <span>No folders</span>
+                        <svg class="chevron-mini" viewBox="0 0 10 10" width="8" height="8"><path d="M2 3.5l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>
+                      </div>
+
+                      <div class="cmp-pill" title="Autonomy level">
+                        <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M8 1.5l5 2.5v4.5c0 3.5-2.5 5.5-5 6.5-2.5-1-5-3-5-6.5V4l5-2.5z"/></svg>
+                        <span>Ask before changing</span>
+                        <svg class="chevron-mini" viewBox="0 0 10 10" width="8" height="8"><path d="M2 3.5l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>
+                      </div>
+
+                      <div class="cmp-pill cmp-pill-model" title="Active Model">
+                        <span id="cmpModelPillText">Anthropic</span>
+                        <svg class="chevron-mini" viewBox="0 0 10 10" width="8" height="8"><path d="M2 3.5l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>
+                      </div>
+
+                      <span class="cmp-lock-ic" title="Local sandbox security">
+                        <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="#f43f5e" stroke-width="1.5">
+                          <rect x="3.5" y="7" width="9" height="6" rx="1.5"/>
+                          <path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2"/>
+                        </svg>
+                      </span>
+                    </div>
+
+                    <div class="cmp-bar-right">
+                      <button type="button" class="cmp-tool-btn" title="Attach file" disabled aria-label="Attach file">
+                        <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M13.5 8.5l-5.8 5.8a4 4 0 0 1-5.7-5.7l6.8-6.8a2.6 2.6 0 0 1 3.7 3.7l-6.8 6.8a1.2 1.2 0 0 1-1.7-1.7l5.9-5.9"/></svg>
+                      </button>
+                      <button type="button" class="cmp-tool-btn" title="Voice input" disabled aria-label="Voice input">
+                        <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="5.5" y="2" width="5" height="8" rx="2.5"/><path d="M3 7.5a5 5 0 0 0 10 0M8 12.5v2.5M6 15h4"/></svg>
+                      </button>
+                      <button type="button" class="cmp-tool-btn" title="Enhance prompt" disabled aria-label="Enhance prompt">
+                        <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M8 1.5l1.6 3.6L13.5 6.8l-2.7 2.6.6 3.9L8 11.3l-3.4 2 .6-3.9-2.7-2.6 3.9-1.7z"/></svg>
+                      </button>
+                      <button type="button" class="cmp-send-circle" disabled aria-label="Send message">
+                        <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="#121110" stroke-width="2.2"><path d="M8 12.5V3.5M3.5 8L8 3.5 12.5 8"/></svg>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </main>
+          </div>
+        </div>
+        <p class="window-caption">
+          The real software. Switch agents on the rail, explore active memory traces, and test editable action cards. Text input is locked in preview mode — click any prompt chip above to run a turn.
+        </p>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════════ ACT I: THE AMNESIA (S2) -- >
+    <section class="section problem-section" id="story">
+      <div class="container">
+        <div class="craft-card amnesia-card-container">
+          <div class="amnesia-kicker">ACT I — THE AMNESIA</div>
+          <h2 class="amnesia-title">Every new chat starts from zero.</h2>
+          <p class="amnesia-lead">
+            Your projects, people, decisions, and preferences are scattered across conversations and apps.
+            Every time you switch chats, you rebuild the context you already gave AI.
+          </p>
+
+          <div class="amnesia-panels">
+            <!-- Left panel: Without Chitragupta -- >
+            <div class="amnesia-panel panel-without">
+              <div class="panel-header-tag tag-without">WITHOUT CHITRAGUPTA</div>
+              <div class="panel-state">New conversation</div>
+              <div class="panel-quote">"Let me explain the project again…"</div>
+              <div class="panel-pill pill-lost">
+                Context lost. Start over.
+              </div>
+            </div>
+
+            <!-- Right panel: With Chitragupta -- >
+            <div class="amnesia-panel panel-with">
+              <div class="panel-header-tag tag-with">WITH CHITRAGUPTA</div>
+              <div class="panel-state">Persistent local brain</div>
+              <div class="panel-quote">"Prepare the project brief."</div>
+              <div class="panel-pill pill-recalled">
+                <span class="pill-title">CONTEXT RECALLED</span>
+                <span class="pill-meta">People · Projects · Decisions</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="amnesia-takeaway">
+            The problem isn't just AI forgetting. It's that your context has nowhere of its own to live.
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════════ ACT II: YOUR CONTEXT (S3) -- >
+    <section class="section context-section" id="context">
+      <div class="container">
+        <div class="craft-card">
+        <div class="section-label">ACT II — THE BRAIN, LOCAL</div>
+        <h2 class="section-h2">Your context belongs to you.</h2>
+        <p class="section-lead">
+          Chitragupta builds the brain on your machine. Your sources become memories and a graph
+          of the people, projects and facts inside them, in <code class="mono-code">~/Library/Chitragupta</code> —
+          a folder you can open, copy, back up, or delete. There is no cloud copy, because there is no cloud.
+        </p>
+
+        <div class="proof-grid">
+          <!-- Proof 1 -- >
+          <div class="proof-card">
+            <div class="proof-header">
+              <span class="proof-num">01</span>
+              <span class="proof-title">It is a folder.</span>
+            </div>
+            <div class="finder-mock">
+              <div class="finder-path">~/Library/Chitragupta</div>
+              <div class="finder-files">
+                <div class="f-row"><span class="f-icon">📁</span> memories.parquet <span class="f-meta">24.2 MB</span></div>
+                <div class="f-row"><span class="f-icon">🗄</span> brain.sqlite <span class="f-meta">18.6 MB</span></div>
+                <div class="f-row"><span class="f-icon">🕸</span> entity-graph.json <span class="f-meta">4.1 MB</span></div>
+                <div class="f-row"><span class="f-icon">🔑</span> secrets.keychain <span class="f-meta">macOS Secure</span></div>
+              </div>
+            </div>
+            <p class="proof-desc">
+              Inspect it in Finder. Back it up with Time Machine. Drag it to the Trash if you want it gone forever.
+            </p>
+          </div>
+
+          <!-- Proof 2 -- >
+          <div class="proof-card">
+            <div class="proof-header">
+              <span class="proof-num">02</span>
+              <span class="proof-title">It works with the wi-fi off.</span>
+            </div>
+            <div class="offline-demo">
+              <div class="offline-toggle-bar">
+                <span class="toggle-label">AIRPLANE MODE</span>
+                <span class="toggle-pill active" id="airplane-status">● WI-FI DISCONNECTED</span>
+              </div>
+              <div class="offline-query-mock">
+                <div class="oq-q">"Who owns the auth refactor?"</div>
+                <div class="oq-a">"Rahul. Started 14 Sep in branch `auth-v2`."</div>
+                <div class="oq-proof">100% On-Device · Local Ollama · 0 network packets</div>
+              </div>
+            </div>
+            <p class="proof-desc">
+              Flip airplane mode on. Chitragupta answers from your local memory using local models without a hiccup.
+            </p>
+          </div>
+
+          <!-- Proof 3 -- >
+          <div class="proof-card">
+            <div class="proof-header">
+              <span class="proof-num">03</span>
+              <span class="proof-title">Nothing is sent.</span>
+            </div>
+            <div class="privacy-inspect">
+              <div class="pi-metric">
+                <span class="pi-big">0</span>
+                <span class="pi-label">TRACKING PIXELS</span>
+              </div>
+              <div class="pi-metric">
+                <span class="pi-big">0</span>
+                <span class="pi-label">CLOUD DATABASES</span>
+              </div>
+              <div class="pi-metric">
+                <span class="pi-big">1</span>
+                <span class="pi-label">DAILY UPDATE CHECK</span>
+              </div>
+            </div>
+            <p class="proof-desc">
+              One anonymous daily request checks for software updates. No unique identifiers, and it can be disabled with a toggle.
+            </p>
+          </div>
+        </div>
+
+        <div class="honesty-note">
+          <span class="honesty-icon">ℹ</span>
+          <span>
+            <strong>Honesty note:</strong> No account to use it. Signing in names your backup set; it never gates your data, and nothing local ever asks whether you did it.
+          </span>
+        </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════════ ACT III: THE ROSTER (S4) -- >
+    <section class="section agents-section" id="agents">
+      <div class="container">
+        <div class="craft-card">
+        <div class="section-label">ACT III — THE ROSTER</div>
+        <h2 class="section-h2">One brain. A team of agents.</h2>
+        <p class="section-lead">
+          Not one assistant trying to do everything with a giant prompt — a specialized roster.
+          Inbox, Researcher, Engineer, Writer, Money, Health. All reading the same brain,
+          so you explain a client or priority once, and every one of them knows.
+        </p>
+
+        <!-- Architecture signal flow -- >
+        <div class="arch-flow">
+          <div class="arch-node">
+            <span class="arch-type">SOURCES</span>
+            <span class="arch-name">Mail · Files · Calendar · Notes</span>
+          </div>
+          <div class="arch-arrow">──►</div>
+          <div class="arch-node arch-center">
+            <span class="arch-type">SHARED BRAIN</span>
+            <span class="arch-name">Memories + Knowledge Graph</span>
+          </div>
+          <div class="arch-arrow">──►</div>
+          <div class="arch-node">
+            <span class="arch-type">ROSTER</span>
+            <span class="arch-name">Specialized Agents</span>
+          </div>
+        </div>
+
+        <!-- Roster cards -- >
+        <div class="roster-grid">
+          <div class="roster-card" data-agent="chief">
+            <div class="avatar-slot" id="avatar-chief"></div>
+            <div class="roster-meta">
+              <h3 class="roster-name">Chief of Staff</h3>
+              <p class="roster-role">Your day, end to end.</p>
+              <p class="roster-detail">Synthesizes morning briefs, spots conflicting priorities across your tools, and coordinates other agents.</p>
+            </div>
+          </div>
+
+          <div class="roster-card" data-agent="inbox">
+            <div class="avatar-slot" id="avatar-inbox"></div>
+            <div class="roster-meta">
+              <h3 class="roster-name">Inbox</h3>
+              <p class="roster-role">Email and messages.</p>
+              <p class="roster-detail">Drafts replies in your authentic voice. Never claims to have sent, and never sends without explicit approval.</p>
+            </div>
+          </div>
+
+          <div class="roster-card highlight-card" data-agent="researcher">
+            <div class="avatar-slot" id="avatar-researcher"></div>
+            <div class="roster-meta">
+              <div class="card-badge">THE ARCHITECTURAL PROOF</div>
+              <h3 class="roster-name">Researcher</h3>
+              <p class="roster-role">Investigates properly. Can act on nothing.</p>
+              <p class="roster-detail">
+                Cites where each answer came from. Deliberately has zero mutation actions — an agent with no way to send cannot mistakenly send.
+              </p>
+            </div>
+          </div>
+
+          <div class="roster-card" data-agent="engineer">
+            <div class="avatar-slot" id="avatar-engineer"></div>
+            <div class="roster-meta">
+              <h3 class="roster-name">Engineer</h3>
+              <p class="roster-role">Repositories, codebases & issues.</p>
+              <p class="roster-detail">Indexes commits, PRs, and tickets. Understands why architectural decisions were made 6 months ago.</p>
+            </div>
+          </div>
+
+          <div class="roster-card" data-agent="writer">
+            <div class="avatar-slot" id="avatar-writer"></div>
+            <div class="roster-meta">
+              <h3 class="roster-name">Writer</h3>
+              <p class="roster-role">Drafts in your voice.</p>
+              <p class="roster-detail">Learned from essays, notes, and documentation you actually wrote — not generic corporate marketing tone.</p>
+            </div>
+          </div>
+
+          <div class="roster-card" data-agent="money">
+            <div class="avatar-slot" id="avatar-money"></div>
+            <div class="roster-meta">
+              <h3 class="roster-name">Money</h3>
+              <p class="roster-role">What you spend, from your own records.</p>
+              <p class="roster-detail">Reads your local receipts, invoices, and bank statements. Never connects to third-party aggregation scrapers.</p>
+            </div>
+          </div>
+
+          <div class="roster-card" data-agent="health">
+            <div class="avatar-slot" id="avatar-health"></div>
+            <div class="roster-meta">
+              <h3 class="roster-name">Health & Fitness</h3>
+              <p class="roster-role">Measures before it judges.</p>
+              <p class="roster-detail">Correlates sleep, workout logs, and calendar intensity. Strict units: 170 lb is never confused with 170 kg.</p>
+            </div>
+          </div>
+        </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════════ ACT III-B: RECALL IN ACTION (S5) -- >
+    <section class="section recall-section" id="recall">
+      <div class="container">
+        <div class="craft-card">
+        <div class="section-label">ACT III-B — RECALL IN ACTION</div>
+        <h2 class="section-h2">AI that remembers your world.</h2>
+        <p class="section-lead">
+          Every turn starts with recall: the memories, facts, and excerpts that matter to what you
+          just asked — fused, scored, and cited. You do not prompt it. You do not paste anything.
+        </p>
+
+        <!-- Interactive recall trace -- >
+        <div class="trace-card">
+          <div class="trace-header">
+            <span class="trace-label">LIVE RECALL TRACE</span>
+            <span class="trace-meta">25,000 MEMORIES SCANNED IN 14.2ms</span>
+          </div>
+
+          <div class="trace-query">
+            <span class="trace-q-tag">USER TURN</span>
+            <div class="trace-q-text">"Can you draft a short note to Priya about Northwind before Thursday's sync?"</div>
+          </div>
+
+          <div class="trace-nodes-header">CONTEXT FUSED FROM YOUR LOCAL BRAIN:</div>
+          <div class="trace-nodes">
+            <div class="node-item">
+              <div class="node-badge cal">CALENDAR · 12 SEP</div>
+              <div class="node-text"><strong>Priya Raman</strong> (Lead Designer) — "Aurora Project Sync weekly on Thursdays at 10:00"</div>
+              <div class="node-score">Score 0.94 · Explicit</div>
+            </div>
+
+            <div class="node-item">
+              <div class="node-badge notes">NOTES · /ROADMAP</div>
+              <div class="node-text">"Northwind Enterprise pitch: needs 3-tier pricing breakdown with volume tiers"</div>
+              <div class="node-score">Score 0.91 · Verified</div>
+            </div>
+
+            <div class="node-item">
+              <div class="node-badge mail">MAIL · INBOX</div>
+              <div class="node-text">"Priya: 'I prefer concise bullets over long docs before our team review'"</div>
+              <div class="node-score">Score 0.88 · Behavioral</div>
+            </div>
+          </div>
+
+          <div class="trace-answer">
+            <span class="trace-a-tag">AGENT SYNTHESIS (INBOX)</span>
+            <div class="trace-a-text">
+              "Hi Priya, ahead of Thursday's 10:00 sync, here's the Northwind pricing summary you requested:<br>
+              • 3 tiers mapped (Standard, Scale, Enterprise)<br>
+              • Volume discount thresholds matched to our Q4 targets<br>
+              Let me know if you want the slide deck adjusted before the review."
+            </div>
+          </div>
+        </div>
+
+        <!-- Hairline stats strip -- >
+        <div class="stats-strip">
+          <div class="stat-cell">
+            <span class="stat-num">APPEND-ONLY</span>
+            <span class="stat-label">Changes supersede, never overwrite history</span>
+          </div>
+          <div class="stat-cell">
+            <span class="stat-num">PROVENANCE</span>
+            <span class="stat-label">Inferred context never outranks what you confirmed</span>
+          </div>
+          <div class="stat-cell">
+            <span class="stat-num">15 MS</span>
+            <span class="stat-label">Full vector + graph recall on every single turn</span>
+          </div>
+        </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════════ ACTS IV & V: WORK & FINAL SAY (S6) -- >
+    <section class="section consent-section" id="consent">
+      <div class="container">
+        <div class="craft-card">
+        <div class="section-label">ACTS IV & V — AUTOMATION AND CONSENT</div>
+        <h2 class="section-h2">Let AI work. Keep the final say.</h2>
+        <p class="section-lead">
+          Automations run in the background. But reading is free — anything that leaves your machine
+          stops at an editable action card. What runs is what is on the card when you press Confirm,
+          never what the model first wrote.
+        </p>
+
+        <div class="consent-grid">
+          <!-- Half A: Durable Work -- >
+          <div class="consent-card">
+            <div class="consent-card-badge">HALF A · THE WORK HAPPENS</div>
+            <h3 class="consent-card-title">Durable Background Runs</h3>
+            <p class="consent-card-desc">
+              Triggers, conditions, and runs that survive system sleep and reboots. Mail arrives, 07:00 strikes,
+              or an event fires. The engine knows the difference between <em>failed</em> and <em>declined to act</em>.
+            </p>
+            <div class="run-log-mock">
+              <div class="log-row"><span class="log-time">07:00:00</span> <span class="log-ok">TRIGGER</span> Morning brief fired</div>
+              <div class="log-row"><span class="log-time">07:00:02</span> <span class="log-ok">RECALL</span> 4 new emails, 1 calendar shift</div>
+              <div class="log-row"><span class="log-time">07:00:05</span> <span class="log-warn">WAITING</span> Draft prepared → Staged for approval</div>
+            </div>
+          </div>
+
+          <!-- Half B: Human Consent -- >
+          <div class="consent-card highlight-card">
+            <div class="consent-card-badge gold">HALF B · YOU KEEP THE SAY</div>
+            <h3 class="consent-card-title">Every Field Editable Before Confirm</h3>
+            <p class="consent-card-desc">
+              An agent working while you were asleep cannot widen its own permissions.
+              The request waits, showing the entire payload. You cannot consent to text you were never shown.
+            </p>
+            <div class="consent-visuals">
+              <img src="/action-card.png" alt="Chitragupta editable action card" class="consent-img" loading="lazy" width="600" height="400">
+            </div>
+          </div>
+        </div>
+
+        <!-- The Shopping / Financial safeguard -- >
+        <div class="safeguard-box">
+          <div class="safeguard-icon">🛡</div>
+          <div class="safeguard-copy">
+            <h4>The Hard Safety Boundary</h4>
+            <p>
+              An agent may fill an online cart freely, but it may <strong>never</strong> place an order.
+              Controls that place orders or transfer funds are intercepted, refused, and re-raised as a single
+              card showing every line item and the merchant's total — re-verified when you press Confirm.
+              Payment cards, PINs, and one-time codes are permanently refused: we do not hold them and will never ask.
+            </p>
+          </div>
+        </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════════ ACT VI: BRING YOUR MODEL (S8) -- >
+    <section class="section models-section" id="models">
+      <div class="container">
+        <div class="craft-card">
+        <div class="section-label">ACT VI — BRING YOUR OWN MODEL</div>
+        <h2 class="section-h2">Your models change. Your memory doesn't.</h2>
+        <p class="section-lead">
+          Claude, GPT, Gemini, Grok, DeepSeek, OpenRouter, or a local Ollama instance on Apple silicon.
+          Swap mid-conversation. Your memory never moves, and retiring a vendor model never breaks your brain.
+        </p>
+
+        <!-- Interactive model switcher -- >
+        <div class="model-picker-card">
+          <div class="picker-tabs" role="tablist">
+            <button class="picker-tab active" data-model="claude" role="tab" aria-selected="true">
+              <span class="m-icon">✦</span> Claude 3.7 Sonnet
+            </button>
+            <button class="picker-tab" data-model="gpt4o" role="tab" aria-selected="false">
+              <span class="m-icon">▲</span> GPT-4o
+            </button>
+            <button class="picker-tab" data-model="ollama" role="tab" aria-selected="false">
+              <span class="m-icon">🦙</span> Ollama (100% Offline)
+            </button>
+            <button class="picker-tab" data-model="deepseek" role="tab" aria-selected="false">
+              <span class="m-icon">◆</span> DeepSeek R1
+            </button>
+          </div>
+
+          <div class="picker-body">
+            <div class="picker-info">
+              <div class="p-row">
+                <span class="p-k">Active Model:</span>
+                <span class="p-v" id="model-name">Anthropic Claude 3.7 Sonnet</span>
+              </div>
+              <div class="p-row">
+                <span class="p-k">Memory Provider:</span>
+                <span class="p-v highlight-v">Chitragupta Local Brain (Unchanged)</span>
+              </div>
+              <div class="p-row">
+                <span class="p-k">Recall Latency:</span>
+                <span class="p-v">14 ms · On-device vector database</span>
+              </div>
+              <div class="p-row">
+                <span class="p-k">API Key Storage:</span>
+                <span class="p-v">macOS Keychain · Sent directly to provider, never via our servers</span>
+              </div>
+            </div>
+            <div class="picker-quote" id="model-desc">
+              "Optimal reasoning and tone adaptation. Memory context is injected from your local machine, keeping your enterprise discussions private."
+            </div>
+          </div>
+        </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════════ ACT VII: PROVENANCE (S9) -- >
+    <section class="section provenance-section" id="provenance">
+      <div class="container">
+        <div class="craft-card">
+        <div class="section-label">ACT VII — PROVENANCE</div>
+        <h2 class="section-h2">Built to remember what actually happened.</h2>
+        <p class="section-lead">
+          The app is named after Chitragupta — in Hindu tradition, the scribe who keeps the record
+          of what each person has actually done. That is the whole job. Answers cite their source.
+          History supersedes instead of overwriting. Units are typed and never converted silently.
+        </p>
+
+        <div class="provenance-card">
+          <div class="prov-brand">
+            <img src="/brand-tile.png" alt="" width="32" height="32">
+            <div>
+              <div class="prov-title">Chitragupta Scribe Engine</div>
+              <div class="prov-sub">Immutable claim audit trail</div>
+            </div>
+          </div>
+
+          <div class="prov-timeline">
+            <div class="prov-step">
+              <span class="prov-dot"></span>
+              <div class="prov-content">
+                <div class="prov-time">12 Sep 2026 · Initial Claim</div>
+                <div class="prov-fact">"Project Aurora demo planned for October 15th."</div>
+                <div class="prov-source">Source: Calendar Invite #84102</div>
+              </div>
+            </div>
+
+            <div class="prov-step">
+              <span class="prov-dot superseded"></span>
+              <div class="prov-content">
+                <div class="prov-time">24 Sep 2026 · Superseded</div>
+                <div class="prov-fact">"Project Aurora demo shifted to October 28th to allow design audit."</div>
+                <div class="prov-source">Source: Slack #leadership · Priya Raman</div>
+              </div>
+            </div>
+
+            <div class="prov-step active">
+              <span class="prov-dot gold"></span>
+              <div class="prov-content">
+                <div class="prov-time">02 Oct 2026 · Current Truth</div>
+                <div class="prov-fact">"Project Aurora release tagged v1.0.0 for October 28th launch."</div>
+                <div class="prov-source">Source: GitHub Release tag #v1.0.0</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════════ COMPARE (S10) -- >
+    <section class="section compare-section" id="compare">
+      <div class="container">
+        <div class="craft-card">
+        <div class="section-label">COMPETITOR COMPARISON</div>
+        <h2 class="section-h2">How Chitragupta compares.</h2>
+        <p class="section-lead">
+          The fall 2026 wave of "always-on" agents — Meta Muse, OpenAI Dots, and xAI Grok Bots — promise background autonomy.
+          But they all share the same structural risk: uploading your entire life, email credentials, and private files
+          to their cloud servers. Here is an honest architectural accounting of how Chitragupta differs.
+        </p>
+
+        <!-- Comparison Tab Controls -- >
+        <div class="compare-tabs">
+          <button class="compare-tab-btn active" id="btn-compare-agents" type="button">
+            <span>Always-On Agents (Muse, Dots, Grok Bots)</span>
+          </button>
+          <button class="compare-tab-btn" id="btn-compare-chatbots" type="button">
+            <span>Traditional Chatbots (ChatGPT, Claude, Rewind)</span>
+          </button>
+        </div>
+
+        <!-- Table 1: Always-On Competitors (Muse, Dots, Grok) -- >
+        <div class="table-wrap compare-table-wrap" id="table-wrap-agents">
+          <table class="compare-table">
+            <thead>
+              <tr>
+                <th>Feature / Architecture</th>
+                <th class="col-highlight">Chitragupta</th>
+                <th>Meta Muse</th>
+                <th>OpenAI Dots</th>
+                <th>xAI Grok Bots</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Where data &amp; memory live</strong></td>
+                <td class="col-highlight"><span class="table-yes">Your Mac only (~/.chitragupta)</span></td>
+                <td><span class="table-no">Meta Cloud VM</span></td>
+                <td><span class="table-no">OpenAI Cloud servers</span></td>
+                <td><span class="table-no">xAI Cloud infrastructure</span></td>
+              </tr>
+              <tr>
+                <td><strong>Runtime architecture</strong></td>
+                <td class="col-highlight"><span class="table-yes">Native macOS app (Apple Silicon)</span></td>
+                <td>Remote cloud virtual machine</td>
+                <td>Remote cloud background worker</td>
+                <td>Cloud multi-bot container</td>
+              </tr>
+              <tr>
+                <td><strong>Bring your own model (No lock-in)</strong></td>
+                <td class="col-highlight"><span class="table-yes">Any model (Claude, GPT-4o, DeepSeek, Ollama)</span></td>
+                <td><span class="table-no">Locked to Meta / Llama</span></td>
+                <td><span class="table-no">Locked to OpenAI</span></td>
+                <td><span class="table-no">Locked to Grok</span></td>
+              </tr>
+              <tr>
+                <td><strong>Works 100% Offline (Airplane Mode)</strong></td>
+                <td class="col-highlight"><span class="table-yes">Yes — zero internet needed (Ollama)</span></td>
+                <td><span class="table-no">No (requires cloud VM)</span></td>
+                <td><span class="table-no">No (requires cloud servers)</span></td>
+                <td><span class="table-no">No (requires cloud compute)</span></td>
+              </tr>
+              <tr>
+                <td><strong>Action safety &amp; consent cards</strong></td>
+                <td class="col-highlight"><span class="table-yes">Editable cards (nothing sends without 1-click ok)</span></td>
+                <td><span class="table-no">Opaque background automation</span></td>
+                <td><span class="table-no">Semi-autonomous cloud browser</span></td>
+                <td><span class="table-no">Autonomous background tasks</span></td>
+              </tr>
+              <tr>
+                <td><strong>Memory provenance &amp; citations</strong></td>
+                <td class="col-highlight"><span class="table-yes">Exact local file &amp; timestamp trace for every fact</span></td>
+                <td>Black-box memory summary</td>
+                <td>Search snippet summaries</td>
+                <td>Opaque vector context</td>
+              </tr>
+              <tr>
+                <td><strong>Local hardware automation (Browser &amp; Shell)</strong></td>
+                <td class="col-highlight"><span class="table-yes">Direct local Chromium &amp; sandbox shell on your Mac</span></td>
+                <td><span class="table-no">Cloud VM container</span></td>
+                <td><span class="table-no">Cloud virtual desktop</span></td>
+                <td><span class="table-no">Cloud container only</span></td>
+              </tr>
+              <tr>
+                <td><strong>License &amp; Open Source</strong></td>
+                <td class="col-highlight"><span class="table-yes">Apache-2.0 (100% Open Source)</span></td>
+                <td><span class="table-no">Closed source proprietary</span></td>
+                <td><span class="table-no">Closed source proprietary</span></td>
+                <td><span class="table-no">Closed source proprietary</span></td>
+              </tr>
+              <tr>
+                <td><strong>Monthly price</strong></td>
+                <td class="col-highlight"><span class="table-yes">Free &amp; Open Source ($0 local, or raw API keys)</span></td>
+                <td>Proprietary subscription</td>
+                <td>$20 – $200/mo (ChatGPT Plus/Pro)</td>
+                <td>$16 – $30+/mo (X Premium+/SuperGrok)</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Table 2: Traditional Chatbots & Recorders -- >
+        <div class="table-wrap compare-table-wrap is-hidden" id="table-wrap-chatbots">
+          <table class="compare-table">
+            <thead>
+              <tr>
+                <th>Feature / Architecture</th>
+                <th class="col-highlight">Chitragupta</th>
+                <th>ChatGPT / Claude</th>
+                <th>Rewind / Mem0</th>
+                <th>Cloud Agents (Zapier)</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Where data lives</strong></td>
+                <td class="col-highlight"><span class="table-yes">Your Mac only (~/.chitragupta)</span></td>
+                <td><span class="table-no">Cloud database</span></td>
+                <td>Local screen recording</td>
+                <td><span class="table-no">Third-party servers</span></td>
+              </tr>
+              <tr>
+                <td><strong>Shared multi-agent team</strong></td>
+                <td class="col-highlight"><span class="table-yes">Yes — 1 brain, 7+ roles</span></td>
+                <td><span class="table-no">1 model at a time</span></td>
+                <td><span class="table-no">Search only</span></td>
+                <td>Multi-step pipelines</td>
+              </tr>
+              <tr>
+                <td><strong>Editable consent cards</strong></td>
+                <td class="col-highlight"><span class="table-yes">Yes — nothing sends without ok</span></td>
+                <td>N/A (chat only)</td>
+                <td>N/A (recording only)</td>
+                <td><span class="table-no">Runs unattended</span></td>
+              </tr>
+              <tr>
+                <td><strong>Works with Wi-Fi off</strong></td>
+                <td class="col-highlight"><span class="table-yes">Yes (via Ollama)</span></td>
+                <td><span class="table-no">No</span></td>
+                <td>Partial</td>
+                <td><span class="table-no">No</span></td>
+              </tr>
+              <tr>
+                <td><strong>Bring your own model</strong></td>
+                <td class="col-highlight"><span class="table-yes">Yes (swap any time)</span></td>
+                <td><span class="table-no">Locked to vendor</span></td>
+                <td><span class="table-no">Proprietary</span></td>
+                <td>Limited</td>
+              </tr>
+              <tr>
+                <td><strong>License &amp; Open Source</strong></td>
+                <td class="col-highlight"><span class="table-yes">Apache-2.0</span></td>
+                <td><span class="table-no">Closed source</span></td>
+                <td><span class="table-no">Closed source</span></td>
+                <td><span class="table-no">Closed source</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Architectural Callout -- >
+        <div class="compare-callout">
+          <div class="callout-badge">THE ARCHITECTURAL DIFFERENCE</div>
+          <h3 class="callout-title">Why always-on cloud agents get privacy backwards.</h3>
+          <p class="callout-text">
+            Meta Muse, OpenAI Dots, and xAI Grok Bots assume that to have persistent memory and background automation,
+            you must surrender custody of your identity: your Google login cookies, personal inbox, proprietary codebases,
+            and financial receipts uploaded to their server farms.
+          </p>
+          <p class="callout-text">
+            Chitragupta inverts that premise completely. Your unified memory lives on your Apple Silicon Mac in SQLite with
+            vector embeddings. Your agent team can scrape websites, run test suites, draft emails, and schedule reminders —
+            but they run in local sandboxes, cite every fact back to the exact file, and require your explicit 1-click confirmation
+            before anything is sent or committed.
+          </p>
+        </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════════ WHAT IT IS NOT (S11) -- >
+    <section class="section boundaries-section">
+      <div class="container">
+        <div class="craft-card">
+        <div class="section-label">HONEST BOUNDARIES</div>
+        <h2 class="section-h2">What it is not.</h2>
+        <p class="section-lead">
+          A product that concedes nothing reads like software hiding something.
+          Here is what Chitragupta deliberately is not:
+        </p>
+
+        <div class="boundary-list">
+          <div class="b-item">
+            <span class="b-num">✕</span>
+            <div>
+              <strong>macOS only.</strong>
+              We build deeply for Apple silicon and the Mac filesystem. Windows and Linux are not supported.
+            </div>
+          </div>
+          <div class="b-item">
+            <span class="b-num">✕</span>
+            <div>
+              <strong>No mobile app.</strong>
+              Your phone does not hold your work files, local repos, or private database. The brain lives on your desk.
+            </div>
+          </div>
+          <div class="b-item">
+            <span class="b-num">✕</span>
+            <div>
+              <strong>No silent cloud sync.</strong>
+              There is no background server replicating your files. Moving to another Mac uses an encrypted backup you hold the key to.
+            </div>
+          </div>
+          <div class="b-item">
+            <span class="b-num">✕</span>
+            <div>
+              <strong>You bring your own model.</strong>
+              Use your existing Claude/OpenAI/Gemini keys or run completely free on local Ollama. We do not resell API tokens.
+            </div>
+          </div>
+          <div class="b-item">
+            <span class="b-num">✕</span>
+            <div>
+              <strong>No account required.</strong>
+              Local identity is stored on your machine. We do not gate your personal workspace behind a login wall.
+            </div>
+          </div>
+        </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════════ FAQ (S12) -- >
+    <section class="section faq-section" id="faq">
+      <div class="container">
+        <div class="craft-card">
+        <div class="section-label">QUESTIONS & ANSWERS</div>
+        <h2 class="section-h2">Frequently asked questions.</h2>
+
+        <div class="faq-accordion">
+          <details class="faq-item" open>
+            <summary class="faq-q">Is my data really local? How can I verify it?</summary>
+            <div class="faq-a">
+              <p>Yes. Everything lives in <code>~/Library/Chitragupta</code> on your disk. You can open Little Snitch or Wireshark, run Chitragupta, and inspect every outbound network request. The only connection made is directly to the model provider of your choice using your own API key, or zero connections if you run local Ollama.</p>
+            </div>
+          </details>
+
+          <details class="faq-item">
+            <summary class="faq-q">Does it work offline without the internet?</summary>
+            <div class="faq-a">
+              <p>Yes. If you configure a local model runner like Ollama (e.g. Llama 3.3 or Mistral), Chitragupta conducts recall, reasonings, and agent execution with zero internet connection.</p>
+            </div>
+          </details>
+
+          <details class="faq-item">
+            <summary class="faq-q">Do I need an API key? What will it cost me?</summary>
+            <div class="faq-a">
+              <p>Chitragupta software is free and open-source (Apache-2.0). You only pay the model provider (Anthropic, OpenAI, Google) for raw token usage directly at cost, or $0.00 if using local Ollama on your Mac.</p>
+            </div>
+          </details>
+
+          <details class="faq-item">
+            <summary class="faq-q">Which sources can Chitragupta read?</summary>
+            <div class="faq-a">
+              <p>Local Apple Mail, Gmail, local directories/files (PDFs, Markdown, text, code repos), Apple Calendar, Google Calendar, Obsidian/Apple Notes, and browser history you explicitly connect.</p>
+            </div>
+          </details>
+
+          <details class="faq-item">
+            <summary class="faq-q">Can an agent send an email or place an order without asking?</summary>
+            <div class="faq-a">
+              <p>Never. Every mutation action stops at an editable confirmation card. What runs is strictly what you verify and approve. Dangerous actions like placing orders or paying are blocked permanently.</p>
+            </div>
+          </details>
+
+          <details class="faq-item">
+            <summary class="faq-q">What happens if I delete Chitragupta?</summary>
+            <div class="faq-a">
+              <p>Deleting the application and removing <code>~/Library/Chitragupta</code> removes every trace of your memories and brain. There is no remote account or database copy left behind anywhere.</p>
+            </div>
+          </details>
+
+          <details class="faq-item">
+            <summary class="faq-q">Is it open source? Under what license?</summary>
+            <div class="faq-a">
+              <p>Chitragupta is 100% open source under the permissive Apache-2.0 license. You can inspect the entire repository, fork it, and audit every line on GitHub.</p>
+            </div>
+          </details>
+
+          <details class="faq-item">
+            <summary class="faq-q">When do I get in, and what is the waitlist for?</summary>
+            <div class="faq-a">
+              <p>We are rolling out macOS beta builds in staged cohorts to work closely with early testers. Joining the waitlist reserves your place and ensures you receive a direct invitation when the release goes live.</p>
+            </div>
+          </details>
+        </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════════ WAITLIST (S13) -- >
+    <section class="section waitlist-section" id="waitlist">
+      <div class="container waitlist-container">
+        <div class="waitlist-card">
+          <div class="waitlist-header">
+            <div class="section-label">EARLY ACCESS</div>
+            <h2 class="section-h2">Join the Chitragupta Beta.</h2>
+            <p class="waitlist-desc">
+              We're letting people in gradually. Leave your details and we'll send you
+              <strong>one email</strong> when the beta opens — nothing else.
+            </p>
+          </div>
+
+          <form class="waitlist-form" id="waitlist-form" method="post" action="/api/waitlist">
+            <!-- Honeypot -- >
+            <div style="position:absolute;left:-9999px" aria-hidden="true">
+              <label for="website">Website</label>
+              <input type="text" name="website" id="website" tabindex="-1" autocomplete="off">
+            </div>
+
+            <div class="form-grid">
+              <div class="form-field">
+                <label for="wl-name">NAME <span class="req">*</span></label>
+                <input type="text" id="wl-name" name="name" required autocomplete="name" placeholder="Priya Raman">
+              </div>
+
+              <div class="form-field">
+                <label for="wl-email">EMAIL <span class="req">*</span></label>
+                <input type="email" id="wl-email" name="email" required autocomplete="email" placeholder="priya@example.com">
+              </div>
+            </div>
+
+            <div class="form-field">
+              <label for="wl-linkedin">LINKEDIN PROFILE <span class="form-optional">(optional — helps us curate developer & founder cohorts)</span></label>
+              <input type="url" id="wl-linkedin" name="linkedin" autocomplete="url" placeholder="https://linkedin.com/in/yourprofile">
+            </div>
+
+            <div class="form-field">
+              <label for="wl-use">WHAT WOULD YOU POINT IT AT FIRST? <span class="form-optional">(optional)</span></label>
+              <input type="text" id="wl-use" name="use_case" placeholder="e.g. 5 years of client emails, code repos, my Obsidian notes...">
+            </div>
+
+            <div class="form-submit-row">
+              <button type="submit" class="btn-primary btn-submit" id="wl-submit">
+                <span class="btn-label">Request Beta Access</span>
+                <span class="btn-spinner" aria-hidden="true"></span>
+              </button>
+            </div>
+
+            <p class="form-privacy">
+              Stored securely in Cloudflare D1. Used solely to notify you when your invite is ready.
+              Zero third-party trackers, zero advertising pixels, deleted immediately upon request.
+            </p>
+          </form>
+
+          <!-- Success state -- >
+          <div class="waitlist-success" id="waitlist-success" hidden>
+            <div class="success-icon">✓</div>
+            <h3 class="success-title">You're on the list.</h3>
+            <p class="success-msg">Your reserved position is <strong id="success-position">#412</strong>.</p>
+            <p class="success-note">We'll send you exactly one email with your download key when your cohort opens. Thank you for building the local record with us.</p>
+          </div>
+
+          <!-- Error state -- >
+          <div class="waitlist-error" id="waitlist-error" hidden>
+            <p class="error-msg" id="error-msg">Something went wrong. Please check your connection and try again.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ═══════════════════════════════════════════════════════ FOOTER (S14) -- >
+  <footer class="footer">
+    <div class="container footer-inner">
+      <div class="footer-top">
+        <div class="footer-brand">
+          <img src="/brand-tile.png" alt="Chitragupta Mark" class="footer-mark" width="28" height="28">
+          <span class="footer-name">Chitragupta</span>
+        </div>
+        <p class="footer-tagline">
+          Built to run on your machine, and to be able to say where every fact came from.
+        </p>
+      </div>
+
+      <div class="footer-bottom">
+        <div class="footer-links">
+          <a href="https://github.com/suryansh2846code/chitragupta" target="_blank" rel="noopener">GitHub</a>
+          <span class="footer-sep">·</span>
+          <a href="https://github.com/suryansh2846code/chitragupta/blob/main/LICENSE" target="_blank" rel="noopener">Apache-2.0 License</a>
+          <span class="footer-sep">·</span>
+          <a href="https://github.com/suryansh2846code/chitragupta/tree/main/docs" target="_blank" rel="noopener">Architecture Docs</a>
+          <span class="footer-sep">·</span>
+          <span>macOS 14+ Sonoma & Sequoia</span>
+        </div>
+        <div class="footer-copy">
+          No cookies · No analytics tracking · Zero telemetry
+        </div>
+      </div>
+    </div>
+  </footer>
+
+  
+  -->
+
+  <!-- Scripts -->
+  <script src="/brain-data.js"></script>
+  <script src="/character.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>
