@@ -10,6 +10,7 @@
 :root {
   --bg-canvas: #FAF7F2;
   --bg-canvas-subtle: #F4EFE7;
+  --bg-ground: #E4DAC8;
   --bg-card: #FFFFFF;
   --bg-card-warm: #FAF8F5;
   --bg-dark: #191716;
@@ -42,6 +43,13 @@
   --font-hand: 'Caveat', cursive;
   --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 
+  --paper-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.92' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23g)' opacity='0.42'/%3E%3C/svg%3E");
+  --paper-crumple: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='640' height='640'%3E%3Cfilter id='c'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.013' numOctaves='5' seed='4'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3CfeDiffuseLighting lighting-color='%23ffffff' surfaceScale='2.2'%3E%3CfeDistantLight azimuth='235' elevation='55'/%3E%3C/feDiffuseLighting%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='640' height='640' filter='url(%23c)' opacity='0.42'/%3E%3C/svg%3E");
+  --paper-mottle: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='420' height='420'%3E%3Cfilter id='m'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.045' numOctaves='3' seed='11' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='420' height='420' filter='url(%23m)' opacity='0.3'/%3E%3C/svg%3E");
+
+  --hero-inset: 16px;
+  --hero-radius: 32px;
+
   color-scheme: light;
 }
 
@@ -52,7 +60,7 @@
 }
 
 html {
-  background: var(--bg-canvas);
+  background: var(--bg-ground);
   color: var(--ink-body);
   font-family: var(--font-sans);
   font-size: 15px;
@@ -63,7 +71,7 @@ html {
 }
 
 body {
-  background: var(--bg-canvas);
+  background: var(--bg-ground);
   min-height: 100vh;
   overflow-x: hidden;
   position: relative;
@@ -74,12 +82,28 @@ body::before {
   content: "";
   position: fixed;
   inset: 0;
-  background-image: 
+  background-image:
     radial-gradient(circle at 20% 15%, rgba(184, 134, 58, 0.03) 0%, transparent 40%),
     radial-gradient(circle at 80% 25%, rgba(68, 128, 192, 0.02) 0%, transparent 45%),
     radial-gradient(circle at 50% 80%, rgba(184, 134, 58, 0.02) 0%, transparent 50%);
   pointer-events: none;
   z-index: 0;
+}
+
+/* The ground is paper too: a fine grain over a slow crease, so the cream is
+   never a dead flat fill behind a hero built out of torn paper. Fixed, so it
+   does not slide past the content as you scroll. */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.62' numOctaves='5' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='240' height='240' filter='url(%23n)' opacity='0.6'/%3E%3C/svg%3E"), url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='900' height='900'%3E%3Cfilter id='w'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.006' numOctaves='5' seed='3'/%3E%3CfeDiffuseLighting lighting-color='%23ffffff' surfaceScale='3.4'%3E%3CfeDistantLight azimuth='48' elevation='60'/%3E%3C/feDiffuseLighting%3E%3C/filter%3E%3Crect width='900' height='900' filter='url(%23w)'/%3E%3C/svg%3E");
+  background-size: 240px 240px, 900px 900px;
+  background-blend-mode: overlay, normal;
+  mix-blend-mode: soft-light;
+  opacity: 0.95;
 }
 
 a {
@@ -219,6 +243,14 @@ button {
   min-height: 100vh;
   padding: 158px 0 0;
   overflow: hidden;
+  background: var(--bg-canvas);
+  margin: var(--hero-inset) var(--hero-inset) 0;
+  border-radius: var(--hero-radius);
+  box-shadow:
+    0 0 0 1px rgba(45, 35, 22, 0.07),
+    0 2px 6px rgba(45, 35, 22, 0.06),
+    0 16px 38px -10px rgba(45, 35, 22, 0.12),
+    0 46px 100px -26px rgba(45, 35, 22, 0.22);
 }
 
 /* Hero Center Content */
@@ -610,6 +642,1040 @@ button {
 }
 
 /* ═══════════════════════════════════════════════════════
+   WHAT IT DOES — the five verbs
+   One line, always. Small marks in a lot of air: the row is
+   a quiet beat between the hero and the explainer, not a
+   feature grid, so nothing here may wrap or grow heavy.
+   ═══════════════════════════════════════════════════════ */
+.verbs-section {
+  padding: clamp(92px, 10vw, 156px) 0;
+  position: relative;
+  z-index: 2;
+}
+
+.verbs-heading {
+  font-family: var(--font-serif);
+  font-size: clamp(26px, 3.5vw, 50px);
+  font-weight: 450;
+  line-height: 1.16;
+  letter-spacing: -0.016em;
+  color: var(--ink-heading);
+  text-align: center;
+  margin-bottom: clamp(44px, 4.8vw, 72px);
+}
+
+.verbs-heading em {
+  font-style: italic;
+  font-weight: 400;
+}
+
+.verbs-row {
+  list-style: none;
+  display: flex;
+  flex-wrap: nowrap;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: clamp(6px, 1vw, 16px);
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 0 4px;
+}
+
+.verb {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: clamp(12px, 1.4vw, 21px);
+  color: var(--ink-heading);
+}
+
+/* Scales with the viewport so five always sit on one line, down to the
+   narrowest phone — the row wrapping 3 + 2 is not this section. */
+.verb-icon {
+  width: clamp(28px, 2.9vw, 44px);
+  height: clamp(28px, 2.9vw, 44px);
+  display: block;
+}
+
+.verb-label {
+  font-family: var(--font-sans);
+  font-size: clamp(11px, 1vw, 15px);
+  font-weight: 600;
+  letter-spacing: -0.004em;
+  color: var(--ink-heading);
+  white-space: nowrap;
+}
+
+/* ═══════════════════════════════════════════════════════
+   THE PANELS — one claim each, on its own sheet of paper
+   Two shots per panel: the window behind for context, a
+   crop in front at roughly 1:1 so it can actually be read.
+   The grain and crease are what tie these to the hero's
+   paper collage rather than leaving them as flat cards.
+   ═══════════════════════════════════════════════════════ */
+.ic-sprite {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+}
+
+.showcase {
+  padding: clamp(28px, 3vw, 48px) 0 clamp(72px, 7vw, 104px);
+}
+
+.showcase .container {
+  max-width: 1180px;
+}
+
+.showcase-panel {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1.15fr 1fr;
+  align-items: center;
+  gap: clamp(26px, 3.2vw, 52px);
+  background: transparent;
+  padding: clamp(36px, 4vw, 62px);
+  margin-bottom: clamp(20px, 2.2vw, 30px);
+  overflow: visible;
+  isolation: isolate;
+}
+
+/* The sheet itself. It is a separate layer from the content so the torn-edge
+   displacement roughens only the paper — running that filter over the panel
+   would drag the headline and the screenshots out of shape with it. The
+   shadow goes in the same filter chain as a drop-shadow, because a box-shadow
+   would trace the element's rectangle rather than the tear. */
+.showcase-panel::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  border-radius: 8px;
+  background-color: var(--panel, var(--bg-canvas-subtle));
+  background-image: var(--paper-grain), var(--paper-crumple), var(--paper-mottle);
+  background-size: 180px 180px, 640px 640px, 420px 420px;
+  background-blend-mode: overlay, soft-light, overlay;
+  filter: url(#paper-edge)
+          drop-shadow(0 2px 3px rgba(45, 35, 22, 0.14))
+          drop-shadow(0 18px 30px rgba(45, 35, 22, 0.2));
+}
+
+.showcase-panel > * {
+  position: relative;
+  z-index: 1;
+}
+
+.showcase-panel:last-child {
+  margin-bottom: 0;
+}
+
+/* Square-ish, like the reference: the art box drives the panel's height. */
+.showcase-art {
+  position: relative;
+  aspect-ratio: 1 / 1.36;
+  min-width: 0;
+}
+
+.shot-back,
+.shot-front {
+  position: absolute;
+  display: block;
+  height: auto;
+  border-radius: 12px;
+}
+
+.shot-back {
+  top: 0;
+  left: 0;
+  width: 58%;
+  box-shadow:
+    0 0 0 1px rgba(20, 15, 10, 0.26),
+    0 3px 8px rgba(25, 18, 12, 0.14),
+    0 22px 48px -18px rgba(25, 18, 12, 0.4);
+}
+
+/* The readable one. It overlaps the window it was cut from, which is the
+   reference's trick: context behind, the detail you can actually read in front. */
+.shot-front {
+  bottom: 0;
+  left: 5%;
+  width: 90%;
+  box-shadow:
+    0 0 0 1px rgba(20, 15, 10, 0.3),
+    0 4px 12px rgba(25, 18, 12, 0.2),
+    0 26px 58px -16px rgba(25, 18, 12, 0.52);
+}
+
+/* The hero's handwriting, carried down the page. It sits in the copy column
+   rather than over the art: four different crops leave no corner that is
+   reliably free, and a note half-under a screenshot is worse than none. */
+.showcase-note {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.showcase-note .hand {
+  text-transform: uppercase;
+  color: rgba(26, 24, 22, 0.5);
+  font-size: clamp(16px, 1.35vw, 20px);
+  line-height: 1.2;
+  letter-spacing: 0.09em;
+}
+
+.showcase-note svg {
+  width: clamp(30px, 2.6vw, 40px);
+  height: auto;
+  opacity: 0.45;
+  margin-bottom: 3px;
+}
+
+.showcase-copy {
+  min-width: 0;
+}
+
+.showcase-kicker {
+  display: block;
+  font-family: var(--font-sans);
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: rgba(26, 24, 22, 0.56);
+  margin-bottom: 14px;
+}
+
+.showcase-title {
+  font-family: var(--font-serif);
+  font-size: clamp(26px, 3vw, 42px);
+  font-weight: 450;
+  line-height: 1.12;
+  letter-spacing: -0.018em;
+  color: var(--ink-heading);
+  margin-bottom: 18px;
+}
+
+.showcase-body {
+  font-size: clamp(14.5px, 1.1vw, 16px);
+  line-height: 1.6;
+  color: rgba(26, 24, 22, 0.74);
+  max-width: 44ch;
+  margin-bottom: 26px;
+}
+
+.showcase-more {
+  display: inline-flex;
+  align-items: center;
+  background: transparent;
+  color: var(--ink-heading);
+  font-size: 14.5px;
+  font-weight: 600;
+  padding: 12px 26px;
+  border-radius: 9999px;
+  box-shadow: inset 0 0 0 1.5px rgba(26, 24, 22, 0.32);
+  transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+}
+
+.showcase-more:hover {
+  background: rgba(255, 255, 255, 0.4);
+  transform: translateY(-1px);
+  box-shadow: inset 0 0 0 1.5px rgba(26, 24, 22, 0.5);
+}
+
+.showcase-feats {
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px 22px;
+  margin-top: clamp(26px, 2.8vw, 36px);
+}
+
+.showcase-feat {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  min-width: 0;
+  padding: 7px 9px 7px 7px;
+  margin: -7px -9px -7px -7px;
+  border-radius: 12px;
+  transition: background 0.16s ease;
+}
+
+.showcase-feat:hover {
+  background: rgba(255, 255, 255, 0.42);
+}
+
+.feat-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.feat-name {
+  font-size: 14.5px;
+  font-weight: 600;
+  letter-spacing: -0.004em;
+  color: var(--ink-heading);
+}
+
+.feat-sub {
+  font-size: 12.5px;
+  line-height: 1.35;
+  color: rgba(26, 24, 22, 0.6);
+}
+
+.feat-ic {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  margin-top: 1px;
+  color: var(--ink-heading);
+}
+
+@media (max-width: 860px) {
+  .showcase-panel {
+    grid-template-columns: 1fr;
+    gap: 30px;
+  }
+
+  /* The claim should arrive before its proof on a narrow screen. */
+  .showcase-panel .showcase-art { order: 2; }
+  .showcase-panel .showcase-copy { order: 1; }
+
+}
+
+/* ═══════════════════════════════════════════════════════
+   BEYOND THE CHAT — three tinted cards, centred intro
+   Same paper as the panels, via the :root tokens, but with
+   clean corners: these are cards on the page, not torn sheets.
+   ═══════════════════════════════════════════════════════ */
+.adapt-section {
+  padding: clamp(78px, 8.5vw, 132px) 0 clamp(84px, 9vw, 140px);
+  text-align: center;
+}
+
+.adapt-kicker {
+  display: block;
+  font-family: var(--font-sans);
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  margin-bottom: 18px;
+}
+
+.adapt-title {
+  font-family: var(--font-serif);
+  font-size: clamp(30px, 3.8vw, 54px);
+  font-weight: 450;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  color: var(--ink-heading);
+  margin-bottom: 20px;
+}
+
+.adapt-lead {
+  font-size: clamp(14.5px, 1.2vw, 17px);
+  line-height: 1.6;
+  color: var(--ink-body);
+  max-width: 62ch;
+  margin: 0 auto clamp(44px, 4.6vw, 68px);
+}
+
+.adapt-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: clamp(14px, 1.6vw, 24px);
+  text-align: center;
+}
+
+.adapt-card {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-height: clamp(380px, 38vw, 520px);
+  padding: clamp(26px, 2.6vw, 38px) clamp(18px, 1.8vw, 26px) 0;
+  border-radius: clamp(18px, 1.8vw, 26px);
+  background: var(--tint);
+  box-shadow:
+    0 0 0 1px rgba(45, 35, 22, 0.05),
+    0 14px 34px -16px rgba(45, 35, 22, 0.26);
+}
+
+.adapt-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image: var(--paper-grain), var(--paper-mottle);
+  background-size: 180px 180px, 420px 420px;
+  background-blend-mode: overlay, overlay;
+  mix-blend-mode: soft-light;
+  opacity: 0.85;
+}
+
+.adapt-card > * {
+  position: relative;
+  z-index: 1;
+}
+
+.adapt-card-title {
+  font-family: var(--font-serif);
+  font-size: clamp(21px, 1.9vw, 27px);
+  font-weight: 450;
+  letter-spacing: -0.014em;
+  color: var(--ink-heading);
+  margin-bottom: 8px;
+}
+
+.adapt-card-sub {
+  font-size: clamp(13px, 1.05vw, 14.5px);
+  line-height: 1.45;
+  color: rgba(26, 24, 22, 0.66);
+  margin-bottom: clamp(20px, 2.2vw, 32px);
+}
+
+/* The mock runs off the bottom of the card, as in the reference — it is a
+   glimpse of a thing, not a diagram that has to be complete. */
+.adapt-mock {
+  width: 100%;
+  margin-top: auto;
+  padding: clamp(14px, 1.4vw, 20px);
+  border-radius: 14px 14px 0 0;
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: 0 -1px 0 rgba(45, 35, 22, 0.06), 0 -10px 26px -14px rgba(45, 35, 22, 0.4);
+  text-align: left;
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--ink-body);
+}
+
+.mock-flow {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.mock-step {
+  padding: 8px 10px;
+  border-radius: 9px;
+  background: rgba(45, 35, 22, 0.05);
+}
+
+.mock-step b {
+  color: var(--ink-heading);
+}
+
+.mock-step-run {
+  background: rgba(96, 126, 196, 0.16);
+}
+
+.mock-arrow {
+  color: var(--ink-light);
+  font-size: 11px;
+  padding-left: 10px;
+}
+
+.mock-bar {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 9px;
+  margin-bottom: 5px;
+  border-radius: 9px;
+  background: rgba(45, 35, 22, 0.05);
+}
+
+.mock-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ink-light);
+  flex-shrink: 0;
+}
+
+.mock-url {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--ink-body);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mock-pill {
+  flex-shrink: 0;
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 9999px;
+  background: rgba(45, 35, 22, 0.08);
+  color: var(--ink-muted);
+}
+
+.mock-pill-on {
+  background: rgba(70, 140, 95, 0.18);
+  color: #2F6B45;
+}
+
+.mock-refuse {
+  margin-top: 9px;
+  padding: 9px 10px;
+  border-radius: 9px;
+  background: rgba(196, 92, 74, 0.12);
+  color: #8A3C2C;
+}
+
+.mock-refuse b {
+  color: #7A3122;
+}
+
+.mock-file {
+  padding: 10px;
+  border-radius: 9px;
+  background: rgba(45, 35, 22, 0.05);
+}
+
+.mock-file-name {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--ink-heading);
+}
+
+.mock-file-meta {
+  display: block;
+  margin-top: 3px;
+  font-size: 11px;
+  color: var(--ink-muted);
+}
+
+.mock-keys {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.mock-key {
+  padding: 8px 9px;
+  border-radius: 9px;
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--ink-muted);
+  background: rgba(45, 35, 22, 0.05);
+}
+
+.mock-key b {
+  color: var(--ink-heading);
+  font-size: 11.5px;
+}
+
+.mock-foot {
+  display: block;
+  margin-top: 10px;
+  font-size: 11px;
+  color: var(--ink-light);
+}
+
+@media (max-width: 920px) {
+  .adapt-row {
+    grid-template-columns: 1fr;
+    max-width: 440px;
+    margin: 0 auto;
+  }
+
+  .adapt-card {
+    min-height: 0;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════
+   THE ROSTER — square tiles, each with a live face
+   ═══════════════════════════════════════════════════════ */
+.roster-section {
+  padding: clamp(10px, 1.5vw, 24px) 0 clamp(72px, 7vw, 104px);
+}
+
+.roster-section .container {
+  max-width: 1180px;
+}
+
+.roster-panel {
+  grid-template-columns: 0.86fr 1.14fr;
+  align-items: center;
+}
+
+.roster-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: clamp(12px, 1.3vw, 20px);
+  min-width: 0;
+}
+
+.agent-tile {
+  /* Square, as asked — and it is also what a face wants: a portrait box
+     would leave the head small and the card mostly empty. */
+  aspect-ratio: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(6px, 0.8vw, 12px);
+  padding: clamp(14px, 1.5vw, 22px);
+  text-align: center;
+  background: rgba(255, 255, 255, 0.55);
+  border-radius: 18px;
+  box-shadow: 0 1px 2px rgba(60, 46, 18, 0.06);
+  transition: background 0.2s ease, transform 0.2s ease;
+}
+
+.agent-tile:hover {
+  background: rgba(255, 255, 255, 0.72);
+  transform: translateY(-2px);
+}
+
+.agent-face {
+  display: block;
+  width: clamp(84px, 9vw, 132px);
+  height: clamp(84px, 9vw, 132px);
+}
+
+/* character.js injects its own <svg>; it has to fill the slot either way,
+   whether it was created live or rendered to a string. */
+.agent-face > svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+  overflow: visible;
+}
+
+.agent-tile-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.agent-tile-name {
+  font-size: clamp(14px, 1.15vw, 16px);
+  font-weight: 600;
+  letter-spacing: -0.008em;
+  color: var(--ink-heading);
+}
+
+.agent-tile-role {
+  font-size: clamp(11.5px, 0.95vw, 13px);
+  line-height: 1.35;
+  color: rgba(26, 24, 22, 0.6);
+}
+
+@media (max-width: 920px) {
+  .roster-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .roster-panel .connect-copy { order: 0; }
+  .roster-grid { order: 1; }
+}
+
+/* ═══════════════════════════════════════════════════════
+   THE RECORD — four checkable facts, then a second voice
+   ═══════════════════════════════════════════════════════ */
+.proof-section {
+  padding: clamp(72px, 8vw, 128px) 0 clamp(80px, 9vw, 140px);
+}
+
+.proof-row {
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: clamp(20px, 3vw, 44px);
+  max-width: 1080px;
+  margin: 0 auto clamp(72px, 9vw, 150px);
+}
+
+.proof {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+/* A tinted keycap rather than the reference's 3D award badge: same silhouette
+   and weight, our palette, and it echoes the logo tiles in the panel above. */
+.proof-mark {
+  display: grid;
+  place-items: center;
+  width: clamp(48px, 4.6vw, 62px);
+  height: clamp(48px, 4.6vw, 62px);
+  margin-bottom: 8px;
+  border-radius: clamp(13px, 1.3vw, 17px);
+  background: var(--tint);
+  color: var(--ink-heading);
+  box-shadow:
+    0 0 0 1px rgba(45, 35, 22, 0.06),
+    0 1px 1px rgba(45, 35, 22, 0.1),
+    0 7px 16px -6px rgba(45, 35, 22, 0.34);
+}
+
+.proof-mark svg {
+  width: 52%;
+  height: 52%;
+}
+
+.proof-title {
+  font-family: var(--font-sans);
+  font-size: clamp(15px, 1.3vw, 17.5px);
+  font-weight: 700;
+  letter-spacing: -0.012em;
+  color: var(--ink-heading);
+}
+
+.proof-sub {
+  font-size: clamp(13px, 1.05vw, 14.5px);
+  line-height: 1.45;
+  color: var(--ink-muted);
+  max-width: 22ch;
+}
+
+/* The second quote faces the other way, so two pull quotes on one page do not
+   read as the same block printed twice. */
+.pullquote.pullquote-mirror {
+  grid-template-columns: 1fr minmax(230px, 0.4fr);
+}
+
+.pullquote-mirror .pullquote-who {
+  justify-content: flex-end;
+}
+
+@media (max-width: 860px) {
+  .proof-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 34px 20px;
+  }
+}
+
+@media (max-width: 760px) {
+  .pullquote.pullquote-mirror {
+    grid-template-columns: 1fr;
+  }
+
+  /* Attribution under the sentence it belongs to, on both quotes. */
+  .pullquote-mirror .pullquote-text { order: 0; }
+
+  .pullquote-mirror .pullquote-who {
+    order: 1;
+    justify-content: flex-start;
+    flex-direction: row-reverse;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════
+   CONNECT — apps, MCP, and your own model
+   Reuses .showcase-panel so it inherits the same torn paper,
+   grain and crease: one sheet of stock, two sections.
+   ═══════════════════════════════════════════════════════ */
+.connect-section {
+  padding: clamp(10px, 1.5vw, 24px) 0 clamp(72px, 7vw, 104px);
+}
+
+.connect-section .container {
+  max-width: 1180px;
+}
+
+/* Copy on the left here, cards on the right — the mirror of the panel above. */
+.connect-panel {
+  grid-template-columns: 0.84fr 1.16fr;
+  align-items: center;
+}
+
+.connect-copy .showcase-title {
+  font-size: clamp(26px, 2.8vw, 40px);
+}
+
+.connect-copy .showcase-body {
+  max-width: 34ch;
+}
+
+.connect-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: clamp(12px, 1.2vw, 18px);
+  min-width: 0;
+}
+
+.connect-card {
+  background: rgba(255, 255, 255, 0.52);
+  border-radius: 16px;
+  padding: clamp(16px, 1.5vw, 22px);
+  min-width: 0;
+  box-shadow: 0 1px 2px rgba(30, 40, 30, 0.05);
+}
+
+.connect-card-wide {
+  grid-column: 1 / -1;
+}
+
+.connect-card-title {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-family: var(--font-sans);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.004em;
+  color: var(--ink-heading);
+  margin-bottom: 14px;
+}
+
+.logo-row {
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: clamp(8px, 0.8vw, 12px);
+}
+
+.logo-row-wide {
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+}
+
+/* Brand-coloured tile, white mark — the reference's treatment, which puts the
+   five brands that publish a black mark (Notion, GitHub, Apple, Ollama,
+   Cursor) on black tiles. */
+.logo-tile {
+  position: relative;
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  background: var(--brand, var(--ink-heading));
+  border-radius: 12px;
+  max-width: 76px;
+  width: 100%;
+  justify-self: center;
+  box-shadow:
+    0 0 0 1px rgba(30, 40, 30, 0.08),
+    0 2px 5px -2px rgba(30, 40, 30, 0.3);
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+}
+
+.logo-tile:hover,
+.logo-tile:focus-visible {
+  transform: translateY(-4px) scale(1.07);
+  z-index: 3;
+  box-shadow:
+    0 0 0 1px rgba(30, 40, 30, 0.1),
+    0 10px 22px -6px rgba(30, 40, 30, 0.42);
+}
+
+/* The name, on hover. attr() keeps it in one place — the markup — rather than
+   duplicated into a stylesheet that would drift from it. */
+.logo-tile::after {
+  content: attr(data-name);
+  position: absolute;
+  bottom: calc(100% + 9px);
+  left: 50%;
+  transform: translateX(-50%) translateY(4px);
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--bg-dark);
+  color: #FAF7F2;
+  font-family: var(--font-sans);
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  box-shadow: 0 6px 16px -6px rgba(20, 15, 10, 0.5);
+  transition: opacity 0.16s ease, transform 0.16s ease;
+}
+
+.logo-tile:hover::after,
+.logo-tile:focus-visible::after {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+/* The mark is a mask, not an <img>: that is what lets one monochrome source
+   SVG be painted white on every tile without shipping 25 recoloured copies. */
+.logo-glyph {
+  width: 54%;
+  aspect-ratio: 1;
+  background: #fff;
+  -webkit-mask: var(--src) center / contain no-repeat;
+  mask: var(--src) center / contain no-repeat;
+}
+
+.logo-tile-text {
+  font-family: var(--font-sans);
+  font-size: clamp(10px, 0.95vw, 13px);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: #fff;
+}
+
+.connect-community .community-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.community-faces {
+  display: flex;
+  flex-shrink: 0;
+}
+
+.community-faces span {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--pastel);
+  box-shadow: 0 0 0 2.5px rgba(255, 255, 255, 0.92);
+}
+
+.community-faces span + span {
+  margin-left: -10px;
+}
+
+.community-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.community-head {
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--ink-heading);
+}
+
+.community-sub {
+  font-size: 13px;
+  color: rgba(26, 24, 22, 0.62);
+}
+
+.community-sub:hover {
+  color: var(--ink-heading);
+}
+
+@media (max-width: 920px) {
+  .connect-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .connect-copy {
+    order: 0;
+  }
+
+  .connect-grid {
+    order: 1;
+  }
+
+  .logo-row-wide {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+/* ═══════════════════════════════════════════════════════
+   A VOICE — one pull quote, on the bare ground
+   No panel here on purpose: it is the breath between two
+   sheets of paper, so the only thing on it is the sentence.
+   ═══════════════════════════════════════════════════════ */
+.pullquote-section {
+  padding: clamp(88px, 11vw, 168px) 0;
+}
+
+.pullquote {
+  display: grid;
+  grid-template-columns: minmax(230px, 0.4fr) 1fr;
+  align-items: start;
+  gap: clamp(20px, 3vw, 46px);
+  max-width: 1080px;
+  margin: 0 auto;
+}
+
+.pullquote-who {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  /* Sits on the quote's first line rather than the top of its box. */
+  padding-top: clamp(4px, 0.9vw, 14px);
+  min-width: 0;
+}
+
+.pullquote-avatar,
+img.pullquote-avatar {
+  display: block;
+  width: clamp(54px, 5.2vw, 76px);
+  height: clamp(54px, 5.2vw, 76px);
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--pastel, var(--bg-canvas-subtle));
+  box-shadow:
+    0 0 0 1px rgba(45, 35, 22, 0.06),
+    0 6px 16px -8px rgba(45, 35, 22, 0.3);
+}
+
+img.pullquote-avatar {
+  object-fit: cover;
+}
+
+.pullquote-name {
+  font-size: clamp(15px, 1.3vw, 18px);
+  font-weight: 500;
+  color: var(--ink-body);
+  white-space: nowrap;
+}
+
+.pullquote-rule {
+  flex: 1 1 auto;
+  height: 1px;
+  min-width: 24px;
+  background: rgba(40, 32, 24, 0.22);
+}
+
+.pullquote-text {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: clamp(21px, 2.35vw, 34px);
+  font-weight: 400;
+  line-height: 1.46;
+  letter-spacing: -0.012em;
+  color: var(--ink-heading);
+  text-wrap: balance;
+}
+
+@media (max-width: 760px) {
+  .pullquote {
+    grid-template-columns: 1fr;
+    gap: 22px;
+  }
+
+  .pullquote-who {
+    padding-top: 0;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════
    EDITORIAL SECTIONS (HOW IT WORKS, AGENTS, PRIVACY)
    ═══════════════════════════════════════════════════════ */
 .editorial-section {
@@ -867,12 +1933,110 @@ button {
 }
 
 /* ═══════════════════════════════════════════════════════
+   HOW PEOPLE USE IT — the rail
+   Drifts on its own and is scrollable by hand; both act on the
+   same scrollLeft, so they can never disagree. See initPeopleRail.
+   ═══════════════════════════════════════════════════════ */
+.people-section {
+  padding: clamp(84px, 9vw, 136px) 0 clamp(92px, 10vw, 148px);
+  position: relative;
+}
+
+.people-heading {
+  font-family: var(--font-serif);
+  font-size: clamp(28px, 3.4vw, 48px);
+  font-weight: 450;
+  line-height: 1.12;
+  letter-spacing: -0.018em;
+  color: var(--ink-heading);
+  text-align: center;
+  margin-bottom: clamp(44px, 4.6vw, 64px);
+}
+
+/* A real scroll container, not a transform: that is what buys trackpad,
+   shift+wheel and touch swipe for nothing. The drift just writes scrollLeft. */
+.people-viewport {
+  overflow-x: auto;
+  overflow-y: hidden;
+  /* html sets scroll-behavior: smooth, which would fight every frame's write. */
+  scroll-behavior: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+  /* Cards fade at the edges rather than being guillotined. */
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent);
+}
+
+.people-viewport::-webkit-scrollbar {
+  display: none;
+}
+
+.people-viewport.is-dragging {
+  cursor: grabbing;
+}
+
+.people-track {
+  display: flex;
+  align-items: flex-start;
+  gap: 22px;
+  width: max-content;
+  padding: 0 clamp(20px, 4vw, 64px);
+}
+
+.person-card {
+  flex: 0 0 clamp(214px, 19vw, 262px);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* The portrait slot. A flat pastel block reads as deliberate where a grey
+   box reads as a failed image — and it is the one thing on the card that
+   gets replaced by an <img> of the same size later. */
+.person-photo,
+img.person-photo {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 5;
+  border-radius: 16px;
+  background: var(--pastel, var(--bg-canvas-subtle));
+  box-shadow:
+    0 0 0 1px rgba(45, 35, 22, 0.06),
+    0 10px 26px -10px rgba(45, 35, 22, 0.22);
+}
+
+img.person-photo {
+  object-fit: cover;
+}
+
+.person-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-left: 2px;
+}
+
+.person-name {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.006em;
+  color: var(--ink-heading);
+}
+
+.person-role {
+  font-size: 13.5px;
+  color: var(--ink-muted);
+}
+
+/* ═══════════════════════════════════════════════════════
    WAITLIST SECTION — TACTILE PARCHMENT CARD
    ═══════════════════════════════════════════════════════ */
 .waitlist-section {
   padding: 100px 0 120px;
   position: relative;
-  background: var(--bg-canvas);
 }
 
 .waitlist-card-warm {

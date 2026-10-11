@@ -377,6 +377,18 @@
   // ═══════════════════════════════════════════════════════════
   // 2. LIVE AGENT AVATARS (CHARACTER.JS)
   // ═══════════════════════════════════════════════════════════
+  // The silhouette and palette are a choice made in the markup, not left to
+  // the seed: left to chance, two agents drew the same shape and several drew
+  // the palettes whose background is near-black.
+  function sceneFor(el, seed, name) {
+    var opts = { name: name, frame: 'rounded' };
+    var preset = el.getAttribute('data-preset');
+    var palette = el.getAttribute('data-palette');
+    if (preset) opts.preset = preset;
+    if (palette) opts.palette = palette;
+    return window.Character.generateScene(seed, opts);
+  }
+
   // The seed lives on the element, so adding an agent to the page is a markup
   // change rather than an edit to a roster kept down here.
   function initAgentAvatars() {
@@ -388,11 +400,9 @@
       var name = slot.getAttribute('aria-label') || seed;
       var size = parseInt(slot.getAttribute('data-avatar-size'), 10) || 40;
       try {
-        var scene = window.Character.generateScene(seed);
+        var scene = sceneFor(slot, seed, name);
         if (!scene || !scene.scene) return;
-        scene.scene.camera.frame = 'none';
         scene.scene.effects.showAvatarShadow = false;
-        scene.scene.camera.padding = 3;
         slot.innerHTML = window.Character.renderToString(scene, { size: size, title: name });
       } catch (e) {
         console.warn('Avatar generation skipped for ' + seed, e);
@@ -1845,11 +1855,158 @@
     switchAgent('personal-manager');
   }
 
+  // ═══════════════════════════════════════════════════════════
+  // 4. THE ROSTER — faces that watch the cursor
+  // ═══════════════════════════════════════════════════════════
+  function initLiveAgentFaces() {
+    if (typeof window.Character === 'undefined' || !window.Character.createCharacter) return;
+
+    var slots = document.querySelectorAll('[data-live-seed]');
+    if (!slots.length) return;
+
+    // A live face is a spring integrating on every pointer move. Four is the
+    // whole point of this section; a roster of thirty would not be.
+    var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    Array.prototype.forEach.call(slots, function (slot) {
+      var seed = slot.getAttribute('data-live-seed');
+      var name = slot.getAttribute('data-agent') || seed;
+      try {
+        var scene = sceneFor(slot, seed, name);
+        if (!scene || !scene.scene) return;
+        scene.scene.effects.showAvatarShadow = false;
+
+        if (reduce) {
+          // Same face, no spring: it still has to be a face, not a gap.
+          slot.innerHTML = window.Character.renderToString(scene, { size: 150, title: name });
+          return;
+        }
+        slot._character = window.Character.createCharacter(slot, scene, { size: 150, title: name });
+      } catch (e) {
+        console.warn('Live face skipped for ' + seed, e);
+      }
+    });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initLiveAgentFaces);
+  } else {
+    initLiveAgentFaces();
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // 3. HOW PEOPLE USE IT — drifts on its own, and scrolls by hand
+  // ═══════════════════════════════════════════════════════════
+  function initPeopleRail() {
+    var viewport = document.querySelector('.people-viewport');
+    var track = viewport && viewport.querySelector('.people-track');
+    if (!track || !track.children.length) return;
+
+    var SPEED = 0.035;   // px per ms — a drift, not a conveyor belt
+    var IDLE = 1600;     // ms of quiet after a touch before it picks up again
+    var GRAB = 3;        // px of travel before a click counts as a drag
+    var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    // A second copy of the row is what lets the wrap be invisible: the jump
+    // lands on identical content. aria-hidden, or a screen reader is read
+    // every person twice.
+    var originals = Array.prototype.slice.call(track.children);
+    for (var i = 0; i < originals.length; i++) {
+      var copy = originals[i].cloneNode(true);
+      copy.setAttribute('aria-hidden', 'true');
+      track.appendChild(copy);
+    }
+
+    var half = 0, lastT = 0, idleUntil = 0, onScreen = false;
+    var dragging = false, startX = 0, startScroll = 0, moved = false;
+
+    function measure() { half = track.scrollWidth / 2; }
+    measure();
+    window.addEventListener('resize', measure);
+    // Web fonts land after first paint and change every card's width.
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(measure);
+
+    // Off-screen it costs nothing: no frames while nobody can see it.
+    if ('IntersectionObserver' in window) {
+      new IntersectionObserver(function (entries) {
+        onScreen = entries[0].isIntersecting;
+      }, { threshold: 0 }).observe(viewport);
+    } else {
+      onScreen = true;
+    }
+
+    function wrap() {
+      if (half <= 0) return;
+      if (viewport.scrollLeft >= half) viewport.scrollLeft -= half;
+      else if (viewport.scrollLeft <= 0) viewport.scrollLeft += half;
+    }
+
+    function frame(t) {
+      var dt = lastT ? Math.min(t - lastT, 64) : 16;
+      lastT = t;
+      if (!reduce && onScreen && !dragging && t > idleUntil) {
+        viewport.scrollLeft += dt * SPEED;
+      }
+      wrap();
+      requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+
+    // Hands off while someone is actually moving it. The drift writes
+    // scrollLeft itself, so a 'scroll' listener cannot tell us apart from it —
+    // only the input events can.
+    function yield_() { idleUntil = performance.now() + IDLE; }
+    viewport.addEventListener('wheel', yield_, { passive: true });
+    viewport.addEventListener('touchstart', yield_, { passive: true });
+    viewport.addEventListener('keydown', yield_);
+
+    // Drag is mouse-only: on touch the browser's own panning is better than
+    // anything reimplemented here, and the two would fight.
+    viewport.addEventListener('pointerdown', function (e) {
+      if (e.pointerType !== 'mouse') return;
+      dragging = true;
+      moved = false;
+      startX = e.clientX;
+      startScroll = viewport.scrollLeft;
+      if (viewport.setPointerCapture) viewport.setPointerCapture(e.pointerId);
+    });
+
+    viewport.addEventListener('pointermove', function (e) {
+      if (!dragging) return;
+      var dx = e.clientX - startX;
+      if (!moved && Math.abs(dx) > GRAB) {
+        moved = true;
+        viewport.classList.add('is-dragging');
+      }
+      if (moved) { viewport.scrollLeft = startScroll - dx; wrap(); }
+    });
+
+    function endDrag(e) {
+      if (!dragging) return;
+      dragging = false;
+      viewport.classList.remove('is-dragging');
+      yield_();
+      if (e && e.pointerId != null && viewport.releasePointerCapture &&
+          viewport.hasPointerCapture && viewport.hasPointerCapture(e.pointerId)) {
+        viewport.releasePointerCapture(e.pointerId);
+      }
+    }
+    viewport.addEventListener('pointerup', endDrag);
+    viewport.addEventListener('pointercancel', endDrag);
+    viewport.addEventListener('dragstart', function (e) { e.preventDefault(); });
+  }
+
   // Initialize workspace display on DOM ready
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', initWorkspaceDisplay);
   } else {
     initWorkspaceDisplay();
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initPeopleRail);
+  } else {
+    initPeopleRail();
   }
 
 
